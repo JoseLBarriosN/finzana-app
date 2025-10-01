@@ -1,155 +1,147 @@
 // =============================================
-// CONFIGURACIÓN DE GOOGLE APPS SCRIPT - CON MANEJO DE CORS
+// CONFIGURACIÓN DE GOOGLE SHEETS API v4
 // =============================================
 
-const GAS_URL = 'https://script.google.com/macros/s/AKfycbxyRj7vlZdUqHIR9SU-KvNF13kVWVgGHlnCPAHfjewrHu_XqoO0S5DfXyiKBkwzsgry/exec';
+const API_KEY = 'AIzaSyAsBdhcY48jMt-PE259q1QRYj_KhlWPjq4'; // Reemplaza con tu API Key
+const SPREADSHEET_ID = '1ei2I56i9GKRV6IGO8TTJV9PqYUAZ_MzVQrJ0vB01vLM';
 
-// Detectar si estamos en un entorno con CORS bloqueado
-function isCORSBlocked() {
-    return window.location.origin.includes('github.io') || 
-           window.location.origin.includes('localhost');
-}
-
-// Función inteligente que maneja CORS automáticamente
-async function callGoogleAppsScript(accion, tabla, datos = null, campo = null, valor = null) {
-    // Si sabemos que CORS está bloqueado, no intentar
-    if (isCORSBlocked()) {
-        console.log(`🚫 CORS bloqueado - Usando localStorage para: ${accion}`);
-        return await callGoogleAppsScriptLocal(accion, tabla, datos, campo, valor);
-    }
-    
-    console.log(`📤 Intentando GAS: ${accion} en ${tabla}`);
+// Función para obtener datos de una hoja
+async function obtenerDatosDeSheet(nombreHoja) {
+    console.log(`🔍 Obteniendo datos de: ${nombreHoja}`);
     
     try {
-        const payload = {
-            accion: accion,
-            tabla: tabla,
-            datos: datos,
-            campo: campo,
-            valor: valor
-        };
-
-        const response = await fetch(GAS_URL, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(payload)
-        });
-
+        const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${nombreHoja}?key=${API_KEY}`;
+        
+        const response = await fetch(url);
+        
         if (!response.ok) {
             throw new Error(`Error HTTP: ${response.status}`);
         }
-
-        const result = await response.json();
-        console.log(`✅ GAS exitoso: ${accion}`);
-        return result;
+        
+        const data = await response.json();
+        
+        if (!data.values || data.values.length === 0) {
+            return [];
+        }
+        
+        // Convertir array de arrays a array de objetos
+        const headers = data.values[0];
+        const registros = [];
+        
+        for (let i = 1; i < data.values.length; i++) {
+            const registro = {};
+            for (let j = 0; j < headers.length; j++) {
+                registro[headers[j]] = data.values[i][j];
+            }
+            registros.push(registro);
+        }
+        
+        console.log(`✅ ${registros.length} registros obtenidos de ${nombreHoja}`);
+        return registros;
         
     } catch (error) {
-        console.log(`❌ GAS falló (${error.message}) - Usando localStorage`);
-        return await callGoogleAppsScriptLocal(accion, tabla, datos, campo, valor);
+        console.error(`❌ Error obteniendo ${nombreHoja}:`, error);
+        throw error;
+    }
+}
+
+// Función para guardar datos en una hoja
+async function guardarDatosEnSheet(nombreHoja, datos) {
+    console.log(`💾 Guardando ${datos.length} registros en: ${nombreHoja}`);
+    
+    try {
+        // Primero obtener los headers existentes o crear nuevos
+        let headers;
+        try {
+            const datosExistentes = await obtenerDatosDeSheet(nombreHoja);
+            if (datosExistentes.length > 0) {
+                headers = Object.keys(datosExistentes[0]);
+            } else {
+                headers = Object.keys(datos[0]);
+            }
+        } catch (error) {
+            // Si la hoja no existe, usar los headers del primer registro
+            headers = Object.keys(datos[0]);
+        }
+        
+        // Convertir datos a formato de Sheets
+        const valores = [headers]; // Headers
+        
+        datos.forEach(registro => {
+            const fila = headers.map(header => registro[header] || '');
+            valores.push(fila);
+        });
+        
+        const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${nombreHoja}?valueInputOption=RAW&key=${API_KEY}`;
+        
+        const response = await fetch(url, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                values: valores
+            })
+        });
+        
+        if (!response.ok) {
+            throw new Error(`Error HTTP: ${response.status}`);
+        }
+        
+        console.log(`✅ ${datos.length} registros guardados en ${nombreHoja}`);
+        return { success: true, registros: datos.length };
+        
+    } catch (error) {
+        console.error(`❌ Error guardando en ${nombreHoja}:`, error);
+        throw error;
+    }
+}
+
+// Función específica para usuarios
+async function obtenerUsuariosDesdeSheets() {
+    try {
+        const usuarios = await obtenerDatosDeSheet('usuarios');
+        
+        // Convertir a formato de objeto
+        const usuariosObj = {};
+        usuarios.forEach(usuario => {
+            if (usuario.username && usuario.password) {
+                usuariosObj[usuario.username] = {
+                    password: usuario.password,
+                    name: usuario.name || usuario.username,
+                    role: usuario.role || 'consulta',
+                    email: usuario.email || '',
+                    telefono: usuario.telefono || '',
+                    fechaCreacion: usuario.fechaCreacion || new Date().toISOString()
+                };
+            }
+        });
+        
+        // Guardar en localStorage como backup
+        localStorage.setItem('finzana-users', JSON.stringify(usuariosObj));
+        
+        return usuariosObj;
+        
+    } catch (error) {
+        console.log('❌ Error obteniendo usuarios de Sheets, usando localStorage');
+        return obtenerUsuariosDesdeLocalStorage();
     }
 }
 
 // Función de fallback a localStorage
-async function callGoogleAppsScriptLocal(accion, tabla, datos = null, campo = null, valor = null) {
-    console.log(`💾 Usando localStorage para: ${accion} en ${tabla}`);
-    
+function obtenerUsuariosDesdeLocalStorage() {
     try {
-        switch(accion) {
-            case 'obtener_todos':
-                const data = localStorage.getItem(`finzana-${tabla}`);
-                return { 
-                    success: true, 
-                    data: data ? JSON.parse(data) : [] 
-                };
-                
-            case 'guardar_lote':
-                if (datos && Array.isArray(datos)) {
-                    localStorage.setItem(`finzana-${tabla}`, JSON.stringify(datos));
-                    return { 
-                        success: true, 
-                        data: { 
-                            mensaje: `Datos guardados localmente: ${datos.length} registros`,
-                            registros: datos.length 
-                        } 
-                    };
-                }
-                return { success: false, error: 'Datos inválidos' };
-                
-            case 'buscar':
-                const allData = localStorage.getItem(`finzana-${tabla}`);
-                if (!allData) return { success: true, data: null };
-                
-                const records = JSON.parse(allData);
-                const found = records.find(record => record[campo] == valor);
-                return { success: true, data: found || null };
-                
-            case 'limpiar_tabla':
-                localStorage.removeItem(`finzana-${tabla}`);
-                return { 
-                    success: true, 
-                    data: { mensaje: 'Tabla limpiada localmente' } 
-                };
-                
-            default:
-                return { success: false, error: 'Acción no soportada en modo local' };
+        const usersLocal = localStorage.getItem('finzana-users');
+        if (usersLocal) {
+            return JSON.parse(usersLocal);
         }
     } catch (error) {
-        console.error('Error en modo local:', error);
-        return { success: false, error: error.message };
-    }
-}
-
-// Función específica para usuarios que SIEMPRE funciona
-async function obtenerUsuariosConFallback() {
-    console.log('🔍 Obteniendo usuarios (con fallback automático)...');
-    
-    // Primero intentar con GAS
-    try {
-        const resultadoGAS = await callGoogleAppsScript('obtener_todos', 'usuarios');
-        
-        if (resultadoGAS.success && resultadoGAS.data && resultadoGAS.data.length > 0) {
-            console.log(`✅ ${resultadoGAS.data.length} usuarios desde GAS`);
-            
-            // Convertir a formato de objeto
-            const usuariosObj = {};
-            resultadoGAS.data.forEach(usuario => {
-                if (usuario.username && usuario.password) {
-                    usuariosObj[usuario.username] = {
-                        password: usuario.password,
-                        name: usuario.name || usuario.username,
-                        role: usuario.role || 'consulta',
-                        email: usuario.email || '',
-                        telefono: usuario.telefono || '',
-                        fechaCreacion: usuario.fechaCreacion || new Date().toISOString()
-                    };
-                }
-            });
-            
-            // Guardar en localStorage como backup
-            localStorage.setItem('finzana-users', JSON.stringify(usuariosObj));
-            
-            return usuariosObj;
-        }
-    } catch (error) {
-        console.log('❌ GAS falló, usando localStorage...');
+        console.error('Error leyendo usuarios locales:', error);
     }
     
-    // Fallback a localStorage
-    const usuariosLocal = localStorage.getItem('finzana-users');
-    if (usuariosLocal) {
-        const usuarios = JSON.parse(usuariosLocal);
-        console.log(`💾 ${Object.keys(usuarios).length} usuarios desde localStorage`);
-        return usuarios;
-    }
-    
-    // Último recurso: usuarios por defecto
-    console.log('🆕 Creando usuarios por defecto...');
     return crearUsuariosPorDefecto();
 }
 
-// Crear usuarios por defecto
 function crearUsuariosPorDefecto() {
     const defaultUsers = {
         'admin': {
@@ -187,6 +179,5 @@ function crearUsuariosPorDefecto() {
     };
     
     localStorage.setItem('finzana-users', JSON.stringify(defaultUsers));
-    console.log('✅ Usuarios por defecto creados en localStorage');
     return defaultUsers;
 }
