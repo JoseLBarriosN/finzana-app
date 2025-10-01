@@ -1,4 +1,4 @@
-﻿// =============================================
+// =============================================
 // INICIALIZACIÓN DE LA APLICACIÓN
 // =============================================
 
@@ -60,14 +60,14 @@ document.addEventListener('DOMContentLoaded', function () {
     // ========== EVENT LISTENERS ==========
 
     // Logout
-    document.getElementById('logout-btn').addEventListener('click', function () {
+    document.getElementById('logout-btn').addEventListener('click', function() {
         localStorage.removeItem('finzana-user');
         location.reload();
     });
 
     // Navegación
     document.querySelectorAll('[data-view]').forEach(button => {
-        button.addEventListener('click', function () {
+        button.addEventListener('click', function() {
             const targetView = this.getAttribute('data-view');
             showView(targetView);
         });
@@ -78,7 +78,7 @@ document.addEventListener('DOMContentLoaded', function () {
     document.getElementById('buscar-cliente').addEventListener('input', loadClientesTable);
 
     // Gestión de usuarios
-    document.getElementById('btn-nuevo-usuario').addEventListener('click', function () {
+    document.getElementById('btn-nuevo-usuario').addEventListener('click', function() {
         document.getElementById('form-usuario-container').classList.remove('hidden');
         document.getElementById('form-usuario-titulo').textContent = 'Nuevo Usuario';
         document.getElementById('form-usuario').reset();
@@ -86,11 +86,11 @@ document.addEventListener('DOMContentLoaded', function () {
         document.getElementById('nuevo-username').readOnly = false;
     });
 
-    document.getElementById('btn-cancelar-usuario').addEventListener('click', function () {
+    document.getElementById('btn-cancelar-usuario').addEventListener('click', function() {
         document.getElementById('form-usuario-container').classList.add('hidden');
     });
 
-    document.getElementById('form-usuario').addEventListener('submit', function (e) {
+    document.getElementById('form-usuario').addEventListener('submit', function(e) {
         e.preventDefault();
         const users = database.getUsers();
         const userId = document.getElementById('usuario-id').value;
@@ -126,7 +126,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // Importación
     document.querySelectorAll('.import-tab').forEach(tab => {
-        tab.addEventListener('click', function () {
+        tab.addEventListener('click', function() {
             document.querySelectorAll('.import-tab').forEach(t => t.classList.remove('active'));
             document.querySelectorAll('.import-tab-content').forEach(c => c.classList.add('hidden'));
             this.classList.add('active');
@@ -135,7 +135,7 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     });
 
-    document.getElementById('btn-procesar-importacion').addEventListener('click', function () {
+    document.getElementById('btn-procesar-importacion').addEventListener('click', function() {
         const textareaId = `datos-importar-${currentImportTab}`;
         const csvData = document.getElementById(textareaId).value;
         if (!csvData.trim()) {
@@ -148,7 +148,7 @@ document.addEventListener('DOMContentLoaded', function () {
             let mensaje = `Importación completada: ${resultado.importados} de ${resultado.total} registros procesados`;
             if (resultado.errores.length > 0) {
                 mensaje += `<br>Errores: ${resultado.errores.length}`;
-                document.getElementById('detalle-importacion').innerHTML =
+                document.getElementById('detalle-importacion').innerHTML = 
                     `<strong>Detalle de errores:</strong><ul>${resultado.errores.map(e => `<li>${e}</li>`).join('')}</ul>`;
             } else document.getElementById('detalle-importacion').innerHTML = '';
             showStatus('estado-importacion', mensaje, 'success');
@@ -156,7 +156,7 @@ document.addEventListener('DOMContentLoaded', function () {
         document.getElementById('resultado-importacion').classList.remove('hidden');
     });
 
-    document.getElementById('btn-limpiar-datos').addEventListener('click', function () {
+    document.getElementById('btn-limpiar-datos').addEventListener('click', function() {
         if (confirm('¿Estás seguro de que deseas limpiar toda la base de datos? Esta acción no se puede deshacer.')) {
             const resultado = database.limpiarBaseDeDatos();
             showStatus('estado-importacion', resultado.message, 'success');
@@ -165,7 +165,7 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 
     // Clientes
-    document.getElementById('form-cliente').addEventListener('submit', function (e) {
+    document.getElementById('form-cliente').addEventListener('submit', function(e) {
         e.preventDefault();
         const cliente = {
             curp: document.getElementById('curp_cliente').value,
@@ -182,7 +182,7 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 
     // Colocación
-    document.getElementById('btnBuscarCliente_colocacion').addEventListener('click', function () {
+    document.getElementById('btnBuscarCliente_colocacion').addEventListener('click', function() {
         const curp = document.getElementById('curp_colocacion').value;
         const cliente = database.buscarClientePorCURP(curp);
         if (cliente) {
@@ -200,7 +200,7 @@ document.addEventListener('DOMContentLoaded', function () {
     document.getElementById('monto_colocacion').addEventListener('change', calcularMontoTotalColocacion);
     document.getElementById('plazo_colocacion').addEventListener('change', calcularMontoTotalColocacion);
 
-    document.getElementById('form-colocacion').addEventListener('submit', function (e) {
+    document.getElementById('form-colocacion').addEventListener('submit', function(e) {
         e.preventDefault();
         const credito = {
             curpCliente: document.getElementById('curp_colocacion').value,
@@ -221,7 +221,7 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 
     // Cobranza
-    document.getElementById('btnBuscarCredito_cobranza').addEventListener('click', function () {
+    document.getElementById('btnBuscarCredito_cobranza').addEventListener('click', function() {
         const idCredito = document.getElementById('idCredito_cobranza').value.trim();
         const credito = database.buscarCreditoPorId(idCredito);
         if (credito) {
@@ -229,26 +229,26 @@ document.addEventListener('DOMContentLoaded', function () {
             const cliente = database.buscarClientePorCURP(credito.curpCliente);
             const infoCredito = database.obtenerInformacionCreditoCliente(credito.curpCliente);
             const semanasAtraso = database.calcularSemanasAtraso(credito);
-
+            
             document.getElementById('nombre_cobranza').value = cliente ? cliente.nombre : 'No encontrado';
             document.getElementById('grupo_cobranza').value = cliente ? cliente.poblacion_grupo : 'No encontrado';
             document.getElementById('saldo_cobranza').value = `$${credito.saldo.toLocaleString()}`;
             document.getElementById('estado_cobranza').value = credito.estado;
             document.getElementById('siguiente_pago_cobranza').value = infoCredito ? infoCredito.siguientePago : 'N/A';
             document.getElementById('semanas_atraso_cobranza').value = semanasAtraso;
-
+            
             if (semanasAtraso > 0) {
                 document.getElementById('tipo_cobranza').value = 'actualizado';
                 document.getElementById('tipo_cobranza').disabled = true;
             } else document.getElementById('tipo_cobranza').disabled = false;
-
-            document.getElementById('monto_cobranza').addEventListener('input', function () {
+            
+            document.getElementById('monto_cobranza').addEventListener('input', function() {
                 const monto = parseFloat(this.value) || 0;
                 const saldoActual = credito.saldo;
                 const saldoDespues = saldoActual - monto;
                 document.getElementById('saldoDespues_cobranza').value = `$${saldoDespues.toLocaleString()}`;
             });
-
+            
             document.getElementById('form-cobranza').classList.remove('hidden');
             showStatus('status_cobranza', 'Crédito encontrado', 'success');
         } else {
@@ -257,7 +257,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     });
 
-    document.getElementById('form-cobranza').addEventListener('submit', function (e) {
+    document.getElementById('form-cobranza').addEventListener('submit', function(e) {
         e.preventDefault();
         const pago = {
             idCredito: creditoActual.id,
@@ -276,7 +276,7 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 
     // Reportes
-    document.getElementById('btn-actualizar-reportes').addEventListener('click', function () {
+    document.getElementById('btn-actualizar-reportes').addEventListener('click', function() {
         const reportes = database.generarReportes();
         document.getElementById('total-clientes').textContent = reportes.totalClientes;
         document.getElementById('total-creditos').textContent = reportes.totalCreditos;
@@ -285,13 +285,13 @@ document.addEventListener('DOMContentLoaded', function () {
         document.getElementById('pagos-registrados').textContent = reportes.pagosRegistrados;
         document.getElementById('cobrado-mes').textContent = `$${reportes.cobradoMes.toLocaleString()}`;
         document.getElementById('total-comisiones').textContent = `$${reportes.totalComisiones.toLocaleString()}`;
-        const tasaRecuperacion = reportes.totalCartera > 0 ?
+        const tasaRecuperacion = reportes.totalCartera > 0 ? 
             ((reportes.cobradoMes / reportes.totalCartera) * 100).toFixed(1) : 0;
         document.getElementById('tasa-recuperacion').textContent = `${tasaRecuperacion}%`;
     });
 
     // Eventos de vistas
-    document.getElementById('view-reportes').addEventListener('viewshown', function () {
+    document.getElementById('view-reportes').addEventListener('viewshown', function() {
         document.getElementById('btn-actualizar-reportes').click();
     });
     document.getElementById('view-usuarios').addEventListener('viewshown', loadUsersTable);
@@ -351,7 +351,7 @@ function loadClientesTable() {
     const tbody = document.getElementById('tabla-clientes');
     const busqueda = document.getElementById('buscar-cliente').value.toLowerCase();
     tbody.innerHTML = '';
-    const clientesFiltrados = clientes.filter(cliente =>
+    const clientesFiltrados = clientes.filter(cliente => 
         cliente.curp.toLowerCase().includes(busqueda) || cliente.nombre.toLowerCase().includes(busqueda)
     );
     for (const cliente of clientesFiltrados) {
@@ -456,7 +456,7 @@ function editCliente(curp) {
         document.getElementById('poblacion_grupo_cliente').value = cliente.poblacion_grupo;
         document.getElementById('ruta_cliente').value = cliente.ruta;
         document.querySelector('#form-cliente button[type="submit"]').innerHTML = '<i class="fas fa-save"></i> Actualizar Cliente';
-        document.getElementById('form-cliente').onsubmit = function (e) {
+        document.getElementById('form-cliente').onsubmit = function(e) {
             e.preventDefault();
             const datosActualizados = {
                 curp: document.getElementById('curp_cliente').value,
