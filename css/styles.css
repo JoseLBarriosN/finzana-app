@@ -1,10 +1,11 @@
-﻿:root {
+:root {
     --primary: #2E8B57;
     --primary-dark: #1e6b47;
     --secondary: #1E90FF;
     --success: #3CB371;
     --danger: #FF6347;
     --warning: #FFA500;
+    --info: #17a2b8;
     --light: #f8f9fa;
     --dark: #212529;
     --gray: #6c757d;
@@ -60,9 +61,7 @@ body {
 }
 
 @keyframes spin {
-    to {
-        transform: rotate(360deg);
-    }
+    to { transform: rotate(360deg); }
 }
 
 /* Login Screen */
@@ -81,19 +80,27 @@ body {
     transition: var(--transition);
 }
 
-    .login-box:hover {
-        transform: translateY(-5px);
-        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
-    }
+.login-box:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+}
 
 .login-logo {
     width: 80px;
     height: 80px;
-    margin-bottom: 20px;
+    margin: 0 auto 20px;
     border-radius: 50%;
-    object-fit: cover;
+    background: rgba(46, 139, 87, 0.1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
     border: 3px solid var(--primary);
     padding: 5px;
+}
+
+.login-logo i {
+    font-size: 40px;
+    color: var(--primary);
 }
 
 .login-box h1 {
@@ -129,16 +136,16 @@ input, select, textarea {
     transition: var(--transition);
 }
 
-    input:focus, select:focus, textarea:focus {
-        outline: none;
-        border-color: var(--primary);
-        box-shadow: 0 0 0 3px rgba(46, 139, 87, 0.2);
-    }
+input:focus, select:focus, textarea:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(46, 139, 87, 0.2);
+}
 
-    input[readonly] {
-        background-color: #f8f9fa;
-        color: var(--gray);
-    }
+input[readonly] {
+    background-color: #f8f9fa;
+    color: var(--gray);
+}
 
 /* Buttons */
 .btn {
@@ -162,10 +169,10 @@ input, select, textarea {
     width: 100%;
 }
 
-    .btn-primary:hover {
-        background: var(--primary-dark);
-        transform: translateY(-2px);
-    }
+.btn-primary:hover {
+    background: var(--primary-dark);
+    transform: translateY(-2px);
+}
 
 .btn-secondary {
     background: var(--light);
@@ -173,36 +180,36 @@ input, select, textarea {
     border: 1px solid #dee2e6;
 }
 
-    .btn-secondary:hover {
-        background: #e9ecef;
-    }
+.btn-secondary:hover {
+    background: #e9ecef;
+}
 
 .btn-success {
     background: var(--success);
     color: white;
 }
 
-    .btn-success:hover {
-        background: #2e9c5f;
-    }
+.btn-success:hover {
+    background: #2e9c5f;
+}
 
 .btn-danger {
     background: var(--danger);
     color: white;
 }
 
-    .btn-danger:hover {
-        background: #e64a2e;
-    }
+.btn-danger:hover {
+    background: #e64a2e;
+}
 
 .btn-warning {
     background: var(--warning);
     color: white;
 }
 
-    .btn-warning:hover {
-        background: #e69500;
-    }
+.btn-warning:hover {
+    background: #e69500;
+}
 
 .btn-menu {
     background: white;
@@ -217,11 +224,11 @@ input, select, textarea {
     box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
 }
 
-    .btn-menu:hover {
-        background: #f8f9fa;
-        transform: translateY(-2px);
-        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-    }
+.btn-menu:hover {
+    background: #f8f9fa;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
 
 .btn-back {
     background: none;
@@ -230,10 +237,10 @@ input, select, textarea {
     margin-bottom: 20px;
 }
 
-    .btn-back:hover {
-        background: none;
-        color: var(--primary-dark);
-    }
+.btn-back:hover {
+    background: none;
+    color: var(--primary-dark);
+}
 
 /* Main App */
 .app-container {
@@ -275,6 +282,11 @@ input, select, textarea {
     font-size: 18px;
 }
 
+#user-role-display {
+    font-size: 14px;
+    opacity: 0.8;
+}
+
 .app-content {
     flex: 1;
     padding: 30px;
@@ -285,11 +297,11 @@ input, select, textarea {
     animation: fadeIn 0.3s ease;
 }
 
-    .view h2, .view h3 {
-        color: var(--dark);
-        margin-bottom: 25px;
-        font-weight: 700;
-    }
+.view h2, .view h3 {
+    color: var(--dark);
+    margin-bottom: 25px;
+    font-weight: 700;
+}
 
 /* Search Groups */
 .search-group {
@@ -298,10 +310,10 @@ input, select, textarea {
     margin-bottom: 20px;
 }
 
-    .search-group input {
-        flex: 1;
-        min-width: 200px;
-    }
+.search-group input {
+    flex: 1;
+    min-width: 200px;
+}
 
 /* Menu Grid */
 .menu-grid {
@@ -321,15 +333,14 @@ input, select, textarea {
     border: 1px solid #f0f0f0;
 }
 
-    .menu-card:hover {
-        transform: translateY(-5px);
-        box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
-    }
+.menu-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
+}
 
 .menu-icon {
     font-size: 40px;
     margin-bottom: 15px;
-    color: var(--primary);
 }
 
 .menu-card h3 {
@@ -341,6 +352,39 @@ input, select, textarea {
     color: var(--gray);
     font-size: 14px;
     margin-bottom: 15px;
+}
+
+/* Colores específicos para cada ícono */
+.icon-clientes {
+    color: #3498db; /* Azul para gestión de clientes */
+}
+
+.icon-usuarios {
+    color: #9b59b6; /* Púrpura para gestión de usuarios */
+}
+
+.icon-importar {
+    color: #e74c3c; /* Rojo para importar datos */
+}
+
+.icon-registrar {
+    color: #2ecc71; /* Verde para registrar cliente */
+}
+
+.icon-colocacion {
+    color: #f39c12; /* Naranja para generar crédito */
+}
+
+.icon-cobranza {
+    color: #16a085; /* Verde azulado para registrar pago */
+}
+
+.icon-reportes {
+    color: #34495e; /* Gris oscuro para reportes */
+}
+
+.icon-configuracion {
+    color: #7f8c8d; /* Gris para configuración */
 }
 
 /* Status Messages */
@@ -369,6 +413,19 @@ input, select, textarea {
     border: 1px solid #b3d7ff;
 }
 
+.auth-status {
+    margin-top: 15px;
+    padding: 10px;
+    border-radius: var(--border-radius);
+    text-align: center;
+}
+
+.auth-info {
+    margin-top: 20px;
+    font-size: 14px;
+    color: var(--gray);
+}
+
 /* User Management Styles */
 .user-table, .client-table {
     width: 100%;
@@ -380,26 +437,26 @@ input, select, textarea {
     box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
 }
 
-    .user-table th,
-    .user-table td,
-    .client-table th,
-    .client-table td {
-        padding: 15px;
-        text-align: left;
-        border-bottom: 1px solid #eee;
-    }
+.user-table th,
+.user-table td,
+.client-table th,
+.client-table td {
+    padding: 15px;
+    text-align: left;
+    border-bottom: 1px solid #eee;
+}
 
-    .user-table th,
-    .client-table th {
-        background: #f8f9fa;
-        font-weight: 600;
-        color: var(--dark);
-    }
+.user-table th,
+.client-table th {
+    background: #f8f9fa;
+    font-weight: 600;
+    color: var(--dark);
+}
 
-    .user-table tr:hover,
-    .client-table tr:hover {
-        background: #f8f9fa;
-    }
+.user-table tr:hover,
+.client-table tr:hover {
+    background: #f8f9fa;
+}
 
 .role-badge {
     padding: 4px 8px;
@@ -461,6 +518,12 @@ input, select, textarea {
     box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
 }
 
+.report-icon {
+    font-size: 30px;
+    margin-bottom: 10px;
+    color: var(--primary);
+}
+
 .report-value {
     font-size: 24px;
     font-weight: 700;
@@ -494,11 +557,15 @@ input, select, textarea {
     border-bottom: 3px solid transparent;
 }
 
-    .import-tab.active {
-        border-bottom-color: var(--primary);
-        color: var(--primary);
-        font-weight: 600;
-    }
+.import-tab.active {
+    border-bottom-color: var(--primary);
+    color: var(--primary);
+    font-weight: 600;
+}
+
+.import-tab-content {
+    margin-top: 20px;
+}
 
 /* Credit Info Styles */
 .credito-info {
@@ -508,10 +575,10 @@ input, select, textarea {
     margin-top: 15px;
 }
 
-    .credito-info h5 {
-        margin-bottom: 10px;
-        color: var(--primary);
-    }
+.credito-info h5 {
+    margin-bottom: 10px;
+    color: var(--primary);
+}
 
 .info-grid {
     display: grid;
@@ -546,13 +613,8 @@ input, select, textarea {
 
 /* Animations */
 @keyframes fadeIn {
-    from {
-        opacity: 0;
-    }
-
-    to {
-        opacity: 1;
-    }
+    from { opacity: 0; }
+    to { opacity: 1; }
 }
 
 @keyframes slideUp {
@@ -560,7 +622,6 @@ input, select, textarea {
         opacity: 0;
         transform: translateY(20px);
     }
-
     to {
         opacity: 1;
         transform: translateY(0);
@@ -583,9 +644,9 @@ input, select, textarea {
         flex-direction: column;
     }
 
-        .search-group input {
-            min-width: auto;
-        }
+    .search-group input {
+        min-width: auto;
+    }
 
     .user-table, .client-table {
         display: block;
@@ -596,5 +657,3 @@ input, select, textarea {
         grid-template-columns: 1fr;
     }
 }
-
-
