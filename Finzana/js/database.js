@@ -1,19 +1,72 @@
 ﻿// =============================================
-// SISTEMA DE BASE DE DATOS CON GOOGLE SHEETS
+// SISTEMA DE BASE DE DATOS CON GOOGLE SHEETS - VERSIÓN PRODUCCIÓN
 // =============================================
 
 class FinzanaDatabase {
     constructor() {
+        this.gasAvailable = true;
+        this.initialized = false;
         this.initializeDatabase();
     }
 
-    initializeDatabase() {
-        console.log('Base de datos conectada a Google Sheets');
-        // Verificar si hay datos locales y ofrecer migración
-        setTimeout(() => this.verificarDatosLocales(), 1000);
+    async initializeDatabase() {
+        console.log('🚀 Inicializando Finzana Database...');
+
+        // Detectar entorno
+        const hostname = window.location.hostname;
+        this.isDevelopment = hostname === 'localhost' || hostname === '127.0.0.1';
+        console.log('Entorno:', this.isDevelopment ? 'DESARROLLO' : 'PRODUCCIÓN');
+
+        // Probar conexión con GAS
+        await this.probarConexionGAS();
+
+        this.initialized = true;
+        console.log('✅ Base de datos inicializada - Google Sheets:', this.gasAvailable ? 'DISPONIBLE' : 'NO DISPONIBLE');
+
+        // Solo ofrecer migración si GAS está disponible y hay datos locales
+        if (this.gasAvailable) {
+            setTimeout(() => this.verificarDatosLocales(), 3000);
+        }
+    }
+
+    async probarConexionGAS() {
+        try {
+            console.log('🔌 Probando conexión con Google Apps Script...');
+
+            const testPayload = {
+                accion: 'obtener_todos',
+                tabla: 'usuarios'
+            };
+
+            const response = await fetch(GAS_URL, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(testPayload)
+            });
+
+            if (response.ok) {
+                const result = await response.json();
+                this.gasAvailable = result.success;
+                console.log('✅ Conexión GAS exitosa');
+            } else {
+                this.gasAvailable = false;
+                console.log('❌ Conexión GAS fallida - Status:', response.status);
+            }
+        } catch (error) {
+            this.gasAvailable = false;
+            console.log('❌ Error de conexión GAS:', error.message);
+        }
     }
 
     verificarDatosLocales() {
+        // No mostrar migración si ya estamos en producción y no hay datos locales significativos
+        if (!this.isDevelopment) {
+            const clientesCount = JSON.parse(localStorage.getItem('finzana-clientes') || '[]').length;
+            if (clientesCount === 0) return;
+        }
+
         const clientesLocales = JSON.parse(localStorage.getItem('finzana-clientes') || '[]');
         const creditosLocales = JSON.parse(localStorage.getItem('finzana-creditos') || '[]');
         const pagosLocales = JSON.parse(localStorage.getItem('finzana-pagos') || '[]');
@@ -21,69 +74,121 @@ class FinzanaDatabase {
         const totalDatosLocales = clientesLocales.length + creditosLocales.length + pagosLocales.length;
 
         if (totalDatosLocales > 0 && document.getElementById('view-main-menu')) {
-            if (confirm(`Tienes ${totalDatosLocales} registros locales. ¿Deseas migrarlos a Google Sheets ahora?`)) {
-                MigradorDatos.mostrarPanelMigracion();
-            }
+            console.log(`📊 Datos locales encontrados: ${totalDatosLocales} registros`);
+
+            setTimeout(() => {
+                if (confirm(`¿Deseas migrar ${totalDatosLocales} registros locales a Google Sheets?`)) {
+                    MigradorDatos.mostrarPanelMigracion();
+                }
+            }, 2000);
         }
     }
 
     // ========== USUARIOS ==========
     async getUsers() {
+        // Esperar a que la base de datos esté inicializada
+        while (!this.initialized) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+        }
+
         try {
-            // PRIMERO intentar con Google Sheets
-            const result = await callGoogleAppsScript('obtener_todos', 'usuarios');
-            if (result.success && result.data && result.data.length > 0) {
-                // Convertir array de usuarios a objeto
-                const usersObj = {};
-                result.data.forEach(user => {
-                    if (user.username) { // Solo si tiene username válido
-                        usersObj[user.username] = user;
+            // Intentar con Google Sheets si está disponible
+            if (this.gasAvailable) {
+                const result = await callGoogleAppsScript('obtener_todos', 'usuarios');
+
+                if (result.success && result.data && result.data.length > 0) {
+                    console.log(`✅ Usuarios obtenidos de Google Sheets: ${result.data.length} registros`);
+
+                    // Convertir array de usuarios a objeto
+                    const usersObj = {};
+                    result.data.forEach(user => {
+                        if (user.username && user.password) {
+                            usersObj[user.username] = user;
+                        }
+                    });
+
+                    // Validar que tenemos usuarios válidos
+                    if (Object.keys(usersObj).length > 0) {
+                        // Sincronizar con localStorage como backup
+                        localStorage.setItem('finzana-users', JSON.stringify(usersObj));
+                        return usersObj;
                     }
-                });
+                }
 
-                // Guardar también localmente como backup
-                localStorage.setItem('finzana-users', JSON.stringify(usersObj));
-
-                return usersObj;
+                console.log('ℹ️ No hay usuarios en Google Sheets, verificando localStorage...');
             }
 
-            // Si falla Google Sheets, usar datos locales
+            // Fallback a localStorage
+            return this.getUsersLocal();
+
+        } catch (error) {
+            console.error('❌ Error obteniendo usuarios de GAS:', error);
+            return this.getUsersLocal();
+        }
+    }
+
+    getUsersLocal() {
+        try {
             const usersLocal = localStorage.getItem('finzana-users');
             if (usersLocal) {
                 const users = JSON.parse(usersLocal);
-                // Intentar guardar en Google Sheets para recuperación
-                if (Object.keys(users).length > 0) {
-                    setTimeout(() => this.sincronizarUsuariosLocales(users), 1000);
+                const validUsers = Object.keys(users).filter(username =>
+                    users[username] && users[username].password
+                );
+
+                if (validUsers.length > 0) {
+                    console.log(`✅ Usuarios obtenidos de localStorage: ${validUsers.length} usuarios`);
+                    return users;
                 }
-                return users;
             }
 
-            // Si no hay datos locales, crear usuarios por defecto
+            // Si no hay usuarios válidos, crear los por defecto
+            console.log('🔧 Creando usuarios por defecto...');
             return this.crearUsuariosPorDefecto();
 
         } catch (error) {
-            console.error('Error obteniendo usuarios:', error);
-            const usersLocal = localStorage.getItem('finzana-users');
-            return usersLocal ? JSON.parse(usersLocal) : this.crearUsuariosPorDefecto();
+            console.error('❌ Error obteniendo usuarios locales:', error);
+            return this.crearUsuariosPorDefecto();
         }
     }
 
-    // Nueva función para sincronizar usuarios locales con Google Sheets
-    async sincronizarUsuariosLocales(users) {
+    async saveUsers(users) {
         try {
-            const usersArray = Object.entries(users).map(([username, userData]) => ({
-                username: username,
-                ...userData
-            }));
+            // Validar usuarios antes de guardar
+            const validUsers = {};
+            Object.entries(users).forEach(([username, userData]) => {
+                if (username && userData && userData.password && userData.name && userData.role) {
+                    validUsers[username] = userData;
+                }
+            });
 
-            await callGoogleAppsScript('guardar_lote', 'usuarios', usersArray);
-            console.log('Usuarios locales sincronizados con Google Sheets');
+            // Guardar en localStorage siempre como backup
+            localStorage.setItem('finzana-users', JSON.stringify(validUsers));
+            console.log(`💾 Usuarios guardados en localStorage: ${Object.keys(validUsers).length} usuarios`);
+
+            // Si GAS está disponible, sincronizar
+            if (this.gasAvailable) {
+                const usersArray = Object.entries(validUsers).map(([username, userData]) => ({
+                    username: username,
+                    ...userData
+                }));
+
+                const result = await callGoogleAppsScript('guardar_lote', 'usuarios', usersArray);
+                if (result.success) {
+                    console.log('✅ Usuarios sincronizados con Google Sheets');
+                } else {
+                    console.log('⚠️ Usuarios guardados solo localmente');
+                }
+            }
+
+            return true;
         } catch (error) {
-            console.log('No se pudo sincronizar usuarios con Google Sheets, usando locales:', error.message);
+            console.error('❌ Error guardando usuarios:', error);
+            // Siempre retornamos true porque al menos se guardó en localStorage
+            return true;
         }
     }
 
-    // Función para crear usuarios por defecto
     crearUsuariosPorDefecto() {
         const defaultUsers = {
             'admin': {
@@ -122,9 +227,7 @@ class FinzanaDatabase {
 
         // Guardar localmente
         localStorage.setItem('finzana-users', JSON.stringify(defaultUsers));
-
-        // Intentar guardar en Google Sheets
-        this.sincronizarUsuariosLocales(defaultUsers);
+        console.log('👥 Usuarios por defecto creados y guardados');
 
         return defaultUsers;
     }
@@ -132,15 +235,22 @@ class FinzanaDatabase {
     // ========== CLIENTES ==========
     async getClientes() {
         try {
-            const result = await callGoogleAppsScript('obtener_todos', 'clientes');
-            if (result.success) {
-                return result.data;
+            if (this.gasAvailable) {
+                const result = await callGoogleAppsScript('obtener_todos', 'clientes');
+                if (result.success) {
+                    console.log(`✅ Clientes obtenidos de Google Sheets: ${result.data.length} registros`);
+                    return result.data;
+                }
             }
+
             // Fallback a datos locales
             const clientesLocal = localStorage.getItem('finzana-clientes');
-            return clientesLocal ? JSON.parse(clientesLocal) : [];
+            const clientes = clientesLocal ? JSON.parse(clientesLocal) : [];
+            console.log(`💾 Clientes obtenidos de localStorage: ${clientes.length} registros`);
+            return clientes;
+
         } catch (error) {
-            console.error('Error obteniendo clientes:', error);
+            console.error('❌ Error obteniendo clientes:', error);
             const clientesLocal = localStorage.getItem('finzana-clientes');
             return clientesLocal ? JSON.parse(clientesLocal) : [];
         }
@@ -148,38 +258,59 @@ class FinzanaDatabase {
 
     async saveClientes(clientes) {
         try {
-            const result = await callGoogleAppsScript('guardar_lote', 'clientes', clientes);
-
-            // También guardar localmente como backup
+            // Guardar localmente siempre
             localStorage.setItem('finzana-clientes', JSON.stringify(clientes));
+            console.log(`💾 Clientes guardados en localStorage: ${clientes.length} registros`);
 
-            return result.success;
+            // Sincronizar con GAS si está disponible
+            if (this.gasAvailable) {
+                const result = await callGoogleAppsScript('guardar_lote', 'clientes', clientes);
+                if (result.success) {
+                    console.log('✅ Clientes sincronizados con Google Sheets');
+                }
+            }
+
+            return true;
         } catch (error) {
-            console.error('Error guardando clientes:', error);
-            // Fallback a localStorage
-            localStorage.setItem('finzana-clientes', JSON.stringify(clientes));
+            console.error('❌ Error guardando clientes:', error);
             return false;
         }
     }
 
     async buscarClientePorCURP(curp) {
+        if (!curp || curp.length !== 18) {
+            return null;
+        }
+
         try {
-            const result = await callGoogleAppsScript('buscar', 'clientes', null, 'curp', curp);
-            if (result.success && result.data) {
-                return result.data;
+            if (this.gasAvailable) {
+                const result = await callGoogleAppsScript('buscar', 'clientes', null, 'curp', curp);
+                if (result.success && result.data) {
+                    return result.data;
+                }
             }
 
             // Fallback a búsqueda local
             const clientes = await this.getClientes();
             return clientes.find(cliente => cliente.curp === curp) || null;
+
         } catch (error) {
-            console.error('Error buscando cliente:', error);
+            console.error('❌ Error buscando cliente:', error);
             const clientes = await this.getClientes();
             return clientes.find(cliente => cliente.curp === curp) || null;
         }
     }
 
     async agregarCliente(cliente) {
+        // Validar datos del cliente
+        if (!cliente.curp || cliente.curp.length !== 18) {
+            return { success: false, message: 'La CURP debe tener 18 caracteres' };
+        }
+
+        if (!cliente.nombre || cliente.nombre.trim() === '') {
+            return { success: false, message: 'El nombre es requerido' };
+        }
+
         try {
             const clientes = await this.getClientes();
 
@@ -196,13 +327,14 @@ class FinzanaDatabase {
             const guardado = await this.saveClientes(clientes);
 
             if (guardado) {
+                console.log('✅ Cliente agregado exitosamente:', cliente.curp);
                 return { success: true, message: 'Cliente registrado exitosamente', data: cliente };
             } else {
                 return { success: false, message: 'Error al guardar el cliente' };
             }
         } catch (error) {
-            console.error('Error agregando cliente:', error);
-            return { success: false, message: 'Error al agregar cliente' };
+            console.error('❌ Error agregando cliente:', error);
+            return { success: false, message: 'Error al agregar cliente: ' + error.message };
         }
     }
 
@@ -212,18 +344,20 @@ class FinzanaDatabase {
             const index = clientes.findIndex(cliente => cliente.curp === curp);
 
             if (index !== -1) {
+                // Mantener ID y fecha de registro original
                 datosActualizados.id = clientes[index].id;
                 datosActualizados.fechaRegistro = clientes[index].fechaRegistro;
                 clientes[index] = datosActualizados;
 
                 const guardado = await this.saveClientes(clientes);
                 if (guardado) {
+                    console.log('✅ Cliente actualizado:', curp);
                     return { success: true, message: 'Cliente actualizado exitosamente' };
                 }
             }
             return { success: false, message: 'Cliente no encontrado' };
         } catch (error) {
-            console.error('Error actualizando cliente:', error);
+            console.error('❌ Error actualizando cliente:', error);
             return { success: false, message: 'Error al actualizar cliente' };
         }
     }
@@ -236,12 +370,13 @@ class FinzanaDatabase {
             if (nuevosClientes.length < clientes.length) {
                 const guardado = await this.saveClientes(nuevosClientes);
                 if (guardado) {
+                    console.log('✅ Cliente eliminado:', curp);
                     return { success: true, message: 'Cliente eliminado exitosamente' };
                 }
             }
             return { success: false, message: 'Cliente no encontrado' };
         } catch (error) {
-            console.error('Error eliminando cliente:', error);
+            console.error('❌ Error eliminando cliente:', error);
             return { success: false, message: 'Error al eliminar cliente' };
         }
     }
@@ -249,14 +384,16 @@ class FinzanaDatabase {
     // ========== CRÉDITOS ==========
     async getCreditos() {
         try {
-            const result = await callGoogleAppsScript('obtener_todos', 'creditos');
-            if (result.success) {
-                return result.data;
+            if (this.gasAvailable) {
+                const result = await callGoogleAppsScript('obtener_todos', 'creditos');
+                if (result.success) {
+                    return result.data;
+                }
             }
             const creditosLocal = localStorage.getItem('finzana-creditos');
             return creditosLocal ? JSON.parse(creditosLocal) : [];
         } catch (error) {
-            console.error('Error obteniendo créditos:', error);
+            console.error('❌ Error obteniendo créditos:', error);
             const creditosLocal = localStorage.getItem('finzana-creditos');
             return creditosLocal ? JSON.parse(creditosLocal) : [];
         }
@@ -264,21 +401,31 @@ class FinzanaDatabase {
 
     async saveCreditos(creditos) {
         try {
-            const result = await callGoogleAppsScript('guardar_lote', 'creditos', creditos);
             localStorage.setItem('finzana-creditos', JSON.stringify(creditos));
-            return result.success;
+
+            if (this.gasAvailable) {
+                const result = await callGoogleAppsScript('guardar_lote', 'creditos', creditos);
+                if (result.success) {
+                    console.log('✅ Créditos sincronizados con Google Sheets');
+                }
+            }
+
+            return true;
         } catch (error) {
-            console.error('Error guardando créditos:', error);
-            localStorage.setItem('finzana-creditos', JSON.stringify(creditos));
+            console.error('❌ Error guardando créditos:', error);
             return false;
         }
     }
 
     async buscarCreditoPorId(idCredito) {
+        if (!idCredito) return null;
+
         try {
-            const result = await callGoogleAppsScript('buscar', 'creditos', null, 'id', idCredito);
-            if (result.success && result.data) {
-                return result.data;
+            if (this.gasAvailable) {
+                const result = await callGoogleAppsScript('buscar', 'creditos', null, 'id', idCredito);
+                if (result.success && result.data) {
+                    return result.data;
+                }
             }
 
             const creditos = await this.getCreditos();
@@ -292,13 +439,18 @@ class FinzanaDatabase {
             }
             return credito || null;
         } catch (error) {
-            console.error('Error buscando crédito:', error);
+            console.error('❌ Error buscando crédito:', error);
             const creditos = await this.getCreditos();
             return creditos.find(credito => credito.id === idCredito) || null;
         }
     }
 
     async agregarCredito(credito) {
+        // Validaciones
+        if (!credito.curpCliente || !credito.monto || !credito.plazo) {
+            return { success: false, message: 'Datos incompletos del crédito' };
+        }
+
         try {
             const creditos = await this.getCreditos();
             credito.id = this.generarIdConsecutivo();
@@ -311,12 +463,13 @@ class FinzanaDatabase {
             const guardado = await this.saveCreditos(creditos);
 
             if (guardado) {
+                console.log('✅ Crédito generado:', credito.id);
                 return { success: true, message: 'Crédito generado exitosamente', data: credito };
             } else {
                 return { success: false, message: 'Error al guardar el crédito' };
             }
         } catch (error) {
-            console.error('Error agregando crédito:', error);
+            console.error('❌ Error agregando crédito:', error);
             return { success: false, message: 'Error al agregar crédito' };
         }
     }
@@ -324,14 +477,16 @@ class FinzanaDatabase {
     // ========== PAGOS ==========
     async getPagos() {
         try {
-            const result = await callGoogleAppsScript('obtener_todos', 'pagos');
-            if (result.success) {
-                return result.data;
+            if (this.gasAvailable) {
+                const result = await callGoogleAppsScript('obtener_todos', 'pagos');
+                if (result.success) {
+                    return result.data;
+                }
             }
             const pagosLocal = localStorage.getItem('finzana-pagos');
             return pagosLocal ? JSON.parse(pagosLocal) : [];
         } catch (error) {
-            console.error('Error obteniendo pagos:', error);
+            console.error('❌ Error obteniendo pagos:', error);
             const pagosLocal = localStorage.getItem('finzana-pagos');
             return pagosLocal ? JSON.parse(pagosLocal) : [];
         }
@@ -339,17 +494,27 @@ class FinzanaDatabase {
 
     async savePagos(pagos) {
         try {
-            const result = await callGoogleAppsScript('guardar_lote', 'pagos', pagos);
             localStorage.setItem('finzana-pagos', JSON.stringify(pagos));
-            return result.success;
+
+            if (this.gasAvailable) {
+                const result = await callGoogleAppsScript('guardar_lote', 'pagos', pagos);
+                if (result.success) {
+                    console.log('✅ Pagos sincronizados con Google Sheets');
+                }
+            }
+
+            return true;
         } catch (error) {
-            console.error('Error guardando pagos:', error);
-            localStorage.setItem('finzana-pagos', JSON.stringify(pagos));
+            console.error('❌ Error guardando pagos:', error);
             return false;
         }
     }
 
     async agregarPago(pago) {
+        if (!pago.idCredito || !pago.monto || pago.monto <= 0) {
+            return { success: false, message: 'Datos de pago inválidos' };
+        }
+
         try {
             const pagos = await this.getPagos();
             const creditos = await this.getCreditos();
@@ -372,12 +537,13 @@ class FinzanaDatabase {
             const creditoGuardado = await this.saveCreditos(creditos);
 
             if (pagoGuardado && creditoGuardado) {
+                console.log('✅ Pago registrado:', pago.id);
                 return { success: true, message: 'Pago registrado exitosamente', data: pago, credito: credito };
             } else {
                 return { success: false, message: 'Error al guardar el pago' };
             }
         } catch (error) {
-            console.error('Error agregando pago:', error);
+            console.error('❌ Error agregando pago:', error);
             return { success: false, message: 'Error al agregar pago' };
         }
     }
@@ -489,5 +655,22 @@ class FinzanaDatabase {
         const fechaVencimiento = new Date(fechaCreacion);
         fechaVencimiento.setDate(fechaVencimiento.getDate() + (credito.plazo * 7));
         return new Date() > fechaVencimiento;
+    }
+
+    // ========== MÉTODOS DE DIAGNÓSTICO ==========
+    async diagnostico() {
+        console.log('=== DIAGNÓSTICO DEL SISTEMA ===');
+
+        const info = {
+            entorno: this.isDevelopment ? 'Desarrollo' : 'Producción',
+            gasDisponible: this.gasAvailable,
+            usuariosLocal: Object.keys(JSON.parse(localStorage.getItem('finzana-users') || '{}')).length,
+            clientesLocal: JSON.parse(localStorage.getItem('finzana-clientes') || '[]').length,
+            creditosLocal: JSON.parse(localStorage.getItem('finzana-creditos') || '[]').length,
+            pagosLocal: JSON.parse(localStorage.getItem('finzana-pagos') || '[]').length
+        };
+
+        console.table(info);
+        return info;
     }
 }
