@@ -84,56 +84,18 @@ class FinzanaDatabase {
         }
     }
 
-    // ========== USUARIOS - CON GOOGLE SHEETS API ==========
+   // ========== USUARIOS - SISTEMA HÍBRIDO MEJORADO ==========
 async getUsers() {
-    console.log('👥 Obteniendo usuarios...');
+    console.log('👥 Solicitando usuarios...');
     
-    try {
-        // Verificar conexión primero
-        const conexionOk = await verificarConexionSheetsAPI();
-        
-        if (conexionOk) {
-            // Intentar con Google Sheets API
-            const usuarios = await obtenerUsuariosDesdeSheets();
-            console.log(`✅ ${Object.keys(usuarios).length} usuarios cargados desde Google Sheets`);
-            return usuarios;
-        } else {
-            console.log('🌐 Sheets API no disponible, usando localStorage');
-            return obtenerUsuariosDesdeLocalStorage();
-        }
-        
-    } catch (error) {
-        console.log('❌ Error general obteniendo usuarios, usando localStorage');
-        return obtenerUsuariosDesdeLocalStorage();
-    }
+    // Usar el sistema híbrido mejorado
+    const usuarios = await obtenerUsuariosConSheets();
+    console.log(`✅ ${Object.keys(usuarios).length} usuarios listos para login`);
+    return usuarios;
 }
 
 async saveUsers(users) {
-    try {
-        // Validar usuarios
-        const validUsers = {};
-        Object.entries(users).forEach(([username, userData]) => {
-            if (username && userData && userData.password && userData.name && userData.role) {
-                validUsers[username] = userData;
-            }
-        });
-        
-        // Guardar en localStorage siempre
-        guardarDatosLocales('users', validUsers);
-        console.log(`💾 ${Object.keys(validUsers).length} usuarios guardados en localStorage`);
-        
-        // Intentar guardar en Google Sheets (pero no es crítico si falla)
-        try {
-            await guardarUsuariosEnSheets(validUsers);
-        } catch (error) {
-            console.log('⚠️ No se pudo sincronizar con Google Sheets (continuando con localStorage)');
-        }
-        
-        return true;
-    } catch (error) {
-        console.error('Error guardando usuarios:', error);
-        return false;
-    }
+    return await guardarUsuarios(users);
 }
 
     // ========== CLIENTES ==========
@@ -579,5 +541,6 @@ async saveUsers(users) {
     }
 
 }
+
 
 
