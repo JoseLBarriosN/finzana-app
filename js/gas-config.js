@@ -1,10 +1,13 @@
 // =============================================
-// CONFIGURACIÓN DE GOOGLE SHEETS API v4
+// CONFIGURACIÓN DE GOOGLE SHEETS API v4 - CON MANEJO MEJORADO DE ERRORES
 // =============================================
 
-// REEMPLAZA ESTA API_KEY CON LA QUE OBTUVISTE DE GOOGLE CLOUD
+// REEMPLAZA CON TU API KEY
 const API_KEY = 'AIzaSyAsBdhcY48jMt-PE259q1QRYj_KhlWPjq4';
 const SPREADSHEET_ID = '1ei2I56i9GKRV6IGO8TTJV9PqYUAZ_MzVQrJ0vB01vLM';
+
+// Variable global para controlar el modo
+let MODO_SHEETS_DISPONIBLE = false;
 
 // Función para verificar la conexión con Sheets API
 async function verificarConexionSheetsAPI() {
@@ -17,19 +20,26 @@ async function verificarConexionSheetsAPI() {
         
         if (response.ok) {
             console.log('✅ Conexión con Google Sheets API exitosa');
+            MODO_SHEETS_DISPONIBLE = true;
             return true;
         } else {
-            console.log('❌ Error en la conexión:', response.status);
+            console.log('❌ Error en la conexión:', response.status, response.statusText);
+            MODO_SHEETS_DISPONIBLE = false;
             return false;
         }
     } catch (error) {
         console.log('❌ Error de conexión:', error.message);
+        MODO_SHEETS_DISPONIBLE = false;
         return false;
     }
 }
 
 // Función para obtener datos de una hoja
 async function obtenerDatosDeSheet(nombreHoja) {
+    if (!MODO_SHEETS_DISPONIBLE) {
+        throw new Error('Modo Sheets no disponible');
+    }
+    
     console.log(`🔍 Obteniendo datos de: ${nombreHoja}`);
     
     try {
@@ -38,7 +48,11 @@ async function obtenerDatosDeSheet(nombreHoja) {
         const response = await fetch(url);
         
         if (!response.ok) {
-            throw new Error(`Error HTTP: ${response.status}`);
+            if (response.status === 403) {
+                console.log('🔒 Error 403: Permisos insuficientes para Google Sheets API');
+                MODO_SHEETS_DISPONIBLE = false;
+            }
+            throw new Error(`Error HTTP: ${response.status} - ${response.statusText}`);
         }
         
         const data = await response.json();
@@ -65,89 +79,34 @@ async function obtenerDatosDeSheet(nombreHoja) {
         
     } catch (error) {
         console.error(`❌ Error obteniendo ${nombreHoja}:`, error.message);
-        throw error;
-    }
-}
-
-// Función para guardar datos en una hoja
-async function guardarDatosEnSheet(nombreHoja, datos) {
-    console.log(`💾 Guardando ${datos.length} registros en: ${nombreHoja}`);
-    
-    try {
-        // Si no hay datos, no hacer nada
-        if (!datos || datos.length === 0) {
-            console.log('ℹ️ No hay datos para guardar');
-            return { success: true, registros: 0 };
-        }
-        
-        // Obtener headers de los datos
-        const headers = Object.keys(datos[0]);
-        
-        // Convertir datos a formato de Sheets
-        const valores = [headers]; // Headers
-        
-        datos.forEach(registro => {
-            const fila = headers.map(header => registro[header] || '');
-            valores.push(fila);
-        });
-        
-        const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${nombreHoja}?valueInputOption=RAW&key=${API_KEY}`;
-        
-        const response = await fetch(url, {
-            method: 'PUT',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                values: valores
-            })
-        });
-        
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(`Error HTTP ${response.status}: ${JSON.stringify(errorData)}`);
-        }
-        
-        console.log(`✅ ${datos.length} registros guardados en ${nombreHoja}`);
-        return { success: true, registros: datos.length };
-        
-    } catch (error) {
-        console.error(`❌ Error guardando en ${nombreHoja}:`, error.message);
-        throw error;
-    }
-}
-
-// Función para agregar datos a una hoja (sin borrar existentes)
-async function agregarDatosASheet(nombreHoja, nuevosDatos) {
-    console.log(`📝 Agregando ${nuevosDatos.length} registros a: ${nombreHoja}`);
-    
-    try {
-        // Obtener datos existentes
-        const datosExistentes = await obtenerDatosDeSheet(nombreHoja);
-        const todosLosDatos = [...datosExistentes, ...nuevosDatos];
-        
-        // Guardar todos los datos
-        return await guardarDatosEnSheet(nombreHoja, todosLosDatos);
-        
-    } catch (error) {
-        console.error(`❌ Error agregando datos a ${nombreHoja}:`, error.message);
+        MODO_SHEETS_DISPONIBLE = false;
         throw error;
     }
 }
 
 // =============================================
-// FUNCIONES ESPECÍFICAS PARA USUARIOS
+// SISTEMA HÍBRIDO - SHEETS + LOCALSTORAGE
 // =============================================
 
-async function obtenerUsuariosDesdeSheets() {
+// Función principal para obtener usuarios
+async function obtenerUsuariosConSheets() {
+    console.log('👥 Sistema híbrido: Intentando obtener usuarios...');
+    
+    // Primero verificar conexión
+    const conexionOk = await verificarConexionSheetsAPI();
+    
+    if (!conexionOk) {
+        console.log('🌐 Sheets API no disponible, usando localStorage');
+        return obtenerUsuariosDesdeLocalStorage();
+    }
+    
     try {
-        console.log('🔍 Obteniendo usuarios desde Google Sheets...');
+        console.log('🔍 Intentando desde Google Sheets...');
         const usuarios = await obtenerDatosDeSheet('usuarios');
         
         if (usuarios.length === 0) {
-            console.log('ℹ️ No hay usuarios en Sheets, creando usuarios por defecto...');
-            const usuariosPorDefecto = await crearUsuariosPorDefectoEnSheets();
-            return usuariosPorDefecto;
+            console.log('📝 No hay usuarios en Sheets, creando por defecto...');
+            return await crearUsuariosPorDefecto();
         }
         
         // Convertir a formato de objeto
@@ -165,104 +124,54 @@ async function obtenerUsuariosDesdeSheets() {
             }
         });
         
-        // Validar que tenemos usuarios válidos
         if (Object.keys(usuariosObj).length === 0) {
-            console.log('⚠️ Usuarios en Sheets tienen estructura inválida, creando por defecto...');
-            return await crearUsuariosPorDefectoEnSheets();
+            console.log('⚠️ Usuarios en Sheets tienen estructura inválida');
+            return await crearUsuariosPorDefecto();
         }
         
-        console.log(`✅ ${Object.keys(usuariosObj).length} usuarios válidos obtenidos de Sheets`);
+        console.log(`✅ ${Object.keys(usuariosObj).length} usuarios desde Sheets`);
         
-        // Guardar en localStorage como backup
+        // Sincronizar con localStorage
         localStorage.setItem('finzana-users', JSON.stringify(usuariosObj));
         
         return usuariosObj;
         
     } catch (error) {
-        console.log('❌ Error obteniendo usuarios de Sheets:', error.message);
-        console.log('🔄 Usando usuarios de localStorage...');
+        console.log('❌ Error con Sheets API, usando localStorage:', error.message);
         return obtenerUsuariosDesdeLocalStorage();
     }
 }
 
-async function crearUsuariosPorDefectoEnSheets() {
-    const usuariosPorDefecto = [
-        {
-            username: 'admin',
-            password: 'admin123',
-            name: 'Administrador Principal',
-            role: 'admin',
-            email: 'admin@finzana.com',
-            telefono: '',
-            fechaCreacion: new Date().toISOString()
-        },
-        {
-            username: 'supervisor',
-            password: 'super123',
-            name: 'Supervisor Regional',
-            role: 'supervisor',
-            email: 'supervisor@finzana.com',
-            telefono: '',
-            fechaCreacion: new Date().toISOString()
-        },
-        {
-            username: 'cobrador1',
-            password: 'cobra123',
-            name: 'Carlos Martínez - Cobrador JC1',
-            role: 'cobrador',
-            email: 'carlos@finzana.com',
-            telefono: '333-123-4567',
-            fechaCreacion: new Date().toISOString()
-        },
-        {
-            username: 'consulta',
-            password: 'consulta123',
-            name: 'Usuario de Consulta',
-            role: 'consulta',
-            email: 'consulta@finzana.com',
-            telefono: '',
-            fechaCreacion: new Date().toISOString()
-        }
-    ];
-    
-    try {
-        await guardarDatosEnSheet('usuarios', usuariosPorDefecto);
-        console.log('✅ Usuarios por defecto creados en Google Sheets');
-        
-        // Convertir a formato de objeto
-        const usuariosObj = {};
-        usuariosPorDefecto.forEach(usuario => {
-            usuariosObj[usuario.username] = usuario;
-        });
-        
-        // Guardar en localStorage
-        localStorage.setItem('finzana-users', JSON.stringify(usuariosObj));
-        
-        return usuariosObj;
-        
-    } catch (error) {
-        console.log('❌ No se pudieron crear usuarios en Sheets, usando localStorage');
-        return crearUsuariosPorDefectoLocal();
-    }
-}
-
+// Función para obtener usuarios desde localStorage
 function obtenerUsuariosDesdeLocalStorage() {
     try {
         const usersLocal = localStorage.getItem('finzana-users');
         if (usersLocal) {
             const usuarios = JSON.parse(usersLocal);
-            console.log(`💾 ${Object.keys(usuarios).length} usuarios obtenidos de localStorage`);
-            return usuarios;
+            const usuariosValidos = {};
+            
+            // Validar estructura
+            Object.entries(usuarios).forEach(([username, userData]) => {
+                if (username && userData && userData.password && userData.name && userData.role) {
+                    usuariosValidos[username] = userData;
+                }
+            });
+            
+            if (Object.keys(usuariosValidos).length > 0) {
+                console.log(`💾 ${Object.keys(usuariosValidos).length} usuarios desde localStorage`);
+                return usuariosValidos;
+            }
         }
     } catch (error) {
         console.error('Error leyendo usuarios locales:', error);
     }
     
-    console.log('🆕 Creando usuarios por defecto en localStorage...');
-    return crearUsuariosPorDefectoLocal();
+    console.log('🆕 Creando usuarios por defecto...');
+    return crearUsuariosPorDefecto();
 }
 
-function crearUsuariosPorDefectoLocal() {
+// Función para crear usuarios por defecto
+function crearUsuariosPorDefecto() {
     const defaultUsers = {
         'admin': {
             password: 'admin123',
@@ -298,69 +207,92 @@ function crearUsuariosPorDefectoLocal() {
         }
     };
     
+    // Guardar en localStorage
     localStorage.setItem('finzana-users', JSON.stringify(defaultUsers));
     console.log('✅ 4 usuarios por defecto creados en localStorage');
+    
     return defaultUsers;
 }
 
 // Función para guardar usuarios
-async function guardarUsuariosEnSheets(users) {
+async function guardarUsuarios(users) {
     try {
-        // Convertir objeto a array
-        const usersArray = Object.entries(users).map(([username, userData]) => ({
-            username: username,
-            ...userData
-        }));
+        // Validar usuarios
+        const validUsers = {};
+        Object.entries(users).forEach(([username, userData]) => {
+            if (username && userData && userData.password && userData.name && userData.role) {
+                validUsers[username] = userData;
+            }
+        });
         
-        await guardarDatosEnSheet('usuarios', usersArray);
-        console.log('✅ Usuarios guardados en Google Sheets');
+        // Guardar en localStorage siempre
+        localStorage.setItem('finzana-users', JSON.stringify(validUsers));
+        console.log(`💾 ${Object.keys(validUsers).length} usuarios guardados en localStorage`);
+        
+        // Intentar guardar en Sheets si está disponible
+        if (MODO_SHEETS_DISPONIBLE) {
+            try {
+                const usersArray = Object.entries(validUsers).map(([username, userData]) => ({
+                    username: username,
+                    ...userData
+                }));
+                
+                await guardarDatosEnSheet('usuarios', usersArray);
+                console.log('✅ Usuarios sincronizados con Google Sheets');
+            } catch (error) {
+                console.log('⚠️ No se pudo sincronizar con Google Sheets');
+            }
+        }
+        
         return true;
-        
     } catch (error) {
-        console.log('❌ No se pudieron guardar usuarios en Sheets:', error.message);
+        console.error('Error guardando usuarios:', error);
         return false;
     }
 }
 
-// =============================================
-// FUNCIONES PARA OTRAS TABLAS
-// =============================================
-
-async function obtenerClientesDesdeSheets() {
-    try {
-        return await obtenerDatosDeSheet('clientes');
-    } catch (error) {
-        console.log('❌ Error obteniendo clientes de Sheets, usando localStorage');
-        return obtenerDatosLocales('clientes');
+// Función para guardar datos en Sheets (solo si está disponible)
+async function guardarDatosEnSheet(nombreHoja, datos) {
+    if (!MODO_SHEETS_DISPONIBLE) {
+        console.log(`📝 Modo Sheets no disponible, solo guardando en localStorage`);
+        return { success: true, registros: datos.length };
     }
-}
-
-async function guardarClientesEnSheets(clientes) {
+    
     try {
-        return await guardarDatosEnSheet('clientes', clientes);
+        if (!datos || datos.length === 0) {
+            return { success: true, registros: 0 };
+        }
+        
+        const headers = Object.keys(datos[0]);
+        const valores = [headers];
+        
+        datos.forEach(registro => {
+            const fila = headers.map(header => registro[header] || '');
+            valores.push(fila);
+        });
+        
+        const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${nombreHoja}?valueInputOption=RAW&key=${API_KEY}`;
+        
+        const response = await fetch(url, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                values: valores
+            })
+        });
+        
+        if (!response.ok) {
+            throw new Error(`Error HTTP ${response.status}`);
+        }
+        
+        console.log(`✅ ${datos.length} registros guardados en ${nombreHoja}`);
+        return { success: true, registros: datos.length };
+        
     } catch (error) {
-        console.log('❌ Error guardando clientes en Sheets:', error.message);
-        return { success: false, error: error.message };
-    }
-}
-
-// Funciones auxiliares para localStorage
-function obtenerDatosLocales(tabla) {
-    try {
-        const datosLocal = localStorage.getItem(`finzana-${tabla}`);
-        return datosLocal ? JSON.parse(datosLocal) : [];
-    } catch (error) {
-        console.error(`Error leyendo ${tabla} locales:`, error);
-        return [];
-    }
-}
-
-function guardarDatosLocales(tabla, datos) {
-    try {
-        localStorage.setItem(`finzana-${tabla}`, JSON.stringify(datos));
-        return true;
-    } catch (error) {
-        console.error(`Error guardando ${tabla} locales:`, error);
-        return false;
+        console.error(`❌ Error guardando en ${nombreHoja}:`, error.message);
+        MODO_SHEETS_DISPONIBLE = false;
+        throw error;
     }
 }
