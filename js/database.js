@@ -84,153 +84,50 @@ class FinzanaDatabase {
         }
     }
 
-    // ========== USUARIOS ==========
-    async getUsers() {
-        // Esperar a que la base de datos esté inicializada
-        while (!this.initialized) {
-            await new Promise(resolve => setTimeout(resolve, 100));
-        }
+    // ========== USUARIOS - VERSIÓN SUPER SIMPLE ==========
+async getUsers() {
+    console.log('👥 Obteniendo usuarios...');
+    
+    // Usar la función inteligente que maneja CORS automáticamente
+    const usuarios = await obtenerUsuariosConFallback();
+    
+    console.log(`✅ ${Object.keys(usuarios).length} usuarios listos para login`);
+    return usuarios;
+}
 
+async saveUsers(users) {
+    try {
+        // Validar usuarios
+        const validUsers = {};
+        Object.entries(users).forEach(([username, userData]) => {
+            if (username && userData && userData.password && userData.name && userData.role) {
+                validUsers[username] = userData;
+            }
+        });
+        
+        // Guardar en localStorage
+        localStorage.setItem('finzana-users', JSON.stringify(validUsers));
+        console.log(`💾 ${Object.keys(validUsers).length} usuarios guardados`);
+        
+        // Intentar sincronizar con GAS (pero no es crítico si falla)
         try {
-            // Intentar con Google Sheets si está disponible
-            if (this.gasAvailable) {
-                const result = await callGoogleAppsScript('obtener_todos', 'usuarios');
-
-                if (result.success && result.data && result.data.length > 0) {
-                    console.log(`✅ Usuarios obtenidos de Google Sheets: ${result.data.length} registros`);
-
-                    // Convertir array de usuarios a objeto
-                    const usersObj = {};
-                    result.data.forEach(user => {
-                        if (user.username && user.password) {
-                            usersObj[user.username] = user;
-                        }
-                    });
-
-                    // Validar que tenemos usuarios válidos
-                    if (Object.keys(usersObj).length > 0) {
-                        // Sincronizar con localStorage como backup
-                        localStorage.setItem('finzana-users', JSON.stringify(usersObj));
-                        return usersObj;
-                    }
-                }
-
-                console.log('ℹ️ No hay usuarios en Google Sheets, verificando localStorage...');
-            }
-
-            // Fallback a localStorage
-            return this.getUsersLocal();
-
+            const usersArray = Object.entries(validUsers).map(([username, userData]) => ({
+                username: username,
+                ...userData
+            }));
+            
+            await callGoogleAppsScript('guardar_lote', 'usuarios', usersArray);
+            console.log('✅ Usuarios sincronizados con Google Sheets');
         } catch (error) {
-            console.error('❌ Error obteniendo usuarios de GAS:', error);
-            return this.getUsersLocal();
+            console.log('⚠️ No se pudo sincronizar con Google Sheets (normal en GitHub Pages)');
         }
+        
+        return true;
+    } catch (error) {
+        console.error('Error guardando usuarios:', error);
+        return false;
     }
-
-    getUsersLocal() {
-        try {
-            const usersLocal = localStorage.getItem('finzana-users');
-            if (usersLocal) {
-                const users = JSON.parse(usersLocal);
-                const validUsers = Object.keys(users).filter(username =>
-                    users[username] && users[username].password
-                );
-
-                if (validUsers.length > 0) {
-                    console.log(`✅ Usuarios obtenidos de localStorage: ${validUsers.length} usuarios`);
-                    return users;
-                }
-            }
-
-            // Si no hay usuarios válidos, crear los por defecto
-            console.log('🔧 Creando usuarios por defecto...');
-            return this.crearUsuariosPorDefecto();
-
-        } catch (error) {
-            console.error('❌ Error obteniendo usuarios locales:', error);
-            return this.crearUsuariosPorDefecto();
-        }
-    }
-
-    async saveUsers(users) {
-        try {
-            // Validar usuarios antes de guardar
-            const validUsers = {};
-            Object.entries(users).forEach(([username, userData]) => {
-                if (username && userData && userData.password && userData.name && userData.role) {
-                    validUsers[username] = userData;
-                }
-            });
-
-            // Guardar en localStorage siempre como backup
-            localStorage.setItem('finzana-users', JSON.stringify(validUsers));
-            console.log(`💾 Usuarios guardados en localStorage: ${Object.keys(validUsers).length} usuarios`);
-
-            // Si GAS está disponible, sincronizar
-            if (this.gasAvailable) {
-                const usersArray = Object.entries(validUsers).map(([username, userData]) => ({
-                    username: username,
-                    ...userData
-                }));
-
-                const result = await callGoogleAppsScript('guardar_lote', 'usuarios', usersArray);
-                if (result.success) {
-                    console.log('✅ Usuarios sincronizados con Google Sheets');
-                } else {
-                    console.log('⚠️ Usuarios guardados solo localmente');
-                }
-            }
-
-            return true;
-        } catch (error) {
-            console.error('❌ Error guardando usuarios:', error);
-            // Siempre retornamos true porque al menos se guardó en localStorage
-            return true;
-        }
-    }
-
-    crearUsuariosPorDefecto() {
-        const defaultUsers = {
-            'admin': {
-                password: 'admin123',
-                name: 'Administrador Principal',
-                role: 'admin',
-                email: 'admin@finzana.com',
-                telefono: '',
-                fechaCreacion: new Date().toISOString()
-            },
-            'supervisor': {
-                password: 'super123',
-                name: 'Supervisor Regional',
-                role: 'supervisor',
-                email: 'supervisor@finzana.com',
-                telefono: '',
-                fechaCreacion: new Date().toISOString()
-            },
-            'cobrador1': {
-                password: 'cobra123',
-                name: 'Carlos Martínez - Cobrador JC1',
-                role: 'cobrador',
-                email: 'carlos@finzana.com',
-                telefono: '333-123-4567',
-                fechaCreacion: new Date().toISOString()
-            },
-            'consulta': {
-                password: 'consulta123',
-                name: 'Usuario de Consulta',
-                role: 'consulta',
-                email: 'consulta@finzana.com',
-                telefono: '',
-                fechaCreacion: new Date().toISOString()
-            }
-        };
-
-        // Guardar localmente
-        localStorage.setItem('finzana-users', JSON.stringify(defaultUsers));
-        console.log('👥 Usuarios por defecto creados y guardados');
-
-        return defaultUsers;
-    }
+}
 
     // ========== CLIENTES ==========
     async getClientes() {
@@ -673,4 +570,5 @@ class FinzanaDatabase {
         console.table(info);
         return info;
     }
+
 }
