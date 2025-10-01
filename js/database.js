@@ -89,13 +89,21 @@ async getUsers() {
     console.log('👥 Obteniendo usuarios...');
     
     try {
-        // Intentar con Google Sheets API primero
-        const usuarios = await obtenerUsuariosDesdeSheets();
-        console.log(`✅ ${Object.keys(usuarios).length} usuarios cargados`);
-        return usuarios;
+        // Verificar conexión primero
+        const conexionOk = await verificarConexionSheetsAPI();
+        
+        if (conexionOk) {
+            // Intentar con Google Sheets API
+            const usuarios = await obtenerUsuariosDesdeSheets();
+            console.log(`✅ ${Object.keys(usuarios).length} usuarios cargados desde Google Sheets`);
+            return usuarios;
+        } else {
+            console.log('🌐 Sheets API no disponible, usando localStorage');
+            return obtenerUsuariosDesdeLocalStorage();
+        }
         
     } catch (error) {
-        console.log('❌ Google Sheets API falló, usando localStorage');
+        console.log('❌ Error general obteniendo usuarios, usando localStorage');
         return obtenerUsuariosDesdeLocalStorage();
     }
 }
@@ -110,20 +118,15 @@ async saveUsers(users) {
             }
         });
         
-        // Guardar en localStorage
-        localStorage.setItem('finzana-users', JSON.stringify(validUsers));
+        // Guardar en localStorage siempre
+        guardarDatosLocales('users', validUsers);
+        console.log(`💾 ${Object.keys(validUsers).length} usuarios guardados en localStorage`);
         
-        // Intentar guardar en Google Sheets
+        // Intentar guardar en Google Sheets (pero no es crítico si falla)
         try {
-            const usersArray = Object.entries(validUsers).map(([username, userData]) => ({
-                username: username,
-                ...userData
-            }));
-            
-            await guardarDatosEnSheet('usuarios', usersArray);
-            console.log('✅ Usuarios sincronizados con Google Sheets');
+            await guardarUsuariosEnSheets(validUsers);
         } catch (error) {
-            console.log('⚠️ No se pudo sincronizar con Google Sheets');
+            console.log('⚠️ No se pudo sincronizar con Google Sheets (continuando con localStorage)');
         }
         
         return true;
@@ -576,4 +579,5 @@ async saveUsers(users) {
     }
 
 }
+
 
