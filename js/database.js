@@ -84,15 +84,20 @@ class FinzanaDatabase {
         }
     }
 
-    // ========== USUARIOS - VERSIÓN SUPER SIMPLE ==========
+    // ========== USUARIOS - CON GOOGLE SHEETS API ==========
 async getUsers() {
     console.log('👥 Obteniendo usuarios...');
     
-    // Usar la función inteligente que maneja CORS automáticamente
-    const usuarios = await obtenerUsuariosConFallback();
-    
-    console.log(`✅ ${Object.keys(usuarios).length} usuarios listos para login`);
-    return usuarios;
+    try {
+        // Intentar con Google Sheets API primero
+        const usuarios = await obtenerUsuariosDesdeSheets();
+        console.log(`✅ ${Object.keys(usuarios).length} usuarios cargados`);
+        return usuarios;
+        
+    } catch (error) {
+        console.log('❌ Google Sheets API falló, usando localStorage');
+        return obtenerUsuariosDesdeLocalStorage();
+    }
 }
 
 async saveUsers(users) {
@@ -107,19 +112,18 @@ async saveUsers(users) {
         
         // Guardar en localStorage
         localStorage.setItem('finzana-users', JSON.stringify(validUsers));
-        console.log(`💾 ${Object.keys(validUsers).length} usuarios guardados`);
         
-        // Intentar sincronizar con GAS (pero no es crítico si falla)
+        // Intentar guardar en Google Sheets
         try {
             const usersArray = Object.entries(validUsers).map(([username, userData]) => ({
                 username: username,
                 ...userData
             }));
             
-            await callGoogleAppsScript('guardar_lote', 'usuarios', usersArray);
+            await guardarDatosEnSheet('usuarios', usersArray);
             console.log('✅ Usuarios sincronizados con Google Sheets');
         } catch (error) {
-            console.log('⚠️ No se pudo sincronizar con Google Sheets (normal en GitHub Pages)');
+            console.log('⚠️ No se pudo sincronizar con Google Sheets');
         }
         
         return true;
@@ -572,3 +576,4 @@ async saveUsers(users) {
     }
 
 }
+
