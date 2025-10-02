@@ -5,6 +5,7 @@
     --success: #3CB371;
     --danger: #FF6347;
     --warning: #FFA500;
+    --info: #17a2b8;
     --light: #f8f9fa;
     --dark: #212529;
     --gray: #6c757d;
@@ -87,11 +88,19 @@ body {
 .login-logo {
     width: 80px;
     height: 80px;
-    margin-bottom: 20px;
+    margin: 0 auto 20px;
     border-radius: 50%;
-    object-fit: cover;
+    background: rgba(46, 139, 87, 0.1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
     border: 3px solid var(--primary);
     padding: 5px;
+}
+
+.login-logo i {
+    font-size: 40px;
+    color: var(--primary);
 }
 
 .login-box h1 {
@@ -273,6 +282,11 @@ input[readonly] {
     font-size: 18px;
 }
 
+#user-role-display {
+    font-size: 14px;
+    opacity: 0.8;
+}
+
 .app-content {
     flex: 1;
     padding: 30px;
@@ -327,7 +341,6 @@ input[readonly] {
 .menu-icon {
     font-size: 40px;
     margin-bottom: 15px;
-    color: var(--primary);
 }
 
 .menu-card h3 {
@@ -339,6 +352,39 @@ input[readonly] {
     color: var(--gray);
     font-size: 14px;
     margin-bottom: 15px;
+}
+
+/* Colores específicos para cada ícono */
+.icon-clientes {
+    color: #3498db; /* Azul para gestión de clientes */
+}
+
+.icon-usuarios {
+    color: #9b59b6; /* Púrpura para gestión de usuarios */
+}
+
+.icon-importar {
+    color: #e74c3c; /* Rojo para importar datos */
+}
+
+.icon-registrar {
+    color: #2ecc71; /* Verde para registrar cliente */
+}
+
+.icon-colocacion {
+    color: #f39c12; /* Naranja para generar crédito */
+}
+
+.icon-cobranza {
+    color: #16a085; /* Verde azulado para registrar pago */
+}
+
+.icon-reportes {
+    color: #34495e; /* Gris oscuro para reportes */
+}
+
+.icon-configuracion {
+    color: #7f8c8d; /* Gris para configuración */
 }
 
 /* Status Messages */
@@ -365,6 +411,19 @@ input[readonly] {
     background: #cce7ff;
     color: #004085;
     border: 1px solid #b3d7ff;
+}
+
+.auth-status {
+    margin-top: 15px;
+    padding: 10px;
+    border-radius: var(--border-radius);
+    text-align: center;
+}
+
+.auth-info {
+    margin-top: 20px;
+    font-size: 14px;
+    color: var(--gray);
 }
 
 /* User Management Styles */
@@ -459,6 +518,12 @@ input[readonly] {
     box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
 }
 
+.report-icon {
+    font-size: 30px;
+    margin-bottom: 10px;
+    color: var(--primary);
+}
+
 .report-value {
     font-size: 24px;
     font-weight: 700;
@@ -496,6 +561,10 @@ input[readonly] {
     border-bottom-color: var(--primary);
     color: var(--primary);
     font-weight: 600;
+}
+
+.import-tab-content {
+    margin-top: 20px;
 }
 
 /* Credit Info Styles */
