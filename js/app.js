@@ -218,6 +218,7 @@ document.addEventListener('DOMContentLoaded', function () {
             document.getElementById('idCredito_colocacion').value = 'Se asignará automáticamente';
             document.getElementById('form-colocacion').classList.remove('hidden');
             showStatus('status_colocacion', 'Cliente encontrado', 'success');
+            // Calcular monto total cuando se carga el formulario
             calcularMontoTotalColocacion();
         } else {
             showStatus('status_colocacion', 'Cliente no encontrado. Verifica la CURP', 'error');
@@ -231,6 +232,7 @@ document.addEventListener('DOMContentLoaded', function () {
         validarCURP(this, 'aval');
     });
 
+    // Event listeners para dropdowns de monto y plazo
     document.getElementById('monto_colocacion').addEventListener('change', calcularMontoTotalColocacion);
     document.getElementById('plazo_colocacion').addEventListener('change', calcularMontoTotalColocacion);
 
@@ -240,7 +242,19 @@ document.addEventListener('DOMContentLoaded', function () {
         // Validaciones
         const curpAval = document.getElementById('curpAval_colocacion').value;
         const nombreAval = document.getElementById('nombreAval_colocacion').value;
+        const monto = document.getElementById('monto_colocacion').value;
+        const plazo = document.getElementById('plazo_colocacion').value;
         
+        if (!monto) {
+            showStatus('status_colocacion', 'Debes seleccionar un monto', 'error');
+            return;
+        }
+
+        if (!plazo) {
+            showStatus('status_colocacion', 'Debes seleccionar un plazo', 'error');
+            return;
+        }
+
         if (!validarFormatoCURP(curpAval)) {
             showStatus('status_colocacion', 'El CURP del aval debe tener exactamente 18 caracteres', 'error');
             return;
@@ -254,22 +268,26 @@ document.addEventListener('DOMContentLoaded', function () {
         const credito = {
             curpCliente: document.getElementById('curp_colocacion').value,
             tipo: document.getElementById('tipo_colocacion').value,
-            monto: parseFloat(document.getElementById('monto_colocacion').value),
-            plazo: parseInt(document.getElementById('plazo_colocacion').value),
+            monto: parseFloat(monto),
+            plazo: parseInt(plazo),
             montoTotal: parseFloat(document.getElementById('montoTotal_colocacion').value.replace('$', '').replace(',', '')),
             curpAval: curpAval,
             nombreAval: nombreAval
         };
 
         const resultado = database.agregarCredito(credito);
-        showStatus('status_colocacion', resultado.message, resultado.success ? 'success' : 'error');
+        
         if (resultado.success) {
+            // Mostrar número de crédito generado
+            showStatus('status_colocacion', `${resultado.message}. Número de crédito: ${resultado.data.id}`, 'success');
             document.getElementById('form-colocacion').reset();
             document.getElementById('form-colocacion').classList.add('hidden');
             document.getElementById('curp_colocacion').value = '';
             // Resetear estilos
             curpAvalInput.style.backgroundColor = '';
             curpAvalInput.style.borderColor = '';
+        } else {
+            showStatus('status_colocacion', resultado.message, 'error');
         }
     });
 
@@ -401,9 +419,10 @@ function showStatus(elementId, message, type) {
 }
 
 function calcularMontoTotalColocacion() {
-    const monto = parseFloat(document.getElementById('monto_colocacion').value) || 0;
+    const montoSelect = document.getElementById('monto_colocacion');
+    const monto = montoSelect.value ? parseFloat(montoSelect.value) : 0;
     const montoTotal = monto * 1.3; // 30% de interés
-    document.getElementById('montoTotal_colocacion').value = `$${montoTotal.toLocaleString()}`;
+    document.getElementById('montoTotal_colocacion').value = monto > 0 ? `$${montoTotal.toLocaleString()}` : '';
 }
 
 // ========== VALIDACIÓN CURP ==========
