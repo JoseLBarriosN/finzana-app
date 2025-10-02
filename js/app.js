@@ -12,6 +12,9 @@ document.addEventListener('DOMContentLoaded', function () {
     database = new FinzanaDatabase();
     const users = database.getUsers();
 
+    // Inicializar dropdowns de población/grupo
+    inicializarDropdowns();
+
     setTimeout(() => {
         document.getElementById('loading-overlay').classList.add('hidden');
         document.getElementById('login-screen').classList.remove('hidden');
@@ -164,11 +167,24 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     });
 
-    // Clientes
+    // ========== CLIENTES - VALIDACIÓN CURP ==========
+    const curpClienteInput = document.getElementById('curp_cliente');
+    curpClienteInput.addEventListener('input', function() {
+        validarCURP(this, 'cliente');
+    });
+
     document.getElementById('form-cliente').addEventListener('submit', function(e) {
         e.preventDefault();
+        
+        // Validar CURP antes de enviar
+        const curp = document.getElementById('curp_cliente').value;
+        if (!validarFormatoCURP(curp)) {
+            showStatus('status_cliente', 'El CURP debe tener exactamente 18 caracteres', 'error');
+            return;
+        }
+
         const cliente = {
-            curp: document.getElementById('curp_cliente').value,
+            curp: curp,
             nombre: document.getElementById('nombre_cliente').value,
             domicilio: document.getElementById('domicilio_cliente').value,
             cp: document.getElementById('cp_cliente').value,
@@ -176,12 +192,24 @@ document.addEventListener('DOMContentLoaded', function () {
             poblacion_grupo: document.getElementById('poblacion_grupo_cliente').value,
             ruta: document.getElementById('ruta_cliente').value
         };
+
+        // Validar campos obligatorios
+        if (!cliente.nombre || !cliente.domicilio || !cliente.poblacion_grupo || !cliente.ruta) {
+            showStatus('status_cliente', 'Todos los campos marcados con * son obligatorios', 'error');
+            return;
+        }
+
         const resultado = database.agregarCliente(cliente);
         showStatus('status_cliente', resultado.message, resultado.success ? 'success' : 'error');
-        if (resultado.success) document.getElementById('form-cliente').reset();
+        if (resultado.success) {
+            document.getElementById('form-cliente').reset();
+            // Resetear estilos del CURP
+            curpClienteInput.style.backgroundColor = '';
+            curpClienteInput.style.borderColor = '';
+        }
     });
 
-    // Colocación
+    // ========== COLOCACIÓN - GENERAR CRÉDITO ==========
     document.getElementById('btnBuscarCliente_colocacion').addEventListener('click', function() {
         const curp = document.getElementById('curp_colocacion').value;
         const cliente = database.buscarClientePorCURP(curp);
@@ -197,30 +225,55 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     });
 
+    // Validación CURP AVAL
+    const curpAvalInput = document.getElementById('curpAval_colocacion');
+    curpAvalInput.addEventListener('input', function() {
+        validarCURP(this, 'aval');
+    });
+
     document.getElementById('monto_colocacion').addEventListener('change', calcularMontoTotalColocacion);
     document.getElementById('plazo_colocacion').addEventListener('change', calcularMontoTotalColocacion);
 
     document.getElementById('form-colocacion').addEventListener('submit', function(e) {
         e.preventDefault();
+        
+        // Validaciones
+        const curpAval = document.getElementById('curpAval_colocacion').value;
+        const nombreAval = document.getElementById('nombreAval_colocacion').value;
+        
+        if (!validarFormatoCURP(curpAval)) {
+            showStatus('status_colocacion', 'El CURP del aval debe tener exactamente 18 caracteres', 'error');
+            return;
+        }
+
+        if (!nombreAval.trim()) {
+            showStatus('status_colocacion', 'El nombre del aval es obligatorio', 'error');
+            return;
+        }
+
         const credito = {
             curpCliente: document.getElementById('curp_colocacion').value,
             tipo: document.getElementById('tipo_colocacion').value,
             monto: parseFloat(document.getElementById('monto_colocacion').value),
             plazo: parseInt(document.getElementById('plazo_colocacion').value),
             montoTotal: parseFloat(document.getElementById('montoTotal_colocacion').value.replace('$', '').replace(',', '')),
-            curpAval: document.getElementById('curpAval_colocacion').value,
-            nombreAval: document.getElementById('nombreAval_colocacion').value
+            curpAval: curpAval,
+            nombreAval: nombreAval
         };
+
         const resultado = database.agregarCredito(credito);
         showStatus('status_colocacion', resultado.message, resultado.success ? 'success' : 'error');
         if (resultado.success) {
             document.getElementById('form-colocacion').reset();
             document.getElementById('form-colocacion').classList.add('hidden');
             document.getElementById('curp_colocacion').value = '';
+            // Resetear estilos
+            curpAvalInput.style.backgroundColor = '';
+            curpAvalInput.style.borderColor = '';
         }
     });
 
-    // Cobranza
+    // ========== COBRANZA - REGISTRAR PAGO ==========
     document.getElementById('btnBuscarCredito_cobranza').addEventListener('click', function() {
         const idCredito = document.getElementById('idCredito_cobranza').value.trim();
         const credito = database.buscarCreditoPorId(idCredito);
@@ -237,10 +290,42 @@ document.addEventListener('DOMContentLoaded', function () {
             document.getElementById('siguiente_pago_cobranza').value = infoCredito ? infoCredito.siguientePago : 'N/A';
             document.getElementById('semanas_atraso_cobranza').value = semanasAtraso;
             
+            // Aplicar estilos según atraso
+            const estadoCredito = document.getElementById('estado_cobranza');
+            const semanasAtrasoInput = document.getElementById('semanas_atraso_cobranza');
+            const siguientePagoInput = document.getElementById('siguiente_pago_cobranza');
+            
             if (semanasAtraso > 0) {
-                document.getElementById('tipo_cobranza').value = 'actualizado';
+                // Crédito atrasado
+                document.getElementById('tipo_cobranza').value = 'extraordinario';
                 document.getElementById('tipo_cobranza').disabled = true;
-            } else document.getElementById('tipo_cobranza').disabled = false;
+                
+                // Aplicar estilos rojos
+                estadoCredito.style.color = 'var(--danger)';
+                estadoCredito.style.fontWeight = 'bold';
+                estadoCredito.value = 'ATRASADO';
+                
+                semanasAtrasoInput.style.color = 'var(--danger)';
+                semanasAtrasoInput.style.fontWeight = 'bold';
+                
+                siguientePagoInput.style.color = 'var(--danger)';
+                siguientePagoInput.style.fontWeight = 'bold';
+            } else {
+                // Crédito al corriente
+                document.getElementById('tipo_cobranza').value = 'normal';
+                document.getElementById('tipo_cobranza').disabled = false;
+                
+                // Aplicar estilos verdes
+                estadoCredito.style.color = 'var(--success)';
+                estadoCredito.style.fontWeight = 'bold';
+                estadoCredito.value = 'AL CORRIENTE';
+                
+                semanasAtrasoInput.style.color = 'var(--success)';
+                semanasAtrasoInput.style.fontWeight = 'normal';
+                
+                siguientePagoInput.style.color = 'var(--success)';
+                siguientePagoInput.style.fontWeight = 'normal';
+            }
             
             document.getElementById('monto_cobranza').addEventListener('input', function() {
                 const monto = parseFloat(this.value) || 0;
@@ -317,10 +402,125 @@ function showStatus(elementId, message, type) {
 
 function calcularMontoTotalColocacion() {
     const monto = parseFloat(document.getElementById('monto_colocacion').value) || 0;
-    const montoTotal = monto * 1.3;
+    const montoTotal = monto * 1.3; // 30% de interés
     document.getElementById('montoTotal_colocacion').value = `$${montoTotal.toLocaleString()}`;
 }
 
+// ========== VALIDACIÓN CURP ==========
+function validarCURP(input, tipo) {
+    const curp = input.value.toUpperCase();
+    const curpLength = curp.length;
+    
+    // Limitar a 18 caracteres
+    if (curpLength > 18) {
+        input.value = curp.substring(0, 18);
+        input.style.backgroundColor = '#ffebee';
+        input.style.borderColor = 'var(--danger)';
+        return false;
+    }
+    
+    // Validar formato básico (solo longitud)
+    if (curpLength === 18) {
+        input.style.backgroundColor = '#e8f5e8';
+        input.style.borderColor = 'var(--success)';
+        return true;
+    } else if (curpLength > 0) {
+        input.style.backgroundColor = '#ffebee';
+        input.style.borderColor = 'var(--danger)';
+        return false;
+    } else {
+        input.style.backgroundColor = '';
+        input.style.borderColor = '';
+        return false;
+    }
+}
+
+function validarFormatoCURP(curp) {
+    return curp.length === 18;
+}
+
+// ========== INICIALIZACIÓN DROPDOWNS ==========
+function inicializarDropdowns() {
+    // Poblaciones/Grupos disponibles
+    const poblaciones = [
+        'Población A', 'Población B', 'Población C', 
+        'Población D', 'Población E', 'Población F'
+    ];
+    
+    // Rutas disponibles
+    const rutas = ['JC1', 'JC2', 'JC3', 'JC4', 'JC5'];
+    
+    // Montos de crédito disponibles
+    const montos = [3000, 3500, 4000, 4500, 5000, 6000, 7000, 8000, 9000, 10000];
+    
+    // Tipos de crédito
+    const tiposCredito = ['Nuevo', 'Renovación', 'Ingreso'];
+    
+    // Plazos disponibles
+    const plazos = [13, 14];
+    
+    // Inicializar dropdown de población/grupo
+    const poblacionSelect = document.getElementById('poblacion_grupo_cliente');
+    if (poblacionSelect) {
+        poblacionSelect.innerHTML = '<option value="">Selecciona una población/grupo</option>';
+        poblaciones.forEach(poblacion => {
+            const option = document.createElement('option');
+            option.value = poblacion;
+            option.textContent = poblacion;
+            poblacionSelect.appendChild(option);
+        });
+    }
+    
+    // Inicializar dropdown de ruta
+    const rutaSelect = document.getElementById('ruta_cliente');
+    if (rutaSelect) {
+        rutaSelect.innerHTML = '<option value="">Selecciona una ruta</option>';
+        rutas.forEach(ruta => {
+            const option = document.createElement('option');
+            option.value = ruta;
+            option.textContent = ruta;
+            rutaSelect.appendChild(option);
+        });
+    }
+    
+    // Inicializar dropdown de tipo de crédito
+    const tipoCreditoSelect = document.getElementById('tipo_colocacion');
+    if (tipoCreditoSelect) {
+        tipoCreditoSelect.innerHTML = '<option value="">Selecciona tipo de crédito</option>';
+        tiposCredito.forEach(tipo => {
+            const option = document.createElement('option');
+            option.value = tipo.toLowerCase();
+            option.textContent = tipo;
+            tipoCreditoSelect.appendChild(option);
+        });
+    }
+    
+    // Inicializar dropdown de montos
+    const montoSelect = document.getElementById('monto_colocacion');
+    if (montoSelect) {
+        montoSelect.innerHTML = '<option value="">Selecciona un monto</option>';
+        montos.forEach(monto => {
+            const option = document.createElement('option');
+            option.value = monto;
+            option.textContent = `$${monto.toLocaleString()}`;
+            montoSelect.appendChild(option);
+        });
+    }
+    
+    // Inicializar dropdown de plazos
+    const plazoSelect = document.getElementById('plazo_colocacion');
+    if (plazoSelect) {
+        plazoSelect.innerHTML = '<option value="">Selecciona un plazo</option>';
+        plazos.forEach(plazo => {
+            const option = document.createElement('option');
+            option.value = plazo;
+            option.textContent = `${plazo} semanas`;
+            plazoSelect.appendChild(option);
+        });
+    }
+}
+
+// ========== GESTIÓN DE USUARIOS ==========
 function loadUsersTable() {
     const users = database.getUsers();
     const tbody = document.getElementById('tabla-usuarios');
@@ -346,6 +546,35 @@ function loadUsersTable() {
     }
 }
 
+function editUser(username) {
+    const users = database.getUsers();
+    const user = users[username];
+    if (user) {
+        document.getElementById('form-usuario-container').classList.remove('hidden');
+        document.getElementById('form-usuario-titulo').textContent = 'Editar Usuario';
+        document.getElementById('usuario-id').value = username;
+        document.getElementById('nuevo-username').value = username;
+        document.getElementById('nuevo-username').readOnly = true;
+        document.getElementById('nuevo-password').value = '';
+        document.getElementById('nuevo-password').placeholder = 'Dejar en blanco para no cambiar';
+        document.getElementById('nuevo-nombre').value = user.name;
+        document.getElementById('nuevo-rol').value = user.role;
+        document.getElementById('nuevo-email').value = user.email || '';
+        document.getElementById('nuevo-telefono').value = user.telefono || '';
+    }
+}
+
+function deleteUser(username) {
+    if (confirm(`¿Estás seguro de que deseas eliminar al usuario ${username}?`)) {
+        const users = database.getUsers();
+        delete users[username];
+        database.saveUsers(users);
+        loadUsersTable();
+        showStatus('status_usuarios', 'Usuario eliminado exitosamente', 'success');
+    }
+}
+
+// ========== GESTIÓN DE CLIENTES ==========
 function loadClientesTable() {
     const clientes = database.getClientes();
     const tbody = document.getElementById('tabla-clientes');
@@ -413,34 +642,6 @@ function loadClientesTable() {
             </td>
         `;
         tbody.appendChild(tr);
-    }
-}
-
-function editUser(username) {
-    const users = database.getUsers();
-    const user = users[username];
-    if (user) {
-        document.getElementById('form-usuario-container').classList.remove('hidden');
-        document.getElementById('form-usuario-titulo').textContent = 'Editar Usuario';
-        document.getElementById('usuario-id').value = username;
-        document.getElementById('nuevo-username').value = username;
-        document.getElementById('nuevo-username').readOnly = true;
-        document.getElementById('nuevo-password').value = '';
-        document.getElementById('nuevo-password').placeholder = 'Dejar en blanco para no cambiar';
-        document.getElementById('nuevo-nombre').value = user.name;
-        document.getElementById('nuevo-rol').value = user.role;
-        document.getElementById('nuevo-email').value = user.email || '';
-        document.getElementById('nuevo-telefono').value = user.telefono || '';
-    }
-}
-
-function deleteUser(username) {
-    if (confirm(`¿Estás seguro de que deseas eliminar al usuario ${username}?`)) {
-        const users = database.getUsers();
-        delete users[username];
-        database.saveUsers(users);
-        loadUsersTable();
-        showStatus('status_usuarios', 'Usuario eliminado exitosamente', 'success');
     }
 }
 
