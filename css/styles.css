@@ -668,4 +668,8 @@ input[readonly] {
     .info-grid {
         grid-template-columns: 1fr;
     }
+
+    .required {
+    color: var(--danger);
 }
+
