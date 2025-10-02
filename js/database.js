@@ -160,16 +160,35 @@ class FinzanaDatabase {
     }
 
     agregarCredito(credito) {
-        const creditos = this.getCreditos();
-        credito.id = this.generarIdConsecutivo();
-        credito.fechaCreacion = new Date().toISOString();
-        credito.estado = 'activo';
-        credito.montoTotal = credito.monto * 1.3;
-        credito.saldo = credito.montoTotal;
-        creditos.push(credito);
-        this.saveCreditos(creditos);
-        return { success: true, message: 'Crédito generado exitosamente', data: credito };
-    }
+    const creditos = this.getCreditos();
+    
+    // Generar ID consecutivo
+    credito.id = this.generarIdConsecutivo();
+    credito.fechaCreacion = new Date().toISOString();
+    credito.estado = 'activo';
+    credito.montoTotal = credito.monto * 1.3;
+    credito.saldo = credito.montoTotal;
+    
+    console.log('Crédito a guardar:', credito);
+    
+    creditos.push(credito);
+    this.saveCreditos(creditos);
+    
+    return { 
+        success: true, 
+        message: 'Crédito generado exitosamente', 
+        data: credito 
+    };
+}
+
+generarIdConsecutivo() {
+    let counter = parseInt(localStorage.getItem('finzana-credito-counter')) || 20000000;
+    const nuevoId = counter.toString();
+    counter++;
+    localStorage.setItem('finzana-credito-counter', counter.toString());
+    console.log('Nuevo ID generado:', nuevoId);
+    return nuevoId;
+}
 
     agregarCreditoImportado(credito) {
         const creditos = this.getCreditos();
@@ -376,3 +395,4 @@ class FinzanaDatabase {
         return new Date() > fechaVencimiento;
     }
 }
+
