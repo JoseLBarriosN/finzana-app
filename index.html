@@ -166,7 +166,14 @@
             </div>
 
             <div id="view-gestion-clientes" class="view hidden">
-                <h2>Gestión de Clientes</h2>
+                <div class="view-header">
+                    <h2>Gestión de Clientes</h2>
+                    <button class="btn btn-secondary" data-view="view-main-menu">
+                        <i class="fas fa-arrow-left"></i>
+                        <span>Volver al Menú</span>
+                    </button>
+                </div>
+                
                 <div class="search-group">
                     <input type="text" id="buscar-cliente" placeholder="Buscar por CURP o nombre...">
                     <button id="btn-buscar-cliente" class="btn btn-primary">
@@ -193,7 +200,14 @@
             </div>
 
             <div id="view-usuarios" class="view hidden">
-                <h2>Gestión de Usuarios</h2>
+                <div class="view-header">
+                    <h2>Gestión de Usuarios</h2>
+                    <button class="btn btn-secondary" data-view="view-main-menu">
+                        <i class="fas fa-arrow-left"></i>
+                        <span>Volver al Menú</span>
+                    </button>
+                </div>
+                
                 <button id="btn-nuevo-usuario" class="btn btn-primary">
                     <i class="fas fa-user-plus"></i>
                     <span>Nuevo Usuario</span>
@@ -264,7 +278,14 @@
             </div>
 
             <div id="view-importar" class="view hidden">
-                <h2>Importar Datos</h2>
+                <div class="view-header">
+                    <h2>Importar Datos</h2>
+                    <button class="btn btn-secondary" data-view="view-main-menu">
+                        <i class="fas fa-arrow-left"></i>
+                        <span>Volver al Menú</span>
+                    </button>
+                </div>
+                
                 <p>Importa información desde archivos CSV al sistema</p>
                 
                 <div class="import-tabs">
@@ -360,7 +381,14 @@
             </div>
 
             <div id="view-cliente" class="view hidden">
-                <h2>Registrar Cliente</h2>
+                <div class="view-header">
+                    <h2>Registrar Cliente</h2>
+                    <button class="btn btn-secondary" data-view="view-main-menu">
+                        <i class="fas fa-arrow-left"></i>
+                        <span>Volver al Menú</span>
+                    </button>
+                </div>
+                
                 <form id="form-cliente">
                     <div class="form-group">
                         <label for="curp_cliente">CURP</label>
@@ -400,8 +428,8 @@
                             <span>Guardar Cliente</span>
                         </button>
                         <button type="button" class="btn btn-secondary" data-view="view-main-menu">
-                            <i class="fas fa-arrow-left"></i>
-                            <span>Volver</span>
+                            <i class="fas fa-times"></i>
+                            <span>Cancelar</span>
                         </button>
                     </div>
                 </form>
@@ -409,7 +437,14 @@
             </div>
 
             <div id="view-colocacion" class="view hidden">
-                <h2>Generar Crédito</h2>
+                <div class="view-header">
+                    <h2>Generar Crédito</h2>
+                    <button class="btn btn-secondary" data-view="view-main-menu">
+                        <i class="fas fa-arrow-left"></i>
+                        <span>Volver al Menú</span>
+                    </button>
+                </div>
+                
                 <div class="form-group">
                     <label for="curp_colocacion">CURP del Cliente</label>
                     <div class="search-group">
@@ -464,8 +499,8 @@
                             <span>Generar Crédito</span>
                         </button>
                         <button type="button" class="btn btn-secondary" data-view="view-main-menu">
-                            <i class="fas fa-arrow-left"></i>
-                            <span>Volver</span>
+                            <i class="fas fa-times"></i>
+                            <span>Cancelar</span>
                         </button>
                     </div>
                 </div>
@@ -473,7 +508,14 @@
             </div>
 
             <div id="view-cobranza" class="view hidden">
-                <h2>Registrar Pago</h2>
+                <div class="view-header">
+                    <h2>Registrar Pago</h2>
+                    <button class="btn btn-secondary" data-view="view-main-menu">
+                        <i class="fas fa-arrow-left"></i>
+                        <span>Volver al Menú</span>
+                    </button>
+                </div>
+                
                 <div class="form-group">
                     <label for="idCredito_cobranza">ID del Crédito</label>
                     <div class="search-group">
@@ -532,8 +574,8 @@
                             <span>Registrar Pago</span>
                         </button>
                         <button type="button" class="btn btn-secondary" data-view="view-main-menu">
-                            <i class="fas fa-arrow-left"></i>
-                            <span>Volver</span>
+                            <i class="fas fa-times"></i>
+                            <span>Cancelar</span>
                         </button>
                     </div>
                 </div>
@@ -541,7 +583,14 @@
             </div>
 
             <div id="view-reportes" class="view hidden">
-                <h2>Reportes del Sistema</h2>
+                <div class="view-header">
+                    <h2>Reportes del Sistema</h2>
+                    <button class="btn btn-secondary" data-view="view-main-menu">
+                        <i class="fas fa-arrow-left"></i>
+                        <span>Volver al Menú</span>
+                    </button>
+                </div>
+                
                 <button id="btn-actualizar-reportes" class="btn btn-primary">
                     <i class="fas fa-sync-alt"></i>
                     <span>Actualizar Reportes</span>
