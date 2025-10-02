@@ -211,17 +211,25 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // ========== COLOCACIÓN - GENERAR CRÉDITO ==========
     document.getElementById('btnBuscarCliente_colocacion').addEventListener('click', function() {
-        const curp = document.getElementById('curp_colocacion').value;
+        const curp = document.getElementById('curp_colocacion').value.trim();
+        
+        // Validar que el CURP tenga 18 caracteres
+        if (!validarFormatoCURP(curp)) {
+            showStatus('status_colocacion', 'El CURP debe tener exactamente 18 caracteres', 'error');
+            document.getElementById('form-colocacion').classList.add('hidden');
+            return;
+        }
+        
         const cliente = database.buscarClientePorCURP(curp);
         if (cliente) {
             document.getElementById('nombre_colocacion').value = cliente.nombre;
             document.getElementById('idCredito_colocacion').value = 'Se asignará automáticamente';
             document.getElementById('form-colocacion').classList.remove('hidden');
             showStatus('status_colocacion', 'Cliente encontrado', 'success');
-            // Calcular monto total cuando se carga el formulario
-            calcularMontoTotalColocacion();
+            // Resetear el cálculo del monto total
+            document.getElementById('montoTotal_colocacion').value = '';
         } else {
-            showStatus('status_colocacion', 'Cliente no encontrado. Verifica la CURP', 'error');
+            showStatus('status_colocacion', 'Cliente no encontrado. Verifica la CURP o registra al cliente primero', 'error');
             document.getElementById('form-colocacion').classList.add('hidden');
         }
     });
@@ -238,12 +246,16 @@ document.addEventListener('DOMContentLoaded', function () {
 
     document.getElementById('form-colocacion').addEventListener('submit', function(e) {
         e.preventDefault();
+        console.log('Formulario de crédito enviado'); // Debug
         
         // Validaciones
         const curpAval = document.getElementById('curpAval_colocacion').value;
         const nombreAval = document.getElementById('nombreAval_colocacion').value;
         const monto = document.getElementById('monto_colocacion').value;
         const plazo = document.getElementById('plazo_colocacion').value;
+        const tipoCredito = document.getElementById('tipo_colocacion').value;
+        
+        console.log('Datos del formulario:', { curpAval, nombreAval, monto, plazo, tipoCredito }); // Debug
         
         if (!monto) {
             showStatus('status_colocacion', 'Debes seleccionar un monto', 'error');
@@ -252,6 +264,11 @@ document.addEventListener('DOMContentLoaded', function () {
 
         if (!plazo) {
             showStatus('status_colocacion', 'Debes seleccionar un plazo', 'error');
+            return;
+        }
+
+        if (!tipoCredito) {
+            showStatus('status_colocacion', 'Debes seleccionar un tipo de crédito', 'error');
             return;
         }
 
@@ -267,7 +284,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
         const credito = {
             curpCliente: document.getElementById('curp_colocacion').value,
-            tipo: document.getElementById('tipo_colocacion').value,
+            tipo: tipoCredito,
             monto: parseFloat(monto),
             plazo: parseInt(plazo),
             montoTotal: parseFloat(document.getElementById('montoTotal_colocacion').value.replace('$', '').replace(',', '')),
@@ -275,7 +292,10 @@ document.addEventListener('DOMContentLoaded', function () {
             nombreAval: nombreAval
         };
 
+        console.log('Datos del crédito a guardar:', credito); // Debug
+
         const resultado = database.agregarCredito(credito);
+        console.log('Resultado de agregar crédito:', resultado); // Debug
         
         if (resultado.success) {
             // Mostrar número de crédito generado
@@ -286,8 +306,12 @@ document.addEventListener('DOMContentLoaded', function () {
             // Resetear estilos
             curpAvalInput.style.backgroundColor = '';
             curpAvalInput.style.borderColor = '';
+            
+            // Mostrar el número de crédito en la consola para verificación
+            console.log('Crédito generado exitosamente. Número:', resultado.data.id);
         } else {
             showStatus('status_colocacion', resultado.message, 'error');
+            console.error('Error al generar crédito:', resultado.message);
         }
     });
 
@@ -421,8 +445,13 @@ function showStatus(elementId, message, type) {
 function calcularMontoTotalColocacion() {
     const montoSelect = document.getElementById('monto_colocacion');
     const monto = montoSelect.value ? parseFloat(montoSelect.value) : 0;
-    const montoTotal = monto * 1.3; // 30% de interés
-    document.getElementById('montoTotal_colocacion').value = monto > 0 ? `$${montoTotal.toLocaleString()}` : '';
+    
+    if (monto > 0) {
+        const montoTotal = monto * 1.3; // 30% de interés
+        document.getElementById('montoTotal_colocacion').value = `$${montoTotal.toLocaleString()}`;
+    } else {
+        document.getElementById('montoTotal_colocacion').value = '';
+    }
 }
 
 // ========== VALIDACIÓN CURP ==========
@@ -460,14 +489,21 @@ function validarFormatoCURP(curp) {
 
 // ========== INICIALIZACIÓN DROPDOWNS ==========
 function inicializarDropdowns() {
-    // Poblaciones/Grupos disponibles
+    // Poblaciones/Grupos disponibles (datos reales del sistema)
     const poblaciones = [
-        'Población A', 'Población B', 'Población C', 
-        'Población D', 'Población E', 'Población F'
+        'Aguascalientes Centro', 'Bajío Norte', 'Bajío Sur', 
+        'Centro Occidente', 'Centro Norte', 'Centro Sur',
+        'Noroeste', 'Norte', 'Occidente', 'Oriente',
+        'Pacífico Centro', 'Pacífico Norte', 'Pacífico Sur',
+        'Peninsular', 'Sureste', 'Zona Metropolitana'
     ];
     
-    // Rutas disponibles
-    const rutas = ['JC1', 'JC2', 'JC3', 'JC4', 'JC5'];
+    // Rutas disponibles (datos reales del sistema)
+    const rutas = [
+        'RUTA-001', 'RUTA-002', 'RUTA-003', 'RUTA-004', 'RUTA-005',
+        'RUTA-006', 'RUTA-007', 'RUTA-008', 'RUTA-009', 'RUTA-010',
+        'RUTA-011', 'RUTA-012', 'RUTA-013', 'RUTA-014', 'RUTA-015'
+    ];
     
     // Montos de crédito disponibles
     const montos = [3000, 3500, 4000, 4500, 5000, 6000, 7000, 8000, 9000, 10000];
