@@ -6,6 +6,17 @@
     <title>Finzana - Sistema de Gestión de Créditos</title>
     <link rel="stylesheet" href="css/styles.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        .required {
+            color: var(--danger);
+            font-weight: bold;
+        }
+        .field-note {
+            font-size: 12px;
+            color: var(--gray);
+            margin-top: 5px;
+        }
+    </style>
 </head>
 <body>
     <div id="loading-overlay" class="loading-overlay">
@@ -219,19 +230,19 @@
                     <form id="form-usuario">
                         <input type="hidden" id="usuario-id">
                         <div class="form-group">
-                            <label for="nuevo-username">Usuario</label>
+                            <label for="nuevo-username">Usuario <span class="required">*</span></label>
                             <input type="text" id="nuevo-username" required>
                         </div>
                         <div class="form-group">
-                            <label for="nuevo-password">Contraseña</label>
+                            <label for="nuevo-password">Contraseña <span class="required">*</span></label>
                             <input type="password" id="nuevo-password" required>
                         </div>
                         <div class="form-group">
-                            <label for="nuevo-nombre">Nombre Completo</label>
+                            <label for="nuevo-nombre">Nombre Completo <span class="required">*</span></label>
                             <input type="text" id="nuevo-nombre" required>
                         </div>
                         <div class="form-group">
-                            <label for="nuevo-rol">Rol</label>
+                            <label for="nuevo-rol">Rol <span class="required">*</span></label>
                             <select id="nuevo-rol" required>
                                 <option value="admin">Administrador</option>
                                 <option value="supervisor">Supervisor</option>
@@ -391,15 +402,16 @@
                 
                 <form id="form-cliente">
                     <div class="form-group">
-                        <label for="curp_cliente">CURP</label>
-                        <input type="text" id="curp_cliente" required>
+                        <label for="curp_cliente">CURP <span class="required">*</span></label>
+                        <input type="text" id="curp_cliente" placeholder="18 caracteres" required maxlength="18">
+                        <div class="field-note">El CURP debe tener exactamente 18 caracteres</div>
                     </div>
                     <div class="form-group">
-                        <label for="nombre_cliente">Nombre Completo</label>
+                        <label for="nombre_cliente">Nombre Completo <span class="required">*</span></label>
                         <input type="text" id="nombre_cliente" required>
                     </div>
                     <div class="form-group">
-                        <label for="domicilio_cliente">Domicilio</label>
+                        <label for="domicilio_cliente">Domicilio <span class="required">*</span></label>
                         <input type="text" id="domicilio_cliente" required>
                     </div>
                     <div class="form-group">
@@ -411,15 +423,15 @@
                         <input type="text" id="telefono_cliente">
                     </div>
                     <div class="form-group">
-                        <label for="poblacion_grupo_cliente">Población/Grupo</label>
-                        <input type="text" id="poblacion_grupo_cliente" required>
+                        <label for="poblacion_grupo_cliente">Población/Grupo <span class="required">*</span></label>
+                        <select id="poblacion_grupo_cliente" required>
+                            <!-- Opciones se cargan dinámicamente -->
+                        </select>
                     </div>
                     <div class="form-group">
-                        <label for="ruta_cliente">Ruta</label>
-                        <select id="ruta_cliente">
-                            <option value="JC1">JC1</option>
-                            <option value="JC2">JC2</option>
-                            <option value="JC3">JC3</option>
+                        <label for="ruta_cliente">Ruta <span class="required">*</span></label>
+                        <select id="ruta_cliente" required>
+                            <!-- Opciones se cargan dinámicamente -->
                         </select>
                     </div>
                     <div class="form-group">
@@ -446,9 +458,9 @@
                 </div>
                 
                 <div class="form-group">
-                    <label for="curp_colocacion">CURP del Cliente</label>
+                    <label for="curp_colocacion">CURP del Cliente <span class="required">*</span></label>
                     <div class="search-group">
-                        <input type="text" id="curp_colocacion" placeholder="Ingresa la CURP del cliente">
+                        <input type="text" id="curp_colocacion" placeholder="Ingresa la CURP del cliente" required>
                         <button id="btnBuscarCliente_colocacion" class="btn btn-primary">
                             <i class="fas fa-search"></i>
                             <span>Buscar Cliente</span>
@@ -466,32 +478,36 @@
                         <input type="text" id="idCredito_colocacion" readonly>
                     </div>
                     <div class="form-group">
-                        <label for="tipo_colocacion">Tipo de Crédito</label>
+                        <label for="tipo_colocacion">Tipo de Crédito <span class="required">*</span></label>
                         <select id="tipo_colocacion" required>
-                            <option value="normal">Normal</option>
-                            <option value="especial">Especial</option>
-                            <option value="emergente">Emergente</option>
+                            <!-- Opciones se cargan dinámicamente -->
                         </select>
                     </div>
                     <div class="form-group">
-                        <label for="monto_colocacion">Monto Solicitado</label>
-                        <input type="number" id="monto_colocacion" min="100" step="100" required>
+                        <label for="monto_colocacion">Monto Solicitado <span class="required">*</span></label>
+                        <select id="monto_colocacion" required>
+                            <!-- Opciones se cargan dinámicamente -->
+                        </select>
                     </div>
                     <div class="form-group">
-                        <label for="plazo_colocacion">Plazo (semanas)</label>
-                        <input type="number" id="plazo_colocacion" min="1" max="52" required>
+                        <label for="plazo_colocacion">Plazo (semanas) <span class="required">*</span></label>
+                        <select id="plazo_colocacion" required>
+                            <!-- Opciones se cargan dinámicamente -->
+                        </select>
                     </div>
                     <div class="form-group">
                         <label for="montoTotal_colocacion">Monto Total a Pagar</label>
                         <input type="text" id="montoTotal_colocacion" readonly>
+                        <div class="field-note">Incluye el 30% de interés</div>
                     </div>
                     <div class="form-group">
-                        <label for="curpAval_colocacion">CURP del Aval (opcional)</label>
-                        <input type="text" id="curpAval_colocacion">
+                        <label for="curpAval_colocacion">CURP del Aval <span class="required">*</span></label>
+                        <input type="text" id="curpAval_colocacion" placeholder="18 caracteres" required maxlength="18">
+                        <div class="field-note">El CURP debe tener exactamente 18 caracteres</div>
                     </div>
                     <div class="form-group">
-                        <label for="nombreAval_colocacion">Nombre del Aval (opcional)</label>
-                        <input type="text" id="nombreAval_colocacion">
+                        <label for="nombreAval_colocacion">Nombre del Aval <span class="required">*</span></label>
+                        <input type="text" id="nombreAval_colocacion" required>
                     </div>
                     <div class="form-group">
                         <button type="submit" class="btn btn-success">
@@ -517,9 +533,9 @@
                 </div>
                 
                 <div class="form-group">
-                    <label for="idCredito_cobranza">ID del Crédito</label>
+                    <label for="idCredito_cobranza">ID del Crédito <span class="required">*</span></label>
                     <div class="search-group">
-                        <input type="text" id="idCredito_cobranza" placeholder="Ingresa el ID del crédito">
+                        <input type="text" id="idCredito_cobranza" placeholder="Ingresa el ID del crédito" required>
                         <button id="btnBuscarCredito_cobranza" class="btn btn-primary">
                             <i class="fas fa-search"></i>
                             <span>Buscar Crédito</span>
@@ -553,11 +569,11 @@
                         <input type="text" id="semanas_atraso_cobranza" readonly>
                     </div>
                     <div class="form-group">
-                        <label for="monto_cobranza">Monto del Pago</label>
+                        <label for="monto_cobranza">Monto del Pago <span class="required">*</span></label>
                         <input type="number" id="monto_cobranza" min="1" required>
                     </div>
                     <div class="form-group">
-                        <label for="tipo_cobranza">Tipo de Pago</label>
+                        <label for="tipo_cobranza">Tipo de Pago <span class="required">*</span></label>
                         <select id="tipo_cobranza" required>
                             <option value="normal">Normal</option>
                             <option value="extraordinario">Extraordinario</option>
