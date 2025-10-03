@@ -189,12 +189,14 @@ document.addEventListener('DOMContentLoaded', function () {
             domicilio: document.getElementById('domicilio_cliente').value,
             cp: document.getElementById('cp_cliente').value,
             telefono: document.getElementById('telefono_cliente').value,
+            fecha_registro: document.getElementById('fecha_registro_cliente').value,
             poblacion_grupo: document.getElementById('poblacion_grupo_cliente').value,
-            ruta: document.getElementById('ruta_cliente').value
+            ruta: document.getElementById('ruta_cliente').value,
+            estado: document.getElementById('estado_cliente').value
         };
 
         // Validar campos obligatorios
-        if (!cliente.nombre || !cliente.domicilio || !cliente.poblacion_grupo || !cliente.ruta) {
+        if (!cliente.nombre || !cliente.domicilio || !cliente.poblacion_grupo || !cliente.ruta || !cliente.estado) {
             showStatus('status_cliente', 'Todos los campos marcados con * son obligatorios', 'error');
             return;
         }
@@ -254,8 +256,10 @@ document.addEventListener('DOMContentLoaded', function () {
         const monto = document.getElementById('monto_colocacion').value;
         const plazo = document.getElementById('plazo_colocacion').value;
         const tipoCredito = document.getElementById('tipo_colocacion').value;
+        const grupoPoblacion = document.getElementById('grupo_poblacion_colocacion').value;
+        const ruta = document.getElementById('ruta_colocacion').value;
         
-        console.log('Datos del formulario:', { curpAval, nombreAval, monto, plazo, tipoCredito });
+        console.log('Datos del formulario:', { curpAval, nombreAval, monto, plazo, tipoCredito, grupoPoblacion, ruta });
         
         if (!monto) {
             showStatus('status_colocacion', 'Debes seleccionar un monto', 'error');
@@ -289,7 +293,12 @@ document.addEventListener('DOMContentLoaded', function () {
             plazo: parseInt(plazo),
             montoTotal: parseFloat(document.getElementById('montoTotal_colocacion').value.replace('$', '').replace(',', '')),
             curpAval: curpAval,
-            nombreAval: nombreAval
+            nombreAval: nombreAval,
+            grupoPoblacion: grupoPoblacion,
+            ruta: ruta,
+            interes: parseFloat(monto) * 0.3, // 30% de interés
+            saldo: parseFloat(monto) * 1.3,
+            estado: 'activo'
         };
 
         console.log('Datos del crédito a guardar:', credito);
@@ -389,7 +398,11 @@ document.addEventListener('DOMContentLoaded', function () {
         const pago = {
             idCredito: creditoActual.id,
             monto: parseFloat(document.getElementById('monto_cobranza').value),
-            tipoPago: document.getElementById('tipo_cobranza').value
+            tipoPago: document.getElementById('tipo_cobranza').value,
+            grupo: document.getElementById('grupo_cobranza').value,
+            ruta: 'JC1', // Por defecto
+            interesCobrado: parseFloat(document.getElementById('monto_cobranza').value) * 0.3,
+            cobradoPor: currentUser.name
         };
         const resultado = database.agregarPago(pago);
         showStatus('status_cobranza', resultado.message, resultado.success ? 'success' : 'error');
@@ -495,6 +508,7 @@ function inicializarDropdowns() {
         tipoPago: ["EXTRAORDINARIO", "ACTUALIZADO", "NORMAL"],
         plazos: ["14", "10", "13"],
         montos: ["3000", "3500", "4000", "4500", "5000", "6000", "7000", "8000", "9000", "10000"],
+        estados: ["JALISCO", "GUANAJUATO"],
         poblaciones: [
             "LA CALERA", "ATEQUIZA", "SAN JACINTO", "PONCITLAN", "OCOTLAN",
             "ARENAL", "AMATITAN", "ACATLAN DE JUAREZ", "BELLAVISTA", 
@@ -508,6 +522,18 @@ function inicializarDropdowns() {
             "COMERCIAL", "COBRANZA", "R1", "R2", "R3", "JC1", "RX"
         ]
     };
+
+    // Inicializar dropdown de estado
+    const estadoSelect = document.getElementById('estado_cliente');
+    if (estadoSelect) {
+        estadoSelect.innerHTML = '<option value="">Selecciona un estado</option>';
+        dropdownOptions.estados.forEach(estado => {
+            const option = document.createElement('option');
+            option.value = estado;
+            option.textContent = estado;
+            estadoSelect.appendChild(option);
+        });
+    }
 
     // Inicializar dropdown de población/grupo
     const poblacionSelect = document.getElementById('poblacion_grupo_cliente');
@@ -566,6 +592,30 @@ function inicializarDropdowns() {
             option.value = plazo;
             option.textContent = `${plazo} semanas`;
             plazoSelect.appendChild(option);
+        });
+    }
+
+    // Inicializar dropdown de grupo/población para colocación
+    const grupoPoblacionSelect = document.getElementById('grupo_poblacion_colocacion');
+    if (grupoPoblacionSelect) {
+        grupoPoblacionSelect.innerHTML = '<option value="">Selecciona grupo/población</option>';
+        dropdownOptions.poblaciones.forEach(poblacion => {
+            const option = document.createElement('option');
+            option.value = poblacion;
+            option.textContent = poblacion;
+            grupoPoblacionSelect.appendChild(option);
+        });
+    }
+
+    // Inicializar dropdown de ruta para colocación
+    const rutaColocacionSelect = document.getElementById('ruta_colocacion');
+    if (rutaColocacionSelect) {
+        rutaColocacionSelect.innerHTML = '<option value="">Selecciona una ruta</option>';
+        dropdownOptions.rutas.forEach(ruta => {
+            const option = document.createElement('option');
+            option.value = ruta;
+            option.textContent = ruta;
+            rutaColocacionSelect.appendChild(option);
         });
     }
 
@@ -644,58 +694,32 @@ function loadClientesTable() {
     const tbody = document.getElementById('tabla-clientes');
     const busqueda = document.getElementById('buscar-cliente').value.toLowerCase();
     tbody.innerHTML = '';
+    
     const clientesFiltrados = clientes.filter(cliente => 
-        cliente.curp.toLowerCase().includes(busqueda) || cliente.nombre.toLowerCase().includes(busqueda)
+        (cliente.curp && cliente.curp.toLowerCase().includes(busqueda)) ||
+        (cliente.nombre && cliente.nombre.toLowerCase().includes(busqueda)) ||
+        (cliente.telefono && cliente.telefono.toLowerCase().includes(busqueda)) ||
+        (cliente.poblacion_grupo && cliente.poblacion_grupo.toLowerCase().includes(busqueda)) ||
+        (cliente.estado && cliente.estado.toLowerCase().includes(busqueda)) ||
+        (cliente.ruta && cliente.ruta.toLowerCase().includes(busqueda)) ||
+        (cliente.domicilio && cliente.domicilio.toLowerCase().includes(busqueda)) ||
+        (cliente.cp && cliente.cp.toLowerCase().includes(busqueda))
     );
+    
     for (const cliente of clientesFiltrados) {
         const tr = document.createElement('tr');
         const infoCredito = database.obtenerInformacionCreditoCliente(cliente.curp);
-        let infoCreditoHTML = '<em>Sin crédito activo</em>';
-        if (infoCredito) {
-            const estadoClase = infoCredito.estaAlCorriente ? 'status-al-corriente' : 'status-atrasado';
-            const estadoTexto = infoCredito.estaAlCorriente ? 'Al Corriente' : `Atrasado (${infoCredito.semanasAtraso} semanas)`;
-            infoCreditoHTML = `
-                <div class="credito-info">
-                    <h5>Información del Crédito</h5>
-                    <div class="info-grid">
-                        <div class="info-item">
-                            <span class="info-label">ID Crédito:</span>
-                            <span class="info-value">${infoCredito.idCredito}</span>
-                        </div>
-                        <div class="info-item">
-                            <span class="info-label">Fecha Creación:</span>
-                            <span class="info-value">${new Date(infoCredito.fechaCreacion).toLocaleDateString()}</span>
-                        </div>
-                        <div class="info-item">
-                            <span class="info-label">Siguiente Pago:</span>
-                            <span class="info-value">${infoCredito.siguientePago}</span>
-                        </div>
-                        <div class="info-item">
-                            <span class="info-label">Estado:</span>
-                            <span class="info-value ${estadoClase}">${estadoTexto}</span>
-                        </div>
-                        <div class="info-item">
-                            <span class="info-label">Saldo Restante:</span>
-                            <span class="info-value">$${infoCredito.saldoRestante.toLocaleString()}</span>
-                        </div>
-                        <div class="info-item">
-                            <span class="info-label">Semana:</span>
-                            <span class="info-value">${infoCredito.semanaActual}/${infoCredito.plazoTotal}</span>
-                        </div>
-                        <div class="info-item">
-                            <span class="info-label">Pagado:</span>
-                            <span class="info-value">${infoCredito.porcentajePagado}%</span>
-                        </div>
-                    </div>
-                </div>
-            `;
-        }
+        
         tr.innerHTML = `
-            <td>${cliente.curp}</td>
-            <td>${cliente.nombre}</td>
-            <td>${cliente.telefono}</td>
-            <td>${cliente.poblacion_grupo}</td>
-            <td>${infoCreditoHTML}</td>
+            <td>${cliente.curp || ''}</td>
+            <td>${cliente.nombre || ''}</td>
+            <td>${cliente.domicilio || ''}</td>
+            <td>${cliente.cp || ''}</td>
+            <td>${cliente.telefono || ''}</td>
+            <td>${cliente.fecha_registro || ''}</td>
+            <td>${cliente.poblacion_grupo || ''}</td>
+            <td>${cliente.estado || ''}</td>
+            <td>${cliente.ruta || ''}</td>
             <td class="action-buttons">
                 <button class="btn btn-sm btn-secondary" onclick="editCliente('${cliente.curp}')">
                     <i class="fas fa-edit"></i>
@@ -718,8 +742,11 @@ function editCliente(curp) {
         document.getElementById('domicilio_cliente').value = cliente.domicilio;
         document.getElementById('cp_cliente').value = cliente.cp;
         document.getElementById('telefono_cliente').value = cliente.telefono;
+        document.getElementById('fecha_registro_cliente').value = cliente.fecha_registro;
         document.getElementById('poblacion_grupo_cliente').value = cliente.poblacion_grupo;
+        document.getElementById('estado_cliente').value = cliente.estado;
         document.getElementById('ruta_cliente').value = cliente.ruta;
+        
         document.querySelector('#form-cliente button[type="submit"]').innerHTML = '<i class="fas fa-save"></i> Actualizar Cliente';
         document.getElementById('form-cliente').onsubmit = function(e) {
             e.preventDefault();
@@ -729,7 +756,9 @@ function editCliente(curp) {
                 domicilio: document.getElementById('domicilio_cliente').value,
                 cp: document.getElementById('cp_cliente').value,
                 telefono: document.getElementById('telefono_cliente').value,
+                fecha_registro: document.getElementById('fecha_registro_cliente').value,
                 poblacion_grupo: document.getElementById('poblacion_grupo_cliente').value,
+                estado: document.getElementById('estado_cliente').value,
                 ruta: document.getElementById('ruta_cliente').value
             };
             const resultado = database.actualizarCliente(curp, datosActualizados);
