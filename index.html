@@ -394,122 +394,119 @@
             </div>
 
             <!-- ========== VISTA: IMPORTAR DATOS ========== -->
-            <div id="view-importar" class="view hidden">
-                <div class="view-header">
-                    <h2>Importar Datos</h2>
-                    <button class="btn btn-secondary" data-view="view-main-menu">
-                        <i class="fas fa-arrow-left"></i>
-                        <span>Volver al Menú</span>
-                    </button>
-                </div>
-                
-                <p>Importa información desde archivos CSV al sistema</p>
-                
-                <div class="import-tabs">
-                    <div class="import-tab active" data-tab="clientes">Clientes</div>
-                    <div class="import-tab" data-tab="colocacion">Colocación</div>
-                    <div class="import-tab" data-tab="cobranza">Cobranza</div>
-                </div>
-                
-                <!-- ========== TAB: IMPORTAR CLIENTES ========== -->
-                <div id="tab-clientes" class="import-tab-content">
-                    <div class="import-section">
-                        <h4>Formato para importar clientes</h4>
-                        <p>El archivo CSV debe tener las siguientes columnas en orden:</p>
-                        <ul>
-                            <li>NOMBRE</li>
-                            <li>DOMICILIO</li>
-                            <li>CP</li>
-                            <li>TELEFONO</li>
-                            <li>FECHA DE REGISTRO</li>
-                            <li>GRUPO O POBLACION</li>
-                        </ul>
-                        <p><strong>Nota:</strong> Los campos se asignarán automáticamente. Si algún campo no existe en el CSV, se dejará en blanco.</p>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="datos-importar-clientes">Datos CSV</label>
-                        <textarea id="datos-importar-clientes" rows="10" placeholder="Pega aquí los datos en formato CSV"></textarea>
-                    </div>
-                </div>
-                
-                <!-- ========== TAB: IMPORTAR COLOCACIÓN ========== -->
-                <div id="tab-colocacion" class="import-tab-content hidden">
-                    <div class="import-section">
-                        <h4>Formato para importar colocación</h4>
-                        <p>El archivo CSV debe tener las siguientes columnas en orden:</p>
-                        <ul>
-                            <li>CURP</li>
-                            <li>NOMBRE DEL CLIENTE</li>
-                            <li>ID DE CREDITO</li>
-                            <li>FECHA DE REGISTRO (formato día/mes/año)</li>
-                            <li>TIPO</li>
-                            <li>MONTO</li>
-                            <li>PLAZO</li>
-                            <li>MONTO TOTAL</li>
-                            <li>CURP AVAL</li>
-                            <li>NOMBRE AVAL</li>
-                            <li>GRUPO O POBLACIÓN</li>
-                            <li>RUTA</li>
-                            <li>INTERES</li>
-                            <li>SALDO</li>
-                            <li>ULTIMO PAGO</li>
-                            <li>SALDO VENCIDO</li>
-                            <li>STATUS</li>
-                            <li>SALDO INTERES</li>
-                            <li>STJ150</li>
-                        </ul>
-                        <p><strong>Nota:</strong> Los campos se asignarán automáticamente. Si algún campo no existe en el CSV, se dejará en blanco.</p>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="datos-importar-colocacion">Datos CSV</label>
-                        <textarea id="datos-importar-colocacion" rows="10" placeholder="Pega aquí los datos en formato CSV"></textarea>
-                    </div>
-                </div>
-                
-                <!-- ========== TAB: IMPORTAR COBRANZA ========== -->
-                <div id="tab-cobranza" class="import-tab-content hidden">
-                    <div class="import-section">
-                        <h4>Formato para importar cobranza</h4>
-                        <p>El archivo CSV debe tener las siguientes columnas en orden:</p>
-                        <ul>
-                            <li>NOMBRE</li>
-                            <li>ID DE CREDITO</li>
-                            <li>FECHA</li>
-                            <li>MONTO DE PAGO</li>
-                            <li>COMISIÓN</li>
-                            <li>TIPO DE PAGO</li>
-                            <li>GRUPO O POBLACION</li>
-                            <li>RUTA</li>
-                            <li>SALDO</li>
-                            <li>COBRADO POR</li>
-                        </ul>
-                        <p><strong>Nota:</strong> Los campos se asignarán automáticamente. Si algún campo no existe en el CSV, se dejará en blanco.</p>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="datos-importar-cobranza">Datos CSV</label>
-                        <textarea id="datos-importar-cobranza" rows="10" placeholder="Pega aquí los datos en formato CSV"></textarea>
-                    </div>
-                </div>
-                
-                <div class="form-group">
-                    <button id="btn-procesar-importacion" class="btn btn-primary">
-                        <i class="fas fa-file-import"></i>
-                        <span>Procesar Importación</span>
-                    </button>
-                    <button id="btn-limpiar-datos" class="btn btn-danger">
-                        <i class="fas fa-trash"></i>
-                        <span>Limpiar Base de Datos</span>
-                    </button>
-                </div>
-                
-                <div id="resultado-importacion" class="hidden">
-                    <div id="estado-importacion"></div>
-                    <div id="detalle-importacion"></div>
-                </div>
-            </div>
+<div id="view-importar" class="view hidden">
+    <div class="view-header">
+        <h2>Importar Datos</h2>
+        <button class="btn btn-secondary" data-view="view-main-menu">
+            <i class="fas fa-arrow-left"></i>
+            <span>Volver al Menú</span>
+        </button>
+    </div>
+    
+    <p>Importa información desde archivos CSV al sistema</p>
+    
+    <div class="import-tabs">
+        <div class="import-tab active" data-tab="clientes">Clientes</div>
+        <div class="import-tab" data-tab="colocacion">Colocación</div>
+        <div class="import-tab" data-tab="cobranza">Cobranza</div>
+    </div>
+    
+    <!-- ========== TAB: IMPORTAR CLIENTES ========== -->
+    <div id="tab-clientes" class="import-tab-content">
+        <div class="import-section">
+            <h4>Formato para importar clientes</h4>
+            <p>El archivo CSV debe tener las siguientes columnas en orden:</p>
+            <ul>
+                <li>NOMBRE</li>
+                <li>DOMICILIO</li>
+                <li>CP</li>
+                <li>TELEFONO</li>
+                <li>FECHA DE REGISTRO</li>
+                <li>GRUPO O POBLACION</li>
+            </ul>
+        </div>
+        
+        <div class="form-group">
+            <label for="datos-importar-clientes">Datos CSV</label>
+            <textarea id="datos-importar-clientes" rows="10" placeholder="Pega aquí los datos en formato CSV"></textarea>
+        </div>
+    </div>
+    
+    <!-- ========== TAB: IMPORTAR COLOCACIÓN ========== -->
+    <div id="tab-colocacion" class="import-tab-content hidden">
+        <div class="import-section">
+            <h4>Formato para importar colocación</h4>
+            <p>El archivo CSV debe tener las siguientes columnas en orden:</p>
+            <ul>
+                <li>CURP</li>
+                <li>NOMBRE DEL CLIENTE</li>
+                <li>ID DE CREDITO</li>
+                <li>FECHA DE REGISTRO (formato día/mes/año)</li>
+                <li>TIPO</li>
+                <li>MONTO</li>
+                <li>PLAZO</li>
+                <li>MONTO TOTAL</li>
+                <li>CURP AVAL</li>
+                <li>NOMBRE AVAL</li>
+                <li>GRUPO O POBLACIÓN</li>
+                <li>RUTA</li>
+                <li>INTERES</li>
+                <li>SALDO</li>
+                <li>ULTIMO PAGO</li>
+                <li>SALDO VENCIDO</li>
+                <li>STATUS</li>
+                <li>SALDO INTERES</li>
+                <li>STJ150</li>
+            </ul>
+        </div>
+        
+        <div class="form-group">
+            <label for="datos-importar-colocacion">Datos CSV</label>
+            <textarea id="datos-importar-colocacion" rows="10" placeholder="Pega aquí los datos en formato CSV"></textarea>
+        </div>
+    </div>
+    
+    <!-- ========== TAB: IMPORTAR COBRANZA ========== -->
+    <div id="tab-cobranza" class="import-tab-content hidden">
+        <div class="import-section">
+            <h4>Formato para importar cobranza</h4>
+            <p>El archivo CSV debe tener las siguientes columnas en orden:</p>
+            <ul>
+                <li>NOMBRE</li>
+                <li>ID DE CREDITO</li>
+                <li>FECHA</li>
+                <li>MONTO DE PAGO</li>
+                <li>COMISIÓN</li>
+                <li>TIPO DE PAGO</li>
+                <li>GRUPO O POBLACION</li>
+                <li>RUTA</li>
+                <li>SALDO</li>
+                <li>COBRADO POR</li>
+            </ul>
+        </div>
+        
+        <div class="form-group">
+            <label for="datos-importar-cobranza">Datos CSV</label>
+            <textarea id="datos-importar-cobranza" rows="10" placeholder="Pega aquí los datos en formato CSV"></textarea>
+        </div>
+    </div>
+    
+    <div class="form-group">
+        <button id="btn-procesar-importacion" class="btn btn-primary">
+            <i class="fas fa-file-import"></i>
+            <span>Procesar Importación</span>
+        </button>
+        <button id="btn-limpiar-datos" class="btn btn-danger">
+            <i class="fas fa-trash"></i>
+            <span>Limpiar Base de Datos</span>
+        </button>
+    </div>
+    
+    <div id="resultado-importacion" class="hidden">
+        <div id="estado-importacion"></div>
+        <div id="detalle-importacion"></div>
+    </div>
+</div>
 
             <!-- ========== VISTA: REGISTRAR CLIENTE ========== -->
             <div id="view-cliente" class="view hidden">
@@ -809,3 +806,4 @@
     <script src="js/app.js"></script>
 </body>
 </html>
+
