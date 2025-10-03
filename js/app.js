@@ -20,7 +20,7 @@ document.addEventListener('DOMContentLoaded', function () {
         document.getElementById('login-screen').classList.remove('hidden');
     }, 2000);
 
-    // Sistema de autenticación
+    // ========== SISTEMA DE AUTENTICACIÓN ==========
     document.getElementById('login-form').addEventListener('submit', function (e) {
         e.preventDefault();
         const username = document.getElementById('username').value;
@@ -60,7 +60,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
-    // ========== EVENT LISTENERS ==========
+    // ========== EVENT LISTENERS PRINCIPALES ==========
 
     // Logout
     document.getElementById('logout-btn').addEventListener('click', function() {
@@ -68,7 +68,7 @@ document.addEventListener('DOMContentLoaded', function () {
         location.reload();
     });
 
-    // Navegación
+    // Navegación entre vistas
     document.querySelectorAll('[data-view]').forEach(button => {
         button.addEventListener('click', function() {
             const targetView = this.getAttribute('data-view');
@@ -127,35 +127,65 @@ document.addEventListener('DOMContentLoaded', function () {
         loadUsersTable();
     });
 
-    // Importación
+    // ========== IMPORTACIÓN DE DATOS - CORRECCIONES APLICADAS ==========
+
+    // Navegación entre pestañas de importación
     document.querySelectorAll('.import-tab').forEach(tab => {
         tab.addEventListener('click', function() {
+            // Remover clase active de todas las pestañas
             document.querySelectorAll('.import-tab').forEach(t => t.classList.remove('active'));
+            // Ocultar todos los contenidos
             document.querySelectorAll('.import-tab-content').forEach(c => c.classList.add('hidden'));
+            
+            // Activar pestaña clickeada
             this.classList.add('active');
             currentImportTab = this.getAttribute('data-tab');
-            document.getElementById(`tab-${currentImportTab}`).classList.remove('hidden');
+            
+            // Mostrar contenido correspondiente
+            const tabContent = document.getElementById(`tab-${currentImportTab}`);
+            if (tabContent) {
+                tabContent.classList.remove('hidden');
+            }
         });
     });
 
+    // Procesar importación
     document.getElementById('btn-procesar-importacion').addEventListener('click', function() {
         const textareaId = `datos-importar-${currentImportTab}`;
-        const csvData = document.getElementById(textareaId).value;
+        const textarea = document.getElementById(textareaId);
+        
+        if (!textarea) {
+            showStatus('estado-importacion', 'Error: No se encontró el área de texto para importar', 'error');
+            document.getElementById('resultado-importacion').classList.remove('hidden');
+            return;
+        }
+        
+        const csvData = textarea.value;
+        
         if (!csvData.trim()) {
             showStatus('estado-importacion', 'No hay datos para importar', 'error');
             document.getElementById('resultado-importacion').classList.remove('hidden');
             return;
         }
+        
         const resultado = database.importarDatosDesdeCSV(csvData, currentImportTab);
+        
         if (resultado.success) {
             let mensaje = `Importación completada: ${resultado.importados} de ${resultado.total} registros procesados`;
-            if (resultado.errores.length > 0) {
+            
+            if (resultado.errores && resultado.errores.length > 0) {
                 mensaje += `<br>Errores: ${resultado.errores.length}`;
                 document.getElementById('detalle-importacion').innerHTML = 
                     `<strong>Detalle de errores:</strong><ul>${resultado.errores.map(e => `<li>${e}</li>`).join('')}</ul>`;
-            } else document.getElementById('detalle-importacion').innerHTML = '';
+            } else {
+                document.getElementById('detalle-importacion').innerHTML = '';
+            }
+            
             showStatus('estado-importacion', mensaje, 'success');
-        } else showStatus('estado-importacion', resultado.message, 'error');
+        } else {
+            showStatus('estado-importacion', resultado.message, 'error');
+        }
+        
         document.getElementById('resultado-importacion').classList.remove('hidden');
     });
 
@@ -173,6 +203,7 @@ document.addEventListener('DOMContentLoaded', function () {
         validarCURP(this, 'cliente');
     });
 
+    // ========== FORMULARIO CLIENTE - CORRECCIONES APLICADAS ==========
     document.getElementById('form-cliente').addEventListener('submit', function(e) {
         e.preventDefault();
         
@@ -189,25 +220,30 @@ document.addEventListener('DOMContentLoaded', function () {
             domicilio: document.getElementById('domicilio_cliente').value,
             cp: document.getElementById('cp_cliente').value,
             telefono: document.getElementById('telefono_cliente').value,
-            fecha_registro: document.getElementById('fecha_registro_cliente').value,
-            poblacion_grupo: document.getElementById('poblacion_grupo_cliente').value,
-            ruta: document.getElementById('ruta_cliente').value,
-            estado: document.getElementById('estado_cliente').value
+            // FECHA DE REGISTRO AUTOMÁTICA - NO MANUAL (CORRECCIÓN APLICADA)
+            fecha_registro: new Date().toISOString().split('T')[0],
+            poblacion_grupo: document.getElementById('poblacion_grupo_cliente').value
         };
 
         // Validar campos obligatorios
-        if (!cliente.nombre || !cliente.domicilio || !cliente.poblacion_grupo || !cliente.ruta || !cliente.estado) {
+        if (!cliente.nombre || !cliente.domicilio || !cliente.poblacion_grupo) {
             showStatus('status_cliente', 'Todos los campos marcados con * son obligatorios', 'error');
             return;
         }
 
         const resultado = database.agregarCliente(cliente);
         showStatus('status_cliente', resultado.message, resultado.success ? 'success' : 'error');
+        
         if (resultado.success) {
             document.getElementById('form-cliente').reset();
             // Resetear estilos del CURP
             curpClienteInput.style.backgroundColor = '';
             curpClienteInput.style.borderColor = '';
+            
+            // Recargar tabla de clientes si estamos en esa vista
+            if (document.getElementById('view-gestion-clientes').classList.contains('hidden') === false) {
+                loadClientesTable();
+            }
         }
     });
 
@@ -256,10 +292,8 @@ document.addEventListener('DOMContentLoaded', function () {
         const monto = document.getElementById('monto_colocacion').value;
         const plazo = document.getElementById('plazo_colocacion').value;
         const tipoCredito = document.getElementById('tipo_colocacion').value;
-        const grupoPoblacion = document.getElementById('grupo_poblacion_colocacion').value;
-        const ruta = document.getElementById('ruta_colocacion').value;
         
-        console.log('Datos del formulario:', { curpAval, nombreAval, monto, plazo, tipoCredito, grupoPoblacion, ruta });
+        console.log('Datos del formulario:', { curpAval, nombreAval, monto, plazo, tipoCredito });
         
         if (!monto) {
             showStatus('status_colocacion', 'Debes seleccionar un monto', 'error');
@@ -294,10 +328,6 @@ document.addEventListener('DOMContentLoaded', function () {
             montoTotal: parseFloat(document.getElementById('montoTotal_colocacion').value.replace('$', '').replace(',', '')),
             curpAval: curpAval,
             nombreAval: nombreAval,
-            grupoPoblacion: grupoPoblacion,
-            ruta: ruta,
-            interes: parseFloat(monto) * 0.3, // 30% de interés
-            saldo: parseFloat(monto) * 1.3,
             estado: 'activo'
         };
 
@@ -415,7 +445,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     });
 
-    // Reportes
+    // ========== REPORTES ==========
     document.getElementById('btn-actualizar-reportes').addEventListener('click', function() {
         const reportes = database.generarReportes();
         document.getElementById('total-clientes').textContent = reportes.totalClientes;
@@ -428,6 +458,18 @@ document.addEventListener('DOMContentLoaded', function () {
         const tasaRecuperacion = reportes.totalCartera > 0 ? 
             ((reportes.cobradoMes / reportes.totalCartera) * 100).toFixed(1) : 0;
         document.getElementById('tasa-recuperacion').textContent = `${tasaRecuperacion}%`;
+    });
+
+    // ========== FILTROS DE CLIENTES - CORRECCIONES APLICADAS ==========
+    document.getElementById('btn-aplicar-filtros').addEventListener('click', loadClientesTable);
+    document.getElementById('btn-limpiar-filtros').addEventListener('click', function() {
+        document.getElementById('filtro-curp').value = '';
+        document.getElementById('filtro-nombre').value = '';
+        document.getElementById('filtro-telefono').value = '';
+        document.getElementById('filtro-grupo').value = '';
+        document.getElementById('filtro-fecha').value = '';
+        document.getElementById('filtro-cp').value = '';
+        loadClientesTable();
     });
 
     // Eventos de vistas
@@ -688,27 +730,40 @@ function deleteUser(username) {
     }
 }
 
-// ========== GESTIÓN DE CLIENTES ==========
+// ========== GESTIÓN DE CLIENTES - CORRECCIONES APLICADAS ==========
 function loadClientesTable() {
     const clientes = database.getClientes();
     const tbody = document.getElementById('tabla-clientes');
-    const busqueda = document.getElementById('buscar-cliente').value.toLowerCase();
+    
+    // Obtener valores de filtros
+    const filtroCurp = document.getElementById('filtro-curp').value.toLowerCase();
+    const filtroNombre = document.getElementById('filtro-nombre').value.toLowerCase();
+    const filtroTelefono = document.getElementById('filtro-telefono').value.toLowerCase();
+    const filtroGrupo = document.getElementById('filtro-grupo').value;
+    const filtroFecha = document.getElementById('filtro-fecha').value;
+    const filtroCp = document.getElementById('filtro-cp').value.toLowerCase();
+    
     tbody.innerHTML = '';
     
-    const clientesFiltrados = clientes.filter(cliente => 
-        (cliente.curp && cliente.curp.toLowerCase().includes(busqueda)) ||
-        (cliente.nombre && cliente.nombre.toLowerCase().includes(busqueda)) ||
-        (cliente.telefono && cliente.telefono.toLowerCase().includes(busqueda)) ||
-        (cliente.poblacion_grupo && cliente.poblacion_grupo.toLowerCase().includes(busqueda)) ||
-        (cliente.estado && cliente.estado.toLowerCase().includes(busqueda)) ||
-        (cliente.ruta && cliente.ruta.toLowerCase().includes(busqueda)) ||
-        (cliente.domicilio && cliente.domicilio.toLowerCase().includes(busqueda)) ||
-        (cliente.cp && cliente.cp.toLowerCase().includes(busqueda))
-    );
+    const clientesFiltrados = clientes.filter(cliente => {
+        // Aplicar todos los filtros
+        if (filtroCurp && !cliente.curp.toLowerCase().includes(filtroCurp)) return false;
+        if (filtroNombre && !cliente.nombre.toLowerCase().includes(filtroNombre)) return false;
+        if (filtroTelefono && !cliente.telefono.toLowerCase().includes(filtroTelefono)) return false;
+        if (filtroGrupo && cliente.poblacion_grupo !== filtroGrupo) return false;
+        if (filtroFecha && cliente.fecha_registro !== filtroFecha) return false;
+        if (filtroCp && !cliente.cp.toLowerCase().includes(filtroCp)) return false;
+        
+        return true;
+    });
+    
+    if (clientesFiltrados.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" class="text-center">No se encontraron clientes con los filtros aplicados</td></tr>';
+        return;
+    }
     
     for (const cliente of clientesFiltrados) {
         const tr = document.createElement('tr');
-        const infoCredito = database.obtenerInformacionCreditoCliente(cliente.curp);
         
         tr.innerHTML = `
             <td>${cliente.curp || ''}</td>
@@ -718,8 +773,6 @@ function loadClientesTable() {
             <td>${cliente.telefono || ''}</td>
             <td>${cliente.fecha_registro || ''}</td>
             <td>${cliente.poblacion_grupo || ''}</td>
-            <td>${cliente.estado || ''}</td>
-            <td>${cliente.ruta || ''}</td>
             <td class="action-buttons">
                 <button class="btn btn-sm btn-secondary" onclick="editCliente('${cliente.curp}')">
                     <i class="fas fa-edit"></i>
@@ -742,10 +795,7 @@ function editCliente(curp) {
         document.getElementById('domicilio_cliente').value = cliente.domicilio;
         document.getElementById('cp_cliente').value = cliente.cp;
         document.getElementById('telefono_cliente').value = cliente.telefono;
-        document.getElementById('fecha_registro_cliente').value = cliente.fecha_registro;
         document.getElementById('poblacion_grupo_cliente').value = cliente.poblacion_grupo;
-        document.getElementById('estado_cliente').value = cliente.estado;
-        document.getElementById('ruta_cliente').value = cliente.ruta;
         
         document.querySelector('#form-cliente button[type="submit"]').innerHTML = '<i class="fas fa-save"></i> Actualizar Cliente';
         document.getElementById('form-cliente').onsubmit = function(e) {
@@ -756,10 +806,8 @@ function editCliente(curp) {
                 domicilio: document.getElementById('domicilio_cliente').value,
                 cp: document.getElementById('cp_cliente').value,
                 telefono: document.getElementById('telefono_cliente').value,
-                fecha_registro: document.getElementById('fecha_registro_cliente').value,
-                poblacion_grupo: document.getElementById('poblacion_grupo_cliente').value,
-                estado: document.getElementById('estado_cliente').value,
-                ruta: document.getElementById('ruta_cliente').value
+                fecha_registro: cliente.fecha_registro, // Mantener la fecha original
+                poblacion_grupo: document.getElementById('poblacion_grupo_cliente').value
             };
             const resultado = database.actualizarCliente(curp, datosActualizados);
             showStatus('status_cliente', resultado.message, resultado.success ? 'success' : 'error');
