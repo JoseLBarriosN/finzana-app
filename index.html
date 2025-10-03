@@ -248,15 +248,12 @@
                             </select>
                         </div>
                         <div class="filter-group">
-                            <label for="filtro-ruta">Ruta</label>
-                            <select id="filtro-ruta">
-                                <option value="">Todas las rutas</option>
-                                <!-- Opciones se cargan dinámicamente -->
-                            </select>
-                        </div>
-                        <div class="filter-group">
                             <label for="filtro-fecha">Fecha de Registro</label>
                             <input type="date" id="filtro-fecha">
+                        </div>
+                        <div class="filter-group">
+                            <label for="filtro-cp">Código Postal</label>
+                            <input type="text" id="filtro-cp" placeholder="Buscar por CP">
                         </div>
                     </div>
                     <div class="filter-row">
@@ -284,7 +281,6 @@
                             <th>Teléfono</th>
                             <th>Fecha de Registro</th>
                             <th>Grupo/Población</th>
-                            <th>Ruta</th>
                             <th>Acciones</th>
                         </tr>
                     </thead>
@@ -422,21 +418,20 @@
                             <li>CURP</li>
                             <li>NOMBRE DEL CLIENTE</li>
                             <li>ID DE CREDITO</li>
-                            <li>FECHA</li>
+                            <li>FECHA DE REGISTRO (formato día/mes/año)</li>
                             <li>TIPO</li>
-                            <li>MONTO TOTAL</li>
+                            <li>MONTO</li>
                             <li>PLAZO</li>
                             <li>MONTO TOTAL</li>
                             <li>CURP AVAL</li>
                             <li>NOMBRE AVAL</li>
-                            <li>GRUPO O POBLACION</li>
+                            <li>GRUPO O POBLACIÓN</li>
                             <li>RUTA</li>
                             <li>INTERES</li>
                             <li>SALDO</li>
-                            <li>FECHA DE ULTIMO PAGO</li>
+                            <li>ULTIMO PAGO</li>
                             <li>SALDO VENCIDO</li>
                             <li>STATUS</li>
-                            <li>SALDO CAPITAL</li>
                             <li>SALDO INTERES</li>
                             <li>STJ150</li>
                         </ul>
@@ -458,12 +453,11 @@
                             <li>NOMBRE</li>
                             <li>ID DE CREDITO</li>
                             <li>FECHA</li>
-                            <li>MONTO</li>
-                            <li>COMISION</li>
+                            <li>MONTO DE PAGO</li>
+                            <li>COMISIÓN</li>
                             <li>TIPO DE PAGO</li>
                             <li>GRUPO O POBLACION</li>
                             <li>RUTA</li>
-                            <li>INTERES COBRADO</li>
                             <li>SALDO</li>
                             <li>COBRADO POR</li>
                         </ul>
@@ -535,12 +529,6 @@
                             <option value="JALISCO">JALISCO</option>
                             <option value="GUANAJUATO">GUANAJUATO</option>
                             <!-- Opciones adicionales se cargan dinámicamente -->
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label for="ruta_cliente">Ruta</label>
-                        <select id="ruta_cliente">
-                            <!-- Opciones se cargan dinámicamente -->
                         </select>
                     </div>
                     <div class="form-group">
@@ -622,10 +610,6 @@
                     <div class="form-group">
                         <label for="grupo_colocacion">Grupo/Población</label>
                         <input type="text" id="grupo_colocacion" readonly>
-                    </div>
-                    <div class="form-group">
-                        <label for="ruta_colocacion">Ruta</label>
-                        <input type="text" id="ruta_colocacion" readonly>
                     </div>
                     <div class="form-group">
                         <button type="submit" class="btn btn-success">
