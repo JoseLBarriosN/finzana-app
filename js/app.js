@@ -527,17 +527,19 @@ function validarFormatoCURP(curp) {
 }
 
 // =============================================
-// INICIALIZACIÓN DROPDOWNS
+// INICIALIZACIÓN DROPDOWNS - SOLO POBLACIONES REALES
 // =============================================
 
 function inicializarDropdowns() {
     console.log('🔄 Inicializando dropdowns...');
     
+    // SOLO LAS POBLACIONES/GRUPOS REALES DEL SISTEMA ORIGINAL
     const dropdownOptions = {
         tipoColocacion: ["NUEVO", "RENOVACION", "REINGRESO"],
         tipoPago: ["EXTRAORDINARIO", "ACTUALIZADO", "NORMAL"],
         plazos: ["14", "10", "13"],
         montos: ["3000", "3500", "4000", "4500", "5000", "6000", "7000", "8000", "9000", "10000"],
+        // SOLO POBLACIONES - NO JALISCO NI GUANAJUATO
         poblaciones: [
             "LA CALERA", "ATEQUIZA", "SAN JACINTO", "PONCITLAN", "OCOTLAN",
             "ARENAL", "AMATITAN", "ACATLAN DE JUAREZ", "BELLAVISTA", 
@@ -843,70 +845,34 @@ function deleteCliente(curp) {
     }
 }
 
-// =============================================
-// COLOCACIÓN - GENERAR CRÉDITO
-// =============================================
-
-function generarCredito() {
-    const curpAval = document.getElementById('curpAval_colocacion').value;
-    const nombreAval = document.getElementById('nombreAval_colocacion').value;
-    const monto = document.getElementById('monto_colocacion').value;
-    const plazo = document.getElementById('plazo_colocacion').value;
-    const tipoCredito = document.getElementById('tipo_colocacion').value;
+// ========== COLOCACIÓN - GENERAR CRÉDITO CON GRUPO AUTOMÁTICO ==========
+document.getElementById('btnBuscarCliente_colocacion').addEventListener('click', function() {
+    const curp = document.getElementById('curp_colocacion').value.trim();
     
-    if (!monto) {
-        showStatus('status_colocacion', 'Debes seleccionar un monto', 'error');
-        return;
-    }
-
-    if (!plazo) {
-        showStatus('status_colocacion', 'Debes seleccionar un plazo', 'error');
-        return;
-    }
-
-    if (!tipoCredito) {
-        showStatus('status_colocacion', 'Debes seleccionar un tipo de crédito', 'error');
-        return;
-    }
-
-    if (!validarFormatoCURP(curpAval)) {
-        showStatus('status_colocacion', 'El CURP del aval debe tener exactamente 18 caracteres', 'error');
-        return;
-    }
-
-    if (!nombreAval.trim()) {
-        showStatus('status_colocacion', 'El nombre del aval es obligatorio', 'error');
-        return;
-    }
-
-    const credito = {
-        curpCliente: document.getElementById('curp_colocacion').value,
-        tipo: tipoCredito,
-        monto: parseFloat(monto),
-        plazo: parseInt(plazo),
-        montoTotal: parseFloat(document.getElementById('montoTotal_colocacion').value.replace('$', '').replace(',', '')),
-        curpAval: curpAval,
-        nombreAval: nombreAval,
-        estado: 'activo'
-    };
-
-    const resultado = database.agregarCredito(credito);
-    
-    if (resultado.success) {
-        showStatus('status_colocacion', `${resultado.message}. Número de crédito: ${resultado.data.id}`, 'success');
-        document.getElementById('form-colocacion').reset();
+    // Validar que el CURP tenga 18 caracteres
+    if (!validarFormatoCURP(curp)) {
+        showStatus('status_colocacion', 'El CURP debe tener exactamente 18 caracteres', 'error');
         document.getElementById('form-colocacion').classList.add('hidden');
-        document.getElementById('curp_colocacion').value = '';
-        
-        const curpAvalInput = document.getElementById('curpAval_colocacion');
-        if (curpAvalInput) {
-            curpAvalInput.style.backgroundColor = '';
-            curpAvalInput.style.borderColor = '';
-        }
-    } else {
-        showStatus('status_colocacion', resultado.message, 'error');
+        return;
     }
-}
+    
+    const cliente = database.buscarClientePorCURP(curp);
+    if (cliente) {
+        document.getElementById('nombre_colocacion').value = cliente.nombre || '';
+        document.getElementById('idCredito_colocacion').value = 'Se asignará automáticamente';
+        
+        // CORRECCIÓN: Autocompletar grupo/población del cliente
+        document.getElementById('grupo_colocacion').value = cliente.poblacion_grupo || '';
+        
+        document.getElementById('form-colocacion').classList.remove('hidden');
+        showStatus('status_colocacion', 'Cliente encontrado', 'success');
+        // Resetear el cálculo del monto total
+        document.getElementById('montoTotal_colocacion').value = '';
+    } else {
+        showStatus('status_colocacion', 'Cliente no encontrado. Verifica la CURP o registra al cliente primero', 'error');
+        document.getElementById('form-colocacion').classList.add('hidden');
+    }
+});
 
 // =============================================
 // COBRANZA - REGISTRAR PAGO
@@ -992,4 +958,46 @@ function actualizarReportes() {
     const tasaRecuperacion = reportes.totalCartera > 0 ? 
         ((reportes.cobradoMes / reportes.totalCartera) * 100).toFixed(1) : 0;
     document.getElementById('tasa-recuperacion').textContent = `${tasaRecuperacion}%`;
+}
+
+// ========== FUNCIÓN PARA LIMPIAR DATOS CORRUPTOS ==========
+limpiarClientesDuplicados() {
+    try {
+        const clientes = this.getClientes();
+        console.log('Clientes antes de limpiar:', clientes);
+        
+        const clientesUnicos = [];
+        const curpsVistos = new Set();
+        
+        for (const cliente of clientes) {
+            if (cliente && cliente.curp && !curpsVistos.has(cliente.curp)) {
+                // Reestructurar cliente con campos correctos
+                const clienteLimpio = {
+                    id: cliente.id || this.generarId('CLI'),
+                    curp: cliente.curp || '',
+                    nombre: cliente.nombre || '',
+                    domicilio: cliente.domicilio || '',
+                    cp: cliente.cp || '',
+                    telefono: cliente.telefono || '',
+                    fecha_registro: cliente.fecha_registro || '',
+                    poblacion_grupo: cliente.poblacion_grupo || '',
+                    fechaCreacion: cliente.fechaCreacion || new Date().toISOString()
+                };
+                
+                clientesUnicos.push(clienteLimpio);
+                curpsVistos.add(cliente.curp);
+            }
+        }
+        
+        this.saveClientes(clientesUnicos);
+        console.log('Clientes después de limpiar:', clientesUnicos);
+        
+        return { 
+            success: true, 
+            message: `Limpieza completada. ${clientes.length - clientesUnicos.length} duplicados eliminados.` 
+        };
+    } catch (error) {
+        console.error('Error en limpieza:', error);
+        return { success: false, message: `Error en limpieza: ${error.message}` };
+    }
 }
