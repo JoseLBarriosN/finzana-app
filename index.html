@@ -56,6 +56,7 @@
             border-bottom: none;
             border-radius: 5px 5px 0 0;
             margin-right: 5px;
+            background-color: #f8f9fa;
         }
         .import-tab.active {
             background-color: var(--primary);
@@ -67,6 +68,65 @@
         }
         .import-tab-content.hidden {
             display: none;
+        }
+        .status-message {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+        .status-success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .status-error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .status-info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        .hidden {
+            display: none !important;
+        }
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(255, 255, 255, 0.9);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+        }
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid var(--primary);
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 2s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        /* Estilos temporales para limpieza */
+        .btn-warning {
+            background-color: #ffc107;
+            color: #212529;
+            border: 1px solid #ffc107;
+        }
+        .btn-warning:hover {
+            background-color: #e0a800;
+            border-color: #d39e00;
         }
     </style>
 </head>
@@ -244,6 +304,14 @@
                     </button>
                 </div>
                 
+                <!-- Botón temporal para limpieza -->
+                <div style="margin-bottom: 20px;">
+                    <button onclick="database.limpiarClientesDuplicados()" class="btn btn-warning">
+                        <i class="fas fa-broom"></i>
+                        <span>Limpiar Datos Corruptos (Temporal)</span>
+                    </button>
+                </div>
+                
                 <!-- ========== FILTROS DE CLIENTES ========== -->
                 <div class="filter-section">
                     <h3>Filtros de Búsqueda</h3>
@@ -268,7 +336,6 @@
                                 <option value="">Todos los grupos</option>
                                 <option value="JALISCO">JALISCO</option>
                                 <option value="GUANAJUATO">GUANAJUATO</option>
-                                <!-- Opciones adicionales se cargan dinámicamente -->
                             </select>
                         </div>
                         <div class="filter-group">
@@ -294,7 +361,7 @@
                     </div>
                 </div>
                 
-                <div id="status_gestion_clientes"></div>
+                <div id="status_gestion_clientes" class="status-message"></div>
                 <table class="client-table">
                     <thead>
                         <tr>
@@ -328,7 +395,7 @@
                     <i class="fas fa-user-plus"></i>
                     <span>Nuevo Usuario</span>
                 </button>
-                <div id="status_usuarios"></div>
+                <div id="status_usuarios" class="status-message"></div>
                 
                 <div id="form-usuario-container" class="hidden">
                     <h3 id="form-usuario-titulo">Nuevo Usuario</h3>
@@ -394,119 +461,120 @@
             </div>
 
             <!-- ========== VISTA: IMPORTAR DATOS ========== -->
-<div id="view-importar" class="view hidden">
-    <div class="view-header">
-        <h2>Importar Datos</h2>
-        <button class="btn btn-secondary" data-view="view-main-menu">
-            <i class="fas fa-arrow-left"></i>
-            <span>Volver al Menú</span>
-        </button>
-    </div>
-    
-    <p>Importa información desde archivos CSV al sistema</p>
-    
-    <div class="import-tabs">
-        <div class="import-tab active" data-tab="clientes">Clientes</div>
-        <div class="import-tab" data-tab="colocacion">Colocación</div>
-        <div class="import-tab" data-tab="cobranza">Cobranza</div>
-    </div>
-    
-    <!-- ========== TAB: IMPORTAR CLIENTES ========== -->
-    <div id="tab-clientes" class="import-tab-content">
-        <div class="import-section">
-            <h4>Formato para importar clientes</h4>
-            <p>El archivo CSV debe tener las siguientes columnas en orden:</p>
-            <ul>
-                <li>NOMBRE</li>
-                <li>DOMICILIO</li>
-                <li>CP</li>
-                <li>TELEFONO</li>
-                <li>FECHA DE REGISTRO</li>
-                <li>GRUPO O POBLACION</li>
-            </ul>
-        </div>
-        
-        <div class="form-group">
-            <label for="datos-importar-clientes">Datos CSV</label>
-            <textarea id="datos-importar-clientes" rows="10" placeholder="Pega aquí los datos en formato CSV"></textarea>
-        </div>
-    </div>
-    
-    <!-- ========== TAB: IMPORTAR COLOCACIÓN ========== -->
-    <div id="tab-colocacion" class="import-tab-content hidden">
-        <div class="import-section">
-            <h4>Formato para importar colocación</h4>
-            <p>El archivo CSV debe tener las siguientes columnas en orden:</p>
-            <ul>
-                <li>CURP</li>
-                <li>NOMBRE DEL CLIENTE</li>
-                <li>ID DE CREDITO</li>
-                <li>FECHA DE REGISTRO (formato día/mes/año)</li>
-                <li>TIPO</li>
-                <li>MONTO</li>
-                <li>PLAZO</li>
-                <li>MONTO TOTAL</li>
-                <li>CURP AVAL</li>
-                <li>NOMBRE AVAL</li>
-                <li>GRUPO O POBLACIÓN</li>
-                <li>RUTA</li>
-                <li>INTERES</li>
-                <li>SALDO</li>
-                <li>ULTIMO PAGO</li>
-                <li>SALDO VENCIDO</li>
-                <li>STATUS</li>
-                <li>SALDO INTERES</li>
-                <li>STJ150</li>
-            </ul>
-        </div>
-        
-        <div class="form-group">
-            <label for="datos-importar-colocacion">Datos CSV</label>
-            <textarea id="datos-importar-colocacion" rows="10" placeholder="Pega aquí los datos en formato CSV"></textarea>
-        </div>
-    </div>
-    
-    <!-- ========== TAB: IMPORTAR COBRANZA ========== -->
-    <div id="tab-cobranza" class="import-tab-content hidden">
-        <div class="import-section">
-            <h4>Formato para importar cobranza</h4>
-            <p>El archivo CSV debe tener las siguientes columnas en orden:</p>
-            <ul>
-                <li>NOMBRE</li>
-                <li>ID DE CREDITO</li>
-                <li>FECHA</li>
-                <li>MONTO DE PAGO</li>
-                <li>COMISIÓN</li>
-                <li>TIPO DE PAGO</li>
-                <li>GRUPO O POBLACION</li>
-                <li>RUTA</li>
-                <li>SALDO</li>
-                <li>COBRADO POR</li>
-            </ul>
-        </div>
-        
-        <div class="form-group">
-            <label for="datos-importar-cobranza">Datos CSV</label>
-            <textarea id="datos-importar-cobranza" rows="10" placeholder="Pega aquí los datos en formato CSV"></textarea>
-        </div>
-    </div>
-    
-    <div class="form-group">
-        <button id="btn-procesar-importacion" class="btn btn-primary">
-            <i class="fas fa-file-import"></i>
-            <span>Procesar Importación</span>
-        </button>
-        <button id="btn-limpiar-datos" class="btn btn-danger">
-            <i class="fas fa-trash"></i>
-            <span>Limpiar Base de Datos</span>
-        </button>
-    </div>
-    
-    <div id="resultado-importacion" class="hidden">
-        <div id="estado-importacion"></div>
-        <div id="detalle-importacion"></div>
-    </div>
-</div>
+            <div id="view-importar" class="view hidden">
+                <div class="view-header">
+                    <h2>Importar Datos</h2>
+                    <button class="btn btn-secondary" data-view="view-main-menu">
+                        <i class="fas fa-arrow-left"></i>
+                        <span>Volver al Menú</span>
+                    </button>
+                </div>
+                
+                <p>Importa información desde archivos CSV al sistema</p>
+                
+                <div class="import-tabs">
+                    <div class="import-tab active" data-tab="clientes">Clientes</div>
+                    <div class="import-tab" data-tab="colocacion">Colocación</div>
+                    <div class="import-tab" data-tab="cobranza">Cobranza</div>
+                </div>
+                
+                <!-- ========== TAB: IMPORTAR CLIENTES ========== -->
+                <div id="tab-clientes" class="import-tab-content">
+                    <div class="import-section">
+                        <h4>Formato para importar clientes</h4>
+                        <p>El archivo CSV debe tener las siguientes columnas en orden:</p>
+                        <ul>
+                            <li>NOMBRE</li>
+                            <li>DOMICILIO</li>
+                            <li>CP</li>
+                            <li>TELEFONO</li>
+                            <li>FECHA DE REGISTRO</li>
+                            <li>GRUPO O POBLACION</li>
+                        </ul>
+                        <p><strong>Nota:</strong> Los campos se asignarán automáticamente. Si algún campo no existe en el CSV, se dejará en blanco.</p>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="datos-importar-clientes">Datos CSV</label>
+                        <textarea id="datos-importar-clientes" rows="10" placeholder="Pega aquí los datos en formato CSV"></textarea>
+                    </div>
+                </div>
+                
+                <!-- ========== TAB: IMPORTAR COLOCACIÓN ========== -->
+                <div id="tab-colocacion" class="import-tab-content hidden">
+                    <div class="import-section">
+                        <h4>Formato para importar colocación</h4>
+                        <p>El archivo CSV debe tener las siguientes columnas en orden:</p>
+                        <ul>
+                            <li>CURP</li>
+                            <li>NOMBRE DEL CLIENTE</li>
+                            <li>ID DE CREDITO</li>
+                            <li>FECHA DE REGISTRO (formato día/mes/año)</li>
+                            <li>TIPO</li>
+                            <li>MONTO</li>
+                            <li>PLAZO</li>
+                            <li>MONTO TOTAL</li>
+                            <li>CURP AVAL</li>
+                            <li>NOMBRE AVAL</li>
+                            <li>GRUPO O POBLACIÓN</li>
+                            <li>RUTA</li>
+                            <li>INTERES</li>
+                            <li>SALDO</li>
+                            <li>ULTIMO PAGO</li>
+                            <li>SALDO VENCIDO</li>
+                            <li>STATUS</li>
+                            <li>SALDO INTERES</li>
+                            <li>STJ150</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="datos-importar-colocacion">Datos CSV</label>
+                        <textarea id="datos-importar-colocacion" rows="10" placeholder="Pega aquí los datos en formato CSV"></textarea>
+                    </div>
+                </div>
+                
+                <!-- ========== TAB: IMPORTAR COBRANZA ========== -->
+                <div id="tab-cobranza" class="import-tab-content hidden">
+                    <div class="import-section">
+                        <h4>Formato para importar cobranza</h4>
+                        <p>El archivo CSV debe tener las siguientes columnas en orden:</p>
+                        <ul>
+                            <li>NOMBRE</li>
+                            <li>ID DE CREDITO</li>
+                            <li>FECHA</li>
+                            <li>MONTO DE PAGO</li>
+                            <li>COMISIÓN</li>
+                            <li>TIPO DE PAGO</li>
+                            <li>GRUPO O POBLACION</li>
+                            <li>RUTA</li>
+                            <li>SALDO</li>
+                            <li>COBRADO POR</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="datos-importar-cobranza">Datos CSV</label>
+                        <textarea id="datos-importar-cobranza" rows="10" placeholder="Pega aquí los datos en formato CSV"></textarea>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <button id="btn-procesar-importacion" class="btn btn-primary">
+                        <i class="fas fa-file-import"></i>
+                        <span>Procesar Importación</span>
+                    </button>
+                    <button id="btn-limpiar-datos" class="btn btn-danger">
+                        <i class="fas fa-trash"></i>
+                        <span>Limpiar Base de Datos</span>
+                    </button>
+                </div>
+                
+                <div id="resultado-importacion" class="hidden">
+                    <div id="estado-importacion" class="status-message"></div>
+                    <div id="detalle-importacion"></div>
+                </div>
+            </div>
 
             <!-- ========== VISTA: REGISTRAR CLIENTE ========== -->
             <div id="view-cliente" class="view hidden">
@@ -543,9 +611,9 @@
                     <div class="form-group">
                         <label for="poblacion_grupo_cliente">Grupo/Población <span class="required">*</span></label>
                         <select id="poblacion_grupo_cliente" required>
+                            <option value="">Selecciona una población/grupo</option>
                             <option value="JALISCO">JALISCO</option>
                             <option value="GUANAJUATO">GUANAJUATO</option>
-                            <!-- Opciones adicionales se cargan dinámicamente -->
                         </select>
                     </div>
                     <div class="form-group">
@@ -559,7 +627,7 @@
                         </button>
                     </div>
                 </form>
-                <div id="status_cliente"></div>
+                <div id="status_cliente" class="status-message"></div>
             </div>
 
             <!-- ========== VISTA: GENERAR CRÉDITO ========== -->
@@ -595,19 +663,19 @@
                     <div class="form-group">
                         <label for="tipo_colocacion">Tipo de Crédito <span class="required">*</span></label>
                         <select id="tipo_colocacion" required>
-                            <!-- Opciones se cargan dinámicamente -->
+                            <option value="">Selecciona tipo de crédito</option>
                         </select>
                     </div>
                     <div class="form-group">
                         <label for="monto_colocacion">Monto Solicitado <span class="required">*</span></label>
                         <select id="monto_colocacion" required>
-                            <!-- Opciones se cargan dinámicamente -->
+                            <option value="">Selecciona un monto</option>
                         </select>
                     </div>
                     <div class="form-group">
                         <label for="plazo_colocacion">Plazo (semanas) <span class="required">*</span></label>
                         <select id="plazo_colocacion" required>
-                            <!-- Opciones se cargan dinámicamente -->
+                            <option value="">Selecciona un plazo</option>
                         </select>
                     </div>
                     <div class="form-group">
@@ -625,10 +693,6 @@
                         <input type="text" id="nombreAval_colocacion" required>
                     </div>
                     <div class="form-group">
-                        <label for="grupo_colocacion">Grupo/Población</label>
-                        <input type="text" id="grupo_colocacion" readonly>
-                    </div>
-                    <div class="form-group">
                         <button type="submit" class="btn btn-success">
                             <i class="fas fa-hand-holding-usd"></i>
                             <span>Generar Crédito</span>
@@ -639,7 +703,7 @@
                         </button>
                     </div>
                 </div>
-                <div id="status_colocacion"></div>
+                <div id="status_colocacion" class="status-message"></div>
             </div>
 
             <!-- ========== VISTA: REGISTRAR PAGO ========== -->
@@ -715,7 +779,7 @@
                         </button>
                     </div>
                 </div>
-                <div id="status_cobranza"></div>
+                <div id="status_cobranza" class="status-message"></div>
             </div>
 
             <!-- ========== VISTA: REPORTES ========== -->
@@ -806,4 +870,3 @@
     <script src="js/app.js"></script>
 </body>
 </html>
-
