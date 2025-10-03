@@ -254,25 +254,50 @@ class FinzanaDatabase {
                 if (tipo === 'clientes') {
                     if (campos.length >= 6) {
                         const cliente = {
-                            curp: campos[0], nombre: campos[1], domicilio: campos[2] || '',
-                            cp: campos[3] || '', telefono: campos[4] || '', 
-                            poblacion_grupo: campos[5] || '', ruta: campos[6] || 'JC1'
+                            nombre: campos[0] || '',
+                            domicilio: campos[1] || '',
+                            cp: campos[2] || '',
+                            telefono: campos[3] || '',
+                            fecha_registro: campos[4] || new Date().toISOString().split('T')[0],
+                            poblacion_grupo: campos[5] || '',
+                            estado: campos[6] || '',
+                            ruta: campos[7] || 'JC1'
                         };
-                        if (cliente.curp && cliente.nombre) {
+                        
+                        // Generar CURP automático si no se proporciona
+                        cliente.curp = this.generarCURPAutomatico(cliente.nombre);
+                        
+                        if (cliente.nombre) {
                             const resultado = this.agregarCliente(cliente);
                             if (resultado.success) registrosImportados.push(cliente);
                             else errores.push(`Línea ${i + 1}: ${resultado.message}`);
-                        } else errores.push(`Línea ${i + 1}: CURP o Nombre faltante`);
+                        } else errores.push(`Línea ${i + 1}: Nombre faltante`);
                     } else errores.push(`Línea ${i + 1}: Formato incorrecto`);
                 } else if (tipo === 'colocacion') {
-                    if (campos.length >= 9) {
+                    if (campos.length >= 10) {
                         const credito = {
-                            curpCliente: campos[0], nombreCliente: campos[1], id: campos[2],
-                            fechaCreacion: campos[3] || new Date().toISOString(), tipo: campos[4],
-                            monto: parseFloat(campos[5]) || 0, plazo: parseInt(campos[6]) || 0,
-                            montoTotal: parseFloat(campos[7]) || 0, curpAval: campos[8] || '',
-                            nombreAval: campos[9] || ''
+                            curpCliente: campos[0] || '',
+                            nombreCliente: campos[1] || '',
+                            id: campos[2] || this.generarIdConsecutivo(),
+                            fechaCreacion: campos[3] || new Date().toISOString(),
+                            tipo: campos[4] || 'nuevo',
+                            monto: parseFloat(campos[5]) || 0,
+                            plazo: parseInt(campos[6]) || 0,
+                            montoTotal: parseFloat(campos[7]) || 0,
+                            curpAval: campos[8] || '',
+                            nombreAval: campos[9] || '',
+                            grupoPoblacion: campos[10] || '',
+                            ruta: campos[11] || 'JC1',
+                            interes: parseFloat(campos[12]) || 0,
+                            saldo: parseFloat(campos[13]) || 0,
+                            fechaUltimoPago: campos[14] || '',
+                            saldoVencido: parseFloat(campos[15]) || 0,
+                            status: campos[16] || 'activo',
+                            saldoCapital: parseFloat(campos[17]) || 0,
+                            saldoInteres: parseFloat(campos[18]) || 0,
+                            stj150: campos[19] || ''
                         };
+                        
                         if (credito.curpCliente && credito.id) {
                             const resultado = this.agregarCreditoImportado(credito);
                             if (resultado.success) registrosImportados.push(credito);
@@ -280,14 +305,21 @@ class FinzanaDatabase {
                         } else errores.push(`Línea ${i + 1}: CURP Cliente o ID Crédito faltante`);
                     } else errores.push(`Línea ${i + 1}: Formato incorrecto`);
                 } else if (tipo === 'cobranza') {
-                    if (campos.length >= 10) {
+                    if (campos.length >= 8) {
                         const pago = {
-                            nombreCliente: campos[0], idCredito: campos[1],
-                            fecha: campos[2] || new Date().toISOString(), monto: parseFloat(campos[3]) || 0,
-                            comision: parseFloat(campos[4]) || 0, tipoPago: campos[5] || 'normal',
-                            grupo: campos[6] || '', ruta: campos[7] || '', 
-                            semanaCredito: parseInt(campos[8]) || 1, saldo: parseFloat(campos[9]) || 0
+                            nombreCliente: campos[0] || '',
+                            idCredito: campos[1] || '',
+                            fecha: campos[2] || new Date().toISOString(),
+                            monto: parseFloat(campos[3]) || 0,
+                            comision: parseFloat(campos[4]) || 0,
+                            tipoPago: campos[5] || 'normal',
+                            grupo: campos[6] || '',
+                            ruta: campos[7] || 'JC1',
+                            interesCobrado: parseFloat(campos[8]) || 0,
+                            saldo: parseFloat(campos[9]) || 0,
+                            cobradoPor: campos[10] || 'Sistema'
                         };
+                        
                         if (pago.idCredito && pago.monto > 0) {
                             const resultado = this.agregarPago(pago);
                             if (resultado.success) registrosImportados.push(pago);
@@ -301,6 +333,13 @@ class FinzanaDatabase {
         } catch (error) {
             return { success: false, message: `Error en la importación: ${error.message}` };
         }
+    }
+
+    generarCURPAutomatico(nombre) {
+        // Generar un CURP automático basado en el nombre y timestamp
+        const timestamp = Date.now().toString();
+        const nombreIniciales = nombre.substring(0, 3).toUpperCase().replace(/\s/g, 'X');
+        return `${nombreIniciales}${timestamp.substr(-15)}`.substring(0, 18);
     }
 
     limpiarBaseDeDatos() {
