@@ -16,14 +16,44 @@
             color: var(--gray);
             margin-top: 5px;
         }
+        .filter-section {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        .filter-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            margin-bottom: 10px;
+        }
+        .filter-group {
+            flex: 1;
+            min-width: 200px;
+        }
+        .filter-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            font-size: 14px;
+        }
+        .filter-group input, .filter-group select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
     </style>
 </head>
 <body>
+    <!-- ========== SECCIÓN DE CARGA ========== -->
     <div id="loading-overlay" class="loading-overlay">
         <div class="spinner"></div>
         <p>Inicializando Finzana...</p>
     </div>
 
+    <!-- ========== SECCIÓN DE LOGIN ========== -->
     <div id="login-screen" class="login-container">
         <div class="login-box">
             <div class="login-logo">
@@ -67,7 +97,9 @@
         </div>
     </div>
 
+    <!-- ========== SECCIÓN PRINCIPAL DE LA APLICACIÓN ========== -->
     <div id="main-app" class="app-container hidden">
+        <!-- ========== HEADER DE LA APLICACIÓN ========== -->
         <header class="app-header">
             <div class="user-info">
                 <div class="user-avatar">
@@ -84,7 +116,9 @@
             </button>
         </header>
 
+        <!-- ========== CONTENIDO PRINCIPAL ========== -->
         <main class="app-content">
+            <!-- ========== VISTA: MENÚ PRINCIPAL ========== -->
             <div id="view-main-menu" class="view">
                 <h2>Panel de Control</h2>
                 <p>Selecciona una opción para gestionar el sistema</p>
@@ -176,6 +210,7 @@
                 </div>
             </div>
 
+            <!-- ========== VISTA: GESTIÓN DE CLIENTES ========== -->
             <div id="view-gestion-clientes" class="view hidden">
                 <div class="view-header">
                     <h2>Gestión de Clientes</h2>
@@ -185,22 +220,71 @@
                     </button>
                 </div>
                 
-                <div class="search-group">
-                    <input type="text" id="buscar-cliente" placeholder="Buscar por CURP o nombre...">
-                    <button id="btn-buscar-cliente" class="btn btn-primary">
-                        <i class="fas fa-search"></i>
-                        <span>Buscar</span>
-                    </button>
+                <!-- ========== FILTROS DE CLIENTES ========== -->
+                <div class="filter-section">
+                    <h3>Filtros de Búsqueda</h3>
+                    <div class="filter-row">
+                        <div class="filter-group">
+                            <label for="filtro-curp">CURP</label>
+                            <input type="text" id="filtro-curp" placeholder="Buscar por CURP">
+                        </div>
+                        <div class="filter-group">
+                            <label for="filtro-nombre">Nombre</label>
+                            <input type="text" id="filtro-nombre" placeholder="Buscar por nombre">
+                        </div>
+                        <div class="filter-group">
+                            <label for="filtro-telefono">Teléfono</label>
+                            <input type="text" id="filtro-telefono" placeholder="Buscar por teléfono">
+                        </div>
+                    </div>
+                    <div class="filter-row">
+                        <div class="filter-group">
+                            <label for="filtro-grupo">Grupo/Población</label>
+                            <select id="filtro-grupo">
+                                <option value="">Todos los grupos</option>
+                                <option value="JALISCO">JALISCO</option>
+                                <option value="GUANAJUATO">GUANAJUATO</option>
+                                <!-- Opciones adicionales se cargan dinámicamente -->
+                            </select>
+                        </div>
+                        <div class="filter-group">
+                            <label for="filtro-ruta">Ruta</label>
+                            <select id="filtro-ruta">
+                                <option value="">Todas las rutas</option>
+                                <!-- Opciones se cargan dinámicamente -->
+                            </select>
+                        </div>
+                        <div class="filter-group">
+                            <label for="filtro-fecha">Fecha de Registro</label>
+                            <input type="date" id="filtro-fecha">
+                        </div>
+                    </div>
+                    <div class="filter-row">
+                        <div class="filter-group">
+                            <button id="btn-aplicar-filtros" class="btn btn-primary">
+                                <i class="fas fa-filter"></i>
+                                <span>Aplicar Filtros</span>
+                            </button>
+                            <button id="btn-limpiar-filtros" class="btn btn-secondary">
+                                <i class="fas fa-times"></i>
+                                <span>Limpiar Filtros</span>
+                            </button>
+                        </div>
+                    </div>
                 </div>
+                
                 <div id="status_gestion_clientes"></div>
                 <table class="client-table">
                     <thead>
                         <tr>
                             <th>CURP</th>
                             <th>Nombre</th>
+                            <th>Domicilio</th>
+                            <th>Código Postal</th>
                             <th>Teléfono</th>
-                            <th>Grupo</th>
-                            <th>Información de Crédito</th>
+                            <th>Fecha de Registro</th>
+                            <th>Grupo/Población</th>
+                            <th>Ruta</th>
                             <th>Acciones</th>
                         </tr>
                     </thead>
@@ -210,6 +294,7 @@
                 </table>
             </div>
 
+            <!-- ========== VISTA: GESTIÓN DE USUARIOS ========== -->
             <div id="view-usuarios" class="view hidden">
                 <div class="view-header">
                     <h2>Gestión de Usuarios</h2>
@@ -288,6 +373,7 @@
                 </table>
             </div>
 
+            <!-- ========== VISTA: IMPORTAR DATOS ========== -->
             <div id="view-importar" class="view hidden">
                 <div class="view-header">
                     <h2>Importar Datos</h2>
@@ -305,19 +391,20 @@
                     <div class="import-tab" data-tab="cobranza">Cobranza</div>
                 </div>
                 
+                <!-- ========== TAB: IMPORTAR CLIENTES ========== -->
                 <div id="tab-clientes" class="import-tab-content">
                     <div class="import-section">
                         <h4>Formato para importar clientes</h4>
                         <p>El archivo CSV debe tener las siguientes columnas en orden:</p>
                         <ul>
-                            <li>CURP</li>
-                            <li>Nombre</li>
-                            <li>Domicilio</li>
-                            <li>Código Postal</li>
-                            <li>Teléfono</li>
-                            <li>Población/Grupo</li>
-                            <li>Ruta (opcional)</li>
+                            <li>NOMBRE</li>
+                            <li>DOMICILIO</li>
+                            <li>CP</li>
+                            <li>TELEFONO</li>
+                            <li>FECHA DE REGISTRO</li>
+                            <li>GRUPO O POBLACION</li>
                         </ul>
+                        <p><strong>Nota:</strong> Los campos se asignarán automáticamente. Si algún campo no existe en el CSV, se dejará en blanco.</p>
                     </div>
                     
                     <div class="form-group">
@@ -326,22 +413,34 @@
                     </div>
                 </div>
                 
+                <!-- ========== TAB: IMPORTAR COLOCACIÓN ========== -->
                 <div id="tab-colocacion" class="import-tab-content hidden">
                     <div class="import-section">
                         <h4>Formato para importar colocación</h4>
                         <p>El archivo CSV debe tener las siguientes columnas en orden:</p>
                         <ul>
-                            <li>CURP Cliente</li>
-                            <li>Nombre Cliente</li>
-                            <li>ID Crédito</li>
-                            <li>Fecha Creación (YYYY-MM-DD)</li>
-                            <li>Tipo</li>
-                            <li>Monto</li>
-                            <li>Plazo (semanas)</li>
-                            <li>Monto Total</li>
-                            <li>CURP Aval (opcional)</li>
-                            <li>Nombre Aval (opcional)</li>
+                            <li>CURP</li>
+                            <li>NOMBRE DEL CLIENTE</li>
+                            <li>ID DE CREDITO</li>
+                            <li>FECHA</li>
+                            <li>TIPO</li>
+                            <li>MONTO TOTAL</li>
+                            <li>PLAZO</li>
+                            <li>MONTO TOTAL</li>
+                            <li>CURP AVAL</li>
+                            <li>NOMBRE AVAL</li>
+                            <li>GRUPO O POBLACION</li>
+                            <li>RUTA</li>
+                            <li>INTERES</li>
+                            <li>SALDO</li>
+                            <li>FECHA DE ULTIMO PAGO</li>
+                            <li>SALDO VENCIDO</li>
+                            <li>STATUS</li>
+                            <li>SALDO CAPITAL</li>
+                            <li>SALDO INTERES</li>
+                            <li>STJ150</li>
                         </ul>
+                        <p><strong>Nota:</strong> Los campos se asignarán automáticamente. Si algún campo no existe en el CSV, se dejará en blanco.</p>
                     </div>
                     
                     <div class="form-group">
@@ -350,22 +449,25 @@
                     </div>
                 </div>
                 
+                <!-- ========== TAB: IMPORTAR COBRANZA ========== -->
                 <div id="tab-cobranza" class="import-tab-content hidden">
                     <div class="import-section">
                         <h4>Formato para importar cobranza</h4>
                         <p>El archivo CSV debe tener las siguientes columnas en orden:</p>
                         <ul>
-                            <li>Nombre Cliente</li>
-                            <li>ID Crédito</li>
-                            <li>Fecha (YYYY-MM-DD)</li>
-                            <li>Monto</li>
-                            <li>Comisión</li>
-                            <li>Tipo Pago</li>
-                            <li>Grupo</li>
-                            <li>Ruta</li>
-                            <li>Semana Crédito</li>
-                            <li>Saldo</li>
+                            <li>NOMBRE</li>
+                            <li>ID DE CREDITO</li>
+                            <li>FECHA</li>
+                            <li>MONTO</li>
+                            <li>COMISION</li>
+                            <li>TIPO DE PAGO</li>
+                            <li>GRUPO O POBLACION</li>
+                            <li>RUTA</li>
+                            <li>INTERES COBRADO</li>
+                            <li>SALDO</li>
+                            <li>COBRADO POR</li>
                         </ul>
+                        <p><strong>Nota:</strong> Los campos se asignarán automáticamente. Si algún campo no existe en el CSV, se dejará en blanco.</p>
                     </div>
                     
                     <div class="form-group">
@@ -391,6 +493,7 @@
                 </div>
             </div>
 
+            <!-- ========== VISTA: REGISTRAR CLIENTE ========== -->
             <div id="view-cliente" class="view hidden">
                 <div class="view-header">
                     <h2>Registrar Cliente</h2>
@@ -423,14 +526,20 @@
                         <input type="text" id="telefono_cliente">
                     </div>
                     <div class="form-group">
-                        <label for="poblacion_grupo_cliente">Población/Grupo <span class="required">*</span></label>
+                        <label for="fecha_registro_cliente">Fecha de Registro</label>
+                        <input type="date" id="fecha_registro_cliente">
+                    </div>
+                    <div class="form-group">
+                        <label for="poblacion_grupo_cliente">Grupo/Población <span class="required">*</span></label>
                         <select id="poblacion_grupo_cliente" required>
-                            <!-- Opciones se cargan dinámicamente -->
+                            <option value="JALISCO">JALISCO</option>
+                            <option value="GUANAJUATO">GUANAJUATO</option>
+                            <!-- Opciones adicionales se cargan dinámicamente -->
                         </select>
                     </div>
                     <div class="form-group">
-                        <label for="ruta_cliente">Ruta <span class="required">*</span></label>
-                        <select id="ruta_cliente" required>
+                        <label for="ruta_cliente">Ruta</label>
+                        <select id="ruta_cliente">
                             <!-- Opciones se cargan dinámicamente -->
                         </select>
                     </div>
@@ -448,6 +557,7 @@
                 <div id="status_cliente"></div>
             </div>
 
+            <!-- ========== VISTA: GENERAR CRÉDITO ========== -->
             <div id="view-colocacion" class="view hidden">
                 <div class="view-header">
                     <h2>Generar Crédito</h2>
@@ -510,6 +620,14 @@
                         <input type="text" id="nombreAval_colocacion" required>
                     </div>
                     <div class="form-group">
+                        <label for="grupo_colocacion">Grupo/Población</label>
+                        <input type="text" id="grupo_colocacion" readonly>
+                    </div>
+                    <div class="form-group">
+                        <label for="ruta_colocacion">Ruta</label>
+                        <input type="text" id="ruta_colocacion" readonly>
+                    </div>
+                    <div class="form-group">
                         <button type="submit" class="btn btn-success">
                             <i class="fas fa-hand-holding-usd"></i>
                             <span>Generar Crédito</span>
@@ -523,6 +641,7 @@
                 <div id="status_colocacion"></div>
             </div>
 
+            <!-- ========== VISTA: REGISTRAR PAGO ========== -->
             <div id="view-cobranza" class="view hidden">
                 <div class="view-header">
                     <h2>Registrar Pago</h2>
@@ -549,7 +668,7 @@
                         <input type="text" id="nombre_cobranza" readonly>
                     </div>
                     <div class="form-group">
-                        <label for="grupo_cobranza">Grupo</label>
+                        <label for="grupo_cobranza">Grupo/Población</label>
                         <input type="text" id="grupo_cobranza" readonly>
                     </div>
                     <div class="form-group">
@@ -598,6 +717,7 @@
                 <div id="status_cobranza"></div>
             </div>
 
+            <!-- ========== VISTA: REPORTES ========== -->
             <div id="view-reportes" class="view hidden">
                 <div class="view-header">
                     <h2>Reportes del Sistema</h2>
