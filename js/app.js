@@ -246,7 +246,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     document.getElementById('form-colocacion').addEventListener('submit', function(e) {
         e.preventDefault();
-        console.log('Formulario de crédito enviado'); // Debug
+        console.log('Formulario de crédito enviado');
         
         // Validaciones
         const curpAval = document.getElementById('curpAval_colocacion').value;
@@ -255,7 +255,7 @@ document.addEventListener('DOMContentLoaded', function () {
         const plazo = document.getElementById('plazo_colocacion').value;
         const tipoCredito = document.getElementById('tipo_colocacion').value;
         
-        console.log('Datos del formulario:', { curpAval, nombreAval, monto, plazo, tipoCredito }); // Debug
+        console.log('Datos del formulario:', { curpAval, nombreAval, monto, plazo, tipoCredito });
         
         if (!monto) {
             showStatus('status_colocacion', 'Debes seleccionar un monto', 'error');
@@ -292,10 +292,10 @@ document.addEventListener('DOMContentLoaded', function () {
             nombreAval: nombreAval
         };
 
-        console.log('Datos del crédito a guardar:', credito); // Debug
+        console.log('Datos del crédito a guardar:', credito);
 
         const resultado = database.agregarCredito(credito);
-        console.log('Resultado de agregar crédito:', resultado); // Debug
+        console.log('Resultado de agregar crédito:', resultado);
         
         if (resultado.success) {
             // Mostrar número de crédito generado
@@ -489,36 +489,31 @@ function validarFormatoCURP(curp) {
 
 // ========== INICIALIZACIÓN DROPDOWNS ==========
 function inicializarDropdowns() {
-    // Poblaciones/Grupos disponibles (datos reales del sistema)
-    const poblaciones = [
-        'Aguascalientes Centro', 'Bajío Norte', 'Bajío Sur', 
-        'Centro Occidente', 'Centro Norte', 'Centro Sur',
-        'Noroeste', 'Norte', 'Occidente', 'Oriente',
-        'Pacífico Centro', 'Pacífico Norte', 'Pacífico Sur',
-        'Peninsular', 'Sureste', 'Zona Metropolitana'
-    ];
-    
-    // Rutas disponibles (datos reales del sistema)
-    const rutas = [
-        'RUTA-001', 'RUTA-002', 'RUTA-003', 'RUTA-004', 'RUTA-005',
-        'RUTA-006', 'RUTA-007', 'RUTA-008', 'RUTA-009', 'RUTA-010',
-        'RUTA-011', 'RUTA-012', 'RUTA-013', 'RUTA-014', 'RUTA-015'
-    ];
-    
-    // Montos de crédito disponibles
-    const montos = [3000, 3500, 4000, 4500, 5000, 6000, 7000, 8000, 9000, 10000];
-    
-    // Tipos de crédito
-    const tiposCredito = ['Nuevo', 'Renovación', 'Ingreso'];
-    
-    // Plazos disponibles
-    const plazos = [13, 14];
-    
+    // Datos reales de la hoja TABLAS del sistema Finzana
+    const dropdownOptions = {
+        tipoColocacion: ["NUEVO", "RENOVACION", "REINGRESO"],
+        tipoPago: ["EXTRAORDINARIO", "ACTUALIZADO", "NORMAL"],
+        plazos: ["14", "10", "13"],
+        montos: ["3000", "3500", "4000", "4500", "5000", "6000", "7000", "8000", "9000", "10000"],
+        poblaciones: [
+            "LA CALERA", "ATEQUIZA", "SAN JACINTO", "PONCITLAN", "OCOTLAN",
+            "ARENAL", "AMATITAN", "ACATLAN DE JUAREZ", "BELLAVISTA", 
+            "SAN ISIDRO MAZATEPEC", "TALA", "CUISILLOS", "HUAXTLA", "NEXTIPAC",
+            "SANTA LUCIA", "JAMAY", "LA BARCA", "SAN JUAN DE OCOTAN", "TALA 2",
+            "EL HUMEDO", "NEXTIPAC 2", "ZZ PUEBLO"
+        ],
+        rGrupo: ["JC1", "RUTAX"],
+        rutas: [
+            "AUDITORIA", "SUPERVISION", "ADMINISTRACION", "DIRECCION",
+            "COMERCIAL", "COBRANZA", "R1", "R2", "R3", "JC1", "RX"
+        ]
+    };
+
     // Inicializar dropdown de población/grupo
     const poblacionSelect = document.getElementById('poblacion_grupo_cliente');
     if (poblacionSelect) {
         poblacionSelect.innerHTML = '<option value="">Selecciona una población/grupo</option>';
-        poblaciones.forEach(poblacion => {
+        dropdownOptions.poblaciones.forEach(poblacion => {
             const option = document.createElement('option');
             option.value = poblacion;
             option.textContent = poblacion;
@@ -530,7 +525,7 @@ function inicializarDropdowns() {
     const rutaSelect = document.getElementById('ruta_cliente');
     if (rutaSelect) {
         rutaSelect.innerHTML = '<option value="">Selecciona una ruta</option>';
-        rutas.forEach(ruta => {
+        dropdownOptions.rutas.forEach(ruta => {
             const option = document.createElement('option');
             option.value = ruta;
             option.textContent = ruta;
@@ -542,7 +537,7 @@ function inicializarDropdowns() {
     const tipoCreditoSelect = document.getElementById('tipo_colocacion');
     if (tipoCreditoSelect) {
         tipoCreditoSelect.innerHTML = '<option value="">Selecciona tipo de crédito</option>';
-        tiposCredito.forEach(tipo => {
+        dropdownOptions.tipoColocacion.forEach(tipo => {
             const option = document.createElement('option');
             option.value = tipo.toLowerCase();
             option.textContent = tipo;
@@ -554,10 +549,10 @@ function inicializarDropdowns() {
     const montoSelect = document.getElementById('monto_colocacion');
     if (montoSelect) {
         montoSelect.innerHTML = '<option value="">Selecciona un monto</option>';
-        montos.forEach(monto => {
+        dropdownOptions.montos.forEach(monto => {
             const option = document.createElement('option');
             option.value = monto;
-            option.textContent = `$${monto.toLocaleString()}`;
+            option.textContent = `$${parseInt(monto).toLocaleString()}`;
             montoSelect.appendChild(option);
         });
     }
@@ -566,13 +561,27 @@ function inicializarDropdowns() {
     const plazoSelect = document.getElementById('plazo_colocacion');
     if (plazoSelect) {
         plazoSelect.innerHTML = '<option value="">Selecciona un plazo</option>';
-        plazos.forEach(plazo => {
+        dropdownOptions.plazos.forEach(plazo => {
             const option = document.createElement('option');
             option.value = plazo;
             option.textContent = `${plazo} semanas`;
             plazoSelect.appendChild(option);
         });
     }
+
+    // Inicializar dropdown de tipo de pago (cobranza)
+    const tipoPagoSelect = document.getElementById('tipo_cobranza');
+    if (tipoPagoSelect) {
+        tipoPagoSelect.innerHTML = '';
+        dropdownOptions.tipoPago.forEach(tipo => {
+            const option = document.createElement('option');
+            option.value = tipo.toLowerCase();
+            option.textContent = tipo;
+            tipoPagoSelect.appendChild(option);
+        });
+    }
+
+    console.log('✅ Dropdowns inicializados con datos reales del sistema');
 }
 
 // ========== GESTIÓN DE USUARIOS ==========
