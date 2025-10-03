@@ -1,5 +1,5 @@
 // =============================================
-// INICIALIZACIÓN DE LA APLICACIÓN
+// INICIALIZACIÓN DE LA APLICACIÓN - CORREGIDO
 // =============================================
 
 let database;
@@ -284,7 +284,6 @@ document.addEventListener('DOMContentLoaded', function () {
                         loadClientesTable();
                     }
                     
-                    // NO cerrar sesión - esta era la causa del problema
                     console.log('✅ Cliente guardado exitosamente');
                 }
             } catch (error) {
@@ -539,7 +538,6 @@ function inicializarDropdowns() {
         tipoPago: ["EXTRAORDINARIO", "ACTUALIZADO", "NORMAL"],
         plazos: ["14", "10", "13"],
         montos: ["3000", "3500", "4000", "4500", "5000", "6000", "7000", "8000", "9000", "10000"],
-        estados: ["JALISCO", "GUANAJUATO"],
         poblaciones: [
             "LA CALERA", "ATEQUIZA", "SAN JACINTO", "PONCITLAN", "OCOTLAN",
             "ARENAL", "AMATITAN", "ACATLAN DE JUAREZ", "BELLAVISTA", 
@@ -721,7 +719,7 @@ function deleteUser(username) {
 }
 
 // =============================================
-// GESTIÓN DE CLIENTES
+// GESTIÓN DE CLIENTES - CORRECCIÓN COMPLETA
 // =============================================
 
 function loadClientesTable() {
@@ -743,17 +741,26 @@ function loadClientesTable() {
     
     tbody.innerHTML = '';
     
+    // CORRECCIÓN: Validar que los clientes tengan la estructura correcta
     const clientesFiltrados = clientes.filter(cliente => {
-        // Aplicar todos los filtros
-        if (filtroCurp && !cliente.curp.toLowerCase().includes(filtroCurp)) return false;
-        if (filtroNombre && !cliente.nombre.toLowerCase().includes(filtroNombre)) return false;
-        if (filtroTelefono && !cliente.telefono.toLowerCase().includes(filtroTelefono)) return false;
+        // Validar estructura básica del cliente
+        if (!cliente || typeof cliente !== 'object') {
+            console.warn('Cliente inválido encontrado:', cliente);
+            return false;
+        }
+        
+        // Aplicar filtros
+        if (filtroCurp && (!cliente.curp || !cliente.curp.toLowerCase().includes(filtroCurp))) return false;
+        if (filtroNombre && (!cliente.nombre || !cliente.nombre.toLowerCase().includes(filtroNombre))) return false;
+        if (filtroTelefono && (!cliente.telefono || !cliente.telefono.toLowerCase().includes(filtroTelefono))) return false;
         if (filtroGrupo && cliente.poblacion_grupo !== filtroGrupo) return false;
         if (filtroFecha && cliente.fecha_registro !== filtroFecha) return false;
-        if (filtroCp && !cliente.cp.toLowerCase().includes(filtroCp)) return false;
+        if (filtroCp && (!cliente.cp || !cliente.cp.toLowerCase().includes(filtroCp))) return false;
         
         return true;
     });
+    
+    console.log('Clientes filtrados:', clientesFiltrados);
     
     if (clientesFiltrados.length === 0) {
         tbody.innerHTML = '<tr><td colspan="8" class="text-center">No se encontraron clientes con los filtros aplicados</td></tr>';
@@ -763,14 +770,15 @@ function loadClientesTable() {
     for (const cliente of clientesFiltrados) {
         const tr = document.createElement('tr');
         
+        // CORRECCIÓN: Asignación explícita y validación de cada campo
         tr.innerHTML = `
-            <td>${cliente.curp || ''}</td>
-            <td>${cliente.nombre || ''}</td>
-            <td>${cliente.domicilio || ''}</td>
-            <td>${cliente.cp || ''}</td>
-            <td>${cliente.telefono || ''}</td>
-            <td>${cliente.fecha_registro || ''}</td>
-            <td>${cliente.poblacion_grupo || ''}</td>
+            <td>${cliente.curp || 'N/A'}</td>
+            <td>${cliente.nombre || 'N/A'}</td>
+            <td>${cliente.domicilio || 'N/A'}</td>
+            <td>${cliente.cp || 'N/A'}</td>
+            <td>${cliente.telefono || 'N/A'}</td>
+            <td>${cliente.fecha_registro || 'N/A'}</td>
+            <td>${cliente.poblacion_grupo || 'N/A'}</td>
             <td class="action-buttons">
                 <button class="btn btn-sm btn-secondary" onclick="editCliente('${cliente.curp}')">
                     <i class="fas fa-edit"></i>
