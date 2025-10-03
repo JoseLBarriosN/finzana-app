@@ -44,6 +44,30 @@
             border: 1px solid #ddd;
             border-radius: 4px;
         }
+        .import-tabs {
+            display: flex;
+            border-bottom: 1px solid #ddd;
+            margin-bottom: 20px;
+        }
+        .import-tab {
+            padding: 10px 20px;
+            cursor: pointer;
+            border: 1px solid transparent;
+            border-bottom: none;
+            border-radius: 5px 5px 0 0;
+            margin-right: 5px;
+        }
+        .import-tab.active {
+            background-color: var(--primary);
+            color: white;
+            border-color: #ddd;
+        }
+        .import-tab-content {
+            display: block;
+        }
+        .import-tab-content.hidden {
+            display: none;
+        }
     </style>
 </head>
 <body>
@@ -518,10 +542,6 @@
                     <div class="form-group">
                         <label for="telefono_cliente">Teléfono</label>
                         <input type="text" id="telefono_cliente">
-                    </div>
-                    <div class="form-group">
-                        <label for="fecha_registro_cliente">Fecha de Registro</label>
-                        <input type="date" id="fecha_registro_cliente">
                     </div>
                     <div class="form-group">
                         <label for="poblacion_grupo_cliente">Grupo/Población <span class="required">*</span></label>
