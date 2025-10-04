@@ -1,5 +1,5 @@
 // =============================================
-// SISTEMA DE BASE DE DATOS COMPLETO - CORREGIDO
+// SISTEMA DE BASE DE DATOS COMPLETO
 // =============================================
 
 class FinzanaDatabase {
@@ -90,49 +90,23 @@ class FinzanaDatabase {
 
     agregarCliente(cliente) {
         const clientes = this.getClientes();
-        
-        // Validar que el cliente tenga CURP
-        if (!cliente.curp) {
-            return { success: false, message: 'El cliente debe tener una CURP' };
-        }
-        
-        // Validar formato de CURP
-        if (cliente.curp.length !== 18) {
-            return { success: false, message: 'La CURP debe tener exactamente 18 caracteres' };
-        }
-        
         if (this.buscarClientePorCURP(cliente.curp)) {
             return { success: false, message: 'Ya existe un cliente con esta CURP' };
         }
-        
-        // Asegurar que el cliente tenga todos los campos necesarios
-        const clienteCompleto = {
-            id: this.generarId('CLI'),
-            curp: cliente.curp,
-            nombre: cliente.nombre || '',
-            domicilio: cliente.domicilio || '',
-            cp: cliente.cp || '',
-            telefono: cliente.telefono || '',
-            fecha_registro: cliente.fecha_registro || new Date().toISOString().split('T')[0],
-            poblacion_grupo: cliente.poblacion_grupo || '',
-            fechaCreacion: new Date().toISOString()
-        };
-        
-        clientes.push(clienteCompleto);
+        cliente.id = this.generarId('CLI');
+        cliente.fechaRegistro = new Date().toISOString();
+        clientes.push(cliente);
         this.saveClientes(clientes);
-        return { success: true, message: 'Cliente registrado exitosamente', data: clienteCompleto };
+        return { success: true, message: 'Cliente registrado exitosamente', data: cliente };
     }
 
     actualizarCliente(curp, datosActualizados) {
         const clientes = this.getClientes();
         const index = clientes.findIndex(cliente => cliente.curp === curp);
         if (index !== -1) {
-            // Mantener los datos originales que no se deben cambiar
             datosActualizados.id = clientes[index].id;
-            datosActualizados.fechaCreacion = clientes[index].fechaCreacion;
-            datosActualizados.curp = curp; // Asegurar que la CURP no cambie
-            
-            clientes[index] = { ...clientes[index], ...datosActualizados };
+            datosActualizados.fechaRegistro = clientes[index].fechaRegistro;
+            clientes[index] = datosActualizados;
             this.saveClientes(clientes);
             return { success: true, message: 'Cliente actualizado exitosamente' };
         }
@@ -182,6 +156,7 @@ class FinzanaDatabase {
         const nuevoId = counter.toString();
         counter++;
         localStorage.setItem('finzana-credito-counter', counter.toString());
+        console.log('Nuevo ID generado:', nuevoId);
         return nuevoId;
     }
 
@@ -194,6 +169,8 @@ class FinzanaDatabase {
         credito.estado = 'activo';
         credito.montoTotal = credito.monto * 1.3;
         credito.saldo = credito.montoTotal;
+        
+        console.log('Crédito a guardar:', credito);
         
         creditos.push(credito);
         this.saveCreditos(creditos);
@@ -264,193 +241,65 @@ class FinzanaDatabase {
         return monto * (porcentajes[tipoPago] || 0.10);
     }
 
-  // ========== IMPORTACIÓN - SOLO DATOS EXACTOS DEL CSV ==========
-importarDatosDesdeCSV(csvData, tipo) {
-    try {
-        const lineas = csvData.split('\n').filter(linea => linea.trim());
-        const registrosImportados = [];
-        const errores = [];
-
-        console.log(`📊 Procesando ${lineas.length} líneas para ${tipo}`);
-
-        for (let i = 0; i < lineas.length; i++) {
-            // Parsear línea CSV
-            const campos = this.parseCSVLine(lineas[i]);
-            console.log(`Línea ${i + 1} campos:`, campos);
-
-            if (tipo === 'clientes') {
-                // FORMATO: NOMBRE,DOMICILIO,CP,TELEFONO,FECHA DE REGISTRO,GRUPO O POBLACION
-                if (campos.length >= 6) {
-                    const cliente = {
-                        // ASIGNACIÓN EXACTA - SIN GENERAR DATOS AUTOMÁTICOS
-                        nombre: campos[0] || '',
-                        domicilio: campos[1] || '',
-                        cp: campos[2] || '',
-                        telefono: campos[3] || '',
-                        fecha_registro: campos[4] || '',
-                        poblacion_grupo: campos[5] || '',
-                        curp: '' // CURP VACÍO - SE DEBE ASIGNAR MANUALMENTE
-                    };
-                    
-                    console.log('Cliente a importar:', cliente);
-                    
-                    // Validar datos mínimos - solo requerimos nombre
-                    if (cliente.nombre) {
-                        // CORRECCIÓN: No guardar directamente, solo mostrar para revisión
-                        // El CURP debe asignarse manualmente después
-                        registrosImportados.push(cliente);
-                        console.log(`✅ Cliente listo para revisión: ${cliente.nombre}`);
-                    } else {
-                        errores.push(`Línea ${i + 1}: Nombre faltante`);
-                    }
-                } else {
-                    errores.push(`Línea ${i + 1}: Formato incorrecto. Se esperaban 6 campos, se encontraron ${campos.length}`);
-                }
-                
-            } else if (tipo === 'colocacion') {
-                // FORMATO: CURP,NOMBRE DEL CLIENTE,ID DE CREDITO,FECHA DE REGISTRO,TIPO,MONTO,PLAZO,MONTO TOTAL,CURP AVAL,NOMBRE AVAL,GRUPO O POBLACIÓN,RUTA,INTERES,SALDO,ULTIMO PAGO,SALDO VENCIDO,STATUS,SALDO INTERES,STJ150
-                if (campos.length >= 19) {
-                    const credito = {
-                        curpCliente: campos[0] || '',
-                        nombreCliente: campos[1] || '',
-                        id: campos[2] || '',
-                        fechaCreacion: this.convertirFecha(campos[3]) || '',
-                        tipo: campos[4] || '',
-                        monto: this.parseNumero(campos[5]) || 0,
-                        plazo: parseInt(campos[6]) || 0,
-                        montoTotal: this.parseNumero(campos[7]) || 0,
-                        curpAval: campos[8] || '',
-                        nombreAval: campos[9] || '',
-                        grupoPoblacion: campos[10] || '',
-                        ruta: campos[11] || '',
-                        interes: this.parseNumero(campos[12]) || 0,
-                        saldo: this.parseNumero(campos[13]) || 0,
-                        fechaUltimoPago: this.convertirFecha(campos[14]) || '',
-                        saldoVencido: this.parseNumero(campos[15]) || 0,
-                        status: campos[16] || '',
-                        saldoCapital: this.parseNumero(campos[17]) || 0,
-                        saldoInteres: this.parseNumero(campos[18]) || 0,
-                        stj150: campos[19] || ''
-                    };
-                    
-                    if (credito.curpCliente && credito.id) {
-                        const resultado = this.agregarCreditoImportado(credito);
-                        if (resultado.success) registrosImportados.push(credito);
-                        else errores.push(`Línea ${i + 1}: ${resultado.message}`);
-                    } else {
-                        errores.push(`Línea ${i + 1}: CURP Cliente o ID Crédito faltante`);
-                    }
-                } else {
-                    errores.push(`Línea ${i + 1}: Formato incorrecto para colocación`);
-                }
-                
-            } else if (tipo === 'cobranza') {
-                // FORMATO: NOMBRE,ID DE CREDITO,FECHA,MONTO DE PAGO,COMISIÓN,TIPO DE PAGO,GRUPO O POBLACION,RUTA,SALDO,COBRADO POR
-                if (campos.length >= 10) {
-                    const pago = {
-                        nombreCliente: campos[0] || '',
-                        idCredito: campos[1] || '',
-                        fecha: this.convertirFecha(campos[2]) || '',
-                        monto: this.parseNumero(campos[3]) || 0,
-                        comision: this.parseNumero(campos[4]) || 0,
-                        tipoPago: campos[5] || '',
-                        grupo: campos[6] || '',
-                        ruta: campos[7] || '',
-                        interesCobrado: this.parseNumero(campos[8]) || 0,
-                        saldo: this.parseNumero(campos[9]) || 0,
-                        cobradoPor: campos[10] || ''
-                    };
-                    
-                    if (pago.idCredito && pago.monto > 0) {
-                        const resultado = this.agregarPago(pago);
-                        if (resultado.success) registrosImportados.push(pago);
-                        else errores.push(`Línea ${i + 1}: ${resultado.message}`);
-                    } else {
-                        errores.push(`Línea ${i + 1}: ID Crédito o Monto inválido`);
-                    }
-                } else {
-                    errores.push(`Línea ${i + 1}: Formato incorrecto para cobranza`);
-                }
-            }
-        }
-
-        return { 
-            success: true, 
-            total: lineas.length, 
-            importados: registrosImportados.length, 
-            errores: errores 
-        };
-    } catch (error) {
-        console.error('Error en importación:', error);
-        return { 
-            success: false, 
-            message: `Error en la importación: ${error.message}` 
-        };
-    }
-}
-
-// CORRECCIÓN: Función para parsear líneas CSV correctamente
-parseCSVLine(line) {
-    const result = [];
-    let current = '';
-    let inQuotes = false;
-    
-    for (let i = 0; i < line.length; i++) {
-        const char = line[i];
-        
-        if (char === '"') {
-            inQuotes = !inQuotes;
-        } else if (char === ',' && !inQuotes) {
-            result.push(current.trim());
-            current = '';
-        } else {
-            current += char;
-        }
-    }
-    
-    result.push(current.trim());
-    return result.map(field => field.replace(/^"|"$/g, ''));
-}
-
-    // ========== FUNCIÓN TEMPORAL PARA LIMPIAR DATOS CORRUPTOS ==========
-    limpiarClientesDuplicados() {
+    // ========== IMPORTACIÓN ==========
+    importarDatosDesdeCSV(csvData, tipo) {
         try {
-            const clientes = this.getClientes();
-            console.log('Clientes antes de limpiar:', clientes);
-            
-            const clientesUnicos = [];
-            const curpsVistos = new Set();
-            
-            for (const cliente of clientes) {
-                if (cliente && cliente.curp && !curpsVistos.has(cliente.curp)) {
-                    // Validar que el cliente tenga la estructura correcta
-                    const clienteLimpio = {
-                        curp: cliente.curp,
-                        nombre: cliente.nombre || '',
-                        domicilio: cliente.domicilio || '',
-                        cp: cliente.cp || '',
-                        telefono: cliente.telefono || '',
-                        fecha_registro: cliente.fecha_registro || new Date().toISOString().split('T')[0],
-                        poblacion_grupo: cliente.poblacion_grupo || '',
-                        id: cliente.id || this.generarId('CLI'),
-                        fechaCreacion: cliente.fechaCreacion || new Date().toISOString()
-                    };
-                    
-                    clientesUnicos.push(clienteLimpio);
-                    curpsVistos.add(cliente.curp);
+            const lineas = csvData.split('\n').filter(linea => linea.trim());
+            const registrosImportados = [];
+            const errores = [];
+
+            for (let i = 0; i < lineas.length; i++) {
+                const campos = lineas[i].split(',').map(campo => campo.trim());
+
+                if (tipo === 'clientes') {
+                    if (campos.length >= 6) {
+                        const cliente = {
+                            curp: campos[0], nombre: campos[1], domicilio: campos[2] || '',
+                            cp: campos[3] || '', telefono: campos[4] || '', 
+                            poblacion_grupo: campos[5] || '', ruta: campos[6] || 'JC1'
+                        };
+                        if (cliente.curp && cliente.nombre) {
+                            const resultado = this.agregarCliente(cliente);
+                            if (resultado.success) registrosImportados.push(cliente);
+                            else errores.push(`Línea ${i + 1}: ${resultado.message}`);
+                        } else errores.push(`Línea ${i + 1}: CURP o Nombre faltante`);
+                    } else errores.push(`Línea ${i + 1}: Formato incorrecto`);
+                } else if (tipo === 'colocacion') {
+                    if (campos.length >= 9) {
+                        const credito = {
+                            curpCliente: campos[0], nombreCliente: campos[1], id: campos[2],
+                            fechaCreacion: campos[3] || new Date().toISOString(), tipo: campos[4],
+                            monto: parseFloat(campos[5]) || 0, plazo: parseInt(campos[6]) || 0,
+                            montoTotal: parseFloat(campos[7]) || 0, curpAval: campos[8] || '',
+                            nombreAval: campos[9] || ''
+                        };
+                        if (credito.curpCliente && credito.id) {
+                            const resultado = this.agregarCreditoImportado(credito);
+                            if (resultado.success) registrosImportados.push(credito);
+                            else errores.push(`Línea ${i + 1}: ${resultado.message}`);
+                        } else errores.push(`Línea ${i + 1}: CURP Cliente o ID Crédito faltante`);
+                    } else errores.push(`Línea ${i + 1}: Formato incorrecto`);
+                } else if (tipo === 'cobranza') {
+                    if (campos.length >= 10) {
+                        const pago = {
+                            nombreCliente: campos[0], idCredito: campos[1],
+                            fecha: campos[2] || new Date().toISOString(), monto: parseFloat(campos[3]) || 0,
+                            comision: parseFloat(campos[4]) || 0, tipoPago: campos[5] || 'normal',
+                            grupo: campos[6] || '', ruta: campos[7] || '', 
+                            semanaCredito: parseInt(campos[8]) || 1, saldo: parseFloat(campos[9]) || 0
+                        };
+                        if (pago.idCredito && pago.monto > 0) {
+                            const resultado = this.agregarPago(pago);
+                            if (resultado.success) registrosImportados.push(pago);
+                            else errores.push(`Línea ${i + 1}: ${resultado.message}`);
+                        } else errores.push(`Línea ${i + 1}: ID Crédito o Monto inválido`);
+                    } else errores.push(`Línea ${i + 1}: Formato incorrecto`);
                 }
             }
-            
-            this.saveClientes(clientesUnicos);
-            console.log('Clientes después de limpiar:', clientesUnicos);
-            
-            return { 
-                success: true, 
-                message: `Limpieza completada. ${clientes.length - clientesUnicos.length} duplicados eliminados.` 
-            };
+
+            return { success: true, total: lineas.length, importados: registrosImportados.length, errores: errores };
         } catch (error) {
-            console.error('Error en limpieza:', error);
-            return { success: false, message: `Error en limpieza: ${error.message}` };
+            return { success: false, message: `Error en la importación: ${error.message}` };
         }
     }
 
@@ -538,4 +387,3 @@ parseCSVLine(line) {
         return new Date() > fechaVencimiento;
     }
 }
-
