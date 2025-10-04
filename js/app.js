@@ -20,7 +20,7 @@ document.addEventListener('DOMContentLoaded', function () {
         document.getElementById('login-screen').classList.remove('hidden');
     }, 2000);
 
-    // ========== SISTEMA DE AUTENTICACIÓN ==========
+    // Sistema de autenticación
     document.getElementById('login-form').addEventListener('submit', function (e) {
         e.preventDefault();
         const username = document.getElementById('username').value;
@@ -60,7 +60,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
-    // ========== EVENT LISTENERS PRINCIPALES ==========
+    // ========== EVENT LISTENERS ==========
 
     // Logout
     document.getElementById('logout-btn').addEventListener('click', function() {
@@ -68,7 +68,7 @@ document.addEventListener('DOMContentLoaded', function () {
         location.reload();
     });
 
-    // Navegación entre vistas
+    // Navegación
     document.querySelectorAll('[data-view]').forEach(button => {
         button.addEventListener('click', function() {
             const targetView = this.getAttribute('data-view');
@@ -127,65 +127,35 @@ document.addEventListener('DOMContentLoaded', function () {
         loadUsersTable();
     });
 
-    // ========== IMPORTACIÓN DE DATOS - CORRECCIONES APLICADAS ==========
-
-    // Navegación entre pestañas de importación
+    // Importación
     document.querySelectorAll('.import-tab').forEach(tab => {
         tab.addEventListener('click', function() {
-            // Remover clase active de todas las pestañas
             document.querySelectorAll('.import-tab').forEach(t => t.classList.remove('active'));
-            // Ocultar todos los contenidos
             document.querySelectorAll('.import-tab-content').forEach(c => c.classList.add('hidden'));
-            
-            // Activar pestaña clickeada
             this.classList.add('active');
             currentImportTab = this.getAttribute('data-tab');
-            
-            // Mostrar contenido correspondiente
-            const tabContent = document.getElementById(`tab-${currentImportTab}`);
-            if (tabContent) {
-                tabContent.classList.remove('hidden');
-            }
+            document.getElementById(`tab-${currentImportTab}`).classList.remove('hidden');
         });
     });
 
-    // Procesar importación
     document.getElementById('btn-procesar-importacion').addEventListener('click', function() {
         const textareaId = `datos-importar-${currentImportTab}`;
-        const textarea = document.getElementById(textareaId);
-        
-        if (!textarea) {
-            showStatus('estado-importacion', 'Error: No se encontró el área de texto para importar', 'error');
-            document.getElementById('resultado-importacion').classList.remove('hidden');
-            return;
-        }
-        
-        const csvData = textarea.value;
-        
+        const csvData = document.getElementById(textareaId).value;
         if (!csvData.trim()) {
             showStatus('estado-importacion', 'No hay datos para importar', 'error');
             document.getElementById('resultado-importacion').classList.remove('hidden');
             return;
         }
-        
         const resultado = database.importarDatosDesdeCSV(csvData, currentImportTab);
-        
         if (resultado.success) {
             let mensaje = `Importación completada: ${resultado.importados} de ${resultado.total} registros procesados`;
-            
-            if (resultado.errores && resultado.errores.length > 0) {
+            if (resultado.errores.length > 0) {
                 mensaje += `<br>Errores: ${resultado.errores.length}`;
                 document.getElementById('detalle-importacion').innerHTML = 
                     `<strong>Detalle de errores:</strong><ul>${resultado.errores.map(e => `<li>${e}</li>`).join('')}</ul>`;
-            } else {
-                document.getElementById('detalle-importacion').innerHTML = '';
-            }
-            
+            } else document.getElementById('detalle-importacion').innerHTML = '';
             showStatus('estado-importacion', mensaje, 'success');
-        } else {
-            showStatus('estado-importacion', resultado.message, 'error');
-        }
-        
+        } else showStatus('estado-importacion', resultado.message, 'error');
         document.getElementById('resultado-importacion').classList.remove('hidden');
     });
 
@@ -203,7 +173,6 @@ document.addEventListener('DOMContentLoaded', function () {
         validarCURP(this, 'cliente');
     });
 
-    // ========== FORMULARIO CLIENTE - CORRECCIONES APLICADAS ==========
     document.getElementById('form-cliente').addEventListener('submit', function(e) {
         e.preventDefault();
         
@@ -220,30 +189,23 @@ document.addEventListener('DOMContentLoaded', function () {
             domicilio: document.getElementById('domicilio_cliente').value,
             cp: document.getElementById('cp_cliente').value,
             telefono: document.getElementById('telefono_cliente').value,
-            // FECHA DE REGISTRO AUTOMÁTICA - NO MANUAL (CORRECCIÓN APLICADA)
-            fecha_registro: new Date().toISOString().split('T')[0],
-            poblacion_grupo: document.getElementById('poblacion_grupo_cliente').value
+            poblacion_grupo: document.getElementById('poblacion_grupo_cliente').value,
+            ruta: document.getElementById('ruta_cliente').value
         };
 
         // Validar campos obligatorios
-        if (!cliente.nombre || !cliente.domicilio || !cliente.poblacion_grupo) {
+        if (!cliente.nombre || !cliente.domicilio || !cliente.poblacion_grupo || !cliente.ruta) {
             showStatus('status_cliente', 'Todos los campos marcados con * son obligatorios', 'error');
             return;
         }
 
         const resultado = database.agregarCliente(cliente);
         showStatus('status_cliente', resultado.message, resultado.success ? 'success' : 'error');
-        
         if (resultado.success) {
             document.getElementById('form-cliente').reset();
             // Resetear estilos del CURP
             curpClienteInput.style.backgroundColor = '';
             curpClienteInput.style.borderColor = '';
-            
-            // Recargar tabla de clientes si estamos en esa vista
-            if (document.getElementById('view-gestion-clientes').classList.contains('hidden') === false) {
-                loadClientesTable();
-            }
         }
     });
 
@@ -284,7 +246,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     document.getElementById('form-colocacion').addEventListener('submit', function(e) {
         e.preventDefault();
-        console.log('Formulario de crédito enviado');
+        console.log('Formulario de crédito enviado'); // Debug
         
         // Validaciones
         const curpAval = document.getElementById('curpAval_colocacion').value;
@@ -293,7 +255,7 @@ document.addEventListener('DOMContentLoaded', function () {
         const plazo = document.getElementById('plazo_colocacion').value;
         const tipoCredito = document.getElementById('tipo_colocacion').value;
         
-        console.log('Datos del formulario:', { curpAval, nombreAval, monto, plazo, tipoCredito });
+        console.log('Datos del formulario:', { curpAval, nombreAval, monto, plazo, tipoCredito }); // Debug
         
         if (!monto) {
             showStatus('status_colocacion', 'Debes seleccionar un monto', 'error');
@@ -327,14 +289,13 @@ document.addEventListener('DOMContentLoaded', function () {
             plazo: parseInt(plazo),
             montoTotal: parseFloat(document.getElementById('montoTotal_colocacion').value.replace('$', '').replace(',', '')),
             curpAval: curpAval,
-            nombreAval: nombreAval,
-            estado: 'activo'
+            nombreAval: nombreAval
         };
 
-        console.log('Datos del crédito a guardar:', credito);
+        console.log('Datos del crédito a guardar:', credito); // Debug
 
         const resultado = database.agregarCredito(credito);
-        console.log('Resultado de agregar crédito:', resultado);
+        console.log('Resultado de agregar crédito:', resultado); // Debug
         
         if (resultado.success) {
             // Mostrar número de crédito generado
@@ -428,11 +389,7 @@ document.addEventListener('DOMContentLoaded', function () {
         const pago = {
             idCredito: creditoActual.id,
             monto: parseFloat(document.getElementById('monto_cobranza').value),
-            tipoPago: document.getElementById('tipo_cobranza').value,
-            grupo: document.getElementById('grupo_cobranza').value,
-            ruta: 'JC1', // Por defecto
-            interesCobrado: parseFloat(document.getElementById('monto_cobranza').value) * 0.3,
-            cobradoPor: currentUser.name
+            tipoPago: document.getElementById('tipo_cobranza').value
         };
         const resultado = database.agregarPago(pago);
         showStatus('status_cobranza', resultado.message, resultado.success ? 'success' : 'error');
@@ -445,7 +402,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     });
 
-    // ========== REPORTES ==========
+    // Reportes
     document.getElementById('btn-actualizar-reportes').addEventListener('click', function() {
         const reportes = database.generarReportes();
         document.getElementById('total-clientes').textContent = reportes.totalClientes;
@@ -458,18 +415,6 @@ document.addEventListener('DOMContentLoaded', function () {
         const tasaRecuperacion = reportes.totalCartera > 0 ? 
             ((reportes.cobradoMes / reportes.totalCartera) * 100).toFixed(1) : 0;
         document.getElementById('tasa-recuperacion').textContent = `${tasaRecuperacion}%`;
-    });
-
-    // ========== FILTROS DE CLIENTES - CORRECCIONES APLICADAS ==========
-    document.getElementById('btn-aplicar-filtros').addEventListener('click', loadClientesTable);
-    document.getElementById('btn-limpiar-filtros').addEventListener('click', function() {
-        document.getElementById('filtro-curp').value = '';
-        document.getElementById('filtro-nombre').value = '';
-        document.getElementById('filtro-telefono').value = '';
-        document.getElementById('filtro-grupo').value = '';
-        document.getElementById('filtro-fecha').value = '';
-        document.getElementById('filtro-cp').value = '';
-        loadClientesTable();
     });
 
     // Eventos de vistas
@@ -544,44 +489,36 @@ function validarFormatoCURP(curp) {
 
 // ========== INICIALIZACIÓN DROPDOWNS ==========
 function inicializarDropdowns() {
-    // Datos reales de la hoja TABLAS del sistema Finzana
-    const dropdownOptions = {
-        tipoColocacion: ["NUEVO", "RENOVACION", "REINGRESO"],
-        tipoPago: ["EXTRAORDINARIO", "ACTUALIZADO", "NORMAL"],
-        plazos: ["14", "10", "13"],
-        montos: ["3000", "3500", "4000", "4500", "5000", "6000", "7000", "8000", "9000", "10000"],
-        estados: ["JALISCO", "GUANAJUATO"],
-        poblaciones: [
-            "LA CALERA", "ATEQUIZA", "SAN JACINTO", "PONCITLAN", "OCOTLAN",
-            "ARENAL", "AMATITAN", "ACATLAN DE JUAREZ", "BELLAVISTA", 
-            "SAN ISIDRO MAZATEPEC", "TALA", "CUISILLOS", "HUAXTLA", "NEXTIPAC",
-            "SANTA LUCIA", "JAMAY", "LA BARCA", "SAN JUAN DE OCOTAN", "TALA 2",
-            "EL HUMEDO", "NEXTIPAC 2", "ZZ PUEBLO"
-        ],
-        rGrupo: ["JC1", "RUTAX"],
-        rutas: [
-            "AUDITORIA", "SUPERVISION", "ADMINISTRACION", "DIRECCION",
-            "COMERCIAL", "COBRANZA", "R1", "R2", "R3", "JC1", "RX"
-        ]
-    };
-
-    // Inicializar dropdown de estado
-    const estadoSelect = document.getElementById('estado_cliente');
-    if (estadoSelect) {
-        estadoSelect.innerHTML = '<option value="">Selecciona un estado</option>';
-        dropdownOptions.estados.forEach(estado => {
-            const option = document.createElement('option');
-            option.value = estado;
-            option.textContent = estado;
-            estadoSelect.appendChild(option);
-        });
-    }
-
+    // Poblaciones/Grupos disponibles (datos reales del sistema)
+    const poblaciones = [
+        'Aguascalientes Centro', 'Bajío Norte', 'Bajío Sur', 
+        'Centro Occidente', 'Centro Norte', 'Centro Sur',
+        'Noroeste', 'Norte', 'Occidente', 'Oriente',
+        'Pacífico Centro', 'Pacífico Norte', 'Pacífico Sur',
+        'Peninsular', 'Sureste', 'Zona Metropolitana'
+    ];
+    
+    // Rutas disponibles (datos reales del sistema)
+    const rutas = [
+        'RUTA-001', 'RUTA-002', 'RUTA-003', 'RUTA-004', 'RUTA-005',
+        'RUTA-006', 'RUTA-007', 'RUTA-008', 'RUTA-009', 'RUTA-010',
+        'RUTA-011', 'RUTA-012', 'RUTA-013', 'RUTA-014', 'RUTA-015'
+    ];
+    
+    // Montos de crédito disponibles
+    const montos = [3000, 3500, 4000, 4500, 5000, 6000, 7000, 8000, 9000, 10000];
+    
+    // Tipos de crédito
+    const tiposCredito = ['Nuevo', 'Renovación', 'Ingreso'];
+    
+    // Plazos disponibles
+    const plazos = [13, 14];
+    
     // Inicializar dropdown de población/grupo
     const poblacionSelect = document.getElementById('poblacion_grupo_cliente');
     if (poblacionSelect) {
         poblacionSelect.innerHTML = '<option value="">Selecciona una población/grupo</option>';
-        dropdownOptions.poblaciones.forEach(poblacion => {
+        poblaciones.forEach(poblacion => {
             const option = document.createElement('option');
             option.value = poblacion;
             option.textContent = poblacion;
@@ -593,7 +530,7 @@ function inicializarDropdowns() {
     const rutaSelect = document.getElementById('ruta_cliente');
     if (rutaSelect) {
         rutaSelect.innerHTML = '<option value="">Selecciona una ruta</option>';
-        dropdownOptions.rutas.forEach(ruta => {
+        rutas.forEach(ruta => {
             const option = document.createElement('option');
             option.value = ruta;
             option.textContent = ruta;
@@ -605,7 +542,7 @@ function inicializarDropdowns() {
     const tipoCreditoSelect = document.getElementById('tipo_colocacion');
     if (tipoCreditoSelect) {
         tipoCreditoSelect.innerHTML = '<option value="">Selecciona tipo de crédito</option>';
-        dropdownOptions.tipoColocacion.forEach(tipo => {
+        tiposCredito.forEach(tipo => {
             const option = document.createElement('option');
             option.value = tipo.toLowerCase();
             option.textContent = tipo;
@@ -617,10 +554,10 @@ function inicializarDropdowns() {
     const montoSelect = document.getElementById('monto_colocacion');
     if (montoSelect) {
         montoSelect.innerHTML = '<option value="">Selecciona un monto</option>';
-        dropdownOptions.montos.forEach(monto => {
+        montos.forEach(monto => {
             const option = document.createElement('option');
             option.value = monto;
-            option.textContent = `$${parseInt(monto).toLocaleString()}`;
+            option.textContent = `$${monto.toLocaleString()}`;
             montoSelect.appendChild(option);
         });
     }
@@ -629,51 +566,13 @@ function inicializarDropdowns() {
     const plazoSelect = document.getElementById('plazo_colocacion');
     if (plazoSelect) {
         plazoSelect.innerHTML = '<option value="">Selecciona un plazo</option>';
-        dropdownOptions.plazos.forEach(plazo => {
+        plazos.forEach(plazo => {
             const option = document.createElement('option');
             option.value = plazo;
             option.textContent = `${plazo} semanas`;
             plazoSelect.appendChild(option);
         });
     }
-
-    // Inicializar dropdown de grupo/población para colocación
-    const grupoPoblacionSelect = document.getElementById('grupo_poblacion_colocacion');
-    if (grupoPoblacionSelect) {
-        grupoPoblacionSelect.innerHTML = '<option value="">Selecciona grupo/población</option>';
-        dropdownOptions.poblaciones.forEach(poblacion => {
-            const option = document.createElement('option');
-            option.value = poblacion;
-            option.textContent = poblacion;
-            grupoPoblacionSelect.appendChild(option);
-        });
-    }
-
-    // Inicializar dropdown de ruta para colocación
-    const rutaColocacionSelect = document.getElementById('ruta_colocacion');
-    if (rutaColocacionSelect) {
-        rutaColocacionSelect.innerHTML = '<option value="">Selecciona una ruta</option>';
-        dropdownOptions.rutas.forEach(ruta => {
-            const option = document.createElement('option');
-            option.value = ruta;
-            option.textContent = ruta;
-            rutaColocacionSelect.appendChild(option);
-        });
-    }
-
-    // Inicializar dropdown de tipo de pago (cobranza)
-    const tipoPagoSelect = document.getElementById('tipo_cobranza');
-    if (tipoPagoSelect) {
-        tipoPagoSelect.innerHTML = '';
-        dropdownOptions.tipoPago.forEach(tipo => {
-            const option = document.createElement('option');
-            option.value = tipo.toLowerCase();
-            option.textContent = tipo;
-            tipoPagoSelect.appendChild(option);
-        });
-    }
-
-    console.log('✅ Dropdowns inicializados con datos reales del sistema');
 }
 
 // ========== GESTIÓN DE USUARIOS ==========
@@ -730,49 +629,64 @@ function deleteUser(username) {
     }
 }
 
-// ========== GESTIÓN DE CLIENTES - CORRECCIONES APLICADAS ==========
+// ========== GESTIÓN DE CLIENTES ==========
 function loadClientesTable() {
     const clientes = database.getClientes();
     const tbody = document.getElementById('tabla-clientes');
-    
-    // Obtener valores de filtros
-    const filtroCurp = document.getElementById('filtro-curp').value.toLowerCase();
-    const filtroNombre = document.getElementById('filtro-nombre').value.toLowerCase();
-    const filtroTelefono = document.getElementById('filtro-telefono').value.toLowerCase();
-    const filtroGrupo = document.getElementById('filtro-grupo').value;
-    const filtroFecha = document.getElementById('filtro-fecha').value;
-    const filtroCp = document.getElementById('filtro-cp').value.toLowerCase();
-    
+    const busqueda = document.getElementById('buscar-cliente').value.toLowerCase();
     tbody.innerHTML = '';
-    
-    const clientesFiltrados = clientes.filter(cliente => {
-        // Aplicar todos los filtros
-        if (filtroCurp && !cliente.curp.toLowerCase().includes(filtroCurp)) return false;
-        if (filtroNombre && !cliente.nombre.toLowerCase().includes(filtroNombre)) return false;
-        if (filtroTelefono && !cliente.telefono.toLowerCase().includes(filtroTelefono)) return false;
-        if (filtroGrupo && cliente.poblacion_grupo !== filtroGrupo) return false;
-        if (filtroFecha && cliente.fecha_registro !== filtroFecha) return false;
-        if (filtroCp && !cliente.cp.toLowerCase().includes(filtroCp)) return false;
-        
-        return true;
-    });
-    
-    if (clientesFiltrados.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="8" class="text-center">No se encontraron clientes con los filtros aplicados</td></tr>';
-        return;
-    }
-    
+    const clientesFiltrados = clientes.filter(cliente => 
+        cliente.curp.toLowerCase().includes(busqueda) || cliente.nombre.toLowerCase().includes(busqueda)
+    );
     for (const cliente of clientesFiltrados) {
         const tr = document.createElement('tr');
-        
+        const infoCredito = database.obtenerInformacionCreditoCliente(cliente.curp);
+        let infoCreditoHTML = '<em>Sin crédito activo</em>';
+        if (infoCredito) {
+            const estadoClase = infoCredito.estaAlCorriente ? 'status-al-corriente' : 'status-atrasado';
+            const estadoTexto = infoCredito.estaAlCorriente ? 'Al Corriente' : `Atrasado (${infoCredito.semanasAtraso} semanas)`;
+            infoCreditoHTML = `
+                <div class="credito-info">
+                    <h5>Información del Crédito</h5>
+                    <div class="info-grid">
+                        <div class="info-item">
+                            <span class="info-label">ID Crédito:</span>
+                            <span class="info-value">${infoCredito.idCredito}</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">Fecha Creación:</span>
+                            <span class="info-value">${new Date(infoCredito.fechaCreacion).toLocaleDateString()}</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">Siguiente Pago:</span>
+                            <span class="info-value">${infoCredito.siguientePago}</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">Estado:</span>
+                            <span class="info-value ${estadoClase}">${estadoTexto}</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">Saldo Restante:</span>
+                            <span class="info-value">$${infoCredito.saldoRestante.toLocaleString()}</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">Semana:</span>
+                            <span class="info-value">${infoCredito.semanaActual}/${infoCredito.plazoTotal}</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">Pagado:</span>
+                            <span class="info-value">${infoCredito.porcentajePagado}%</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
         tr.innerHTML = `
-            <td>${cliente.curp || ''}</td>
-            <td>${cliente.nombre || ''}</td>
-            <td>${cliente.domicilio || ''}</td>
-            <td>${cliente.cp || ''}</td>
-            <td>${cliente.telefono || ''}</td>
-            <td>${cliente.fecha_registro || ''}</td>
-            <td>${cliente.poblacion_grupo || ''}</td>
+            <td>${cliente.curp}</td>
+            <td>${cliente.nombre}</td>
+            <td>${cliente.telefono}</td>
+            <td>${cliente.poblacion_grupo}</td>
+            <td>${infoCreditoHTML}</td>
             <td class="action-buttons">
                 <button class="btn btn-sm btn-secondary" onclick="editCliente('${cliente.curp}')">
                     <i class="fas fa-edit"></i>
@@ -796,7 +710,7 @@ function editCliente(curp) {
         document.getElementById('cp_cliente').value = cliente.cp;
         document.getElementById('telefono_cliente').value = cliente.telefono;
         document.getElementById('poblacion_grupo_cliente').value = cliente.poblacion_grupo;
-        
+        document.getElementById('ruta_cliente').value = cliente.ruta;
         document.querySelector('#form-cliente button[type="submit"]').innerHTML = '<i class="fas fa-save"></i> Actualizar Cliente';
         document.getElementById('form-cliente').onsubmit = function(e) {
             e.preventDefault();
@@ -806,8 +720,8 @@ function editCliente(curp) {
                 domicilio: document.getElementById('domicilio_cliente').value,
                 cp: document.getElementById('cp_cliente').value,
                 telefono: document.getElementById('telefono_cliente').value,
-                fecha_registro: cliente.fecha_registro, // Mantener la fecha original
-                poblacion_grupo: document.getElementById('poblacion_grupo_cliente').value
+                poblacion_grupo: document.getElementById('poblacion_grupo_cliente').value,
+                ruta: document.getElementById('ruta_cliente').value
             };
             const resultado = database.actualizarCliente(curp, datosActualizados);
             showStatus('status_cliente', resultado.message, resultado.success ? 'success' : 'error');
