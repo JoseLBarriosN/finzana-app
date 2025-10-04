@@ -11,6 +11,7 @@
             color: var(--danger);
             font-weight: bold;
         }
+
         .field-note {
             font-size: 12px;
             color: var(--gray);
@@ -88,7 +89,7 @@
             <div id="view-main-menu" class="view">
                 <h2>Panel de Control</h2>
                 <p>Selecciona una opción para gestionar el sistema</p>
-                
+
                 <div class="menu-grid">
                     <div class="menu-card" data-view="view-gestion-clientes">
                         <div class="menu-icon icon-clientes">
@@ -184,28 +185,79 @@
                         <span>Volver al Menú</span>
                     </button>
                 </div>
-                
-                <div class="search-group">
-                    <input type="text" id="buscar-cliente" placeholder="Buscar por CURP o nombre...">
-                    <button id="btn-buscar-cliente" class="btn btn-primary">
-                        <i class="fas fa-search"></i>
-                        <span>Buscar</span>
-                    </button>
+
+                <div class="filtros-container">
+                    <h3>Filtros de Búsqueda</h3>
+                    <div id="filtros-grid" class="filtros-grid">
+                        <div class="form-group">
+                            <label for="sucursal_filtro">Sucursal</label>
+                            <select id="sucursal_filtro">
+                                <option value="">Todas</option>
+                                <option value="GDL">Guadalajara</option>
+                                <option value="LEON">León</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="curp_filtro">CURP Cliente</label>
+                            <input type="text" id="curp_filtro" placeholder="Buscar por CURP...">
+                        </div>
+                        <div class="form-group">
+                            <label for="nombre_filtro">Nombre Cliente</label>
+                            <input type="text" id="nombre_filtro" placeholder="Buscar por nombre...">
+                        </div>
+                        <div class="form-group">
+                            <label for="fecha_registro_filtro">Fecha de Registro</label>
+                            <input type="date" id="fecha_registro_filtro">
+                        </div>
+                        <div class="form-group">
+                            <label for="fecha_credito_filtro">Fecha de Crédito</label>
+                            <input type="date" id="fecha_credito_filtro">
+                        </div>
+                        <div class="form-group">
+                            <label for="tipo_colocacion_filtro">Tipo de Colocación</label>
+                            <select id="tipo_colocacion_filtro">
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="plazo_filtro">Plazo</label>
+                            <select id="plazo_filtro">
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="curp_aval_filtro">CURP Aval</label>
+                            <input type="text" id="curp_aval_filtro" placeholder="Buscar por CURP de aval...">
+                        </div>
+                        <div class="form-group">
+                            <label for="grupo_filtro">Grupo o Población</label>
+                            <select id="grupo_filtro">
+                            </select>
+                        </div>
+                    </div>
+                    <div class="filtros-actions">
+                        <button id="btn-aplicar-filtros" class="btn btn-primary">
+                            <i class="fas fa-search"></i>
+                            <span>Filtrar</span>
+                        </button>
+                        <button id="btn-limpiar-filtros" class="btn btn-secondary">
+                            <i class="fas fa-times"></i>
+                            <span>Limpiar Filtros</span>
+                        </button>
+                    </div>
                 </div>
+
                 <div id="status_gestion_clientes"></div>
                 <table class="client-table">
                     <thead>
                         <tr>
+                            <th>Sucursal</th>
                             <th>CURP</th>
                             <th>Nombre</th>
-                            <th>Teléfono</th>
                             <th>Grupo</th>
                             <th>Información de Crédito</th>
                             <th>Acciones</th>
                         </tr>
                     </thead>
                     <tbody id="tabla-clientes">
-                        <!-- Los datos se cargan dinámicamente -->
                     </tbody>
                 </table>
             </div>
@@ -218,13 +270,13 @@
                         <span>Volver al Menú</span>
                     </button>
                 </div>
-                
+
                 <button id="btn-nuevo-usuario" class="btn btn-primary">
                     <i class="fas fa-user-plus"></i>
                     <span>Nuevo Usuario</span>
                 </button>
                 <div id="status_usuarios"></div>
-                
+
                 <div id="form-usuario-container" class="hidden">
                     <h3 id="form-usuario-titulo">Nuevo Usuario</h3>
                     <form id="form-usuario">
@@ -270,7 +322,7 @@
                         </div>
                     </form>
                 </div>
-                
+
                 <table class="user-table">
                     <thead>
                         <tr>
@@ -283,7 +335,6 @@
                         </tr>
                     </thead>
                     <tbody id="tabla-usuarios">
-                        <!-- Los datos se cargan dinámicamente -->
                     </tbody>
                 </table>
             </div>
@@ -296,95 +347,59 @@
                         <span>Volver al Menú</span>
                     </button>
                 </div>
-                
-                <p>Importa información desde archivos CSV al sistema</p>
-                
-                <div class="import-tabs">
-                    <div class="import-tab active" data-tab="clientes">Clientes</div>
-                    <div class="import-tab" data-tab="colocacion">Colocación</div>
-                    <div class="import-tab" data-tab="cobranza">Cobranza</div>
-                </div>
-                
-                <div id="tab-clientes" class="import-tab-content">
-                    <div class="import-section">
-                        <h4>Formato para importar clientes</h4>
-                        <p>El archivo CSV debe tener las siguientes columnas en orden:</p>
-                        <ul>
-                            <li>CURP</li>
-                            <li>Nombre</li>
-                            <li>Domicilio</li>
-                            <li>Código Postal</li>
-                            <li>Teléfono</li>
-                            <li>Población/Grupo</li>
-                            <li>Ruta (opcional)</li>
-                        </ul>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="datos-importar-clientes">Datos CSV</label>
-                        <textarea id="datos-importar-clientes" rows="10" placeholder="Pega aquí los datos en formato CSV"></textarea>
-                    </div>
-                </div>
-                
-                <div id="tab-colocacion" class="import-tab-content hidden">
-                    <div class="import-section">
-                        <h4>Formato para importar colocación</h4>
-                        <p>El archivo CSV debe tener las siguientes columnas en orden:</p>
-                        <ul>
-                            <li>CURP Cliente</li>
-                            <li>Nombre Cliente</li>
-                            <li>ID Crédito</li>
-                            <li>Fecha Creación (YYYY-MM-DD)</li>
-                            <li>Tipo</li>
-                            <li>Monto</li>
-                            <li>Plazo (semanas)</li>
-                            <li>Monto Total</li>
-                            <li>CURP Aval (opcional)</li>
-                            <li>Nombre Aval (opcional)</li>
-                        </ul>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="datos-importar-colocacion">Datos CSV</label>
-                        <textarea id="datos-importar-colocacion" rows="10" placeholder="Pega aquí los datos en formato CSV"></textarea>
-                    </div>
-                </div>
-                
-                <div id="tab-cobranza" class="import-tab-content hidden">
-                    <div class="import-section">
-                        <h4>Formato para importar cobranza</h4>
-                        <p>El archivo CSV debe tener las siguientes columnas en orden:</p>
-                        <ul>
-                            <li>Nombre Cliente</li>
-                            <li>ID Crédito</li>
-                            <li>Fecha (YYYY-MM-DD)</li>
-                            <li>Monto</li>
-                            <li>Comisión</li>
-                            <li>Tipo Pago</li>
-                            <li>Grupo</li>
-                            <li>Ruta</li>
-                            <li>Semana Crédito</li>
-                            <li>Saldo</li>
-                        </ul>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="datos-importar-cobranza">Datos CSV</label>
-                        <textarea id="datos-importar-cobranza" rows="10" placeholder="Pega aquí los datos en formato CSV"></textarea>
-                    </div>
-                </div>
-                
+
                 <div class="form-group">
-                    <button id="btn-procesar-importacion" class="btn btn-primary">
-                        <i class="fas fa-file-import"></i>
-                        <span>Procesar Importación</span>
-                    </button>
-                    <button id="btn-limpiar-datos" class="btn btn-danger">
-                        <i class="fas fa-trash"></i>
-                        <span>Limpiar Base de Datos</span>
-                    </button>
+                    <label for="office-select">Selecciona la Sucursal para Importar</label>
+                    <select id="office-select">
+                        <option value="GDL">Guadalajara</option>
+                        <option value="LEON">León</option>
+                    </select>
                 </div>
-                
+
+                <div id="import-gdl-section">
+                    <div class="import-tabs">
+                        <div class="import-tab active" data-tab="clientes">Clientes</div>
+                        <div class="import-tab" data-tab="colocacion">Colocación</div>
+                        <div class="import-tab" data-tab="cobranza">Cobranza</div>
+                    </div>
+                    <div id="tab-gdl-clientes" class="import-tab-content">
+                        <div class="import-section"><h4>Formato Guadalajara - Clientes (7 columnas)</h4><p>CURP, NOMBRE, DOMICILIO, CP, TELEFONO, FECHA REGISTRO, GRUPO</p></div>
+                        <textarea id="datos-importar-gdl-clientes" rows="8" placeholder="Pega aquí los datos CSV..."></textarea>
+                    </div>
+                    <div id="tab-gdl-colocacion" class="import-tab-content hidden">
+                        <div class="import-section"><h4>Formato Guadalajara - Colocación (13 columnas)</h4><p>CURP, NOMBRE, ID, FECHA, TIPO, MONTO, PLAZO, MONTO A PAGAR, CURP AVAL, NOMBRE AVAL, GRUPO, RUTA, SALDO</p></div>
+                        <textarea id="datos-importar-gdl-colocacion" rows="8" placeholder="Pega aquí los datos CSV..."></textarea>
+                    </div>
+                    <div id="tab-gdl-cobranza" class="import-tab-content hidden">
+                        <div class="import-section"><h4>Formato Guadalajara - Cobranza (11 columnas)</h4><p>NOMBRE, ID CREDITO, FECHA, MONTO PAGO, COBRO SEMANA, COMISION, TIPO PAGO, GRUPO, RUTA, SEMANA CREDITO, SALDO</p></div>
+                        <textarea id="datos-importar-gdl-cobranza" rows="8" placeholder="Pega aquí los datos CSV..."></textarea>
+                    </div>
+                </div>
+
+                <div id="import-leon-section" class="hidden">
+                    <div class="import-tabs">
+                        <div class="import-tab active" data-tab="clientes">Clientas</div>
+                        <div class="import-tab" data-tab="colocacion">Colocación</div>
+                        <div class="import-tab" data-tab="cobranza">Cobranza</div>
+                    </div>
+                    <div id="tab-leon-clientes" class="import-tab-content">
+                        <div class="import-section"><h4>Formato León - Clientas (7 columnas)</h4><p>CURP, NOMBRE, DOMICILIO, CP, TELEFONO, FECHA REGISTRO, GRUPO</p></div>
+                        <textarea id="datos-importar-leon-clientes" rows="8" placeholder="Pega aquí los datos CSV..."></textarea>
+                    </div>
+                    <div id="tab-leon-colocacion" class="import-tab-content hidden">
+                        <div class="import-section"><h4>Formato León - Colocación (20 columnas)</h4><p>CURP, NOMBRE, ID, FECHA, TIPO, MONTO, PLAZO, MONTO A PAGAR, CURP AVAL, NOMBRE AVAL, GRUPO, RUTA, INTERES, SALDO, ULTIMO PAGO, SALDO VENCIDO, STATUS, SALDO CAPITAL, SALDO INTERES, STJ150</p></div>
+                        <textarea id="datos-importar-leon-colocacion" rows="8" placeholder="Pega aquí los datos CSV..."></textarea>
+                    </div>
+                    <div id="tab-leon-cobranza" class="import-tab-content hidden">
+                        <div class="import-section"><h4>Formato León - Cobranza (11 columnas)</h4><p>NOMBRE, ID CREDITO, FECHA, MONTO PAGO, COMISION, TIPO PAGO, GRUPO, RUTA, INTERES COBRADO, SALDO, COBRADO POR</p></div>
+                        <textarea id="datos-importar-leon-cobranza" rows="8" placeholder="Pega aquí los datos CSV..."></textarea>
+                    </div>
+                </div>
+
+                <div class="form-group" style="margin-top: 20px;">
+                    <button id="btn-procesar-importacion" class="btn btn-primary"><i class="fas fa-file-import"></i> Procesar Importación</button>
+                    <button id="btn-limpiar-datos" class="btn btn-danger"><i class="fas fa-trash"></i> Limpiar Base de Datos</button>
+                </div>
                 <div id="resultado-importacion" class="hidden">
                     <div id="estado-importacion"></div>
                     <div id="detalle-importacion"></div>
@@ -399,7 +414,6 @@
                         <span>Volver al Menú</span>
                     </button>
                 </div>
-                
                 <form id="form-cliente">
                     <div class="form-group">
                         <label for="curp_cliente">CURP <span class="required">*</span></label>
@@ -424,25 +438,15 @@
                     </div>
                     <div class="form-group">
                         <label for="poblacion_grupo_cliente">Población/Grupo <span class="required">*</span></label>
-                        <select id="poblacion_grupo_cliente" required>
-                            <!-- Opciones se cargan dinámicamente -->
-                        </select>
+                        <select id="poblacion_grupo_cliente" required></select>
                     </div>
                     <div class="form-group">
                         <label for="ruta_cliente">Ruta <span class="required">*</span></label>
-                        <select id="ruta_cliente" required>
-                            <!-- Opciones se cargan dinámicamente -->
-                        </select>
+                        <select id="ruta_cliente" required></select>
                     </div>
                     <div class="form-group">
-                        <button type="submit" class="btn btn-success">
-                            <i class="fas fa-save"></i>
-                            <span>Guardar Cliente</span>
-                        </button>
-                        <button type="button" class="btn btn-secondary" data-view="view-main-menu">
-                            <i class="fas fa-times"></i>
-                            <span>Cancelar</span>
-                        </button>
+                        <button type="submit" class="btn btn-success"><i class="fas fa-save"></i> Guardar Cliente</button>
+                        <button type="button" class="btn btn-secondary" data-view="view-main-menu"><i class="fas fa-times"></i> Cancelar</button>
                     </div>
                 </form>
                 <div id="status_cliente"></div>
@@ -456,69 +460,28 @@
                         <span>Volver al Menú</span>
                     </button>
                 </div>
-                
                 <div class="form-group">
                     <label for="curp_colocacion">CURP del Cliente <span class="required">*</span></label>
                     <div class="search-group">
                         <input type="text" id="curp_colocacion" placeholder="Ingresa la CURP del cliente" required>
-                        <button id="btnBuscarCliente_colocacion" class="btn btn-primary">
-                            <i class="fas fa-search"></i>
-                            <span>Buscar Cliente</span>
-                        </button>
+                        <button id="btnBuscarCliente_colocacion" class="btn btn-primary"><i class="fas fa-search"></i> Buscar Cliente</button>
                     </div>
                 </div>
-                
                 <div id="form-colocacion" class="hidden">
-                    <div class="form-group">
-                        <label for="nombre_colocacion">Nombre del Cliente</label>
-                        <input type="text" id="nombre_colocacion" readonly>
-                    </div>
-                    <div class="form-group">
-                        <label for="idCredito_colocacion">ID del Crédito</label>
-                        <input type="text" id="idCredito_colocacion" readonly>
-                    </div>
-                    <div class="form-group">
-                        <label for="tipo_colocacion">Tipo de Crédito <span class="required">*</span></label>
-                        <select id="tipo_colocacion" required>
-                            <!-- Opciones se cargan dinámicamente -->
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label for="monto_colocacion">Monto Solicitado <span class="required">*</span></label>
-                        <select id="monto_colocacion" required>
-                            <!-- Opciones se cargan dinámicamente -->
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label for="plazo_colocacion">Plazo (semanas) <span class="required">*</span></label>
-                        <select id="plazo_colocacion" required>
-                            <!-- Opciones se cargan dinámicamente -->
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label for="montoTotal_colocacion">Monto Total a Pagar</label>
-                        <input type="text" id="montoTotal_colocacion" readonly>
-                        <div class="field-note">Incluye el 30% de interés</div>
-                    </div>
-                    <div class="form-group">
-                        <label for="curpAval_colocacion">CURP del Aval <span class="required">*</span></label>
-                        <input type="text" id="curpAval_colocacion" placeholder="18 caracteres" required maxlength="18">
-                        <div class="field-note">El CURP debe tener exactamente 18 caracteres</div>
-                    </div>
-                    <div class="form-group">
-                        <label for="nombreAval_colocacion">Nombre del Aval <span class="required">*</span></label>
-                        <input type="text" id="nombreAval_colocacion" required>
-                    </div>
-                    <div class="form-group">
-                        <button type="submit" class="btn btn-success">
-                            <i class="fas fa-hand-holding-usd"></i>
-                            <span>Generar Crédito</span>
-                        </button>
-                        <button type="button" class="btn btn-secondary" data-view="view-main-menu">
-                            <i class="fas fa-times"></i>
-                            <span>Cancelar</span>
-                        </button>
-                    </div>
+                    <form id="form-credito-submit">
+                        <div class="form-group"><label for="nombre_colocacion">Nombre del Cliente</label><input type="text" id="nombre_colocacion" readonly></div>
+                        <div class="form-group"><label for="idCredito_colocacion">ID del Crédito</label><input type="text" id="idCredito_colocacion" readonly></div>
+                        <div class="form-group"><label for="tipo_colocacion">Tipo de Crédito <span class="required">*</span></label><select id="tipo_colocacion" required></select></div>
+                        <div class="form-group"><label for="monto_colocacion">Monto Solicitado <span class="required">*</span></label><select id="monto_colocacion" required></select></div>
+                        <div class="form-group"><label for="plazo_colocacion">Plazo (semanas) <span class="required">*</span></label><select id="plazo_colocacion" required></select></div>
+                        <div class="form-group"><label for="montoTotal_colocacion">Monto Total a Pagar</label><input type="text" id="montoTotal_colocacion" readonly><div class="field-note">Incluye el 30% de interés</div></div>
+                        <div class="form-group"><label for="curpAval_colocacion">CURP del Aval <span class="required">*</span></label><input type="text" id="curpAval_colocacion" placeholder="18 caracteres" required maxlength="18"><div class="field-note">18 caracteres</div></div>
+                        <div class="form-group"><label for="nombreAval_colocacion">Nombre del Aval <span class="required">*</span></label><input type="text" id="nombreAval_colocacion" required></div>
+                        <div class="form-group">
+                            <button type="submit" class="btn btn-success"><i class="fas fa-hand-holding-usd"></i> Generar Crédito</button>
+                            <button type="button" class="btn btn-secondary" data-view="view-main-menu"><i class="fas fa-times"></i> Cancelar</button>
+                        </div>
+                    </form>
                 </div>
                 <div id="status_colocacion"></div>
             </div>
@@ -531,69 +494,32 @@
                         <span>Volver al Menú</span>
                     </button>
                 </div>
-                
                 <div class="form-group">
                     <label for="idCredito_cobranza">ID del Crédito <span class="required">*</span></label>
                     <div class="search-group">
                         <input type="text" id="idCredito_cobranza" placeholder="Ingresa el ID del crédito" required>
-                        <button id="btnBuscarCredito_cobranza" class="btn btn-primary">
-                            <i class="fas fa-search"></i>
-                            <span>Buscar Crédito</span>
-                        </button>
+                        <button id="btnBuscarCredito_cobranza" class="btn btn-primary"><i class="fas fa-search"></i> Buscar Crédito</button>
                     </div>
                 </div>
-                
                 <div id="form-cobranza" class="hidden">
-                    <div class="form-group">
-                        <label for="nombre_cobranza">Nombre del Cliente</label>
-                        <input type="text" id="nombre_cobranza" readonly>
-                    </div>
-                    <div class="form-group">
-                        <label for="grupo_cobranza">Grupo</label>
-                        <input type="text" id="grupo_cobranza" readonly>
-                    </div>
-                    <div class="form-group">
-                        <label for="saldo_cobranza">Saldo Actual</label>
-                        <input type="text" id="saldo_cobranza" readonly>
-                    </div>
-                    <div class="form-group">
-                        <label for="estado_cobranza">Estado del Crédito</label>
-                        <input type="text" id="estado_cobranza" readonly>
-                    </div>
-                    <div class="form-group">
-                        <label for="siguiente_pago_cobranza">Siguiente Pago</label>
-                        <input type="text" id="siguiente_pago_cobranza" readonly>
-                    </div>
-                    <div class="form-group">
-                        <label for="semanas_atraso_cobranza">Semanas de Atraso</label>
-                        <input type="text" id="semanas_atraso_cobranza" readonly>
-                    </div>
-                    <div class="form-group">
-                        <label for="monto_cobranza">Monto del Pago <span class="required">*</span></label>
-                        <input type="number" id="monto_cobranza" min="1" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="tipo_cobranza">Tipo de Pago <span class="required">*</span></label>
-                        <select id="tipo_cobranza" required>
-                            <option value="normal">Normal</option>
-                            <option value="extraordinario">Extraordinario</option>
-                            <option value="actualizado">Actualizado</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label for="saldoDespues_cobranza">Saldo Después del Pago</label>
-                        <input type="text" id="saldoDespues_cobranza" readonly>
-                    </div>
-                    <div class="form-group">
-                        <button type="submit" class="btn btn-success">
-                            <i class="fas fa-cash-register"></i>
-                            <span>Registrar Pago</span>
-                        </button>
-                        <button type="button" class="btn btn-secondary" data-view="view-main-menu">
-                            <i class="fas fa-times"></i>
-                            <span>Cancelar</span>
-                        </button>
-                    </div>
+                    <form id="form-pago-submit">
+                        <div class="form-group"><label for="nombre_cobranza">Nombre del Cliente</label><input type="text" id="nombre_cobranza" readonly></div>
+                        <div class="form-group"><label for="grupo_cobranza">Grupo</label><input type="text" id="grupo_cobranza" readonly></div>
+                        <div class="form-group"><label for="saldo_cobranza">Saldo Actual</label><input type="text" id="saldo_cobranza" readonly></div>
+                        <div class="form-group"><label for="estado_cobranza">Estado del Crédito</label><input type="text" id="estado_cobranza" readonly></div>
+                        <div class="form-group"><label for="siguiente_pago_cobranza">Siguiente Pago</label><input type="text" id="siguiente_pago_cobranza" readonly></div>
+                        <div class="form-group"><label for="semanas_atraso_cobranza">Semanas de Atraso</label><input type="text" id="semanas_atraso_cobranza" readonly></div>
+                        <div class="form-group"><label for="monto_cobranza">Monto del Pago <span class="required">*</span></label><input type="number" id="monto_cobranza" min="1" required></div>
+                        <div class="form-group">
+                            <label for="tipo_cobranza">Tipo de Pago <span class="required">*</span></label>
+                            <select id="tipo_cobranza" required><option value="normal">Normal</option><option value="extraordinario">Extraordinario</option><option value="actualizado">Actualizado</option></select>
+                        </div>
+                        <div class="form-group"><label for="saldoDespues_cobranza">Saldo Después del Pago</label><input type="text" id="saldoDespues_cobranza" readonly></div>
+                        <div class="form-group">
+                            <button type="submit" class="btn btn-success"><i class="fas fa-cash-register"></i> Registrar Pago</button>
+                            <button type="button" class="btn btn-secondary" data-view="view-main-menu"><i class="fas fa-times"></i> Cancelar</button>
+                        </div>
+                    </form>
                 </div>
                 <div id="status_cobranza"></div>
             </div>
@@ -606,76 +532,16 @@
                         <span>Volver al Menú</span>
                     </button>
                 </div>
-                
-                <button id="btn-actualizar-reportes" class="btn btn-primary">
-                    <i class="fas fa-sync-alt"></i>
-                    <span>Actualizar Reportes</span>
-                </button>
-                
+                <button id="btn-actualizar-reportes" class="btn btn-primary"><i class="fas fa-sync-alt"></i> Actualizar Reportes</button>
                 <div class="report-grid">
-                    <div class="report-card">
-                        <div class="report-icon">
-                            <i class="fas fa-users"></i>
-                        </div>
-                        <div class="report-value" id="total-clientes">0</div>
-                        <div class="report-label">Total Clientes</div>
-                    </div>
-                    
-                    <div class="report-card">
-                        <div class="report-icon">
-                            <i class="fas fa-file-invoice-dollar"></i>
-                        </div>
-                        <div class="report-value" id="total-creditos">0</div>
-                        <div class="report-label">Créditos Activos</div>
-                    </div>
-                    
-                    <div class="report-card">
-                        <div class="report-icon">
-                            <i class="fas fa-money-bill-wave"></i>
-                        </div>
-                        <div class="report-value" id="total-cartera">$0</div>
-                        <div class="report-label">Total Cartera</div>
-                    </div>
-                    
-                    <div class="report-card">
-                        <div class="report-icon">
-                            <i class="fas fa-exclamation-triangle"></i>
-                        </div>
-                        <div class="report-value" id="total-vencidos">0</div>
-                        <div class="report-label">Créditos Vencidos</div>
-                    </div>
-                    
-                    <div class="report-card">
-                        <div class="report-icon">
-                            <i class="fas fa-receipt"></i>
-                        </div>
-                        <div class="report-value" id="pagos-registrados">0</div>
-                        <div class="report-label">Pagos del Mes</div>
-                    </div>
-                    
-                    <div class="report-card">
-                        <div class="report-icon">
-                            <i class="fas fa-coins"></i>
-                        </div>
-                        <div class="report-value" id="cobrado-mes">$0</div>
-                        <div class="report-label">Cobrado Este Mes</div>
-                    </div>
-                    
-                    <div class="report-card">
-                        <div class="report-icon">
-                            <i class="fas fa-percentage"></i>
-                        </div>
-                        <div class="report-value" id="tasa-recuperacion">0%</div>
-                        <div class="report-label">Tasa de Recuperación</div>
-                    </div>
-                    
-                    <div class="report-card">
-                        <div class="report-icon">
-                            <i class="fas fa-hand-holding-usd"></i>
-                        </div>
-                        <div class="report-value" id="total-comisiones">$0</div>
-                        <div class="report-label">Comisiones del Mes</div>
-                    </div>
+                    <div class="report-card"><div class="report-icon"><i class="fas fa-users"></i></div><div class="report-value" id="total-clientes">0</div><div class="report-label">Total Clientes</div></div>
+                    <div class="report-card"><div class="report-icon"><i class="fas fa-file-invoice-dollar"></i></div><div class="report-value" id="total-creditos">0</div><div class="report-label">Créditos Activos</div></div>
+                    <div class="report-card"><div class="report-icon"><i class="fas fa-money-bill-wave"></i></div><div class="report-value" id="total-cartera">$0</div><div class="report-label">Total Cartera</div></div>
+                    <div class="report-card"><div class="report-icon"><i class="fas fa-exclamation-triangle"></i></div><div class="report-value" id="total-vencidos">0</div><div class="report-label">Créditos Vencidos</div></div>
+                    <div class="report-card"><div class="report-icon"><i class="fas fa-receipt"></i></div><div class="report-value" id="pagos-registrados">0</div><div class="report-label">Pagos del Mes</div></div>
+                    <div class="report-card"><div class="report-icon"><i class="fas fa-coins"></i></div><div class="report-value" id="cobrado-mes">$0</div><div class="report-label">Cobrado Este Mes</div></div>
+                    <div class="report-card"><div class="report-icon"><i class="fas fa-percentage"></i></div><div class="report-value" id="tasa-recuperacion">0%</div><div class="report-label">Tasa de Recuperación</div></div>
+                    <div class="report-card"><div class="report-icon"><i class="fas fa-hand-holding-usd"></i></div><div class="report-value" id="total-comisiones">$0</div><div class="report-label">Comisiones del Mes</div></div>
                 </div>
             </div>
         </main>
