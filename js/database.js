@@ -1,377 +1,435 @@
 // =============================================
-// SISTEMA DE BASE DE DATOS COMPLETO
+// SISTEMA DE BASE DE DATOS COMPLETO CON INDEXEDDB (VERSIÓN 2)
 // =============================================
 
 class FinzanaDatabase {
     constructor() {
-        this.initializeDatabase();
+        this.db = null;
+        this.dbName = 'FinzanaDB';
+        this.version = 2; // VERSIÓN INCREMENTADA PARA APLICAR CAMBIOS DE ÍNDICES
     }
 
-    initializeDatabase() {
-        if (!localStorage.getItem('finzana-clientes')) {
-            localStorage.setItem('finzana-clientes', JSON.stringify([]));
+    async connect() {
+        if (this.db) {
+            return Promise.resolve();
         }
-        if (!localStorage.getItem('finzana-creditos')) {
-            localStorage.setItem('finzana-creditos', JSON.stringify([]));
-        }
-        if (!localStorage.getItem('finzana-pagos')) {
-            localStorage.setItem('finzana-pagos', JSON.stringify([]));
-        }
-        if (!localStorage.getItem('finzana-users')) {
-            this.initializeDefaultUsers();
-        }
-        if (!localStorage.getItem('finzana-credito-counter')) {
-            localStorage.setItem('finzana-credito-counter', '20000000');
-        }
+        return new Promise((resolve, reject) => {
+            const request = indexedDB.open(this.dbName, this.version);
+
+            request.onerror = (event) => {
+                console.error('Error al abrir IndexedDB:', event.target.error);
+                reject('Error al abrir IndexedDB.');
+            };
+
+            request.onsuccess = (event) => {
+                this.db = event.target.result;
+                resolve();
+            };
+
+            request.onupgradeneeded = (event) => {
+                this.db = event.target.result;
+                const transaction = event.target.transaction;
+
+                if (!this.db.objectStoreNames.contains('clientes')) {
+                    const clientesStore = this.db.createObjectStore('clientes', { keyPath: 'id', autoIncrement: true });
+                    clientesStore.createIndex('curp', 'curp', { unique: true });
+                    clientesStore.createIndex('nombre', 'nombre', { unique: false });
+                    clientesStore.createIndex('poblacion_grupo', 'poblacion_grupo', { unique: false });
+                    clientesStore.createIndex('office', 'office', { unique: false });
+                } else {
+                    const clientesStore = transaction.objectStore('clientes');
+                    if (!clientesStore.indexNames.contains('nombre')) clientesStore.createIndex('nombre', 'nombre');
+                    if (!clientesStore.indexNames.contains('poblacion_grupo')) clientesStore.createIndex('poblacion_grupo', 'poblacion_grupo');
+                    if (!clientesStore.indexNames.contains('office')) clientesStore.createIndex('office', 'office');
+                }
+
+                if (!this.db.objectStoreNames.contains('creditos')) {
+                    const creditosStore = this.db.createObjectStore('creditos', { keyPath: 'id' });
+                    creditosStore.createIndex('curpCliente', 'curpCliente', { unique: false });
+                }
+
+                if (!this.db.objectStoreNames.contains('pagos')) {
+                    this.db.createObjectStore('pagos', { keyPath: 'id', autoIncrement: true });
+                }
+
+                if (!this.db.objectStoreNames.contains('users')) {
+                    const usersStore = this.db.createObjectStore('users', { keyPath: 'username' });
+                    this.initializeDefaultUsers(usersStore);
+                }
+
+                if (!this.db.objectStoreNames.contains('config')) {
+                    const configStore = this.db.createObjectStore('config', { keyPath: 'key' });
+                    configStore.put({ key: 'credito-counter', value: 20000000 });
+                }
+            };
+        });
     }
 
-    initializeDefaultUsers() {
+    initializeDefaultUsers(store) {
         const defaultUsers = {
-            'admin': {
-                password: 'admin123',
-                name: 'Administrador Principal',
-                role: 'admin',
-                email: 'admin@finzana.com',
-                telefono: '',
-                fechaCreacion: new Date().toISOString()
-            },
-            'supervisor': {
-                password: 'super123',
-                name: 'Supervisor Regional',
-                role: 'supervisor',
-                email: 'supervisor@finzana.com',
-                telefono: '',
-                fechaCreacion: new Date().toISOString()
-            },
-            'cobrador1': {
-                password: 'cobra123',
-                name: 'Carlos Martínez - Cobrador JC1',
-                role: 'cobrador',
-                email: 'carlos@finzana.com',
-                telefono: '333-123-4567',
-                fechaCreacion: new Date().toISOString()
-            },
-            'consulta': {
-                password: 'consulta123',
-                name: 'Usuario de Consulta',
-                role: 'consulta',
-                email: 'consulta@finzana.com',
-                telefono: '',
-                fechaCreacion: new Date().toISOString()
-            }
+            'admin': { username: 'admin', password: 'admin123', name: 'Administrador Principal', role: 'admin', email: 'admin@finzana.com', telefono: '' },
+            'supervisor': { username: 'supervisor', password: 'super123', name: 'Supervisor Regional', role: 'supervisor', email: 'supervisor@finzana.com', telefono: '' },
+            'cobrador1': { username: 'cobrador1', password: 'cobra123', name: 'Carlos Martínez - Cobrador JC1', role: 'cobrador', email: 'carlos@finzana.com', telefono: '333-123-4567' },
+            'consulta': { username: 'consulta', password: 'consulta123', name: 'Usuario de Consulta', role: 'consulta', email: 'consulta@finzana.com', telefono: '' }
         };
-        this.saveUsers(defaultUsers);
+        for (const user of Object.values(defaultUsers)) {
+            store.put(user);
+        }
     }
 
-    // ========== USUARIOS ==========
-    getUsers() {
-        const users = localStorage.getItem('finzana-users');
-        return users ? JSON.parse(users) : {};
+    // ========== MÉTODOS CRUD GENÉRICOS (INTERNOS) ==========
+    async getAll(storeName) {
+        await this.connect();
+        return new Promise((resolve, reject) => {
+            const transaction = this.db.transaction(storeName, 'readonly');
+            const store = transaction.objectStore(storeName);
+            const request = store.getAll();
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = (event) => reject(event.target.error);
+        });
     }
 
-    saveUsers(users) {
-        localStorage.setItem('finzana-users', JSON.stringify(users));
+    async add(storeName, data) {
+        await this.connect();
+        return new Promise((resolve, reject) => {
+            const transaction = this.db.transaction(storeName, 'readwrite');
+            const store = transaction.objectStore(storeName);
+            const request = store.add(data);
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = (event) => reject(event.target.error);
+        });
     }
 
-    // ========== CLIENTES ==========
-    getClientes() {
-        const clientes = localStorage.getItem('finzana-clientes');
-        return clientes ? JSON.parse(clientes) : [];
+    async put(storeName, data) {
+        await this.connect();
+        return new Promise((resolve, reject) => {
+            const transaction = this.db.transaction(storeName, 'readwrite');
+            const store = transaction.objectStore(storeName);
+            const request = store.put(data);
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = (event) => reject(event.target.error);
+        });
     }
 
-    saveClientes(clientes) {
-        localStorage.setItem('finzana-clientes', JSON.stringify(clientes));
+    async delete(storeName, key) {
+        await this.connect();
+        return new Promise((resolve, reject) => {
+            const transaction = this.db.transaction(storeName, 'readwrite');
+            const store = transaction.objectStore(storeName);
+            const request = store.delete(key);
+            request.onsuccess = () => resolve();
+            request.onerror = (event) => reject(event.target.error);
+        });
     }
 
-    buscarClientePorCURP(curp) {
-        const clientes = this.getClientes();
-        return clientes.find(cliente => cliente.curp === curp);
+    async getBy(storeName, indexName, value) {
+        await this.connect();
+        return new Promise((resolve, reject) => {
+            const transaction = this.db.transaction(storeName, 'readonly');
+            const store = transaction.objectStore(storeName);
+            const index = store.index(indexName);
+            const request = index.get(value);
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = (event) => reject(event.target.error);
+        });
     }
 
-    agregarCliente(cliente) {
-        const clientes = this.getClientes();
-        if (this.buscarClientePorCURP(cliente.curp)) {
+    async buscarClientes(filtros) {
+        await this.connect();
+        const transaction = this.db.transaction(['clientes', 'creditos'], 'readonly');
+        const clientesStore = transaction.objectStore('clientes');
+
+        const tieneFiltrosCredito = filtros.fechaCredito || filtros.tipo || filtros.plazo || filtros.curpAval;
+        let creditosPorCliente = new Map();
+        if (tieneFiltrosCredito) {
+            const todosCreditos = await new Promise(res => transaction.objectStore('creditos').getAll().onsuccess = e => res(e.target.result));
+            for (const credito of todosCreditos) {
+                if (!creditosPorCliente.has(credito.curpCliente)) {
+                    creditosPorCliente.set(credito.curpCliente, []);
+                }
+                creditosPorCliente.get(credito.curpCliente).push(credito);
+            }
+        }
+
+        const resultados = [];
+        return new Promise(resolve => {
+            clientesStore.openCursor().onsuccess = (event) => {
+                const cursor = event.target.result;
+                if (cursor) {
+                    const cliente = cursor.value;
+                    let match = true;
+
+                    if (filtros.sucursal && cliente.office !== filtros.sucursal) match = false;
+                    if (match && filtros.curp && !cliente.curp.toLowerCase().includes(filtros.curp)) match = false;
+                    if (match && filtros.nombre && !cliente.nombre.toLowerCase().includes(filtros.nombre)) match = false;
+                    if (match && filtros.grupo && cliente.poblacion_grupo !== filtros.grupo) match = false;
+                    if (match && filtros.fechaRegistro && cliente.fechaRegistro && !cliente.fechaRegistro.startsWith(filtros.fechaRegistro)) match = false;
+
+                    if (match && tieneFiltrosCredito) {
+                        const creditosCliente = creditosPorCliente.get(cliente.curp) || [];
+                        if (creditosCliente.length === 0) {
+                            match = false;
+                        } else {
+                            const matchCredito = creditosCliente.some(credito => {
+                                if (filtros.fechaCredito && (!credito.fechaCreacion || !credito.fechaCreacion.startsWith(filtros.fechaCredito))) return false;
+                                if (filtros.tipo && credito.tipo !== filtros.tipo) return false;
+                                if (filtros.plazo && credito.plazo != filtros.plazo) return false;
+                                if (filtros.curpAval && (!credito.curpAval || !credito.curpAval.toLowerCase().includes(filtros.curpAval))) return false;
+                                return true;
+                            });
+                            if (!matchCredito) match = false;
+                        }
+                    }
+
+                    if (match) {
+                        resultados.push(cliente);
+                    }
+                    cursor.continue();
+                } else {
+                    resolve(resultados);
+                }
+            };
+        });
+    }
+
+    // ========== MÉTODOS PÚBLICOS (API para app.js) ==========
+    async getUsers() {
+        const usersArray = await this.getAll('users');
+        const usersObject = {};
+        usersArray.forEach(user => {
+            usersObject[user.username] = user;
+        });
+        return usersObject;
+    }
+    async getClientes() { return this.getAll('clientes'); }
+    async getCreditos() { return this.getAll('creditos'); }
+    async getPagos() { return this.getAll('pagos'); }
+    async buscarClientePorCURP(curp) { return this.getBy('clientes', 'curp', curp); }
+    async buscarCreditoPorId(id) {
+        const creditos = await this.getCreditos();
+        return creditos.find(c => c.id === id);
+    }
+    async buscarCreditoActivoPorCliente(curp) {
+        const creditos = await this.getCreditos();
+        return creditos.find(c => c.curpCliente === curp && c.estado === 'activo');
+    }
+    async agregarCliente(cliente) {
+        const existe = await this.buscarClientePorCURP(cliente.curp);
+        if (existe) {
             return { success: false, message: 'Ya existe un cliente con esta CURP' };
         }
-        cliente.id = this.generarId('CLI');
-        cliente.fechaRegistro = new Date().toISOString();
-        clientes.push(cliente);
-        this.saveClientes(clientes);
+        if (!cliente.fechaRegistro) {
+            cliente.fechaRegistro = new Date().toISOString();
+        }
+        await this.add('clientes', cliente);
         return { success: true, message: 'Cliente registrado exitosamente', data: cliente };
     }
-
-    actualizarCliente(curp, datosActualizados) {
-        const clientes = this.getClientes();
-        const index = clientes.findIndex(cliente => cliente.curp === curp);
-        if (index !== -1) {
-            datosActualizados.id = clientes[index].id;
-            datosActualizados.fechaRegistro = clientes[index].fechaRegistro;
-            clientes[index] = datosActualizados;
-            this.saveClientes(clientes);
-            return { success: true, message: 'Cliente actualizado exitosamente' };
+    async generarIdConsecutivo() {
+        await this.connect();
+        const transaction = this.db.transaction('config', 'readwrite');
+        const store = transaction.objectStore('config');
+        const counter = await new Promise(res => store.get('credito-counter').onsuccess = e => res(e.target.result));
+        const newValue = counter.value + 1;
+        store.put({ key: 'credito-counter', value: newValue });
+        return counter.value.toString();
+    }
+    async agregarCredito(credito) {
+        if (await this.buscarCreditoActivoPorCliente(credito.curpCliente)) {
+            return { success: false, message: 'El cliente ya tiene un crédito activo.' };
         }
-        return { success: false, message: 'Cliente no encontrado' };
-    }
-
-    eliminarCliente(curp) {
-        const clientes = this.getClientes();
-        const nuevosClientes = clientes.filter(cliente => cliente.curp !== curp);
-        if (nuevosClientes.length < clientes.length) {
-            this.saveClientes(nuevosClientes);
-            return { success: true, message: 'Cliente eliminado exitosamente' };
-        }
-        return { success: false, message: 'Cliente no encontrado' };
-    }
-
-    // ========== CRÉDITOS ==========
-    getCreditos() {
-        const creditos = localStorage.getItem('finzana-creditos');
-        return creditos ? JSON.parse(creditos) : [];
-    }
-
-    saveCreditos(creditos) {
-        localStorage.setItem('finzana-creditos', JSON.stringify(creditos));
-    }
-
-    buscarCreditoPorId(idCredito) {
-        const creditos = this.getCreditos();
-        let credito = creditos.find(credito => credito.id === idCredito);
-        if (!credito) {
-            credito = creditos.find(credito => {
-                if (credito.id.length === 8 && credito.id.endsWith(idCredito)) return true;
-                if (credito.id === idCredito) return true;
-                return false;
-            });
-        }
-        return credito;
-    }
-
-    buscarCreditosPorCliente(curpCliente) {
-        const creditos = this.getCreditos();
-        return creditos.filter(credito => credito.curpCliente === curpCliente && credito.estado === 'activo');
-    }
-
-    generarIdConsecutivo() {
-        let counter = parseInt(localStorage.getItem('finzana-credito-counter')) || 20000000;
-        const nuevoId = counter.toString();
-        counter++;
-        localStorage.setItem('finzana-credito-counter', counter.toString());
-        return nuevoId;
-    }
-
-    agregarCredito(credito) {
-    const creditos = this.getCreditos();
-    
-    // Generar ID consecutivo
-    credito.id = this.generarIdConsecutivo();
-    credito.fechaCreacion = new Date().toISOString();
-    credito.estado = 'activo';
-    credito.montoTotal = credito.monto * 1.3;
-    credito.saldo = credito.montoTotal;
-    
-    console.log('Crédito a guardar:', credito);
-    
-    creditos.push(credito);
-    this.saveCreditos(creditos);
-    
-    return { 
-        success: true, 
-        message: 'Crédito generado exitosamente', 
-        data: credito 
-    };
-}
-
-generarIdConsecutivo() {
-    let counter = parseInt(localStorage.getItem('finzana-credito-counter')) || 20000000;
-    const nuevoId = counter.toString();
-    counter++;
-    localStorage.setItem('finzana-credito-counter', counter.toString());
-    console.log('Nuevo ID generado:', nuevoId);
-    return nuevoId;
-}
-
-    agregarCreditoImportado(credito) {
-        const creditos = this.getCreditos();
-        if (this.buscarCreditoPorId(credito.id)) {
-            return { success: false, message: 'Ya existe un crédito con este ID' };
-        }
-        credito.fechaCreacion = credito.fechaCreacion || new Date().toISOString();
+        credito.id = await this.generarIdConsecutivo();
+        credito.fechaCreacion = new Date().toISOString();
         credito.estado = 'activo';
+        credito.montoTotal = credito.monto * 1.3;
         credito.saldo = credito.montoTotal;
-        creditos.push(credito);
-        this.saveCreditos(creditos);
-        return { success: true, message: 'Crédito importado exitosamente', data: credito };
+        await this.add('creditos', credito);
+        return { success: true, message: 'Crédito generado exitosamente', data: credito };
     }
-
-    // ========== PAGOS ==========
-    getPagos() {
-        const pagos = localStorage.getItem('finzana-pagos');
-        return pagos ? JSON.parse(pagos) : [];
-    }
-
-    savePagos(pagos) {
-        localStorage.setItem('finzana-pagos', JSON.stringify(pagos));
-    }
-
-    buscarPagosPorCredito(idCredito) {
-        const pagos = this.getPagos();
-        return pagos.filter(pago => pago.idCredito === idCredito);
-    }
-
-    agregarPago(pago) {
-        const pagos = this.getPagos();
-        const creditos = this.getCreditos();
-        const credito = creditos.find(c => c.id === pago.idCredito);
+    async agregarPago(pago) {
+        const credito = await this.buscarCreditoPorId(pago.idCredito);
         if (!credito) return { success: false, message: 'Crédito no encontrado' };
 
-        if (!pago.comision) pago.comision = this.calcularComision(pago.monto, pago.tipoPago);
         credito.saldo -= pago.monto;
-        if (credito.saldo <= 0) credito.estado = 'liquidado';
+        if (credito.saldo <= 0.01) {
+            credito.saldo = 0;
+            credito.estado = 'liquidado';
+        }
+        await this.put('creditos', credito);
 
-        pago.id = this.generarId('PAG');
+        if (!pago.comision) pago.comision = this.calcularComision(pago.monto, pago.tipoPago);
         pago.fecha = new Date().toISOString();
         pago.saldoDespues = credito.saldo;
+        await this.add('pagos', pago);
 
-        pagos.push(pago);
-        this.savePagos(pagos);
-        this.saveCreditos(creditos);
-
-        return { success: true, message: 'Pago registrado exitosamente', data: pago, credito: credito };
+        return { success: true, message: 'Pago registrado exitosamente', data: pago };
     }
-
-    // ========== UTILIDADES ==========
-    generarId(prefix) {
-        return `${prefix}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    }
-
-    calcularComision(monto, tipoPago) {
-        const porcentajes = { 'normal': 0.10, 'extraordinario': 0.05, 'actualizado': 0.08 };
-        return monto * (porcentajes[tipoPago] || 0.10);
-    }
-
-    // ========== IMPORTACIÓN ==========
-    importarDatosDesdeCSV(csvData, tipo) {
-        try {
-            const lineas = csvData.split('\n').filter(linea => linea.trim());
-            const registrosImportados = [];
-            const errores = [];
-
-            for (let i = 0; i < lineas.length; i++) {
-                const campos = lineas[i].split(',').map(campo => campo.trim());
-
-                if (tipo === 'clientes') {
-                    if (campos.length >= 6) {
-                        const cliente = {
-                            curp: campos[0], nombre: campos[1], domicilio: campos[2] || '',
-                            cp: campos[3] || '', telefono: campos[4] || '', 
-                            poblacion_grupo: campos[5] || '', ruta: campos[6] || 'JC1'
-                        };
-                        if (cliente.curp && cliente.nombre) {
-                            const resultado = this.agregarCliente(cliente);
-                            if (resultado.success) registrosImportados.push(cliente);
-                            else errores.push(`Línea ${i + 1}: ${resultado.message}`);
-                        } else errores.push(`Línea ${i + 1}: CURP o Nombre faltante`);
-                    } else errores.push(`Línea ${i + 1}: Formato incorrecto`);
-                } else if (tipo === 'colocacion') {
-                    if (campos.length >= 9) {
-                        const credito = {
-                            curpCliente: campos[0], nombreCliente: campos[1], id: campos[2],
-                            fechaCreacion: campos[3] || new Date().toISOString(), tipo: campos[4],
-                            monto: parseFloat(campos[5]) || 0, plazo: parseInt(campos[6]) || 0,
-                            montoTotal: parseFloat(campos[7]) || 0, curpAval: campos[8] || '',
-                            nombreAval: campos[9] || ''
-                        };
-                        if (credito.curpCliente && credito.id) {
-                            const resultado = this.agregarCreditoImportado(credito);
-                            if (resultado.success) registrosImportados.push(credito);
-                            else errores.push(`Línea ${i + 1}: ${resultado.message}`);
-                        } else errores.push(`Línea ${i + 1}: CURP Cliente o ID Crédito faltante`);
-                    } else errores.push(`Línea ${i + 1}: Formato incorrecto`);
-                } else if (tipo === 'cobranza') {
-                    if (campos.length >= 10) {
-                        const pago = {
-                            nombreCliente: campos[0], idCredito: campos[1],
-                            fecha: campos[2] || new Date().toISOString(), monto: parseFloat(campos[3]) || 0,
-                            comision: parseFloat(campos[4]) || 0, tipoPago: campos[5] || 'normal',
-                            grupo: campos[6] || '', ruta: campos[7] || '', 
-                            semanaCredito: parseInt(campos[8]) || 1, saldo: parseFloat(campos[9]) || 0
-                        };
-                        if (pago.idCredito && pago.monto > 0) {
-                            const resultado = this.agregarPago(pago);
-                            if (resultado.success) registrosImportados.push(pago);
-                            else errores.push(`Línea ${i + 1}: ${resultado.message}`);
-                        } else errores.push(`Línea ${i + 1}: ID Crédito o Monto inválido`);
-                    } else errores.push(`Línea ${i + 1}: Formato incorrecto`);
-                }
-            }
-
-            return { success: true, total: lineas.length, importados: registrosImportados.length, errores: errores };
-        } catch (error) {
-            return { success: false, message: `Error en la importación: ${error.message}` };
-        }
-    }
-
-    limpiarBaseDeDatos() {
-        localStorage.setItem('finzana-clientes', JSON.stringify([]));
-        localStorage.setItem('finzana-creditos', JSON.stringify([]));
-        localStorage.setItem('finzana-pagos', JSON.stringify([]));
-        return { success: true, message: 'Base de datos limpiada exitosamente' };
-    }
-
-    // ========== GESTIÓN DE CRÉDITOS ==========
-    obtenerCreditoMasReciente(curpCliente) {
-        const creditos = this.getCreditos();
-        const creditosCliente = creditos.filter(credito => 
-            credito.curpCliente === curpCliente && credito.estado === 'activo'
-        );
+    async obtenerHistorialCreditoCliente(curp) {
+        const creditosCliente = (await this.getCreditos()).filter(c => c.curpCliente === curp);
         if (creditosCliente.length === 0) return null;
+
         creditosCliente.sort((a, b) => new Date(b.fechaCreacion) - new Date(a.fechaCreacion));
-        return creditosCliente[0];
+        const ultimoCredito = creditosCliente[0];
+
+        const pagosCredito = (await this.getPagos()).filter(p => p.idCredito === ultimoCredito.id)
+            .sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+        const ultimoPago = pagosCredito.length > 0 ? pagosCredito[0] : null;
+
+        let historial = {
+            idCredito: ultimoCredito.id,
+            estado: ultimoCredito.estado,
+            saldoRestante: ultimoCredito.saldo,
+            fechaUltimoPago: ultimoPago ? new Date(ultimoPago.fecha).toLocaleDateString() : 'N/A'
+        };
+
+        if (ultimoCredito.estado === 'activo') {
+            historial.semanasAtraso = this.calcularSemanasAtraso(ultimoCredito);
+            historial.estaAlCorriente = historial.semanasAtraso === 0;
+            const fechaInicio = new Date(ultimoCredito.fechaCreacion);
+            const semanasTranscurridas = Math.max(0, Math.floor((new Date() - fechaInicio) / (1000 * 60 * 60 * 24 * 7)));
+            historial.semanaActual = Math.min(semanasTranscurridas + 1, ultimoCredito.plazo);
+            historial.plazoTotal = ultimoCredito.plazo;
+        } else {
+            if (ultimoCredito.saldo > 0) {
+                historial.estado = 'pendiente';
+                const pagoPromedio = (ultimoCredito.plazo > 0) ? ultimoCredito.montoTotal / ultimoCredito.plazo : 0;
+                historial.pagosFaltantes = (pagoPromedio > 0) ? Math.round(ultimoCredito.saldo / pagoPromedio) : 'N/A';
+            } else {
+                historial.estado = 'liquidado';
+            }
+        }
+        return historial;
+    }
+    async limpiarBaseDeDatos() {
+        await this.connect();
+        const transaction = this.db.transaction(['clientes', 'creditos', 'pagos', 'config', 'users'], 'readwrite');
+        await Promise.all([
+            new Promise(res => transaction.objectStore('clientes').clear().onsuccess = res),
+            new Promise(res => transaction.objectStore('creditos').clear().onsuccess = res),
+            new Promise(res => transaction.objectStore('pagos').clear().onsuccess = res),
+            new Promise(res => transaction.objectStore('config').put({ key: 'credito-counter', value: 20000000 }).onsuccess = res),
+            new Promise(res => transaction.objectStore('users').clear().onsuccess = res)
+        ]);
+        // Volver a inicializar los usuarios por defecto
+        const userStore = this.db.transaction('users', 'readwrite').objectStore('users');
+        this.initializeDefaultUsers(userStore);
+
+        return { success: true, message: 'Base de datos limpiada y reiniciada.' };
+    }
+    async importarDatosDesdeCSV(csvData, tipo, office) {
+        await this.connect();
+        const lineas = csvData.split('\n').filter(linea => linea.trim());
+        if (lineas.length === 0) return { success: true, total: 0, importados: 0, errores: [] };
+
+        let errores = [];
+        const transaction = this.db.transaction(['clientes', 'creditos', 'pagos'], 'readwrite');
+        const clientesStore = transaction.objectStore('clientes');
+        const creditosStore = transaction.objectStore('creditos');
+        const pagosStore = transaction.objectStore('pagos');
+
+        if (tipo === 'clientes') {
+            for (const [i, linea] of lineas.entries()) {
+                const campos = linea.split(',').map(c => c.trim());
+                if (campos.length >= 7) {
+                    clientesStore.add({
+                        curp: campos[0], nombre: campos[1], domicilio: campos[2], cp: campos[3],
+                        telefono: campos[4], fechaRegistro: campos[5] || new Date().toISOString(),
+                        poblacion_grupo: campos[6], office: office
+                    });
+                } else { errores.push(`Línea ${i + 1}: Formato incorrecto`); }
+            }
+        }
+        else if (tipo === 'colocacion') {
+            const procesador = (office === 'GDL') ? this.procesarColocacionGDL : this.procesarColocacionLEON;
+            for (const [i, linea] of lineas.entries()) {
+                const credito = procesador(linea, i, office, errores);
+                if (credito) creditosStore.add(credito);
+            }
+        }
+        else if (tipo === 'cobranza') {
+            const creditosMap = new Map((await this.getCreditos()).map(c => [c.id, c]));
+            const procesador = (office === 'GDL') ? this.procesarCobranzaGDL : this.procesarCobranzaLEON;
+            for (const [i, linea] of lineas.entries()) {
+                const pago = procesador(linea, i, office, errores);
+                if (pago) pagosStore.add(pago);
+            }
+        }
+
+        return new Promise(resolve => {
+            transaction.oncomplete = () => {
+                resolve({ success: true, total: lineas.length, importados: lineas.length - errores.length, errores });
+            };
+            transaction.onerror = (event) => {
+                errores.push(`Error en transacción: ${event.target.error}. Verifique IDs duplicados.`);
+                resolve({ success: false, total: lineas.length, importados: 0, errores });
+            };
+        });
     }
 
-    obtenerInformacionCreditoCliente(curpCliente) {
-        const credito = this.obtenerCreditoMasReciente(curpCliente);
-        if (!credito) return null;
-        
-        const pagos = this.buscarPagosPorCredito(credito.id);
-        const totalPagado = pagos.reduce((sum, pago) => sum + pago.monto, 0);
-        const saldoRestante = credito.saldo;
-        const porcentajePagado = (totalPagado / credito.montoTotal) * 100;
-        
-        const fechaInicio = new Date(credito.fechaCreacion);
-        const hoy = new Date();
-        const diferenciaTiempo = hoy - fechaInicio;
-        const semanasTranscurridas = Math.floor(diferenciaTiempo / (1000 * 60 * 60 * 24 * 7));
-        const semanaActual = Math.min(semanasTranscurridas + 1, credito.plazo);
-        const semanasAtraso = Math.max(0, semanasTranscurridas - credito.plazo);
-        
-        const siguientePago = new Date(fechaInicio);
-        siguientePago.setDate(siguientePago.getDate() + (semanaActual * 7));
-        const estaAlCorriente = semanasAtraso === 0 && saldoRestante > 0;
-        
-        return {
-            idCredito: credito.id, fechaCreacion: credito.fechaCreacion,
-            siguientePago: siguientePago.toISOString().split('T')[0], estaAlCorriente: estaAlCorriente,
-            semanasAtraso: semanasAtraso, saldoRestante: saldoRestante, semanaActual: semanaActual,
-            plazoTotal: credito.plazo, montoTotal: credito.montoTotal, totalPagado: totalPagado,
-            porcentajePagado: porcentajePagado.toFixed(1)
-        };
+    procesarColocacionGDL(linea, i, office, errores) {
+        const campos = linea.split(',').map(c => c.trim());
+        if (campos.length >= 13) {
+            return {
+                office, curpCliente: campos[0], nombreCliente: campos[1], id: campos[2],
+                fechaCreacion: campos[3], tipo: campos[4], monto: parseFloat(campos[5]),
+                plazo: parseInt(campos[6]), montoTotal: parseFloat(campos[7]), curpAval: campos[8],
+                nombreAval: campos[9], poblacion_grupo: campos[10], ruta: campos[11],
+                saldo: parseFloat(campos[12]), estado: parseFloat(campos[12]) > 0.01 ? 'activo' : 'liquidado'
+            };
+        } else { errores.push(`Línea ${i + 1}: Formato GDL-Colocación incorrecto`); return null; }
+    }
+    procesarColocacionLEON(linea, i, office, errores) {
+        const campos = linea.split(',').map(c => c.trim());
+        if (campos.length >= 20) {
+            return {
+                office, curpCliente: campos[0], nombreCliente: campos[1], id: campos[2],
+                fechaCreacion: campos[3], tipo: campos[4], monto: parseFloat(campos[5]),
+                plazo: parseInt(campos[6]), montoTotal: parseFloat(campos[7]), curpAval: campos[8],
+                nombreAval: campos[9], poblacion_grupo: campos[10], ruta: campos[11],
+                interes: parseFloat(campos[12]), saldo: parseFloat(campos[13]),
+                ultimoPago: campos[14], saldoVencido: parseFloat(campos[15]), status: campos[16],
+                saldoCapital: parseFloat(campos[17]), saldoInteres: parseFloat(campos[18]), stj150: campos[19],
+                estado: parseFloat(campos[13]) > 0.01 ? 'activo' : 'liquidado'
+            };
+        } else { errores.push(`Línea ${i + 1}: Formato LEON-Colocación incorrecto`); return null; }
+    }
+    procesarCobranzaGDL(linea, i, office, errores) {
+        const campos = linea.split(',').map(c => c.trim());
+        if (campos.length >= 11) {
+            return {
+                office, nombreCliente: campos[0], idCredito: campos[1], fecha: campos[2],
+                monto: parseFloat(campos[3]), cobroSemana: campos[4], comision: parseFloat(campos[5]),
+                tipoPago: campos[6], grupo: campos[7], ruta: campos[8], semanaCredito: parseInt(campos[9])
+            };
+        } else { errores.push(`Línea ${i + 1}: Formato GDL-Cobranza incorrecto`); return null; }
+    }
+    procesarCobranzaLEON(linea, i, office, errores) {
+        const campos = linea.split(',').map(c => c.trim());
+        if (campos.length >= 11) {
+            return {
+                office, nombreCliente: campos[0], idCredito: campos[1], fecha: campos[2],
+                monto: parseFloat(campos[3]), comision: parseFloat(campos[4]), tipoPago: campos[5],
+                grupo: campos[6], ruta: campos[7], interesCobrado: parseFloat(campos[8]), cobradoPor: campos[10]
+            };
+        } else { errores.push(`Línea ${i + 1}: Formato LEON-Cobranza incorrecto`); return null; }
     }
 
     calcularSemanasAtraso(credito) {
+        if (credito.estado !== 'activo' || !credito.plazo || credito.plazo === 0) return 0;
+        const pagoIdealPorSemana = credito.montoTotal / credito.plazo;
+        const montoPagado = credito.montoTotal - credito.saldo;
         const fechaInicio = new Date(credito.fechaCreacion);
         const hoy = new Date();
-        const diferenciaTiempo = hoy - fechaInicio;
-        const semanasTranscurridas = Math.floor(diferenciaTiempo / (1000 * 60 * 60 * 24 * 7));
-        return Math.max(0, semanasTranscurridas - credito.plazo);
+        if (hoy < fechaInicio) return 0;
+        const semanasTranscurridas = Math.floor((hoy - fechaInicio) / (1000 * 60 * 60 * 24 * 7));
+        if (semanasTranscurridas <= 0) return 0;
+        const pagoRequeridoHastaHoy = semanasTranscurridas * pagoIdealPorSemana;
+        const deficit = pagoRequeridoHastaHoy - montoPagado;
+        if (deficit <= 0) return 0;
+        return Math.ceil(deficit / pagoIdealPorSemana);
     }
 
-    // ========== REPORTES ==========
-    generarReportes() {
-        const clientes = this.getClientes();
-        const creditos = this.getCreditos();
-        const pagos = this.getPagos();
-
+    async generarReportes() {
+        const [clientes, creditos, pagos] = await Promise.all([this.getClientes(), this.getCreditos(), this.getPagos()]);
         const creditosActivos = creditos.filter(c => c.estado === 'activo');
         const totalCartera = creditosActivos.reduce((sum, credito) => sum + credito.saldo, 0);
         const totalPagosMes = pagos.filter(pago => {
@@ -379,270 +437,20 @@ generarIdConsecutivo() {
             const hoy = new Date();
             return fechaPago.getMonth() === hoy.getMonth() && fechaPago.getFullYear() === hoy.getFullYear();
         });
-
+        const cobradoMes = totalPagosMes.reduce((sum, pago) => sum + pago.monto, 0);
         return {
             totalClientes: clientes.length, totalCreditos: creditosActivos.length,
             totalCartera: totalCartera, totalVencidos: creditosActivos.filter(c => this.esCreditoVencido(c)).length,
-            pagosRegistrados: totalPagosMes.length, cobradoMes: totalPagosMes.reduce((sum, pago) => sum + pago.monto, 0),
-            totalComisiones: totalPagosMes.reduce((sum, pago) => sum + pago.comision, 0)
+            pagosRegistrados: totalPagosMes.length, cobradoMes: cobradoMes,
+            totalComisiones: totalPagosMes.reduce((sum, pago) => sum + (pago.comision || 0), 0)
         };
     }
 
     esCreditoVencido(credito) {
+        if (credito.estado !== 'activo' || !credito.plazo) return false;
         const fechaCreacion = new Date(credito.fechaCreacion);
         const fechaVencimiento = new Date(fechaCreacion);
         fechaVencimiento.setDate(fechaVencimiento.getDate() + (credito.plazo * 7));
         return new Date() > fechaVencimiento;
-    }
-}
-
-﻿// Finzana - Gestión de Base de Datos Local (IndexedDB)
-// offline-db.js
-class OfflineDB {
-    constructor() {
-        this.dbName = 'FinzanaDB';
-        // Incrementamos la versión para forzar una actualización y evitar el error
-        this.version = 5;
-        this.db = null;
-    }
-
-    async initialize() {
-        return new Promise((resolve, reject) => {
-            console.log('🗃️ Inicializando base de datos local...');
-
-            const request = indexedDB.open(this.dbName, this.version);
-
-            request.onerror = (event) => {
-                console.error('❌ Error abriendo IndexedDB:', event.target.error);
-                reject(event.target.error);
-            };
-
-            request.onsuccess = (event) => {
-                this.db = event.target.result;
-                console.log('✅ Base de datos local inicializada');
-                resolve(this.db);
-            };
-
-            request.onupgradeneeded = (event) => {
-                console.log('🔄 Actualizando estructura de la base de datos...');
-                const db = event.target.result;
-
-                // Eliminar stores antiguos si existen
-                if (db.objectStoreNames.contains('clientes')) {
-                    db.deleteObjectStore('clientes');
-                }
-                if (db.objectStoreNames.contains('creditos')) {
-                    db.deleteObjectStore('creditos');
-                }
-                if (db.objectStoreNames.contains('pagos')) {
-                    db.deleteObjectStore('pagos');
-                }
-
-                // Crear store para transacciones
-                if (!db.objectStoreNames.contains('transactions')) {
-                    const transactionsStore = db.createObjectStore('transactions', {
-                        keyPath: 'id',
-                        autoIncrement: true
-                    });
-                    transactionsStore.createIndex('date', 'date');
-                    transactionsStore.createIndex('type', 'type');
-                    transactionsStore.createIndex('category', 'category');
-                }
-
-                // Crear store para cola de sincronización
-                if (!db.objectStoreNames.contains('syncQueue')) {
-                    const syncStore = db.createObjectStore('syncQueue', {
-                        keyPath: 'id',
-                        autoIncrement: true
-                    });
-                    syncStore.createIndex('table', 'table');
-                    syncStore.createIndex('synced', 'synced');
-                    syncStore.createIndex('timestamp', 'timestamp');
-                }
-
-                console.log('✅ Estructura de base de datos creada');
-            };
-        });
-    }
-
-    // Método genérico para agregar datos
-    async add(storeName, data) {
-        return new Promise((resolve, reject) => {
-            if (!this.db) {
-                reject(new Error('Base de datos no inicializada'));
-                return;
-            }
-
-            const transaction = this.db.transaction([storeName], 'readwrite');
-            const store = transaction.objectStore(storeName);
-
-            // Agregar timestamp si no existe
-            if (!data.timestamp) {
-                data.timestamp = new Date().toISOString();
-            }
-
-            const request = store.add(data);
-
-            request.onsuccess = () => {
-                console.log(`✅ Dato agregado a ${storeName}:`, request.result);
-                resolve(request.result);
-            };
-
-            request.onerror = () => {
-                console.error(`❌ Error agregando a ${storeName}:`, request.error);
-                reject(request.error);
-            };
-        });
-    }
-
-    // Obtener todos los registros de un store
-    async getAll(storeName) {
-        return new Promise((resolve, reject) => {
-            if (!this.db) {
-                reject(new Error('Base de datos no inicializada'));
-                return;
-            }
-
-            const transaction = this.db.transaction([storeName], 'readonly');
-            const store = transaction.objectStore(storeName);
-            const request = store.getAll();
-
-            request.onsuccess = () => {
-                console.log(`✅ ${request.result.length} registros obtenidos de ${storeName}`);
-                resolve(request.result);
-            };
-
-            request.onerror = () => {
-                console.error(`❌ Error obteniendo datos de ${storeName}:`, request.error);
-                reject(request.error);
-            };
-        });
-    }
-
-    // Obtener por índice
-    async getByIndex(storeName, indexName, value) {
-        return new Promise((resolve, reject) => {
-            if (!this.db) {
-                reject(new Error('Base de datos no inicializada'));
-                return;
-            }
-
-            const transaction = this.db.transaction([storeName], 'readonly');
-            const store = transaction.objectStore(storeName);
-            const index = store.index(indexName);
-            const request = index.getAll(value);
-
-            request.onsuccess = () => {
-                resolve(request.result);
-            };
-
-            request.onerror = () => {
-                console.error(`❌ Error buscando en índice ${indexName}:`, request.error);
-                reject(request.error);
-            };
-        });
-    }
-
-    // Actualizar registro
-    async update(storeName, id, updates) {
-        return new Promise((resolve, reject) => {
-            if (!this.db) {
-                reject(new Error('Base de datos no inicializada'));
-                return;
-            }
-
-            const transaction = this.db.transaction([storeName], 'readwrite');
-            const store = transaction.objectStore(storeName);
-            const getRequest = store.get(id);
-
-            getRequest.onsuccess = () => {
-                const data = getRequest.result;
-                if (data) {
-                    const updatedData = { ...data, ...updates, timestamp: new Date().toISOString() };
-                    const putRequest = store.put(updatedData);
-
-                    putRequest.onsuccess = () => {
-                        console.log(`✅ Registro actualizado en ${storeName}`);
-                        resolve(putRequest.result);
-                    };
-
-                    putRequest.onerror = () => {
-                        reject(putRequest.error);
-                    };
-                } else {
-                    reject(new Error('Registro no encontrado'));
-                }
-            };
-
-            getRequest.onerror = () => {
-                reject(getRequest.error);
-            };
-        });
-    }
-
-    // Eliminar registro
-    async delete(storeName, id) {
-        return new Promise((resolve, reject) => {
-            if (!this.db) {
-                reject(new Error('Base de datos no inicializada'));
-                return;
-            }
-
-            const transaction = this.db.transaction([storeName], 'readwrite');
-            const store = transaction.objectStore(storeName);
-            const request = store.delete(id);
-
-            request.onsuccess = () => {
-                console.log(`✅ Registro eliminado de ${storeName}`);
-                resolve();
-            };
-
-            request.onerror = () => {
-                console.error(`❌ Error eliminando registro:`, request.error);
-                reject(request.error);
-            };
-        });
-    }
-
-    // Métodos específicos para transacciones
-    async addTransaction(transaction) {
-        return this.add('transactions', transaction);
-    }
-
-    async getTransactions() {
-        return this.getAll('transactions');
-    }
-
-    async clearTransactions() {
-        return this.clearStore('transactions');
-    }
-
-    // Métodos de utilidad
-    async getCount(storeName) {
-        const data = await this.getAll(storeName);
-        return data.length;
-    }
-
-    async clearStore(storeName) {
-        return new Promise((resolve, reject) => {
-            if (!this.db) {
-                reject(new Error('Base de datos no inicializada'));
-                return;
-            }
-
-            const transaction = this.db.transaction([storeName], 'readwrite');
-            const store = transaction.objectStore(storeName);
-            const request = store.clear();
-
-            request.onsuccess = () => {
-                console.log(`✅ Store ${storeName} limpiado`);
-                resolve();
-            };
-
-            request.onerror = () => {
-                console.error(`❌ Error limpiando store ${storeName}:`, request.error);
-                reject(request.error);
-            };
-        });
     }
 }
