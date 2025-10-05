@@ -123,15 +123,20 @@ const database = {
 
     agregarCredito: async (creditoData) => {
         try {
+            // Verificar si existe el contador
             const counterRef = db.collection('config').doc('credito-counter');
+            const counterDoc = await counterRef.get();
+            
+            if (!counterDoc.exists) {
+                // Crear el contador si no existe
+                await counterRef.set({ value: 20000000 });
+            }
+
             let newId;
             
             try {
                 newId = await db.runTransaction(async (transaction) => {
                     const doc = await transaction.get(counterRef);
-                    if (!doc.exists) {
-                        throw "Documento de contador no encontrado. Por favor, créalo en Firestore.";
-                    }
                     const newValue = (doc.data().value || 20000000) + 1;
                     transaction.update(counterRef, { value: newValue });
                     return newValue.toString();
@@ -207,12 +212,12 @@ const database = {
         const lineas = csvData.split('\n').filter(linea => linea.trim());
         if (lineas.length === 0) return { success: true, total: 0, importados: 0, errores: [] };
 
-        const batch = db.batch();
         let errores = [];
         let importados = 0;
 
         try {
             if (tipo === 'clientes') {
+                const batch = db.batch();
                 for (const [i, linea] of lineas.entries()) {
                     const campos = linea.split(',').map(c => c.trim());
                     if (campos.length < 7) { 
@@ -237,6 +242,7 @@ const database = {
                 await batch.commit();
                 
             } else if (tipo === 'colocacion') {
+                const batch = db.batch();
                 const procesador = (office === 'GDL') ? database._procesarColocacionGDL : database._procesarColocacionLEON;
                 for (const [i, linea] of lineas.entries()) {
                     const credito = procesador(linea, i, office, errores);
@@ -441,7 +447,7 @@ const database = {
             const clientesSnap = await queryClientes.get();
             clientesSnap.forEach(doc => {
                 const cliente = doc.data();
-                if (this._cumpleFiltroFecha(cliente.fechaRegistro, filtros.fechaInicio, filtros.fechaFin)) {
+                if (database._cumpleFiltroFecha(cliente.fechaRegistro, filtros.fechaInicio, filtros.fechaFin)) {
                     resultados.push({
                         tipo: 'cliente',
                         ...cliente
@@ -459,7 +465,7 @@ const database = {
             const creditosSnap = await queryCreditos.get();
             for (const doc of creditosSnap.docs) {
                 const credito = doc.data();
-                if (this._cumpleFiltroFecha(credito.fechaCreacion, filtros.fechaInicio, filtros.fechaFin)) {
+                if (database._cumpleFiltroFecha(credito.fechaCreacion, filtros.fechaInicio, filtros.fechaFin)) {
                     // Buscar información del cliente para el crédito
                     const cliente = await database.buscarClientePorCURP(credito.curpCliente);
                     resultados.push({
@@ -480,7 +486,7 @@ const database = {
             const pagosSnap = await queryPagos.get();
             for (const doc of pagosSnap.docs) {
                 const pago = doc.data();
-                if (this._cumpleFiltroFecha(pago.fecha, filtros.fechaInicio, filtros.fechaFin)) {
+                if (database._cumpleFiltroFecha(pago.fecha, filtros.fechaInicio, filtros.fechaFin)) {
                     // Buscar información del crédito y cliente para el pago
                     const credito = await database.buscarCreditoPorId(pago.idCredito);
                     if (credito) {
