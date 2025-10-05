@@ -1,17 +1,30 @@
 // =============================================
-// CAPA DE SERVICIO DE FIREBASE (database.js)
+// CAPA DE SERVICIO DE FIREBASE (database.js) - CORREGIDO
 // =============================================
 
 const database = {
     // Habilita la persistencia offline de Firestore.
     enableOffline: () => {
-        db.enablePersistence().catch((err) => {
-            if (err.code == 'failed-precondition') {
-                console.warn('Persistencia offline falló: Múltiples pestañas abiertas.');
-            } else if (err.code == 'unimplemented') {
-                console.warn('Persistencia offline no disponible en este navegador.');
-            }
-        });
+        db.enablePersistence()
+            .then(() => {
+                console.log('Persistencia offline activada correctamente');
+                
+                // Sincronización automática cuando se recupera la conexión
+                db.enableNetwork().then(() => {
+                    console.log('Conectado a Firestore');
+                }).catch((error) => {
+                    console.warn('No se pudo conectar a Firestore:', error);
+                });
+            })
+            .catch((err) => {
+                if (err.code == 'failed-precondition') {
+                    console.warn('Persistencia offline falló: Múltiples pestañas abiertas.');
+                } else if (err.code == 'unimplemented') {
+                    console.warn('Persistencia offline no disponible en este navegador.');
+                } else {
+                    console.error('Error en persistencia offline:', err);
+                }
+            });
     },
 
     // --- MÉTODOS GENERALES ---
@@ -76,7 +89,7 @@ const database = {
 
             // Aplicar filtros adicionales en memoria
             if (filtros.nombre && filtros.nombre.trim() !== '') {
-                clientes = clientes.filter(c => 
+                clientes = clientes.filter(c =>
                     c.nombre && c.nombre.toLowerCase().includes(filtros.nombre.toLowerCase())
                 );
             }
@@ -126,14 +139,14 @@ const database = {
             // Verificar si existe el contador
             const counterRef = db.collection('config').doc('credito-counter');
             const counterDoc = await counterRef.get();
-            
+
             if (!counterDoc.exists) {
                 // Crear el contador si no existe
                 await counterRef.set({ value: 20000000 });
             }
 
             let newId;
-            
+
             try {
                 newId = await db.runTransaction(async (transaction) => {
                     const doc = await transaction.get(counterRef);
@@ -220,77 +233,77 @@ const database = {
                 const batch = db.batch();
                 for (const [i, linea] of lineas.entries()) {
                     const campos = linea.split(',').map(c => c.trim());
-                    if (campos.length < 7) { 
-                        errores.push(`Línea ${i + 1}: Faltan columnas`); 
-                        continue; 
+                    if (campos.length < 7) {
+                        errores.push(`Línea ${i + 1}: Faltan columnas`);
+                        continue;
                     }
-                    
+
                     const docRef = db.collection('clientes').doc();
                     batch.set(docRef, {
-                        curp: campos[0].toUpperCase(), 
-                        nombre: campos[1], 
-                        domicilio: campos[2], 
+                        curp: campos[0].toUpperCase(),
+                        nombre: campos[1],
+                        domicilio: campos[2],
                         cp: campos[3],
-                        telefono: campos[4], 
+                        telefono: campos[4],
                         fechaRegistro: campos[5] || new Date().toISOString(),
-                        poblacion_grupo: campos[6], 
+                        poblacion_grupo: campos[6],
                         office: office,
                         ruta: campos[7] || ''
                     });
                     importados++;
                 }
                 await batch.commit();
-                
+
             } else if (tipo === 'colocacion') {
                 const batch = db.batch();
                 for (const [i, linea] of lineas.entries()) {
                     const campos = linea.split(',').map(c => c.trim());
-                    if (campos.length < 13) { 
-                        errores.push(`Línea ${i + 1}: Formato incorrecto para colocación`); 
-                        continue; 
+                    if (campos.length < 13) {
+                        errores.push(`Línea ${i + 1}: Formato incorrecto para colocación`);
+                        continue;
                     }
-                    
+
                     const credito = {
-                        id: campos[2], 
-                        office, 
-                        curpCliente: campos[0].toUpperCase(), 
+                        id: campos[2],
+                        office,
+                        curpCliente: campos[0].toUpperCase(),
                         nombreCliente: campos[1],
-                        fechaCreacion: campos[3], 
-                        tipo: campos[4], 
+                        fechaCreacion: campos[3],
+                        tipo: campos[4],
                         monto: parseFloat(campos[5] || 0),
-                        plazo: parseInt(campos[6] || 0), 
-                        montoTotal: parseFloat(campos[7] || 0), 
+                        plazo: parseInt(campos[6] || 0),
+                        montoTotal: parseFloat(campos[7] || 0),
                         curpAval: campos[8].toUpperCase(),
-                        nombreAval: campos[9], 
-                        poblacion_grupo: campos[10], 
+                        nombreAval: campos[9],
+                        poblacion_grupo: campos[10],
                         ruta: campos[11],
-                        saldo: parseFloat(campos[12] || 0), 
+                        saldo: parseFloat(campos[12] || 0),
                         estado: parseFloat(campos[12] || 0) > 0.01 ? 'activo' : 'liquidado'
                     };
-                    
+
                     const docRef = db.collection('creditos').doc(credito.id);
                     batch.set(docRef, credito);
                     importados++;
                 }
                 await batch.commit();
-                
+
             } else if (tipo === 'cobranza') {
                 // Para cobranza, procesamos uno por uno usando agregarPago
                 for (const [i, linea] of lineas.entries()) {
                     try {
                         const campos = linea.split(',').map(c => c.trim());
-                        if (campos.length < 11) { 
-                            errores.push(`Línea ${i + 1}: Formato incorrecto para cobranza`); 
-                            continue; 
+                        if (campos.length < 11) {
+                            errores.push(`Línea ${i + 1}: Formato incorrecto para cobranza`);
+                            continue;
                         }
-                        
+
                         const pago = {
-                            office, 
-                            idCredito: campos[1], 
+                            office,
+                            idCredito: campos[1],
                             monto: parseFloat(campos[3] || 0),
                             tipoPago: 'normal'
                         };
-                        
+
                         if (pago.idCredito && pago.monto) {
                             const pagoResult = await database.agregarPago(pago);
                             if (pagoResult.success) {
@@ -305,18 +318,20 @@ const database = {
                 }
             }
 
-            return { 
-                success: true, 
-                total: lineas.length, 
-                importados: importados, 
-                errores: errores 
+            return {
+                success: true,
+                total: lineas.length,
+                importados: importados,
+                errores: errores
             };
         } catch (error) {
             console.error("Error en importación masiva: ", error);
-            return { 
-                success: false, 
-                message: `Error crítico: ${error.message}`, 
-                errores: [error.message] 
+            return {
+                success: false,
+                message: `Error crítico: ${error.message}`,
+                total: lineas.length,
+                importados: importados,
+                errores: [error.message]
             };
         }
     },
@@ -351,7 +366,7 @@ const database = {
 
             // Calcular tasa de recuperación
             const totalCarteraMasCobrado = totalCartera + cobradoMes;
-            const tasaRecuperacion = totalCarteraMasCobrado > 0 ? 
+            const tasaRecuperacion = totalCarteraMasCobrado > 0 ?
                 (cobradoMes / totalCarteraMasCobrado * 100) : 0;
 
             // Contar créditos vencidos
@@ -462,7 +477,7 @@ const database = {
 
     _cumpleFiltroFecha: (fecha, fechaInicio, fechaFin) => {
         if (!fechaInicio && !fechaFin) return true;
-        
+
         const fechaObj = new Date(fecha);
         if (fechaInicio) {
             const inicio = new Date(fechaInicio);
