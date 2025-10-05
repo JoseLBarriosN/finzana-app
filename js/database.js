@@ -49,7 +49,7 @@ const database = {
             }
             clienteData.curp = clienteData.curp.toUpperCase();
             await db.collection('clientes').add(clienteData);
-            return { success: true, message: 'Cliente registrado en la nube.' };
+            return { success: true, message: 'Cliente registrado exitosamente.' };
         } catch (error) {
             console.error("Error agregando cliente:", error);
             return { success: false, message: `Error: ${error.message}` };
@@ -155,7 +155,7 @@ const database = {
             creditoData.curpAval = creditoData.curpAval.toUpperCase();
 
             await db.collection('creditos').doc(newId).set(creditoData);
-            return { success: true, message: 'Crédito generado en la nube.', data: creditoData };
+            return { success: true, message: 'Crédito generado exitosamente.', data: creditoData };
         } catch (error) {
             console.error("Error agregando crédito:", error);
             return { success: false, message: `Error: ${error.message}` };
@@ -243,27 +243,56 @@ const database = {
                 
             } else if (tipo === 'colocacion') {
                 const batch = db.batch();
-                const procesador = (office === 'GDL') ? database._procesarColocacionGDL : database._procesarColocacionLEON;
                 for (const [i, linea] of lineas.entries()) {
-                    const credito = procesador(linea, i, office, errores);
-                    if (credito && credito.id) {
-                        const docRef = db.collection('creditos').doc(credito.id);
-                        batch.set(docRef, credito);
-                        importados++;
+                    const campos = linea.split(',').map(c => c.trim());
+                    if (campos.length < 13) { 
+                        errores.push(`Línea ${i + 1}: Formato incorrecto para colocación`); 
+                        continue; 
                     }
+                    
+                    const credito = {
+                        id: campos[2], 
+                        office, 
+                        curpCliente: campos[0].toUpperCase(), 
+                        nombreCliente: campos[1],
+                        fechaCreacion: campos[3], 
+                        tipo: campos[4], 
+                        monto: parseFloat(campos[5] || 0),
+                        plazo: parseInt(campos[6] || 0), 
+                        montoTotal: parseFloat(campos[7] || 0), 
+                        curpAval: campos[8].toUpperCase(),
+                        nombreAval: campos[9], 
+                        poblacion_grupo: campos[10], 
+                        ruta: campos[11],
+                        saldo: parseFloat(campos[12] || 0), 
+                        estado: parseFloat(campos[12] || 0) > 0.01 ? 'activo' : 'liquidado'
+                    };
+                    
+                    const docRef = db.collection('creditos').doc(credito.id);
+                    batch.set(docRef, credito);
+                    importados++;
                 }
                 await batch.commit();
                 
             } else if (tipo === 'cobranza') {
                 // Para cobranza, procesamos uno por uno usando agregarPago
-                const procesador = (office === 'GDL') ? database._procesarCobranzaGDL : database._procesarCobranzaLEON;
-                
                 for (const [i, linea] of lineas.entries()) {
                     try {
-                        const resultado = procesador(linea, i, office, errores);
-                        if (resultado.pago && resultado.pago.idCredito) {
-                            // Usar la función existente de agregar pago
-                            const pagoResult = await database.agregarPago(resultado.pago);
+                        const campos = linea.split(',').map(c => c.trim());
+                        if (campos.length < 11) { 
+                            errores.push(`Línea ${i + 1}: Formato incorrecto para cobranza`); 
+                            continue; 
+                        }
+                        
+                        const pago = {
+                            office, 
+                            idCredito: campos[1], 
+                            monto: parseFloat(campos[3] || 0),
+                            tipoPago: 'normal'
+                        };
+                        
+                        if (pago.idCredito && pago.monto) {
+                            const pagoResult = await database.agregarPago(pago);
                             if (pagoResult.success) {
                                 importados++;
                             } else {
@@ -292,94 +321,7 @@ const database = {
         }
     },
 
-    _procesarColocacionGDL: (linea, i, office, errores) => {
-        const campos = linea.split(',').map(c => c.trim());
-        if (campos.length < 13) { 
-            errores.push(`Línea ${i + 1}: Formato GDL-Colocación incorrecto`); 
-            return null; 
-        }
-        return {
-            id: campos[2], 
-            office, 
-            curpCliente: campos[0].toUpperCase(), 
-            nombreCliente: campos[1],
-            fechaCreacion: campos[3], 
-            tipo: campos[4], 
-            monto: parseFloat(campos[5] || 0),
-            plazo: parseInt(campos[6] || 0), 
-            montoTotal: parseFloat(campos[7] || 0), 
-            curpAval: campos[8].toUpperCase(),
-            nombreAval: campos[9], 
-            poblacion_grupo: campos[10], 
-            ruta: campos[11],
-            saldo: parseFloat(campos[12] || 0), 
-            estado: parseFloat(campos[12] || 0) > 0.01 ? 'activo' : 'liquidado'
-        };
-    },
-
-    _procesarColocacionLEON: (linea, i, office, errores) => {
-        const campos = linea.split(',').map(c => c.trim());
-        if (campos.length < 20) { 
-            errores.push(`Línea ${i + 1}: Formato LEON-Colocación incorrecto`); 
-            return null; 
-        }
-        return {
-            id: campos[2], 
-            office, 
-            curpCliente: campos[0].toUpperCase(), 
-            nombreCliente: campos[1],
-            fechaCreacion: campos[3], 
-            tipo: campos[4], 
-            monto: parseFloat(campos[5] || 0),
-            plazo: parseInt(campos[6] || 0), 
-            montoTotal: parseFloat(campos[7] || 0), 
-            curpAval: campos[8].toUpperCase(),
-            nombreAval: campos[9], 
-            poblacion_grupo: campos[10], 
-            ruta: campos[11],
-            interes: parseFloat(campos[12] || 0), 
-            saldo: parseFloat(campos[13] || 0),
-            ultimoPago: campos[14], 
-            saldoVencido: parseFloat(campos[15] || 0), 
-            status: campos[16],
-            saldoCapital: parseFloat(campos[17] || 0), 
-            saldoInteres: parseFloat(campos[18] || 0), 
-            stj150: campos[19],
-            estado: parseFloat(campos[13] || 0) > 0.01 ? 'activo' : 'liquidado'
-        };
-    },
-
-    _procesarCobranzaGDL: (linea, i, office, errores) => {
-        const campos = linea.split(',').map(c => c.trim());
-        if (campos.length < 11) { 
-            errores.push(`Línea ${i + 1}: Formato GDL-Cobranza incorrecto`); 
-            return { pago: null }; 
-        }
-        const pago = {
-            office, 
-            idCredito: campos[1], 
-            monto: parseFloat(campos[3] || 0),
-            tipoPago: 'normal'
-        };
-        return { pago };
-    },
-
-    _procesarCobranzaLEON: (linea, i, office, errores) => {
-        const campos = linea.split(',').map(c => c.trim());
-        if (campos.length < 11) { 
-            errores.push(`Línea ${i + 1}: Formato LEON-Cobranza incorrecto`); 
-            return { pago: null }; 
-        }
-        const pago = {
-            office, 
-            idCredito: campos[1], 
-            monto: parseFloat(campos[3] || 0),
-            tipoPago: 'normal'
-        };
-        return { pago };
-    },
-
-    // --- FUNCIONES DE REPORTES Y LÓGICA DE NEGOCIO ---
+    // --- FUNCIONES DE REPORTES ---
     generarReportes: async () => {
         try {
             const [clientesSnap, creditosSnap, pagosSnap] = await Promise.all([
