@@ -8,13 +8,6 @@ const database = {
         db.enablePersistence()
             .then(() => {
                 console.log('Persistencia offline activada correctamente');
-                
-                // Sincronización automática cuando se recupera la conexión
-                db.enableNetwork().then(() => {
-                    console.log('Conectado a Firestore');
-                }).catch((error) => {
-                    console.warn('No se pudo conectar a Firestore:', error);
-                });
             })
             .catch((err) => {
                 if (err.code == 'failed-precondition') {
@@ -234,7 +227,7 @@ const database = {
                 for (const [i, linea] of lineas.entries()) {
                     const campos = linea.split(',').map(c => c.trim());
                     if (campos.length < 7) {
-                        errores.push(`Línea ${i + 1}: Faltan columnas`);
+                        errores.push(`Línea ${i + 1}: Faltan columnas (se esperaban 7, se encontraron ${campos.length})`);
                         continue;
                     }
 
@@ -259,16 +252,23 @@ const database = {
                 for (const [i, linea] of lineas.entries()) {
                     const campos = linea.split(',').map(c => c.trim());
                     if (campos.length < 13) {
-                        errores.push(`Línea ${i + 1}: Formato incorrecto para colocación`);
+                        errores.push(`Línea ${i + 1}: Formato incorrecto para colocación (se esperaban 13 columnas, se encontraron ${campos.length})`);
+                        continue;
+                    }
+
+                    // CORRECCIÓN CRÍTICA: Validar que el ID no esté vacío
+                    const creditoId = campos[2].trim();
+                    if (!creditoId) {
+                        errores.push(`Línea ${i + 1}: El ID del crédito está vacío`);
                         continue;
                     }
 
                     const credito = {
-                        id: campos[2],
-                        office,
+                        id: creditoId,
+                        office: office,
                         curpCliente: campos[0].toUpperCase(),
                         nombreCliente: campos[1],
-                        fechaCreacion: campos[3],
+                        fechaCreacion: campos[3] || new Date().toISOString(),
                         tipo: campos[4],
                         monto: parseFloat(campos[5] || 0),
                         plazo: parseInt(campos[6] || 0),
@@ -293,12 +293,12 @@ const database = {
                     try {
                         const campos = linea.split(',').map(c => c.trim());
                         if (campos.length < 11) {
-                            errores.push(`Línea ${i + 1}: Formato incorrecto para cobranza`);
+                            errores.push(`Línea ${i + 1}: Formato incorrecto para cobranza (se esperaban 11 columnas, se encontraron ${campos.length})`);
                             continue;
                         }
 
                         const pago = {
-                            office,
+                            office: office,
                             idCredito: campos[1],
                             monto: parseFloat(campos[3] || 0),
                             tipoPago: 'normal'
@@ -311,6 +311,8 @@ const database = {
                             } else {
                                 errores.push(`Línea ${i + 1}: ${pagoResult.message}`);
                             }
+                        } else {
+                            errores.push(`Línea ${i + 1}: ID de crédito o monto inválido`);
                         }
                     } catch (error) {
                         errores.push(`Línea ${i + 1}: ${error.message}`);
