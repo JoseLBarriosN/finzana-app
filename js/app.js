@@ -225,8 +225,12 @@ async function handleLogin(e) {
 function handleOfficeChange() {
     const office = this.value;
     const isGDL = office === 'GDL';
-    document.getElementById('import-gdl-section').classList.toggle('hidden', !isGDL);
-    document.getElementById('import-leon-section').classList.toggle('hidden', isGDL);
+    const gdlSection = document.getElementById('import-gdl-section');
+    const leonSection = document.getElementById('import-leon-section');
+    
+    if (gdlSection) gdlSection.classList.toggle('hidden', !isGDL);
+    if (leonSection) leonSection.classList.toggle('hidden', isGDL);
+    
     currentImportTab = 'clientes';
     const selector = isGDL ? '#import-gdl-section .import-tab[data-tab="clientes"]' : '#import-leon-section .import-tab[data-tab="clientes"]';
     const tabElement = document.querySelector(selector);
@@ -253,11 +257,19 @@ function handleTabClick() {
 async function handleImport() {
     const office = document.getElementById('office-select').value;
     const textareaId = `datos-importar-${office.toLowerCase()}-${currentImportTab}`;
-    const csvData = document.getElementById(textareaId).value;
+    const textarea = document.getElementById(textareaId);
+    
+    if (!textarea) {
+        showStatus('estado-importacion', 'No se encontró el área de texto para importar.', 'error');
+        return;
+    }
+    
+    const csvData = textarea.value;
     
     if (!csvData.trim()) {
         showStatus('estado-importacion', 'No hay datos para importar.', 'error');
-        document.getElementById('resultado-importacion').classList.remove('hidden');
+        const resultadoImportacion = document.getElementById('resultado-importacion');
+        if (resultadoImportacion) resultadoImportacion.classList.remove('hidden');
         return;
     }
 
@@ -270,24 +282,24 @@ async function handleImport() {
         
         if (resultado.errores && resultado.errores.length > 0) {
             mensaje += `<br>Errores: ${resultado.errores.length}`;
-            document.getElementById('detalle-importacion').innerHTML = `<strong>Detalle:</strong><ul>${resultado.errores.map(e => `<li>${e}</li>`).join('')}</ul>`;
+            const detalleImportacion = document.getElementById('detalle-importacion');
+            if (detalleImportacion) {
+                detalleImportacion.innerHTML = `<strong>Detalle:</strong><ul>${resultado.errores.map(e => `<li>${e}</li>`).join('')}</ul>`;
+            }
         } else {
-            document.getElementById('detalle-importacion').innerHTML = '';
+            const detalleImportacion = document.getElementById('detalle-importacion');
+            if (detalleImportacion) detalleImportacion.innerHTML = '';
         }
         
         showStatus('estado-importacion', mensaje, resultado.success ? 'success' : 'error');
-        document.getElementById('resultado-importacion').classList.remove('hidden');
+        const resultadoImportacion = document.getElementById('resultado-importacion');
+        if (resultadoImportacion) resultadoImportacion.classList.remove('hidden');
     } catch (error) {
         showStatus('estado-importacion', `Error en importación: ${error.message}`, 'error');
     } finally {
         showProcessingOverlay(false);
         showButtonLoading('btn-procesar-importacion', false);
     }
-}
-
-function handleUserForm(e) {
-    e.preventDefault();
-    showStatus('status_usuarios', 'La gestión de usuarios (crear, editar roles) se realiza desde la consola de Firebase.', 'info');
 }
 
 async function handleClientForm(e) {
@@ -328,7 +340,10 @@ async function handleClientForm(e) {
 }
 
 async function handleSearchClientForCredit() {
-    const curp = document.getElementById('curp_colocacion').value.trim();
+    const curpInput = document.getElementById('curp_colocacion');
+    if (!curpInput) return;
+    
+    const curp = curpInput.value.trim();
     if (!validarFormatoCURP(curp)) {
         showStatus('status_colocacion', 'El CURP debe tener 18 caracteres.', 'error');
         return;
@@ -342,19 +357,25 @@ async function handleSearchClientForCredit() {
             const esElegible = await verificarElegibilidadRenovacion(curp);
             if (!esElegible) {
                 showStatus('status_colocacion', `El cliente tiene un crédito activo que no cumple los requisitos para renovación (10 pagos puntuales).`, 'error');
-                document.getElementById('form-colocacion').classList.add('hidden');
+                const formColocacion = document.getElementById('form-colocacion');
+                if (formColocacion) formColocacion.classList.add('hidden');
                 return;
             }
 
             const creditoActivo = await database.buscarCreditoActivoPorCliente(curp);
             showStatus('status_colocacion', creditoActivo ? 'Cliente encontrado y elegible para renovación.' : 'Cliente encontrado y elegible para crédito nuevo.', 'success');
 
-            document.getElementById('nombre_colocacion').value = cliente.nombre;
-            document.getElementById('idCredito_colocacion').value = 'Se asignará automáticamente';
-            document.getElementById('form-colocacion').classList.remove('hidden');
+            const nombreColocacion = document.getElementById('nombre_colocacion');
+            const idCreditoColocacion = document.getElementById('idCredito_colocacion');
+            const formColocacion = document.getElementById('form-colocacion');
+            
+            if (nombreColocacion) nombreColocacion.value = cliente.nombre;
+            if (idCreditoColocacion) idCreditoColocacion.value = 'Se asignará automáticamente';
+            if (formColocacion) formColocacion.classList.remove('hidden');
         } else {
             showStatus('status_colocacion', 'Cliente no encontrado. Registre al cliente primero.', 'error');
-            document.getElementById('form-colocacion').classList.add('hidden');
+            const formColocacion = document.getElementById('form-colocacion');
+            if (formColocacion) formColocacion.classList.add('hidden');
         }
     } catch (error) {
         showStatus('status_colocacion', 'Error al buscar cliente: ' + error.message, 'error');
@@ -387,8 +408,10 @@ async function handleCreditForm(e) {
         if (resultado.success) {
             showStatus('status_colocacion', `${resultado.message}. ID de crédito: ${resultado.data.id}`, 'success');
             e.target.reset();
-            document.getElementById('form-colocacion').classList.add('hidden');
-            document.getElementById('curp_colocacion').value = '';
+            const formColocacion = document.getElementById('form-colocacion');
+            const curpColocacion = document.getElementById('curp_colocacion');
+            if (formColocacion) formColocacion.classList.add('hidden');
+            if (curpColocacion) curpColocacion.value = '';
         } else {
             showStatus('status_colocacion', resultado.message, 'error');
         }
@@ -400,7 +423,10 @@ async function handleCreditForm(e) {
 }
 
 async function handleSearchCreditForPayment() {
-    const idCredito = document.getElementById('idCredito_cobranza').value.trim();
+    const idCreditoInput = document.getElementById('idCredito_cobranza');
+    if (!idCreditoInput) return;
+    
+    const idCredito = idCreditoInput.value.trim();
     
     showButtonLoading('btnBuscarCredito_cobranza', true, 'Buscando...');
     
@@ -411,24 +437,40 @@ async function handleSearchCreditForPayment() {
             const historial = await obtenerHistorialCreditoCliente(creditoActual.curpCliente);
 
             if (historial) {
-                document.getElementById('nombre_cobranza').value = cliente ? cliente.nombre : 'N/A';
-                document.getElementById('saldo_cobranza').value = `$${historial.saldoRestante.toLocaleString()}`;
-                document.getElementById('estado_cobranza').value = historial.estado.toUpperCase();
-                document.getElementById('semanas_atraso_cobranza').value = historial.semanasAtraso || 0;
-                document.getElementById('pago_semanal_cobranza').value = `$${historial.pagoSemanal.toLocaleString()}`;
-                document.getElementById('fecha_proximo_pago_cobranza').value = historial.proximaFechaPago;
-                document.getElementById('monto_cobranza').value = historial.pagoSemanal.toFixed(2);
+                // Actualizar todos los campos del formulario de cobranza
+                const campos = [
+                    'nombre_cobranza', 'saldo_cobranza', 'estado_cobranza', 
+                    'semanas_atraso_cobranza', 'pago_semanal_cobranza', 
+                    'fecha_proximo_pago_cobranza', 'monto_cobranza'
+                ];
+                
+                const valores = [
+                    cliente ? cliente.nombre : 'N/A',
+                    `$${historial.saldoRestante.toLocaleString()}`,
+                    historial.estado.toUpperCase(),
+                    historial.semanasAtraso || 0,
+                    `$${historial.pagoSemanal.toLocaleString()}`,
+                    historial.proximaFechaPago,
+                    historial.pagoSemanal.toFixed(2)
+                ];
+                
+                campos.forEach((campo, index) => {
+                    const element = document.getElementById(campo);
+                    if (element) element.value = valores[index];
+                });
 
                 handleMontoPagoChange();
 
-                document.getElementById('form-cobranza').classList.remove('hidden');
+                const formCobranza = document.getElementById('form-cobranza');
+                if (formCobranza) formCobranza.classList.remove('hidden');
                 showStatus('status_cobranza', 'Crédito encontrado.', 'success');
             } else {
                 showStatus('status_cobranza', 'No se pudo calcular el historial del crédito.', 'error');
             }
         } else {
             showStatus('status_cobranza', 'Crédito no encontrado.', 'error');
-            document.getElementById('form-cobranza').classList.add('hidden');
+            const formCobranza = document.getElementById('form-cobranza');
+            if (formCobranza) formCobranza.classList.add('hidden');
         }
     } catch (error) {
         showStatus('status_cobranza', 'Error al buscar crédito: ' + error.message, 'error');
@@ -439,6 +481,11 @@ async function handleSearchCreditForPayment() {
 
 async function handlePaymentForm(e) {
     e.preventDefault();
+    if (!creditoActual) {
+        showStatus('status_cobranza', 'No hay un crédito seleccionado.', 'error');
+        return;
+    }
+    
     const pago = {
         idCredito: creditoActual.id,
         monto: parseFloat(document.getElementById('monto_cobranza').value),
@@ -456,8 +503,10 @@ async function handlePaymentForm(e) {
         const resultado = await database.agregarPago(pago);
         showStatus('status_cobranza', resultado.message, resultado.success ? 'success' : 'error');
         if (resultado.success) {
-            document.getElementById('form-cobranza').classList.add('hidden');
-            document.getElementById('idCredito_cobranza').value = '';
+            const formCobranza = document.getElementById('form-cobranza');
+            const idCreditoCobranza = document.getElementById('idCredito_cobranza');
+            if (formCobranza) formCobranza.classList.add('hidden');
+            if (idCreditoCobranza) idCreditoCobranza.value = '';
             creditoActual = null;
         }
     } catch (error) {
@@ -469,9 +518,14 @@ async function handlePaymentForm(e) {
 
 function handleMontoPagoChange() {
     if (!creditoActual) return;
-    const monto = parseFloat(document.getElementById('monto_cobranza').value) || 0;
+    const montoInput = document.getElementById('monto_cobranza');
+    const saldoDespuesInput = document.getElementById('saldoDespues_cobranza');
+    
+    if (!montoInput || !saldoDespuesInput) return;
+    
+    const monto = parseFloat(montoInput.value) || 0;
     const saldoDespues = creditoActual.saldo - monto;
-    document.getElementById('saldoDespues_cobranza').value = `$${saldoDespues.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    saldoDespuesInput.value = `$${saldoDespues.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 // =============================================
@@ -485,7 +539,8 @@ function showView(viewId) {
     if (targetView) {
         targetView.classList.remove('hidden');
         // Disparar evento personalizado para que las vistas se inicialicen
-        targetView.dispatchEvent(new CustomEvent('viewshown', { detail: { viewId } }));
+        const event = new CustomEvent('viewshown', { detail: { viewId } });
+        targetView.dispatchEvent(event);
     }
 }
 
@@ -573,8 +628,13 @@ function hideProgress() {
 }
 
 function calcularMontoTotalColocacion() {
-    const monto = parseFloat(document.getElementById('monto_colocacion').value) || 0;
-    document.getElementById('montoTotal_colocacion').value = monto > 0 ? `$${(monto * 1.3).toLocaleString()}` : '';
+    const montoInput = document.getElementById('monto_colocacion');
+    const montoTotalInput = document.getElementById('montoTotal_colocacion');
+    
+    if (!montoInput || !montoTotalInput) return;
+    
+    const monto = parseFloat(montoInput.value) || 0;
+    montoTotalInput.value = monto > 0 ? `$${(monto * 1.3).toLocaleString()}` : '';
 }
 
 function validarCURP(input) {
@@ -583,7 +643,7 @@ function validarCURP(input) {
 }
 
 function validarFormatoCURP(curp) {
-    return curp.length === 18;
+    return curp && curp.length === 18;
 }
 
 function inicializarDropdowns() {
@@ -636,7 +696,7 @@ function inicializarDropdowns() {
 }
 
 // =============================================
-// LÓGICA DE NEGOCIO (VIVE EN APP.JS)
+// LÓGICA DE NEGOCIO
 // =============================================
 
 function _calcularEstadoCredito(credito, pagos) {
@@ -859,15 +919,26 @@ async function loadBasicReports() {
     try {
         const reportes = await database.generarReportes();
         if (reportes) {
-            document.getElementById('total-clientes').textContent = reportes.totalClientes;
-            document.getElementById('total-creditos').textContent = reportes.totalCreditos;
-            document.getElementById('total-cartera').textContent = `$${reportes.totalCartera.toLocaleString()}`;
-            document.getElementById('total-vencidos').textContent = reportes.totalVencidos;
-            document.getElementById('pagos-registrados').textContent = reportes.pagosRegistrados;
-            document.getElementById('cobrado-mes').textContent = `$${reportes.cobradoMes.toLocaleString()}`;
-            document.getElementById('total-comisiones').textContent = `$${reportes.totalComisiones.toLocaleString()}`;
-            const tasaRecuperacion = (reportes.totalCartera + reportes.cobradoMes) > 0 ? (reportes.cobradoMes / (reportes.totalCartera + reportes.cobradoMes) * 100).toFixed(1) : 0;
-            document.getElementById('tasa-recuperacion').textContent = `${tasaRecuperacion}%`;
+            const elementos = {
+                'total-clientes': reportes.totalClientes,
+                'total-creditos': reportes.totalCreditos,
+                'total-cartera': `$${reportes.totalCartera.toLocaleString()}`,
+                'total-vencidos': reportes.totalVencidos,
+                'pagos-registrados': reportes.pagosRegistrados,
+                'cobrado-mes': `$${reportes.cobradoMes.toLocaleString()}`,
+                'total-comisiones': `$${reportes.totalComisiones.toLocaleString()}`
+            };
+            
+            Object.entries(elementos).forEach(([id, valor]) => {
+                const element = document.getElementById(id);
+                if (element) element.textContent = valor;
+            });
+            
+            const tasaRecuperacion = (reportes.totalCartera + reportes.cobradoMes) > 0 ? 
+                (reportes.cobradoMes / (reportes.totalCartera + reportes.cobradoMes) * 100).toFixed(1) : 0;
+            
+            const tasaElement = document.getElementById('tasa-recuperacion');
+            if (tasaElement) tasaElement.textContent = `${tasaRecuperacion}%`;
         }
     } catch (error) {
         console.error('Error cargando reportes:', error);
@@ -1114,6 +1185,10 @@ function exportToPDF() {
     try {
         // Usar html2pdf para generar el PDF
         const element = document.getElementById('view-reportes-avanzados');
+        if (!element) {
+            throw new Error('No se encontró el elemento para exportar');
+        }
+        
         const opt = {
             margin: 1,
             filename: `reporte_finzana_${new Date().toISOString().split('T')[0]}.pdf`,
@@ -1171,7 +1246,8 @@ document.addEventListener('viewshown', function(e) {
     
     switch(viewId) {
         case 'view-reportes':
-            document.getElementById('btn-actualizar-reportes')?.click();
+            const btnActualizar = document.getElementById('btn-actualizar-reportes');
+            if (btnActualizar) btnActualizar.click();
             break;
         case 'view-reportes-avanzados':
             inicializarVistaReportesAvanzados();
