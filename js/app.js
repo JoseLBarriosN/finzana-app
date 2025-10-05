@@ -6,21 +6,25 @@ let currentUser = null;
 let creditoActual = null;
 let currentImportTab = 'clientes';
 
-
 document.addEventListener('DOMContentLoaded', function () {
+    // La inicialización de Firebase ocurre en index.html
     setupEventListeners();
 
-    // El nuevo manejador de estado de autenticación de Firebase
+    // El nuevo manejador de estado de autenticación
     auth.onAuthStateChanged(user => {
         if (user) {
+            // Usuario ha iniciado sesión
             currentUser = user;
             document.getElementById('user-name').textContent = user.displayName || user.email;
+            // Podríamos añadir roles en el futuro usando "custom claims" de Firebase
             document.getElementById('user-role-display').textContent = "Usuario"; 
             
             document.getElementById('loading-overlay').classList.add('hidden');
             document.getElementById('login-screen').classList.add('hidden');
             document.getElementById('main-app').classList.remove('hidden');
+
         } else {
+            // Usuario ha cerrado sesión o no está logueado
             currentUser = null;
             document.getElementById('loading-overlay').classList.add('hidden');
             document.getElementById('main-app').classList.add('hidden');
@@ -30,38 +34,72 @@ document.addEventListener('DOMContentLoaded', function () {
 });
 
 function setupEventListeners() {
+    // Sistema de Autenticación
     document.getElementById('login-form').addEventListener('submit', handleLogin);
     document.getElementById('logout-btn').addEventListener('click', () => auth.signOut());
+
+    // Navegación Principal
     document.querySelectorAll('[data-view]').forEach(button => {
         button.addEventListener('click', function () { showView(this.getAttribute('data-view')); });
     });
+
+    // Gestión de Clientes
     document.getElementById('btn-aplicar-filtros').addEventListener('click', loadClientesTable);
     document.getElementById('btn-limpiar-filtros').addEventListener('click', limpiarFiltrosClientes);
+
+    // Importación de Datos
     document.getElementById('office-select').addEventListener('change', handleOfficeChange);
     document.querySelectorAll('.import-tab').forEach(tab => tab.addEventListener('click', handleTabClick));
     document.getElementById('btn-procesar-importacion').addEventListener('click', handleImport);
-    document.getElementById('btn-limpiar-datos').addEventListener('click', () => { /* ... Lógica de limpiar BD ... */ });
-    document.getElementById('btn-nuevo-usuario').addEventListener('click', () => { /* ... Lógica de UI ... */ });
-    document.getElementById('btn-cancelar-usuario').addEventListener('click', () => { /* ... Lógica de UI ... */ });
+    document.getElementById('btn-limpiar-datos').addEventListener('click', async () => {
+        if (confirm('¿Estás seguro de que deseas limpiar TODA la base de datos en la nube? Esta acción no se puede deshacer.')) {
+            // Esta es una operación avanzada, por ahora solo mostraremos un mensaje.
+            // La lógica real requeriría Cloud Functions para borrar colecciones de forma segura.
+            showStatus('estado-importacion', 'La limpieza masiva debe hacerse desde la consola de Firebase.', 'info');
+        }
+    });
+
+    // Gestión de Usuarios (Firebase Auth)
+    document.getElementById('btn-nuevo-usuario').addEventListener('click', () => {
+        document.getElementById('form-usuario-container').classList.remove('hidden');
+        document.getElementById('form-usuario').reset();
+        document.getElementById('form-usuario-titulo').textContent = 'Nuevo Usuario';
+    });
+    document.getElementById('btn-cancelar-usuario').addEventListener('click', () => {
+        document.getElementById('form-usuario-container').classList.add('hidden');
+    });
     document.getElementById('form-usuario').addEventListener('submit', handleUserForm);
+
+    // Registrar Cliente
     document.getElementById('form-cliente').addEventListener('submit', handleClientForm);
     document.getElementById('curp_cliente').addEventListener('input', function () { validarCURP(this); });
+
+    // Generar Crédito
     document.getElementById('btnBuscarCliente_colocacion').addEventListener('click', handleSearchClientForCredit);
     document.getElementById('form-credito-submit').addEventListener('submit', handleCreditForm);
     document.getElementById('curpAval_colocacion').addEventListener('input', function () { validarCURP(this); });
     document.getElementById('monto_colocacion').addEventListener('change', calcularMontoTotalColocacion);
     document.getElementById('plazo_colocacion').addEventListener('change', calcularMontoTotalColocacion);
+
+    // Registrar Pago
     document.getElementById('btnBuscarCredito_cobranza').addEventListener('click', handleSearchCreditForPayment);
     document.getElementById('form-pago-submit').addEventListener('submit', handlePaymentForm);
     document.getElementById('monto_cobranza').addEventListener('input', handleMontoPagoChange);
-    document.getElementById('btn-actualizar-reportes').addEventListener('click', () => { /* ... Lógica de reportes ... */ });
+
+    // Reportes
+    document.getElementById('btn-actualizar-reportes').addEventListener('click', async () => {
+        // La lógica de reportes necesitaría reescribirse para leer datos de Firestore.
+        console.warn("La generación de reportes aún no está conectada a Firestore.");
+    });
+
+    // Eventos de Vistas
     document.getElementById('view-reportes').addEventListener('viewshown', () => document.getElementById('btn-actualizar-reportes').click());
-    document.getElementById('view-usuarios').addEventListener('viewshown', () => { /* ... Cargar usuarios de Firebase ... */ });
+    document.getElementById('view-usuarios').addEventListener('viewshown', () => { console.log("Cargando vista de usuarios..."); });
     document.getElementById('view-gestion-clientes').addEventListener('viewshown', inicializarVistaGestionClientes);
 }
 
 // =============================================
-// MANEJADORES DE EVENTOS CON FIREBASE
+// MANEJADORES DE EVENTOS
 // =============================================
 
 async function handleLogin(e) {
@@ -80,6 +118,79 @@ async function handleLogin(e) {
         statusElement.textContent = 'Error: correo o contraseña incorrectos.';
         statusElement.className = 'status-message status-error';
     }
+}
+
+function handleOfficeChange() {
+    const office = this.value;
+    const isGDL = office === 'GDL';
+    document.getElementById('import-gdl-section').classList.toggle('hidden', !isGDL);
+    document.getElementById('import-leon-section').classList.toggle('hidden', isGDL);
+    currentImportTab = 'clientes';
+    const selector = isGDL ? '#import-gdl-section .import-tab[data-tab="clientes"]' : '#import-leon-section .import-tab[data-tab="clientes"]';
+    handleTabClick.call(document.querySelector(selector));
+}
+
+function handleTabClick() {
+    const parentSection = this.closest('[id$="-section"]');
+    parentSection.querySelectorAll('.import-tab').forEach(t => t.classList.remove('active'));
+    this.classList.add('active');
+    currentImportTab = this.getAttribute('data-tab');
+    parentSection.querySelectorAll('.import-tab-content').forEach(c => c.classList.add('hidden'));
+    const officePrefix = parentSection.id.includes('gdl') ? 'gdl' : 'leon';
+    document.getElementById(`tab-${officePrefix}-${currentImportTab}`).classList.remove('hidden');
+}
+
+async function handleImport() {
+    const office = document.getElementById('office-select').value;
+    const textareaId = `datos-importar-${office.toLowerCase()}-${currentImportTab}`;
+    const csvData = document.getElementById(textareaId).value;
+    if (!csvData.trim()) {
+        showStatus('estado-importacion', 'No hay datos para importar.', 'error');
+        document.getElementById('resultado-importacion').classList.remove('hidden');
+        return;
+    }
+    const resultado = await database.importarDatosDesdeCSV(csvData, currentImportTab, office);
+    let mensaje = `Importación (${office}) completada: ${resultado.importados} de ${resultado.total} registros.`;
+    if (resultado.errores && resultado.errores.length > 0) {
+        mensaje += `<br>Errores: ${resultado.errores.length}`;
+        document.getElementById('detalle-importacion').innerHTML = `<strong>Detalle:</strong><ul>${resultado.errores.map(e => `<li>${e}</li>`).join('')}</ul>`;
+    } else {
+        document.getElementById('detalle-importacion').innerHTML = '';
+    }
+    showStatus('estado-importacion', mensaje, resultado.success ? 'success' : 'error');
+    document.getElementById('resultado-importacion').classList.remove('hidden');
+}
+
+async function handleUserForm(e) {
+    e.preventDefault();
+    // La creación y gestión de usuarios ahora se hace en la consola de Firebase.
+    // Esta función podría adaptarse en el futuro para usar el Admin SDK en un servidor.
+    showStatus('status_usuarios', 'La gestión de usuarios se realiza en la consola de Firebase.', 'info');
+}
+
+async function handleClientForm(e) {
+    e.preventDefault();
+    const curp = document.getElementById('curp_cliente').value;
+    if (!validarFormatoCURP(curp)) {
+        showStatus('status_cliente', 'El CURP debe tener 18 caracteres.', 'error');
+        return;
+    }
+    const cliente = {
+        curp,
+        nombre: document.getElementById('nombre_cliente').value,
+        domicilio: document.getElementById('domicilio_cliente').value,
+        cp: document.getElementById('cp_cliente').value,
+        telefono: document.getElementById('telefono_cliente').value,
+        poblacion_grupo: document.getElementById('poblacion_grupo_cliente').value,
+        ruta: document.getElementById('ruta_cliente').value
+    };
+    if (!cliente.nombre || !cliente.domicilio || !cliente.poblacion_grupo || !cliente.ruta) {
+        showStatus('status_cliente', 'Los campos con * son obligatorios.', 'error');
+        return;
+    }
+    const resultado = await database.agregarCliente(cliente);
+    showStatus('status_cliente', resultado.message, resultado.success ? 'success' : 'error');
+    if (resultado.success) e.target.reset();
 }
 
 async function handleSearchClientForCredit() {
@@ -106,6 +217,32 @@ async function handleSearchClientForCredit() {
     } else {
         showStatus('status_colocacion', 'Cliente no encontrado. Registre al cliente primero.', 'error');
         document.getElementById('form-colocacion').classList.add('hidden');
+    }
+}
+
+async function handleCreditForm(e) {
+    e.preventDefault();
+    const curpAval = document.getElementById('curpAval_colocacion').value;
+    const credito = {
+        curpCliente: document.getElementById('curp_colocacion').value,
+        tipo: document.getElementById('tipo_colocacion').value,
+        monto: parseFloat(document.getElementById('monto_colocacion').value),
+        plazo: parseInt(document.getElementById('plazo_colocacion').value),
+        curpAval,
+        nombreAval: document.getElementById('nombreAval_colocacion').value
+    };
+    if (!credito.monto || !credito.plazo || !credito.tipo || !credito.nombreAval.trim() || !validarFormatoCURP(curpAval)) {
+        showStatus('status_colocacion', 'Todos los campos son obligatorios y el CURP del aval debe ser válido.', 'error');
+        return;
+    }
+    const resultado = await database.agregarCredito(credito);
+    if (resultado.success) {
+        showStatus('status_colocacion', `${resultado.message}. ID de crédito: ${resultado.data.id}`, 'success');
+        e.target.reset();
+        document.getElementById('form-colocacion').classList.add('hidden');
+        document.getElementById('curp_colocacion').value = '';
+    } else {
+        showStatus('status_colocacion', resultado.message, 'error');
     }
 }
 
@@ -158,69 +295,72 @@ function handleMontoPagoChange() {
     if (!creditoActual) return;
     const monto = parseFloat(document.getElementById('monto_cobranza').value) || 0;
     const saldoDespues = creditoActual.saldo - monto;
-    document.getElementById('saldoDespues_cobranza').value = `$${saldoDespues.toLocaleString()}`;
-}
-
-async function loadClientesTable() {
-    const tbody = document.getElementById('tabla-clientes');
-    tbody.innerHTML = '<tr><td colspan="6">Buscando...</td></tr>';
-    const filtros = {
-        sucursal: document.getElementById('sucursal_filtro').value,
-        curp: document.getElementById('curp_filtro').value.toLowerCase(),
-        nombre: document.getElementById('nombre_filtro').value.toLowerCase(),
-        // ... otros filtros
-    };
-
-    const hayFiltros = Object.values(filtros).some(val => val && val.trim() !== '');
-    if (!hayFiltros) {
-        tbody.innerHTML = '<tr><td colspan="6">Por favor, especifica al menos un criterio de búsqueda.</td></tr>';
-        return;
-    }
-
-    const clientesFiltrados = await database.buscarClientes(filtros);
-
-    tbody.innerHTML = '';
-    if (clientesFiltrados.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6">No se encontraron clientes con los filtros aplicados.</td></tr>';
-        return;
-    }
-
-    for (const cliente of clientesFiltrados) {
-        const tr = document.createElement('tr');
-        const historial = await obtenerHistorialCreditoCliente(cliente.curp);
-        let infoCreditoHTML = '<em>Sin historial</em>';
-        if (historial) {
-            let estadoHTML = '', detallesHTML = '', estadoClase = '';
-            switch (historial.estado) {
-                case 'al corriente': estadoClase = 'status-al-corriente'; break;
-                case 'atrasado': estadoClase = 'status-atrasado'; break;
-                case 'cobranza': estadoClase = 'status-cobranza'; break;
-                case 'juridico': estadoClase = 'status-juridico'; break;
-                case 'liquidado': estadoClase = 'status-al-corriente'; break;
-            }
-            estadoHTML = `<span class="info-value ${estadoClase}">${historial.estado.toUpperCase()}</span>`;
-            if(historial.estado !== 'liquidado') detallesHTML += `<div class="info-item"><span class="info-label">Saldo:</span><span class="info-value">$${historial.saldoRestante.toLocaleString()}</span></div>`;
-            if(historial.semanasAtraso > 0) detallesHTML += `<div class="info-item"><span class="info-label">Semanas Atraso:</span><span class="info-value">${historial.semanasAtraso}</span></div>`;
-            detallesHTML += `<div class="info-item"><span class="info-label">Último Pago:</span><span class="info-value">${historial.fechaUltimoPago}</span></div>`;
-            infoCreditoHTML = `<div class="credito-info"><div class="info-grid"><div class="info-item"><span class="info-label">Último ID:</span><span class="info-value">${historial.idCredito}</span></div><div class="info-item"><span class="info-label">Estado:</span>${estadoHTML}</div>${detallesHTML}</div></div>`;
-        }
-
-        tr.innerHTML = `
-            <td>${cliente.office || 'N/A'}</td>
-            <td>${cliente.curp}</td>
-            <td>${cliente.nombre}</td>
-            <td>${cliente.poblacion_grupo}</td>
-            <td>${infoCreditoHTML}</td>
-            <td class="action-buttons">
-                <button class="btn btn-sm btn-secondary" onclick="editCliente('${cliente.id}')"><i class="fas fa-edit"></i></button>
-                <button class="btn btn-sm btn-danger" onclick="deleteCliente('${cliente.id}')"><i class="fas fa-trash"></i></button>
-            </td>`;
-        tbody.appendChild(tr);
-    }
+    document.getElementById('saldoDespues_cobranza').value = `$${saldoDespues.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
 }
 
 // =============================================
-// LÓGICA DE NEGOCIO (MOVIDA A APP.JS)
+// FUNCIONES DE VISTA Y AUXILIARES
+// =============================================
+
+function showView(viewId) {
+    document.querySelectorAll('.view').forEach(view => view.classList.add('hidden'));
+    const targetView = document.getElementById(viewId);
+    if (targetView) {
+        targetView.classList.remove('hidden');
+        targetView.dispatchEvent(new Event('viewshown'));
+    }
+}
+
+function showStatus(elementId, message, type) {
+    const element = document.getElementById(elementId);
+    element.innerHTML = message;
+    element.className = 'status-message ' + (type === 'success' ? 'status-success' : 'status-error');
+}
+
+function calcularMontoTotalColocacion() {
+    const monto = parseFloat(document.getElementById('monto_colocacion').value) || 0;
+    document.getElementById('montoTotal_colocacion').value = monto > 0 ? `$${(monto * 1.3).toLocaleString()}` : '';
+}
+
+function validarCURP(input) {
+    input.value = input.value.toUpperCase().substring(0, 18);
+    input.style.borderColor = input.value.length === 18 ? 'var(--success)' : (input.value.length > 0 ? 'var(--danger)' : '');
+}
+
+function validarFormatoCURP(curp) {
+    return curp.length === 18;
+}
+
+function inicializarDropdowns() {
+    const poblaciones = ['LA CALERA', 'ATEQUIZA', 'SAN JACINTO', 'PONCITLAN', 'OCOTLAN', 'ARENAL', 'AMATITAN', 'ACATLAN DE JUAREZ', 'BELLAVISTA', 'SAN ISIDRO MAZATEPEC', 'TALA', 'CUISILLOS', 'HUAXTLA', 'NEXTIPAC', 'SANTA LUCIA', 'JAMAY', 'LA BARCA', 'SAN JUAN DE OCOTAN', 'TALA 2', 'EL HUMEDO', 'NEXTIPAC 2', 'ZZ PUEBLO'];
+    const rutas = ['AUDITORIA', 'SUPERVISION', 'ADMINISTRACION', 'DIRECCION', 'COMERCIAL', 'COBRANZA', 'R1', 'R2', 'R3', 'JC1', 'RX'];
+    const tiposCredito = ['NUEVO', 'RENOVACION', 'REINGRESO'];
+    const montos = [3000, 3500, 4000, 4500, 5000, 6000, 7000, 8000, 9000, 10000];
+    const plazos = [13, 14];
+    const popularDropdown = (elementId, options, placeholder, isObject = false) => {
+        const select = document.getElementById(elementId);
+        if (select) {
+            select.innerHTML = `<option value="">${placeholder}</option>`;
+            options.forEach(option => {
+                const el = document.createElement('option');
+                el.value = isObject ? option.value : option;
+                el.textContent = isObject ? option.text : option;
+                select.appendChild(el);
+            });
+        }
+    };
+    popularDropdown('poblacion_grupo_cliente', poblaciones, 'Selecciona población/grupo');
+    popularDropdown('ruta_cliente', rutas, 'Selecciona una ruta');
+    popularDropdown('tipo_colocacion', tiposCredito.map(t => ({ value: t.toLowerCase(), text: t })), 'Selecciona tipo', true);
+    popularDropdown('monto_colocacion', montos.map(m => ({ value: m, text: `$${m.toLocaleString()}` })), 'Selecciona monto', true);
+    popularDropdown('plazo_colocacion', plazos.map(p => ({ value: p, text: `${p} semanas` })), 'Selecciona plazo', true);
+    popularDropdown('grupo_filtro', poblaciones, 'Todos');
+    popularDropdown('tipo_colocacion_filtro', tiposCredito.map(t => ({ value: t.toLowerCase(), text: t })), 'Todos', true);
+    popularDropdown('plazo_filtro', plazos.map(p => ({ value: p, text: `${p} semanas` })), 'Todos', true);
+}
+
+// =============================================
+// LÓGICA DE NEGOCIO (VIVE EN APP.JS)
 // =============================================
 
 function _calcularEstadoCredito(credito, pagos) {
@@ -280,7 +420,7 @@ async function obtenerHistorialCreditoCliente(curp) {
 
 async function verificarElegibilidadRenovacion(curp) {
     const credito = await database.buscarCreditoActivoPorCliente(curp);
-    if (!credito) return true;
+    if (!credito) return true; // Si no hay crédito activo, es elegible
 
     const pagos = await database.getPagosPorCredito(credito.id);
     const estado = _calcularEstadoCredito(credito, pagos);
@@ -290,21 +430,95 @@ async function verificarElegibilidadRenovacion(curp) {
 }
 
 // =============================================
-// EL RESTO DE FUNCIONES (SIN CAMBIOS LÓGICOS IMPORTANTES)
+// FUNCIONES DE CARGA DE DATOS PARA VISTAS
 // =============================================
+
 function inicializarVistaGestionClientes() {
     document.getElementById('tabla-clientes').innerHTML = `<tr><td colspan="6">Utiliza los filtros para buscar y mostrar clientes.</td></tr>`;
 }
+
 function limpiarFiltrosClientes() {
     document.getElementById('filtros-grid').querySelectorAll('input, select').forEach(el => el.value = '');
     inicializarVistaGestionClientes();
 }
-function inicializarDropdowns() { /* ... (código sin cambios) ... */ }
-function showStatus(elementId, message, type) { /* ... (código sin cambios) ... */ }
-function showView(viewId) { /* ... (código sin cambios) ... */ }
-function calcularMontoTotalColocacion() { /* ... (código sin cambios) ... */ }
-function validarCURP(input) { /* ... (código sin cambios) ... */ }
-function validarFormatoCURP(curp) { return curp.length === 18; }
-async function loadUsersTable() { /* ... Lógica para cargar usuarios de Firebase Auth ... */ }
-async function editCliente(docId) { /* ... Lógica para editar cliente en Firebase ... */ }
-async function deleteCliente(docId) { /* ... Lógica para borrar cliente en Firebase ... */ }
+
+async function loadClientesTable() {
+    const tbody = document.getElementById('tabla-clientes');
+    tbody.innerHTML = '<tr><td colspan="6">Buscando...</td></tr>';
+    const filtros = {
+        sucursal: document.getElementById('sucursal_filtro').value,
+        curp: document.getElementById('curp_filtro').value.toLowerCase(),
+        nombre: document.getElementById('nombre_filtro').value.toLowerCase(),
+        fechaRegistro: document.getElementById('fecha_registro_filtro').value,
+        fechaCredito: document.getElementById('fecha_credito_filtro').value,
+        tipo: document.getElementById('tipo_colocacion_filtro').value,
+        plazo: document.getElementById('plazo_filtro').value,
+        curpAval: document.getElementById('curp_aval_filtro').value.toLowerCase(),
+        grupo: document.getElementById('grupo_filtro').value
+    };
+
+    const hayFiltros = Object.values(filtros).some(val => val && val.trim() !== '');
+    if (!hayFiltros) {
+        tbody.innerHTML = '<tr><td colspan="6">Por favor, especifica al menos un criterio de búsqueda.</td></tr>';
+        return;
+    }
+
+    const clientesFiltrados = await database.buscarClientes(filtros);
+
+    tbody.innerHTML = '';
+    if (clientesFiltrados.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6">No se encontraron clientes con los filtros aplicados.</td></tr>';
+        return;
+    }
+
+    for (const cliente of clientesFiltrados) {
+        const tr = document.createElement('tr');
+        const historial = await obtenerHistorialCreditoCliente(cliente.curp);
+        let infoCreditoHTML = '<em>Sin historial</em>';
+
+        if (historial) {
+            let estadoHTML = '', detallesHTML = '', estadoClase = '';
+            switch (historial.estado) {
+                case 'al corriente': estadoClase = 'status-al-corriente'; break;
+                case 'atrasado': estadoClase = 'status-atrasado'; break;
+                case 'cobranza': estadoClase = 'status-cobranza'; break;
+                case 'juridico': estadoClase = 'status-juridico'; break;
+                case 'liquidado': estadoClase = 'status-al-corriente'; break;
+            }
+            estadoHTML = `<span class="info-value ${estadoClase}">${historial.estado.toUpperCase()}</span>`;
+            if(historial.estado !== 'liquidado') detallesHTML += `<div class="info-item"><span class="info-label">Saldo:</span><span class="info-value">$${historial.saldoRestante.toLocaleString()}</span></div>`;
+            if(historial.semanasAtraso > 0) detallesHTML += `<div class="info-item"><span class="info-label">Semanas Atraso:</span><span class="info-value">${historial.semanasAtraso}</span></div>`;
+            detallesHTML += `<div class="info-item"><span class="info-label">Último Pago:</span><span class="info-value">${historial.fechaUltimoPago}</span></div>`;
+            infoCreditoHTML = `<div class="credito-info"><div class="info-grid"><div class="info-item"><span class="info-label">Último ID:</span><span class="info-value">${historial.idCredito}</span></div><div class="info-item"><span class="info-label">Estado:</span>${estadoHTML}</div>${detallesHTML}</div></div>`;
+        }
+
+        tr.innerHTML = `
+            <td>${cliente.office || 'N/A'}</td>
+            <td>${cliente.curp}</td>
+            <td>${cliente.nombre}</td>
+            <td>${cliente.poblacion_grupo}</td>
+            <td>${infoCreditoHTML}</td>
+            <td class="action-buttons">
+                <button class="btn btn-sm btn-secondary" onclick="editCliente('${cliente.id}')"><i class="fas fa-edit"></i></button>
+                <button class="btn btn-sm btn-danger" onclick="deleteCliente('${cliente.id}')"><i class="fas fa-trash"></i></button>
+            </td>`;
+        tbody.appendChild(tr);
+    }
+}
+
+async function loadUsersTable() {
+    // Esta función necesitaría una implementación con Firebase Admin SDK en un servidor
+    // para listar usuarios de forma segura. Por ahora, se deja vacía.
+    document.getElementById('tabla-usuarios').innerHTML = `<tr><td colspan="5">La gestión de usuarios se realiza en la consola de Firebase.</td></tr>`;
+}
+
+async function editCliente(docId) {
+    // La lógica de edición para Firebase es más compleja y se omite por brevedad,
+    // ya que requiere cargar datos en el formulario y luego actualizarlos.
+    alert("Función de editar no implementada en esta versión de Firebase.");
+}
+
+async function deleteCliente(docId) {
+    // La lógica de borrado para Firebase es más compleja y se omite.
+    alert("Función de borrar no implementada en esta versión de Firebase.");
+}
