@@ -7,47 +7,29 @@
     <link rel="stylesheet" href="css/styles.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        .required {
-            color: var(--danger);
-            font-weight: bold;
-        }
-
-        .field-note {
-            font-size: 12px;
-            color: var(--gray);
-            margin-top: 5px;
-        }
+        .required { color: var(--danger); font-weight: bold; }
+        .field-note { font-size: 12px; color: var(--gray); margin-top: 5px; }
     </style>
 </head>
 <body>
     <div id="loading-overlay" class="loading-overlay">
         <div class="spinner"></div>
-        <p>Inicializando Finzana...</p>
+        <p>Conectando con el servidor...</p>
     </div>
 
-    <div id="login-screen" class="login-container">
+    <div id="login-screen" class="login-container hidden">
         <div class="login-box">
             <div class="login-logo"><i class="fas fa-hand-holding-usd"></i></div>
             <h1>Bienvenido a Finzana</h1>
             <p>Sistema de gestión de créditos</p>
             <form id="login-form">
                 <div class="form-group">
-                    <label for="username">Usuario</label>
-                    <input type="text" id="username" placeholder="Ingresa tu usuario" required>
+                    <label for="email">Correo Electrónico</label>
+                    <input type="email" id="email" placeholder="Ingresa tu correo" required value="barrios.nunez.joseluis@gmail.com">
                 </div>
                 <div class="form-group">
                     <label for="password">Contraseña</label>
                     <input type="password" id="password" placeholder="Ingresa tu contraseña" required>
-                </div>
-                <div class="form-group">
-                    <label for="user-role">Rol de usuario</label>
-                    <select id="user-role" required>
-                        <option value="">Selecciona tu rol</option>
-                        <option value="admin">Administrador</option>
-                        <option value="supervisor">Supervisor</option>
-                        <option value="cobrador">Cobrador</option>
-                        <option value="consulta">Consulta</option>
-                    </select>
                 </div>
                 <button type="submit" class="btn btn-primary"><i class="fas fa-sign-in-alt"></i> Iniciar Sesión</button>
             </form>
@@ -132,7 +114,7 @@
                     <label for="office-select">Selecciona la Sucursal para Importar</label>
                     <select id="office-select"><option value="GDL">Guadalajara</option><option value="LEON">León</option></select>
                 </div>
-
+                
                 <div id="import-gdl-section">
                     <div class="import-tabs">
                         <div class="import-tab active" data-tab="clientes">Clientes</div>
@@ -189,23 +171,20 @@
                 <div id="form-usuario-container" class="hidden">
                     <h3 id="form-usuario-titulo">Nuevo Usuario</h3>
                     <form id="form-usuario">
-                        <input type="hidden" id="usuario-id">
-                        <div class="form-group"><label for="nuevo-username">Usuario <span class="required">*</span></label><input type="text" id="nuevo-username" required></div>
+                        <div class="form-group"><label for="nuevo-email">Email <span class="required">*</span></label><input type="email" id="nuevo-email" required></div>
                         <div class="form-group"><label for="nuevo-password">Contraseña <span class="required">*</span></label><input type="password" id="nuevo-password" required></div>
                         <div class="form-group"><label for="nuevo-nombre">Nombre Completo <span class="required">*</span></label><input type="text" id="nuevo-nombre" required></div>
                         <div class="form-group">
                             <label for="nuevo-rol">Rol <span class="required">*</span></label>
                             <select id="nuevo-rol" required><option value="admin">Administrador</option><option value="supervisor">Supervisor</option><option value="cobrador">Cobrador</option><option value="consulta">Consulta</option></select>
                         </div>
-                        <div class="form-group"><label for="nuevo-email">Email</label><input type="email" id="nuevo-email"></div>
-                        <div class="form-group"><label for="nuevo-telefono">Teléfono</label><input type="text" id="nuevo-telefono"></div>
                         <div class="form-group">
                             <button type="submit" class="btn btn-success"><i class="fas fa-save"></i> Guardar</button>
                             <button type="button" id="btn-cancelar-usuario" class="btn btn-secondary"><i class="fas fa-times"></i> Cancelar</button>
                         </div>
                     </form>
                 </div>
-                <table class="user-table"><thead><tr><th>Usuario</th><th>Nombre</th><th>Rol</th><th>Email</th><th>Teléfono</th><th>Acciones</th></tr></thead><tbody id="tabla-usuarios"></tbody></table>
+                <table class="user-table"><thead><tr><th>Email</th><th>Nombre</th><th>Rol</th><th>UID</th><th>Acciones</th></tr></thead><tbody id="tabla-usuarios"></tbody></table>
             </div>
 
             <div id="view-cliente" class="view hidden">
@@ -227,54 +206,49 @@
             </div>
 
             <div id="view-colocacion" class="view hidden">
-                <div class="view-header"><h2>Generar Crédito</h2><button class="btn btn-secondary" data-view="view-main-menu"><i class="fas fa-arrow-left"></i> Volver</button></div>
-                <div class="form-group"><label for="curp_colocacion">CURP del Cliente <span class="required">*</span></label><div class="search-group"><input type="text" id="curp_colocacion" required><button id="btnBuscarCliente_colocacion" class="btn btn-primary"><i class="fas fa-search"></i> Buscar</button></div></div>
-                <div id="form-colocacion" class="hidden">
-                    <form id="form-credito-submit">
-                        <div class="form-group"><label>Nombre del Cliente</label><input type="text" id="nombre_colocacion" readonly></div>
-                        <div class="form-group"><label>ID del Crédito</label><input type="text" id="idCredito_colocacion" readonly></div>
-                        <div class="form-group"><label for="tipo_colocacion">Tipo <span class="required">*</span></label><select id="tipo_colocacion" required></select></div>
-                        <div class="form-group"><label for="monto_colocacion">Monto <span class="required">*</span></label><select id="monto_colocacion" required></select></div>
-                        <div class="form-group"><label for="plazo_colocacion">Plazo (semanas) <span class="required">*</span></label><select id="plazo_colocacion" required></select></div>
-                        <div class="form-group"><label>Monto Total a Pagar</label><input type="text" id="montoTotal_colocacion" readonly><div class="field-note">Incluye 30% de interés</div></div>
-                        <div class="form-group"><label for="curpAval_colocacion">CURP Aval <span class="required">*</span></label><input type="text" id="curpAval_colocacion" placeholder="18 caracteres" required maxlength="18"><div class="field-note">18 caracteres</div></div>
-                        <div class="form-group"><label for="nombreAval_colocacion">Nombre Aval <span class="required">*</span></label><input type="text" id="nombreAval_colocacion" required></div>
-                        <div class="form-group">
-                            <button type="submit" class="btn btn-success"><i class="fas fa-hand-holding-usd"></i> Generar Crédito</button>
-                            <button type="button" class="btn btn-secondary" data-view="view-main-menu"><i class="fas fa-times"></i> Cancelar</button>
-                        </div>
-                    </form>
-                </div>
-                <div id="status_colocacion"></div>
+                 <div class="view-header"><h2>Generar Crédito</h2><button class="btn btn-secondary" data-view="view-main-menu"><i class="fas fa-arrow-left"></i> Volver</button></div>
+                 <div class="form-group"><label for="curp_colocacion">CURP del Cliente <span class="required">*</span></label><div class="search-group"><input type="text" id="curp_colocacion" required><button id="btnBuscarCliente_colocacion" class="btn btn-primary"><i class="fas fa-search"></i> Buscar</button></div></div>
+                 <div id="form-colocacion" class="hidden"><form id="form-credito-submit">
+                    <div class="form-group"><label>Nombre del Cliente</label><input type="text" id="nombre_colocacion" readonly></div>
+                    <div class="form-group"><label>ID del Crédito</label><input type="text" id="idCredito_colocacion" readonly></div>
+                    <div class="form-group"><label for="tipo_colocacion">Tipo <span class="required">*</span></label><select id="tipo_colocacion" required></select></div>
+                    <div class="form-group"><label for="monto_colocacion">Monto <span class="required">*</span></label><select id="monto_colocacion" required></select></div>
+                    <div class="form-group"><label for="plazo_colocacion">Plazo (semanas) <span class="required">*</span></label><select id="plazo_colocacion" required></select></div>
+                    <div class="form-group"><label>Monto Total a Pagar</label><input type="text" id="montoTotal_colocacion" readonly><div class="field-note">Incluye 30% de interés</div></div>
+                    <div class="form-group"><label for="curpAval_colocacion">CURP Aval <span class="required">*</span></label><input type="text" id="curpAval_colocacion" placeholder="18 caracteres" required maxlength="18"><div class="field-note">18 caracteres</div></div>
+                    <div class="form-group"><label for="nombreAval_colocacion">Nombre Aval <span class="required">*</span></label><input type="text" id="nombreAval_colocacion" required></div>
+                    <div class="form-group">
+                        <button type="submit" class="btn btn-success"><i class="fas fa-hand-holding-usd"></i> Generar Crédito</button>
+                        <button type="button" class="btn btn-secondary" data-view="view-main-menu"><i class="fas fa-times"></i> Cancelar</button>
+                    </div>
+                 </form></div>
+                 <div id="status_colocacion"></div>
             </div>
 
             <div id="view-cobranza" class="view hidden">
                 <div class="view-header"><h2>Registrar Pago</h2><button class="btn btn-secondary" data-view="view-main-menu"><i class="fas fa-arrow-left"></i> Volver</button></div>
                 <div class="form-group"><label for="idCredito_cobranza">ID del Crédito <span class="required">*</span></label><div class="search-group"><input type="text" id="idCredito_cobranza" required><button id="btnBuscarCredito_cobranza" class="btn btn-primary"><i class="fas fa-search"></i> Buscar</button></div></div>
-                <div id="form-cobranza" class="hidden">
-                    <form id="form-pago-submit">
-                        <div class="form-group"><label>Nombre Cliente</label><input type="text" id="nombre_cobranza" readonly></div>
-                        <div class="form-group"><label>Saldo Actual</label><input type="text" id="saldo_cobranza" readonly></div>
-                        <div class="form-group"><label>Estado del Crédito</label><input type="text" id="estado_cobranza" readonly></div>
-                        <div class="form-group"><label>Semanas de Atraso</label><input type="text" id="semanas_atraso_cobranza" readonly></div>
-                        <div class="form-group"><label for="pago_semanal_cobranza">Monto de Pago Semanal</label><input type="text" id="pago_semanal_cobranza" readonly></div>
-                        <div class="form-group"><label for="fecha_proximo_pago_cobranza">Fecha Próximo Pago</label><input type="text" id="fecha_proximo_pago_cobranza" readonly></div>
-                        <div class="form-group"><label for="monto_cobranza">Monto del Pago <span class="required">*</span></label><input type="number" id="monto_cobranza" min="0.01" step="0.01" required></div>
-                        <div class="form-group"><label for="tipo_cobranza">Tipo de Pago <span class="required">*</span></label><select id="tipo_cobranza" required><option value="normal">Normal</option><option value="extraordinario">Extraordinario</option><option value="actualizado">Actualizado</option></select></div>
-                        <div class="form-group"><label>Saldo Después del Pago</label><input type="text" id="saldoDespues_cobranza" readonly></div>
-                        <div class="form-group">
-                            <button type="submit" class="btn btn-success"><i class="fas fa-cash-register"></i> Registrar Pago</button>
-                            <button type="button" class="btn btn-secondary" data-view="view-main-menu"><i class="fas fa-times"></i> Cancelar</button>
-                        </div>
-                    </form>
-                </div>
+                <div id="form-cobranza" class="hidden"><form id="form-pago-submit">
+                    <div class="form-group"><label>Nombre Cliente</label><input type="text" id="nombre_cobranza" readonly></div>
+                    <div class="form-group"><label>Saldo Actual</label><input type="text" id="saldo_cobranza" readonly></div>
+                    <div class="form-group"><label>Estado del Crédito</label><input type="text" id="estado_cobranza" readonly></div>
+                    <div class="form-group"><label>Semanas de Atraso</label><input type="text" id="semanas_atraso_cobranza" readonly></div>
+                    <div class="form-group"><label for="pago_semanal_cobranza">Monto de Pago Semanal</label><input type="text" id="pago_semanal_cobranza" readonly></div>
+                    <div class="form-group"><label for="fecha_proximo_pago_cobranza">Fecha Próximo Pago</label><input type="text" id="fecha_proximo_pago_cobranza" readonly></div>
+                    <div class="form-group"><label for="monto_cobranza">Monto del Pago <span class="required">*</span></label><input type="number" id="monto_cobranza" min="0.01" step="0.01" required></div>
+                    <div class="form-group"><label for="tipo_cobranza">Tipo de Pago <span class="required">*</span></label><select id="tipo_cobranza" required><option value="normal">Normal</option><option value="extraordinario">Extraordinario</option><option value="actualizado">Actualizado</option></select></div>
+                    <div class="form-group"><label>Saldo Después del Pago</label><input type="text" id="saldoDespues_cobranza" readonly></div>
+                    <div class="form-group">
+                        <button type="submit" class="btn btn-success"><i class="fas fa-cash-register"></i> Registrar Pago</button>
+                        <button type="button" class="btn btn-secondary" data-view="view-main-menu"><i class="fas fa-times"></i> Cancelar</button>
+                    </div>
+                </form></div>
                 <div id="status_cobranza"></div>
             </div>
-
+            
             <div id="view-reportes" class="view hidden">
                 <div class="view-header"><h2>Reportes del Sistema</h2><button class="btn btn-secondary" data-view="view-main-menu"><i class="fas fa-arrow-left"></i> Volver</button></div>
                 <button id="btn-actualizar-reportes" class="btn btn-primary"><i class="fas fa-sync-alt"></i> Actualizar Reportes</button>
-                <div id="status_reportes"></div>
                 <div class="report-grid">
                     <div class="report-card"><div class="report-icon"><i class="fas fa-users"></i></div><div class="report-value" id="total-clientes">0</div><div class="report-label">Total Clientes</div></div>
                     <div class="report-card"><div class="report-icon"><i class="fas fa-file-invoice-dollar"></i></div><div class="report-value" id="total-creditos">0</div><div class="report-label">Créditos Activos</div></div>
@@ -288,6 +262,24 @@
             </div>
         </main>
     </div>
+
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
+
+    <script>
+      const firebaseConfig = {
+        apiKey: "AIzaSyBNt_JKONVgOXS4fgJrj3qldb1JBdOgPoE",
+        authDomain: "finzana-app.firebaseapp.com",
+        projectId: "finzana-app",
+        storageBucket: "finzana-app.firebasestorage.app",
+        messagingSenderId: "779745085151",
+        appId: "1:779745085151:web:2d470408b6267e3e16cb6a"
+      };
+      firebase.initializeApp(firebaseConfig);
+      const auth = firebase.auth();
+      const db = firebase.firestore();
+    </script>
     <script src="js/database.js"></script>
     <script src="js/app.js"></script>
 </body>
