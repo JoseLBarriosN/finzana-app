@@ -1,5 +1,5 @@
 // =============================================
-// INICIALIZACIÓN DE LA APLICACIÓN CON FIREBASE - CORREGIDO
+// INICIALIZACIÓN DE LA APLICACIÓN CON FIREBASE - CORREGIDO COMPLETO
 // =============================================
 
 let currentUser = null;
@@ -69,7 +69,7 @@ function setupEventListeners() {
         });
     });
 
-    // Gestión de Clientes
+    // Gestión de Clientes - CORREGIDO: Verificar que los elementos existen
     const btnAplicarFiltros = document.getElementById('btn-aplicar-filtros');
     if (btnAplicarFiltros) {
         btnAplicarFiltros.addEventListener('click', loadClientesTable);
@@ -325,7 +325,7 @@ async function handleClientForm(e) {
     };
 
     if (!cliente.nombre || !cliente.domicilio || !cliente.poblacion_grupo || !cliente.ruta) {
-        showStatus('status_cliente', 'Todos los campos son obligatorios.', 'error');
+        showStatus('status_cliente', 'Los campos con * son obligatorios.', 'error');
         showButtonLoading('#form-cliente button[type="submit"]', false);
         return;
     }
@@ -333,554 +333,938 @@ async function handleClientForm(e) {
     try {
         const resultado = await database.agregarCliente(cliente);
         showStatus('status_cliente', resultado.message, resultado.success ? 'success' : 'error');
-        if (resultado.success) {
-            document.getElementById('form-cliente').reset();
-        }
+        if (resultado.success) e.target.reset();
     } catch (error) {
-        showStatus('status_cliente', `Error: ${error.message}`, 'error');
+        showStatus('status_cliente', 'Error al guardar el cliente: ' + error.message, 'error');
     } finally {
         showButtonLoading('#form-cliente button[type="submit"]', false);
     }
 }
 
 async function handleSearchClientForCredit() {
-    const curp = document.getElementById('curpCliente_colocacion').value.toUpperCase();
+    const curpInput = document.getElementById('curp_colocacion');
+    if (!curpInput) return;
+
+    const curp = curpInput.value.trim();
     if (!validarFormatoCURP(curp)) {
-        showStatus('status_colocacion', 'CURP inválido. Debe tener 18 caracteres.', 'error');
+        showStatus('status_colocacion', 'El CURP debe tener 18 caracteres.', 'error');
         return;
     }
 
-    showButtonLoading('#btnBuscarCliente_colocacion', true, 'Buscando...');
+    showButtonLoading('btnBuscarCliente_colocacion', true, 'Buscando...');
 
     try {
         const cliente = await database.buscarClientePorCURP(curp);
         if (cliente) {
-            document.getElementById('nombreCliente_colocacion').value = cliente.nombre;
-            document.getElementById('domicilioCliente_colocacion').value = cliente.domicilio;
-            document.getElementById('telefonoCliente_colocacion').value = cliente.telefono;
-            document.getElementById('poblacion_grupo_colocacion').value = cliente.poblacion_grupo;
-            document.getElementById('ruta_colocacion').value = cliente.ruta;
-            showStatus('status_colocacion', 'Cliente encontrado.', 'success');
+            const esElegible = await verificarElegibilidadRenovacion(curp);
+            if (!esElegible) {
+                showStatus('status_colocacion', `El cliente tiene un crédito activo que no cumple los requisitos para renovación (10 pagos puntuales).`, 'error');
+                const formColocacion = document.getElementById('form-colocacion');
+                if (formColocacion) formColocacion.classList.add('hidden');
+                return;
+            }
+
+            const creditoActivo = await database.buscarCreditoActivoPorCliente(curp);
+            showStatus('status_colocacion', creditoActivo ? 'Cliente encontrado y elegible para renovación.' : 'Cliente encontrado y elegible para crédito nuevo.', 'success');
+
+            const nombreColocacion = document.getElementById('nombre_colocacion');
+            const idCreditoColocacion = document.getElementById('idCredito_colocacion');
+            const formColocacion = document.getElementById('form-colocacion');
+
+            if (nombreColocacion) nombreColocacion.value = cliente.nombre;
+            if (idCreditoColocacion) idCreditoColocacion.value = 'Se asignará automáticamente';
+            if (formColocacion) formColocacion.classList.remove('hidden');
         } else {
-            showStatus('status_colocacion', 'Cliente no encontrado.', 'error');
-            limpiarCamposClienteColocacion();
+            showStatus('status_colocacion', 'Cliente no encontrado. Registre al cliente primero.', 'error');
+            const formColocacion = document.getElementById('form-colocacion');
+            if (formColocacion) formColocacion.classList.add('hidden');
         }
     } catch (error) {
-        showStatus('status_colocacion', `Error: ${error.message}`, 'error');
+        showStatus('status_colocacion', 'Error al buscar cliente: ' + error.message, 'error');
     } finally {
-        showButtonLoading('#btnBuscarCliente_colocacion', false);
+        showButtonLoading('btnBuscarCliente_colocacion', false);
     }
 }
 
 async function handleCreditForm(e) {
     e.preventDefault();
-    const curpCliente = document.getElementById('curpCliente_colocacion').value;
     const curpAval = document.getElementById('curpAval_colocacion').value;
-
-    if (!validarFormatoCURP(curpCliente)) {
-        showStatus('status_colocacion', 'CURP del cliente inválido.', 'error');
-        return;
-    }
-
-    if (!validarFormatoCURP(curpAval)) {
-        showStatus('status_colocacion', 'CURP del aval inválido.', 'error');
-        return;
-    }
-
-    showButtonLoading('#form-credito-submit button[type="submit"]', true, 'Generando...');
-
     const credito = {
-        curpCliente,
-        curpAval,
-        nombreCliente: document.getElementById('nombreCliente_colocacion').value,
-        nombreAval: document.getElementById('nombreAval_colocacion').value,
+        curpCliente: document.getElementById('curp_colocacion').value,
+        tipo: document.getElementById('tipo_colocacion').value,
         monto: parseFloat(document.getElementById('monto_colocacion').value),
         plazo: parseInt(document.getElementById('plazo_colocacion').value),
-        tipo: document.getElementById('tipo_colocacion').value,
-        poblacion_grupo: document.getElementById('poblacion_grupo_colocacion').value,
-        ruta: document.getElementById('ruta_colocacion').value,
-        office: document.getElementById('office_colocacion').value
+        curpAval,
+        nombreAval: document.getElementById('nombreAval_colocacion').value
     };
 
-    if (!credito.nombreCliente || !credito.nombreAval || !credito.monto || !credito.plazo || !credito.tipo || !credito.poblacion_grupo || !credito.ruta) {
-        showStatus('status_colocacion', 'Todos los campos son obligatorios.', 'error');
-        showButtonLoading('#form-credito-submit button[type="submit"]', false);
+    if (!credito.monto || !credito.plazo || !credito.tipo || !credito.nombreAval.trim() || !validarFormatoCURP(curpAval)) {
+        showStatus('status_colocacion', 'Todos los campos son obligatorios y el CURP del aval debe ser válido.', 'error');
         return;
     }
+
+    showButtonLoading('#form-credito-submit button[type="submit"]', true, 'Generando crédito...');
 
     try {
         const resultado = await database.agregarCredito(credito);
-        showStatus('status_colocacion', resultado.message, resultado.success ? 'success' : 'error');
         if (resultado.success) {
-            document.getElementById('form-credito').reset();
-            limpiarCamposClienteColocacion();
-            limpiarCamposAvalColocacion();
+            showStatus('status_colocacion', `${resultado.message}. ID de crédito: ${resultado.data.id}`, 'success');
+            e.target.reset();
+            const formColocacion = document.getElementById('form-colocacion');
+            const curpColocacion = document.getElementById('curp_colocacion');
+            if (formColocacion) formColocacion.classList.add('hidden');
+            if (curpColocacion) curpColocacion.value = '';
+        } else {
+            showStatus('status_colocacion', resultado.message, 'error');
         }
     } catch (error) {
-        showStatus('status_colocacion', `Error: ${error.message}`, 'error');
+        showStatus('status_colocacion', 'Error al generar crédito: ' + error.message, 'error');
     } finally {
         showButtonLoading('#form-credito-submit button[type="submit"]', false);
     }
 }
 
 async function handleSearchCreditForPayment() {
-    const curp = document.getElementById('curpCliente_cobranza').value.toUpperCase();
-    if (!validarFormatoCURP(curp)) {
-        showStatus('status_cobranza', 'CURP inválido. Debe tener 18 caracteres.', 'error');
-        return;
-    }
+    const idCreditoInput = document.getElementById('idCredito_cobranza');
+    if (!idCreditoInput) return;
 
-    showButtonLoading('#btnBuscarCredito_cobranza', true, 'Buscando...');
+    const idCredito = idCreditoInput.value.trim();
+
+    showButtonLoading('btnBuscarCredito_cobranza', true, 'Buscando...');
 
     try {
-        const credito = await database.buscarCreditoActivoPorCliente(curp);
-        if (credito) {
-            creditoActual = credito;
-            document.getElementById('nombreCliente_cobranza').value = credito.nombreCliente;
-            document.getElementById('idCredito_cobranza').value = credito.id;
-            document.getElementById('montoTotal_cobranza').value = credito.montoTotal.toFixed(2);
-            document.getElementById('saldoActual_cobranza').value = credito.saldo.toFixed(2);
-            document.getElementById('monto_cobranza').max = credito.saldo;
-            showStatus('status_cobranza', 'Crédito activo encontrado.', 'success');
+        creditoActual = await database.buscarCreditoPorId(idCredito);
+        if (creditoActual) {
+            const cliente = await database.buscarClientePorCURP(creditoActual.curpCliente);
+            const historial = await obtenerHistorialCreditoCliente(creditoActual.curpCliente);
+
+            if (historial) {
+                // Actualizar todos los campos del formulario de cobranza
+                const campos = [
+                    'nombre_cobranza', 'saldo_cobranza', 'estado_cobranza',
+                    'semanas_atraso_cobranza', 'pago_semanal_cobranza',
+                    'fecha_proximo_pago_cobranza', 'monto_cobranza'
+                ];
+
+                const valores = [
+                    cliente ? cliente.nombre : 'N/A',
+                    `$${historial.saldoRestante.toLocaleString()}`,
+                    historial.estado.toUpperCase(),
+                    historial.semanasAtraso || 0,
+                    `$${historial.pagoSemanal.toLocaleString()}`,
+                    historial.proximaFechaPago,
+                    historial.pagoSemanal.toFixed(2)
+                ];
+
+                campos.forEach((campo, index) => {
+                    const element = document.getElementById(campo);
+                    if (element) element.value = valores[index];
+                });
+
+                handleMontoPagoChange();
+
+                const formCobranza = document.getElementById('form-cobranza');
+                if (formCobranza) formCobranza.classList.remove('hidden');
+                showStatus('status_cobranza', 'Crédito encontrado.', 'success');
+            } else {
+                showStatus('status_cobranza', 'No se pudo calcular el historial del crédito.', 'error');
+            }
         } else {
-            showStatus('status_cobranza', 'No se encontró un crédito activo para este cliente.', 'error');
-            limpiarCamposCreditoCobranza();
+            showStatus('status_cobranza', 'Crédito no encontrado.', 'error');
+            const formCobranza = document.getElementById('form-cobranza');
+            if (formCobranza) formCobranza.classList.add('hidden');
         }
     } catch (error) {
-        showStatus('status_cobranza', `Error: ${error.message}`, 'error');
+        showStatus('status_cobranza', 'Error al buscar crédito: ' + error.message, 'error');
     } finally {
-        showButtonLoading('#btnBuscarCredito_cobranza', false);
+        showButtonLoading('btnBuscarCredito_cobranza', false);
     }
 }
 
 async function handlePaymentForm(e) {
     e.preventDefault();
     if (!creditoActual) {
-        showStatus('status_cobranza', 'Primero busca un crédito activo.', 'error');
+        showStatus('status_cobranza', 'No hay un crédito seleccionado.', 'error');
         return;
     }
-
-    const monto = parseFloat(document.getElementById('monto_cobranza').value);
-    if (!monto || monto <= 0) {
-        showStatus('status_cobranza', 'Monto inválido.', 'error');
-        return;
-    }
-
-    if (monto > creditoActual.saldo) {
-        showStatus('status_cobranza', 'El monto no puede ser mayor al saldo actual.', 'error');
-        return;
-    }
-
-    showButtonLoading('#form-pago-submit button[type="submit"]', true, 'Registrando...');
 
     const pago = {
         idCredito: creditoActual.id,
-        monto,
-        tipoPago: document.getElementById('tipoPago_cobranza').value,
-        office: creditoActual.office
+        monto: parseFloat(document.getElementById('monto_cobranza').value),
+        tipoPago: document.getElementById('tipo_cobranza').value
     };
+
+    if (!pago.monto || pago.monto <= 0) {
+        showStatus('status_cobranza', 'El monto del pago debe ser mayor a cero.', 'error');
+        return;
+    }
+
+    showButtonLoading('#form-pago-submit button[type="submit"]', true, 'Registrando pago...');
 
     try {
         const resultado = await database.agregarPago(pago);
         showStatus('status_cobranza', resultado.message, resultado.success ? 'success' : 'error');
         if (resultado.success) {
-            document.getElementById('form-pago').reset();
-            limpiarCamposCreditoCobranza();
+            const formCobranza = document.getElementById('form-cobranza');
+            const idCreditoCobranza = document.getElementById('idCredito_cobranza');
+            if (formCobranza) formCobranza.classList.add('hidden');
+            if (idCreditoCobranza) idCreditoCobranza.value = '';
             creditoActual = null;
         }
     } catch (error) {
-        showStatus('status_cobranza', `Error: ${error.message}`, 'error');
+        showStatus('status_cobranza', 'Error al registrar pago: ' + error.message, 'error');
     } finally {
         showButtonLoading('#form-pago-submit button[type="submit"]', false);
     }
 }
 
 function handleMontoPagoChange() {
-    const monto = parseFloat(this.value) || 0;
-    const saldoActual = parseFloat(document.getElementById('saldoActual_cobranza').value) || 0;
-    const nuevoSaldo = saldoActual - monto;
-    document.getElementById('nuevoSaldo_cobranza').value = nuevoSaldo.toFixed(2);
+    if (!creditoActual) return;
+    const montoInput = document.getElementById('monto_cobranza');
+    const saldoDespuesInput = document.getElementById('saldoDespues_cobranza');
+
+    if (!montoInput || !saldoDespuesInput) return;
+
+    const monto = parseFloat(montoInput.value) || 0;
+    const saldoDespues = creditoActual.saldo - monto;
+    saldoDespuesInput.value = `$${saldoDespues.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 // =============================================
-// FUNCIONES DE VISUALIZACIÓN
+// FUNCIONES DE VISTA Y AUXILIARES
 // =============================================
 
 function showView(viewId) {
     console.log('Mostrando vista:', viewId);
     document.querySelectorAll('.view').forEach(view => view.classList.add('hidden'));
-    document.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('active'));
-
     const targetView = document.getElementById(viewId);
-    const targetButton = document.querySelector(`[data-view="${viewId}"]`);
-
-    if (targetView) targetView.classList.remove('hidden');
-    if (targetButton) targetButton.classList.add('active');
-
-    // Cargar datos específicos de la vista
-    switch (viewId) {
-        case 'view-clientes':
-            loadClientesTable();
-            break;
-        case 'view-reportes':
-            loadBasicReports();
-            break;
-        case 'view-reportes-avanzados':
-            loadAdvancedReports();
-            break;
-        case 'view-importacion':
-            // Reiniciar estado de importación
-            const resultadoImportacion = document.getElementById('resultado-importacion');
-            if (resultadoImportacion) resultadoImportacion.classList.add('hidden');
-            break;
+    if (targetView) {
+        targetView.classList.remove('hidden');
+        // Disparar evento personalizado para que las vistas se inicialicen
+        const event = new CustomEvent('viewshown', { detail: { viewId } });
+        targetView.dispatchEvent(event);
     }
 }
 
-function showStatus(elementId, message, type = 'info') {
+function showStatus(elementId, message, type) {
     const element = document.getElementById(elementId);
-    if (!element) return;
-
-    element.innerHTML = message;
-    element.className = 'status-message';
-
-    switch (type) {
-        case 'success':
-            element.classList.add('status-success');
-            break;
-        case 'error':
-            element.classList.add('status-error');
-            break;
-        case 'info':
-            element.classList.add('status-info');
-            break;
-        case 'warning':
-            element.classList.add('status-warning');
-            break;
-    }
-
-    element.classList.remove('hidden');
-}
-
-function showButtonLoading(selector, isLoading, loadingText = 'Cargando...') {
-    const button = document.querySelector(selector);
-    if (!button) return;
-
-    if (isLoading) {
-        button.setAttribute('data-original-text', button.textContent);
-        button.innerHTML = `<span class="button-loading-spinner"></span> ${loadingText}`;
-        button.disabled = true;
-    } else {
-        const originalText = button.getAttribute('data-original-text') || 'Enviar';
-        button.textContent = originalText;
-        button.disabled = false;
+    if (element) {
+        element.innerHTML = message;
+        element.className = 'status-message ' + (type === 'success' ? 'status-success' : type === 'error' ? 'status-error' : 'status-info');
     }
 }
 
 function showProcessingOverlay(show, message = 'Procesando...') {
-    const overlay = document.getElementById('processing-overlay');
+    let overlay = document.getElementById('processing-overlay');
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'processing-overlay';
+        overlay.className = 'processing-overlay hidden';
+        overlay.innerHTML = `
+            <div class="processing-spinner"></div>
+            <div id="processing-message" class="processing-message">${message}</div>
+        `;
+        document.body.appendChild(overlay);
+    }
+
     const messageElement = document.getElementById('processing-message');
-    
-    if (!overlay) return;
-    
+    if (messageElement) {
+        messageElement.textContent = message;
+    }
+
     if (show) {
-        if (messageElement) messageElement.textContent = message;
         overlay.classList.remove('hidden');
     } else {
         overlay.classList.add('hidden');
     }
 }
 
-// =============================================
-// FUNCIONALIDADES ESPECÍFICAS
-// =============================================
+function showButtonLoading(selector, show, text = 'Procesando...') {
+    const button = document.querySelector(selector);
+    if (!button) return;
 
-async function loadClientesTable() {
-    const filtros = {
-        sucursal: document.getElementById('filtro-sucursal').value,
-        grupo: document.getElementById('filtro-grupo').value,
-        curp: document.getElementById('filtro-curp').value,
-        nombre: document.getElementById('filtro-nombre').value
-    };
+    if (show) {
+        const originalText = button.textContent;
+        button.setAttribute('data-original-text', originalText);
+        button.innerHTML = text;
+        button.classList.add('btn-loading');
+        button.disabled = true;
+    } else {
+        const originalText = button.getAttribute('data-original-text') || button.textContent;
+        button.innerHTML = originalText;
+        button.classList.remove('btn-loading');
+        button.disabled = false;
+    }
+}
 
-    showProcessingOverlay(true, 'Cargando clientes...');
+function showProgress(percent, message = '') {
+    let progressContainer = document.getElementById('progress-container');
+    if (!progressContainer) {
+        progressContainer = document.createElement('div');
+        progressContainer.id = 'progress-container';
+        progressContainer.className = 'progress-container';
+        progressContainer.innerHTML = `
+            <div id="progress-bar" class="progress-bar"></div>
+            <div id="progress-text" class="progress-text"></div>
+        `;
+        document.body.appendChild(progressContainer);
+    }
 
-    try {
-        const clientes = await database.buscarClientes(filtros);
-        const tbody = document.getElementById('tabla-clientes-body');
-        tbody.innerHTML = '';
+    const progressBar = document.getElementById('progress-bar');
+    const progressText = document.getElementById('progress-text');
 
-        if (clientes.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="9" class="text-center">No se encontraron clientes</td></tr>';
-        } else {
-            clientes.forEach(cliente => {
-                const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td>${cliente.curp || 'N/A'}</td>
-                    <td>${cliente.nombre || 'N/A'}</td>
-                    <td>${cliente.domicilio || 'N/A'}</td>
-                    <td>${cliente.cp || 'N/A'}</td>
-                    <td>${cliente.telefono || 'N/A'}</td>
-                    <td>${cliente.poblacion_grupo || 'N/A'}</td>
-                    <td>${cliente.ruta || 'N/A'}</td>
-                    <td>${cliente.office || 'N/A'}</td>
-                    <td>${formatearFecha(cliente.fechaRegistro)}</td>
-                `;
-                tbody.appendChild(tr);
+    if (progressBar) {
+        progressBar.style.width = percent + '%';
+    }
+
+    if (progressText && message) {
+        progressText.textContent = message;
+    }
+}
+
+function hideProgress() {
+    const progressContainer = document.getElementById('progress-container');
+    if (progressContainer) {
+        progressContainer.remove();
+    }
+}
+
+function calcularMontoTotalColocacion() {
+    const montoInput = document.getElementById('monto_colocacion');
+    const montoTotalInput = document.getElementById('montoTotal_colocacion');
+
+    if (!montoInput || !montoTotalInput) return;
+
+    const monto = parseFloat(montoInput.value) || 0;
+    montoTotalInput.value = monto > 0 ? `$${(monto * 1.3).toLocaleString()}` : '';
+}
+
+function validarCURP(input) {
+    input.value = input.value.toUpperCase().substring(0, 18);
+    input.style.borderColor = input.value.length === 18 ? 'var(--success)' : (input.value.length > 0 ? 'var(--danger)' : '');
+}
+
+function validarFormatoCURP(curp) {
+    return curp && curp.length === 18;
+}
+
+function inicializarDropdowns() {
+    console.log('Inicializando dropdowns...');
+    const poblaciones = ['LA CALERA', 'ATEQUIZA', 'SAN JACINTO', 'PONCITLAN', 'OCOTLAN', 'ARENAL', 'AMATITAN', 'ACATLAN DE JUAREZ', 'BELLAVISTA', 'SAN ISIDRO MAZATEPEC', 'TALA', 'CUISILLOS', 'HUAXTLA', 'NEXTIPAC', 'SANTA LUCIA', 'JAMAY', 'LA BARCA', 'SAN JUAN DE OCOTAN', 'TALA 2', 'EL HUMEDO', 'NEXTIPAC 2', 'ZZ PUEBLO'];
+    const rutas = ['AUDITORIA', 'SUPERVISION', 'ADMINISTRACION', 'DIRECCION', 'COMERCIAL', 'COBRANZA', 'R1', 'R2', 'R3', 'JC1', 'RX'];
+    const tiposCredito = ['NUEVO', 'RENOVACION', 'REINGRESO'];
+    const montos = [3000, 3500, 4000, 4500, 5000, 6000, 7000, 8000, 9000, 10000];
+    const plazos = [13, 14];
+    const estadosCredito = ['al corriente', 'atrasado', 'cobranza', 'juridico', 'liquidado'];
+    const tiposPago = ['normal', 'extraordinario', 'actualizado'];
+    const sucursales = ['GDL', 'LEON'];
+
+    const popularDropdown = (elementId, options, placeholder, isObject = false) => {
+        const select = document.getElementById(elementId);
+        if (select) {
+            select.innerHTML = `<option value="">${placeholder}</option>`;
+            options.forEach(option => {
+                const el = document.createElement('option');
+                el.value = isObject ? option.value : option;
+                el.textContent = isObject ? option.text : option;
+                select.appendChild(el);
             });
         }
-    } catch (error) {
-        console.error('Error cargando clientes:', error);
-        showStatus('status_clientes', `Error: ${error.message}`, 'error');
-    } finally {
-        showProcessingOverlay(false);
+    };
+
+    // Dropdowns para registro de cliente
+    popularDropdown('poblacion_grupo_cliente', poblaciones, 'Selecciona población/grupo');
+    popularDropdown('ruta_cliente', rutas, 'Selecciona una ruta');
+
+    // Dropdowns para colocación
+    popularDropdown('tipo_colocacion', tiposCredito.map(t => ({ value: t.toLowerCase(), text: t })), 'Selecciona tipo', true);
+    popularDropdown('monto_colocacion', montos.map(m => ({ value: m, text: `$${m.toLocaleString()}` })), 'Selecciona monto', true);
+    popularDropdown('plazo_colocacion', plazos.map(p => ({ value: p, text: `${p} semanas` })), 'Selecciona plazo', true);
+
+    // Dropdowns para filtros de clientes - CORREGIDO: Usar IDs correctos
+    popularDropdown('grupo_filtro', poblaciones, 'Todos');
+    popularDropdown('tipo_colocacion_filtro', tiposCredito.map(t => ({ value: t.toLowerCase(), text: t })), 'Todos', true);
+    popularDropdown('plazo_filtro', plazos.map(p => ({ value: p, text: `${p} semanas` })), 'Todos', true);
+
+    // Dropdowns para reportes avanzados
+    popularDropdown('sucursal_filtro_reporte', sucursales, 'Todas');
+    popularDropdown('grupo_filtro_reporte', poblaciones, 'Todos');
+    popularDropdown('ruta_filtro_reporte', rutas, 'Todas');
+    popularDropdown('tipo_credito_filtro_reporte', tiposCredito.map(t => ({ value: t.toLowerCase(), text: t })), 'Todos', true);
+    popularDropdown('estado_credito_filtro_reporte', estadosCredito.map(e => ({ value: e, text: e.toUpperCase() })), 'Todos', true);
+    popularDropdown('tipo_pago_filtro_reporte', tiposPago.map(t => ({ value: t, text: t.toUpperCase() })), 'Todos', true);
+
+    console.log('Dropdowns inicializados correctamente');
+}
+
+// =============================================
+// LÓGICA DE NEGOCIO
+// =============================================
+
+function _calcularEstadoCredito(credito, pagos) {
+    if (!credito) return null;
+    if (credito.saldo <= 0.01) {
+        return { estado: 'liquidado', diasAtraso: 0, semanasAtraso: 0, pagoSemanal: 0, proximaFechaPago: 'N/A' };
+    }
+    const pagoSemanal = (credito.plazo > 0) ? credito.montoTotal / credito.plazo : 0;
+    const montoPagado = credito.montoTotal - credito.saldo;
+    const fechaInicio = new Date(credito.fechaCreacion);
+    const diasTranscurridos = (new Date() - fechaInicio) / (1000 * 60 * 60 * 24);
+    if (diasTranscurridos < 0) return { estado: 'al corriente', diasAtraso: 0, semanasAtraso: 0, pagoSemanal, proximaFechaPago: 'Futuro' };
+
+    const pagoRequerido = (diasTranscurridos / 7) * pagoSemanal;
+    const deficit = pagoRequerido - montoPagado;
+    const diasAtraso = (deficit > 0) ? (deficit / pagoSemanal) * 7 : 0;
+
+    let estado = 'al corriente';
+    if (diasAtraso > 300) estado = 'juridico';
+    else if (diasAtraso > 150) estado = 'cobranza';
+    else if (diasAtraso >= 7) estado = 'atrasado';
+
+    const semanasPagadas = (pagoSemanal > 0) ? montoPagado / pagoSemanal : 0;
+    const proximaFecha = new Date(fechaInicio);
+    proximaFecha.setDate(proximaFecha.getDate() + (Math.floor(semanasPagadas) + 1) * 7);
+
+    return {
+        estado,
+        diasAtraso: Math.round(diasAtraso),
+        semanasAtraso: Math.ceil(diasAtraso / 7),
+        pagoSemanal,
+        proximaFechaPago: proximaFecha.toLocaleDateString()
+    };
+}
+
+async function obtenerHistorialCreditoCliente(curp) {
+    const creditosCliente = await database.buscarCreditosPorCliente(curp);
+    if (creditosCliente.length === 0) return null;
+
+    creditosCliente.sort((a, b) => new Date(b.fechaCreacion) - new Date(a.fechaCreacion));
+    const ultimoCredito = creditosCliente[0];
+
+    const pagos = await database.getPagosPorCredito(ultimoCredito.id);
+    const ultimoPago = pagos.length > 0 ? pagos[0] : null;
+
+    const estadoCalculado = _calcularEstadoCredito(ultimoCredito, pagos);
+
+    return {
+        idCredito: ultimoCredito.id,
+        saldoRestante: ultimoCredito.saldo,
+        fechaUltimoPago: ultimoPago ? new Date(ultimoPago.fecha).toLocaleDateString() : 'N/A',
+        ...estadoCalculado,
+        semanaActual: Math.floor(pagos.length) + 1,
+        plazoTotal: ultimoCredito.plazo,
+    };
+}
+
+async function verificarElegibilidadRenovacion(curp) {
+    const credito = await database.buscarCreditoActivoPorCliente(curp);
+    if (!credito) return true; // Si no hay crédito activo, es elegible
+
+    const pagos = await database.getPagosPorCredito(credito.id);
+    const estado = _calcularEstadoCredito(credito, pagos);
+    const semanasTranscurridas = Math.floor((new Date() - new Date(credito.fechaCreacion)) / (1000 * 60 * 60 * 24 * 7));
+
+    return semanasTranscurridas >= 10 && estado.estado === 'al corriente';
+}
+
+// =============================================
+// FUNCIONES DE CARGA DE DATOS PARA VISTAS - CORREGIDAS
+// =============================================
+
+function inicializarVistaGestionClientes() {
+    const tbody = document.getElementById('tabla-clientes');
+    if (tbody) {
+        tbody.innerHTML = `<tr><td colspan="6">Utiliza los filtros para buscar y mostrar clientes.</td></tr>`;
     }
 }
 
 function limpiarFiltrosClientes() {
-    document.getElementById('filtro-sucursal').value = '';
-    document.getElementById('filtro-grupo').value = '';
-    document.getElementById('filtro-curp').value = '';
-    document.getElementById('filtro-nombre').value = '';
-    loadClientesTable();
+    const filtrosGrid = document.getElementById('filtros-grid');
+    if (filtrosGrid) {
+        filtrosGrid.querySelectorAll('input, select').forEach(el => el.value = '');
+    }
+    inicializarVistaGestionClientes();
 }
 
-async function loadBasicReports() {
-    showProcessingOverlay(true, 'Generando reportes...');
-    showButtonLoading('#btn-actualizar-reportes', true, 'Actualizando...');
+async function loadClientesTable() {
+    const tbody = document.getElementById('tabla-clientes');
+    if (!tbody) {
+        console.error('No se encontró el elemento tabla-clientes');
+        return;
+    }
+
+    tbody.innerHTML = '<tr><td colspan="6">Buscando...</td></tr>';
+
+    showButtonLoading('btn-aplicar-filtros', true, 'Buscando...');
 
     try {
-        const reportes = await database.generarReportes();
-        if (!reportes) {
-            showStatus('status_reportes', 'Error al generar reportes.', 'error');
+        // CORRECCIÓN CRÍTICA: Usar operador de encadenamiento opcional y valores por defecto
+        const filtros = {
+            sucursal: document.getElementById('sucursal_filtro')?.value || '',
+            curp: document.getElementById('curp_filtro')?.value?.toLowerCase() || '',
+            nombre: document.getElementById('nombre_filtro')?.value?.toLowerCase() || '',
+            fechaRegistro: document.getElementById('fecha_registro_filtro')?.value || '',
+            fechaCredito: document.getElementById('fecha_credito_filtro')?.value || '',
+            tipo: document.getElementById('tipo_colocacion_filtro')?.value || '',
+            plazo: document.getElementById('plazo_filtro')?.value || '',
+            curpAval: document.getElementById('curp_aval_filtro')?.value?.toLowerCase() || '',
+            grupo: document.getElementById('grupo_filtro')?.value || ''
+        };
+
+        const hayFiltros = Object.values(filtros).some(val => val && val.trim() !== '');
+        if (!hayFiltros) {
+            tbody.innerHTML = '<tr><td colspan="6">Por favor, especifica al menos un criterio de búsqueda.</td></tr>';
             return;
         }
 
-        // Actualizar tarjetas de métricas
-        document.getElementById('total-clientes').textContent = reportes.totalClientes.toLocaleString();
-        document.getElementById('total-creditos').textContent = reportes.totalCreditos.toLocaleString();
-        document.getElementById('total-cartera').textContent = `$${reportes.totalCartera.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-        document.getElementById('total-vencidos').textContent = reportes.totalVencidos.toLocaleString();
-        document.getElementById('pagos-registrados').textContent = reportes.pagosRegistrados.toLocaleString();
-        document.getElementById('cobrado-mes').textContent = `$${reportes.cobradoMes.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-        document.getElementById('total-comisiones').textContent = `$${reportes.totalComisiones.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-        document.getElementById('tasa-recuperacion').textContent = `${reportes.tasaRecuperacion.toFixed(2)}%`;
+        const clientesFiltrados = await database.buscarClientes(filtros);
 
-        showStatus('status_reportes', 'Reportes actualizados correctamente.', 'success');
+        tbody.innerHTML = '';
+        if (clientesFiltrados.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6">No se encontraron clientes con los filtros aplicados.</td></tr>';
+            return;
+        }
+
+        // Mostrar progreso para muchos clientes
+        if (clientesFiltrados.length > 10) {
+            showProgress(0, 'Cargando información de clientes...');
+        }
+
+        for (let i = 0; i < clientesFiltrados.length; i++) {
+            const cliente = clientesFiltrados[i];
+            const tr = document.createElement('tr');
+            const historial = await obtenerHistorialCreditoCliente(cliente.curp);
+            let infoCreditoHTML = '<em>Sin historial</em>';
+
+            if (historial) {
+                let estadoHTML = '', detallesHTML = '', estadoClase = '';
+                switch (historial.estado) {
+                    case 'al corriente': estadoClase = 'status-al-corriente'; break;
+                    case 'atrasado': estadoClase = 'status-atrasado'; break;
+                    case 'cobranza': estadoClase = 'status-cobranza'; break;
+                    case 'juridico': estadoClase = 'status-juridico'; break;
+                    case 'liquidado': estadoClase = 'status-al-corriente'; break;
+                }
+                estadoHTML = `<span class="info-value ${estadoClase}">${historial.estado.toUpperCase()}</span>`;
+                if (historial.estado !== 'liquidado') detallesHTML += `<div class="info-item"><span class="info-label">Saldo:</span><span class="info-value">$${historial.saldoRestante.toLocaleString()}</span></div>`;
+                if (historial.semanasAtraso > 0) detallesHTML += `<div class="info-item"><span class="info-label">Semanas Atraso:</span><span class="info-value">${historial.semanasAtraso}</span></div>`;
+                detallesHTML += `<div class="info-item"><span class="info-label">Último Pago:</span><span class="info-value">${historial.fechaUltimoPago}</span></div>`;
+                infoCreditoHTML = `<div class="credito-info"><div class="info-grid"><div class="info-item"><span class="info-label">Último ID:</span><span class="info-value">${historial.idCredito}</span></div><div class="info-item"><span class="info-label">Estado:</span>${estadoHTML}</div>${detallesHTML}</div></div>`;
+            }
+
+            tr.innerHTML = `
+                <td>${cliente.office || 'N/A'}</td>
+                <td>${cliente.curp}</td>
+                <td>${cliente.nombre}</td>
+                <td>${cliente.poblacion_grupo}</td>
+                <td>${infoCreditoHTML}</td>
+                <td class="action-buttons">
+                    <button class="btn btn-sm btn-secondary" onclick="editCliente('${cliente.id}')"><i class="fas fa-edit"></i></button>
+                    <button class="btn btn-sm btn-danger" onclick="deleteCliente('${cliente.id}')"><i class="fas fa-trash"></i></button>
+                </td>`;
+            tbody.appendChild(tr);
+
+            // Actualizar progreso
+            if (clientesFiltrados.length > 10) {
+                showProgress(Math.round((i + 1) / clientesFiltrados.length * 100), `Procesando cliente ${i + 1} de ${clientesFiltrados.length}`);
+            }
+        }
+
+        if (clientesFiltrados.length > 10) {
+            hideProgress();
+        }
+
     } catch (error) {
-        console.error('Error cargando reportes:', error);
-        showStatus('status_reportes', `Error: ${error.message}`, 'error');
+        console.error('Error cargando clientes:', error);
+        tbody.innerHTML = '<tr><td colspan="6">Error al cargar los clientes.</td></tr>';
     } finally {
-        showProcessingOverlay(false);
-        showButtonLoading('#btn-actualizar-reportes', false);
+        showButtonLoading('btn-aplicar-filtros', false);
     }
 }
 
-async function loadAdvancedReports() {
-    const filtros = {
-        sucursal: document.getElementById('filtro-sucursal-reportes').value,
-        grupo: document.getElementById('filtro-grupo-reportes').value,
-        ruta: document.getElementById('filtro-ruta-reportes').value,
-        tipoCredito: document.getElementById('filtro-tipo-credito').value,
-        estadoCredito: document.getElementById('filtro-estado-credito').value,
-        tipoPago: document.getElementById('filtro-tipo-pago').value,
-        idCredito: document.getElementById('filtro-id-credito').value,
-        curpCliente: document.getElementById('filtro-curp-cliente').value,
-        fechaInicio: document.getElementById('filtro-fecha-inicio').value,
-        fechaFin: document.getElementById('filtro-fecha-fin').value
-    };
+async function loadUsersTable() {
+    const tbody = document.getElementById('tabla-usuarios');
+    if (!tbody) return;
 
-    showProcessingOverlay(true, 'Generando reporte avanzado...');
+    showProcessingOverlay(true, 'Cargando usuarios...');
 
     try {
-        const resultados = await database.generarReporteAvanzado(filtros);
-        reportData = resultados;
-
-        const tbody = document.getElementById('tabla-reportes-avanzados-body');
+        const userList = await database.getAll('users');
         tbody.innerHTML = '';
-
-        if (resultados.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="8" class="text-center">No se encontraron registros</td></tr>';
-        } else {
-            resultados.forEach(item => {
+        if (userList && userList.length > 0) {
+            userList.forEach(user => {
                 const tr = document.createElement('tr');
-                let contenido = '';
-
-                if (item.tipo === 'cliente') {
-                    contenido = `
-                        <td>${formatearFecha(item.fechaRegistro)}</td>
-                        <td>Cliente</td>
-                        <td>${item.curp || 'N/A'}</td>
-                        <td>${item.nombre || 'N/A'}</td>
-                        <td>${item.poblacion_grupo || 'N/A'}</td>
-                        <td>${item.ruta || 'N/A'}</td>
-                        <td>${item.office || 'N/A'}</td>
-                        <td>N/A</td>
-                    `;
-                } else if (item.tipo === 'credito') {
-                    contenido = `
-                        <td>${formatearFecha(item.fechaCreacion)}</td>
-                        <td>Crédito</td>
-                        <td>${item.curpCliente || 'N/A'}</td>
-                        <td>${item.nombreCliente || 'N/A'}</td>
-                        <td>${item.poblacion_grupo || 'N/A'}</td>
-                        <td>${item.ruta || 'N/A'}</td>
-                        <td>${item.office || 'N/A'}</td>
-                        <td>$${item.montoTotal?.toFixed(2) || 'N/A'}</td>
-                    `;
-                } else if (item.tipo === 'pago') {
-                    contenido = `
-                        <td>${formatearFecha(item.fecha)}</td>
-                        <td>Pago</td>
-                        <td>${item.curpCliente || 'N/A'}</td>
-                        <td>${item.nombreCliente || 'N/A'}</td>
-                        <td>${item.poblacion_grupo || 'N/A'}</td>
-                        <td>${item.ruta || 'N/A'}</td>
-                        <td>${item.office || 'N/A'}</td>
-                        <td>$${item.monto?.toFixed(2) || 'N/A'}</td>
-                    `;
-                }
-
-                tr.innerHTML = contenido;
+                tr.innerHTML = `
+                    <td>${user.email}</td>
+                    <td>${user.name}</td>
+                    <td><span class="role-badge role-${user.role}">${user.role}</span></td>
+                    <td>${user.office || 'N/A'}</td>
+                    <td>${user.uid}</td>
+                `;
                 tbody.appendChild(tr);
             });
+        } else {
+            tbody.innerHTML = `<tr><td colspan="5">No hay usuarios en la base de datos de perfiles.</td></tr>`;
         }
-
-        showStatus('status_reportes_avanzados', `Reporte generado: ${resultados.length} registros encontrados.`, 'success');
     } catch (error) {
-        console.error('Error cargando reportes avanzados:', error);
-        showStatus('status_reportes_avanzados', `Error: ${error.message}`, 'error');
+        console.error('Error cargando usuarios:', error);
+        tbody.innerHTML = `<tr><td colspan="5">Error al cargar usuarios.</td></tr>`;
     } finally {
         showProcessingOverlay(false);
     }
+}
+
+// =============================================
+// FUNCIONES DE REPORTES
+// =============================================
+
+async function loadBasicReports() {
+    showProcessingOverlay(true, 'Generando reportes...');
+    showButtonLoading('btn-actualizar-reportes', true, 'Generando...');
+
+    try {
+        const reportes = await database.generarReportes();
+        if (reportes) {
+            const elementos = {
+                'total-clientes': reportes.totalClientes,
+                'total-creditos': reportes.totalCreditos,
+                'total-cartera': `$${reportes.totalCartera.toLocaleString()}`,
+                'total-vencidos': reportes.totalVencidos,
+                'pagos-registrados': reportes.pagosRegistrados,
+                'cobrado-mes': `$${reportes.cobradoMes.toLocaleString()}`,
+                'total-comisiones': `$${reportes.totalComisiones.toLocaleString()}`
+            };
+
+            Object.entries(elementos).forEach(([id, valor]) => {
+                const element = document.getElementById(id);
+                if (element) element.textContent = valor;
+            });
+
+            const tasaRecuperacion = (reportes.totalCartera + reportes.cobradoMes) > 0 ?
+                (reportes.cobradoMes / (reportes.totalCartera + reportes.cobradoMes) * 100).toFixed(1) : 0;
+
+            const tasaElement = document.getElementById('tasa-recuperacion');
+            if (tasaElement) tasaElement.textContent = `${tasaRecuperacion}%`;
+        }
+    } catch (error) {
+        console.error('Error cargando reportes:', error);
+        showStatus('status_reportes', 'Error al cargar los reportes: ' + error.message, 'error');
+    } finally {
+        showProcessingOverlay(false);
+        showButtonLoading('btn-actualizar-reportes', false);
+    }
+}
+
+function inicializarVistaReportesAvanzados() {
+    const tbody = document.getElementById('tabla-reportes-avanzados');
+    if (tbody) {
+        tbody.innerHTML = '<tr><td colspan="10">Aplica los filtros para generar el reporte.</td></tr>';
+    }
+    // Establecer fechas por defecto (último mes)
+    const hoy = new Date();
+    const haceUnMes = new Date(hoy.getFullYear(), hoy.getMonth() - 1, hoy.getDate());
+    const fechaInicio = document.getElementById('fecha_inicio_reporte');
+    const fechaFin = document.getElementById('fecha_fin_reporte');
+
+    if (fechaInicio) fechaInicio.value = haceUnMes.toISOString().split('T')[0];
+    if (fechaFin) fechaFin.value = hoy.toISOString().split('T')[0];
 }
 
 function limpiarFiltrosReportes() {
-    document.getElementById('filtro-sucursal-reportes').value = '';
-    document.getElementById('filtro-grupo-reportes').value = '';
-    document.getElementById('filtro-ruta-reportes').value = '';
-    document.getElementById('filtro-tipo-credito').value = '';
-    document.getElementById('filtro-estado-credito').value = '';
-    document.getElementById('filtro-tipo-pago').value = '';
-    document.getElementById('filtro-id-credito').value = '';
-    document.getElementById('filtro-curp-cliente').value = '';
-    document.getElementById('filtro-fecha-inicio').value = '';
-    document.getElementById('filtro-fecha-fin').value = '';
-    loadAdvancedReports();
+    const filtrosContainer = document.getElementById('filtros-reportes-avanzados');
+    if (filtrosContainer) {
+        filtrosContainer.querySelectorAll('input, select').forEach(el => {
+            if (el.type !== 'date') el.value = '';
+        });
+    }
+    // Restaurar fechas por defecto
+    const hoy = new Date();
+    const haceUnMes = new Date(hoy.getFullYear(), hoy.getMonth() - 1, hoy.getDate());
+    const fechaInicio = document.getElementById('fecha_inicio_reporte');
+    const fechaFin = document.getElementById('fecha_fin_reporte');
+
+    if (fechaInicio) fechaInicio.value = haceUnMes.toISOString().split('T')[0];
+    if (fechaFin) fechaFin.value = hoy.toISOString().split('T')[0];
 }
 
-// =============================================
-// FUNCIONES DE UTILIDAD
-// =============================================
+async function loadAdvancedReports() {
+    showProcessingOverlay(true, 'Generando reporte avanzado...');
+    showButtonLoading('btn-aplicar-filtros-reportes', true, 'Generando...');
 
-function inicializarDropdowns() {
-    const dropdowns = document.querySelectorAll('.dropdown');
-    dropdowns.forEach(dropdown => {
-        const toggle = dropdown.querySelector('.dropdown-toggle');
-        const menu = dropdown.querySelector('.dropdown-menu');
+    try {
+        const filtros = {
+            sucursal: document.getElementById('sucursal_filtro_reporte')?.value || '',
+            grupo: document.getElementById('grupo_filtro_reporte')?.value || '',
+            ruta: document.getElementById('ruta_filtro_reporte')?.value || '',
+            tipoCredito: document.getElementById('tipo_credito_filtro_reporte')?.value || '',
+            estadoCredito: document.getElementById('estado_credito_filtro_reporte')?.value || '',
+            tipoPago: document.getElementById('tipo_pago_filtro_reporte')?.value || '',
+            fechaInicio: document.getElementById('fecha_inicio_reporte')?.value || '',
+            fechaFin: document.getElementById('fecha_fin_reporte')?.value || '',
+            curpCliente: document.getElementById('curp_filtro_reporte')?.value || '',
+            idCredito: document.getElementById('id_credito_filtro_reporte')?.value || ''
+        };
 
-        if (toggle && menu) {
-            toggle.addEventListener('click', (e) => {
-                e.stopPropagation();
-                menu.classList.toggle('hidden');
-            });
+        reportData = await database.generarReporteAvanzado(filtros);
+        mostrarReporteAvanzado(reportData);
 
-            // Cerrar al hacer clic fuera
-            document.addEventListener('click', () => {
-                menu.classList.add('hidden');
-            });
-        }
-    });
-}
-
-function validarCURP(input) {
-    input.value = input.value.toUpperCase();
-    const curp = input.value.trim();
-    const isValid = validarFormatoCURP(curp);
-
-    if (curp.length > 0 && !isValid) {
-        input.classList.add('input-error');
-    } else {
-        input.classList.remove('input-error');
+    } catch (error) {
+        console.error('Error generando reporte avanzado:', error);
+        showStatus('status_reportes_avanzados', 'Error al generar el reporte: ' + error.message, 'error');
+    } finally {
+        showProcessingOverlay(false);
+        showButtonLoading('btn-aplicar-filtros-reportes', false);
     }
 }
 
-function validarFormatoCURP(curp) {
-    if (!curp || curp.length !== 18) return false;
-    const regex = /^[A-Z]{4}[0-9]{6}[HM][A-Z]{5}[0-9A-Z][0-9]$/;
-    return regex.test(curp);
-}
+function mostrarReporteAvanzado(data) {
+    const tbody = document.getElementById('tabla-reportes-avanzados');
+    if (!tbody) return;
 
-function calcularMontoTotalColocacion() {
-    const monto = parseFloat(document.getElementById('monto_colocacion').value) || 0;
-    const plazo = parseInt(document.getElementById('plazo_colocacion').value) || 0;
-    const montoTotal = monto * 1.3; // 30% de interés
-    document.getElementById('montoTotal_colocacion').value = montoTotal.toFixed(2);
-}
+    tbody.innerHTML = '';
 
-function limpiarCamposClienteColocacion() {
-    document.getElementById('nombreCliente_colocacion').value = '';
-    document.getElementById('domicilioCliente_colocacion').value = '';
-    document.getElementById('telefonoCliente_colocacion').value = '';
-    document.getElementById('poblacion_grupo_colocacion').value = '';
-    document.getElementById('ruta_colocacion').value = '';
-}
+    if (!data || data.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="10">No se encontraron datos con los filtros aplicados.</td></tr>';
+        return;
+    }
 
-function limpiarCamposAvalColocacion() {
-    document.getElementById('nombreAval_colocacion').value = '';
-}
+    data.forEach(item => {
+        const tr = document.createElement('tr');
 
-function limpiarCamposCreditoCobranza() {
-    document.getElementById('nombreCliente_cobranza').value = '';
-    document.getElementById('idCredito_cobranza').value = '';
-    document.getElementById('montoTotal_cobranza').value = '';
-    document.getElementById('saldoActual_cobranza').value = '';
-    document.getElementById('nuevoSaldo_cobranza').value = '';
-    document.getElementById('monto_cobranza').value = '';
-}
+        let rowContent = '';
+        if (item.tipo === 'cliente') {
+            rowContent = `
+                <td>CLIENTE</td>
+                <td>${item.curp || ''}</td>
+                <td>${item.nombre || ''}</td>
+                <td>${item.poblacion_grupo || ''}</td>
+                <td>${item.ruta || ''}</td>
+                <td>${item.office || ''}</td>
+                <td>${item.fechaRegistro ? new Date(item.fechaRegistro).toLocaleDateString() : ''}</td>
+                <td>-</td>
+                <td>-</td>
+                <td>-</td>
+            `;
+        } else if (item.tipo === 'credito') {
+            rowContent = `
+                <td>CRÉDITO</td>
+                <td>${item.curpCliente || ''}</td>
+                <td>${item.nombreCliente || ''}</td>
+                <td>${item.poblacion_grupo || ''}</td>
+                <td>${item.ruta || ''}</td>
+                <td>${item.office || ''}</td>
+                <td>${item.fechaCreacion ? new Date(item.fechaCreacion).toLocaleDateString() : ''}</td>
+                <td>${item.tipo || ''}</td>
+                <td>$${item.monto ? item.monto.toLocaleString() : '0'}</td>
+                <td>$${item.saldo ? item.saldo.toLocaleString() : '0'}</td>
+            `;
+        } else if (item.tipo === 'pago') {
+            rowContent = `
+                <td>PAGO</td>
+                <td>${item.curpCliente || ''}</td>
+                <td>${item.nombreCliente || ''}</td>
+                <td>${item.poblacion_grupo || ''}</td>
+                <td>${item.ruta || ''}</td>
+                <td>${item.office || ''}</td>
+                <td>${item.fecha ? new Date(item.fecha).toLocaleDateString() : ''}</td>
+                <td>${item.tipoPago || ''}</td>
+                <td>$${item.monto ? item.monto.toLocaleString() : '0'}</td>
+                <td>$${item.saldoDespues ? item.saldoDespues.toLocaleString() : '0'}</td>
+            `;
+        }
 
-function formatearFecha(fechaString) {
-    if (!fechaString) return 'N/A';
-    try {
-        const fecha = new Date(fechaString);
-        return fecha.toLocaleDateString('es-MX');
-    } catch (e) {
-        return 'Fecha inválida';
+        tr.innerHTML = rowContent;
+        tbody.appendChild(tr);
+    });
+
+    // Mostrar estadísticas del reporte
+    const totalRegistros = data.length;
+    const totalClientes = data.filter(item => item.tipo === 'cliente').length;
+    const totalCreditos = data.filter(item => item.tipo === 'credito').length;
+    const totalPagos = data.filter(item => item.tipo === 'pago').length;
+    const totalMontoPagos = data.filter(item => item.tipo === 'pago').reduce((sum, item) => sum + (item.monto || 0), 0);
+
+    const estadisticasElement = document.getElementById('estadisticas-reporte');
+    if (estadisticasElement) {
+        estadisticasElement.innerHTML = `
+            <div class="status-message status-info">
+                <strong>Estadísticas del Reporte:</strong><br>
+                Total Registros: ${totalRegistros} | 
+                Clientes: ${totalClientes} | 
+                Créditos: ${totalCreditos} | 
+                Pagos: ${totalPagos} | 
+                Total Pagado: $${totalMontoPagos.toLocaleString()}
+            </div>
+        `;
     }
 }
 
 function exportToCSV() {
     if (!reportData || reportData.length === 0) {
-        showStatus('status_reportes_avanzados', 'No hay datos para exportar.', 'error');
+        alert('No hay datos para exportar. Genera un reporte primero.');
         return;
     }
 
-    let csv = 'Tipo,Fecha,CURP,Nombre,Grupo,Ruta,Sucursal,Monto\n';
-    reportData.forEach(item => {
-        let fila = '';
-        if (item.tipo === 'cliente') {
-            fila = `Cliente,${formatearFecha(item.fechaRegistro)},${item.curp || ''},${item.nombre || ''},${item.poblacion_grupo || ''},${item.ruta || ''},${item.office || ''},N/A`;
-        } else if (item.tipo === 'credito') {
-            fila = `Crédito,${formatearFecha(item.fechaCreacion)},${item.curpCliente || ''},${item.nombreCliente || ''},${item.poblacion_grupo || ''},${item.ruta || ''},${item.office || ''},${item.montoTotal || ''}`;
-        } else if (item.tipo === 'pago') {
-            fila = `Pago,${formatearFecha(item.fecha)},${item.curpCliente || ''},${item.nombreCliente || ''},${item.poblacion_grupo || ''},${item.ruta || ''},${item.office || ''},${item.monto || ''}`;
-        }
-        csv += fila + '\n';
-    });
+    showProcessingOverlay(true, 'Generando archivo CSV...');
+    showButtonLoading('btn-exportar-csv', true, 'Generando CSV...');
 
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    link.setAttribute('href', url);
-    link.setAttribute('download', `reporte_finzana_${new Date().toISOString().split('T')[0]}.csv`);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    try {
+        const headers = ['Tipo', 'CURP', 'Nombre', 'Grupo/Población', 'Ruta', 'Sucursal', 'Fecha', 'Tipo Operación', 'Monto', 'Saldo'];
+        let csvContent = headers.join(',') + '\n';
+
+        reportData.forEach(item => {
+            let row = [];
+
+            if (item.tipo === 'cliente') {
+                row = [
+                    'CLIENTE',
+                    item.curp || '',
+                    `"${item.nombre || ''}"`,
+                    item.poblacion_grupo || '',
+                    item.ruta || '',
+                    item.office || '',
+                    item.fechaRegistro ? new Date(item.fechaRegistro).toLocaleDateString() : '',
+                    '',
+                    '',
+                    ''
+                ];
+            } else if (item.tipo === 'credito') {
+                row = [
+                    'CRÉDITO',
+                    item.curpCliente || '',
+                    `"${item.nombreCliente || ''}"`,
+                    item.poblacion_grupo || '',
+                    item.ruta || '',
+                    item.office || '',
+                    item.fechaCreacion ? new Date(item.fechaCreacion).toLocaleDateString() : '',
+                    item.tipo || '',
+                    item.monto || 0,
+                    item.saldo || 0
+                ];
+            } else if (item.tipo === 'pago') {
+                row = [
+                    'PAGO',
+                    item.curpCliente || '',
+                    `"${item.nombreCliente || ''}"`,
+                    item.poblacion_grupo || '',
+                    item.ruta || '',
+                    item.office || '',
+                    item.fecha ? new Date(item.fecha).toLocaleDateString() : '',
+                    item.tipoPago || '',
+                    item.monto || 0,
+                    item.saldoDespues || 0
+                ];
+            }
+
+            csvContent += row.join(',') + '\n';
+        });
+
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        const url = URL.createObjectURL(blob);
+        link.setAttribute('href', url);
+        link.setAttribute('download', `reporte_finzana_${new Date().toISOString().split('T')[0]}.csv`);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        showStatus('status_reportes_avanzados', 'Archivo CSV exportado exitosamente.', 'success');
+    } catch (error) {
+        console.error('Error exportando CSV:', error);
+        showStatus('status_reportes_avanzados', 'Error al exportar CSV: ' + error.message, 'error');
+    } finally {
+        showProcessingOverlay(false);
+        showButtonLoading('btn-exportar-csv', false);
+    }
 }
 
 function exportToPDF() {
-    showStatus('status_reportes_avanzados', 'Exportación a PDF aún no implementada.', 'info');
+    if (!reportData || reportData.length === 0) {
+        alert('No hay datos para exportar. Genera un reporte primero.');
+        return;
+    }
+
+    showProcessingOverlay(true, 'Generando archivo PDF...');
+    showButtonLoading('btn-exportar-pdf', true, 'Generando PDF...');
+
+    try {
+        // Usar html2pdf para generar el PDF
+        const element = document.getElementById('view-reportes-avanzados');
+        if (!element) {
+            throw new Error('No se encontró el elemento para exportar');
+        }
+
+        const opt = {
+            margin: 1,
+            filename: `reporte_finzana_${new Date().toISOString().split('T')[0]}.pdf`,
+            image: { type: 'jpeg', quality: 0.98 },
+            html2canvas: { scale: 2 },
+            jsPDF: { unit: 'cm', format: 'a4', orientation: 'landscape' }
+        };
+
+        // Crear una copia temporal del contenido para el PDF
+        const tempElement = element.cloneNode(true);
+        tempElement.style.width = '100%';
+        tempElement.style.padding = '20px';
+
+        // Ocultar botones de exportación en el PDF
+        const exportButtons = tempElement.querySelector('.export-buttons');
+        if (exportButtons) exportButtons.style.display = 'none';
+
+        document.body.appendChild(tempElement);
+
+        html2pdf().set(opt).from(tempElement).save().then(() => {
+            document.body.removeChild(tempElement);
+            showStatus('status_reportes_avanzados', 'Archivo PDF exportado exitosamente.', 'success');
+            showProcessingOverlay(false);
+            showButtonLoading('btn-exportar-pdf', false);
+        }).catch(error => {
+            console.error('Error generando PDF:', error);
+            showStatus('status_reportes_avanzados', 'Error al exportar PDF: ' + error.message, 'error');
+            showProcessingOverlay(false);
+            showButtonLoading('btn-exportar-pdf', false);
+        });
+
+    } catch (error) {
+        console.error('Error exportando PDF:', error);
+        showStatus('status_reportes_avanzados', 'Error al exportar PDF: ' + error.message, 'error');
+        showProcessingOverlay(false);
+        showButtonLoading('btn-exportar-pdf', false);
+    }
 }
 
-// Inicialización final
+// Funciones auxiliares para edición/eliminación (placeholder)
+async function editCliente(docId) {
+    alert("La función para editar clientes aún no está implementada en esta versión.");
+}
+
+async function deleteCliente(docId) {
+    if (confirm("¿Estás seguro de que deseas eliminar este cliente? Esta acción no se puede deshacer.")) {
+        alert("La función para eliminar clientes aún no está implementada en esta versión.");
+    }
+}
+
+// Eventos de Vistas
+document.addEventListener('viewshown', function (e) {
+    const viewId = e.detail.viewId;
+    console.log('Vista mostrada:', viewId);
+
+    switch (viewId) {
+        case 'view-reportes':
+            const btnActualizar = document.getElementById('btn-actualizar-reportes');
+            if (btnActualizar) btnActualizar.click();
+            break;
+        case 'view-reportes-avanzados':
+            inicializarVistaReportesAvanzados();
+            break;
+        case 'view-usuarios':
+            loadUsersTable();
+            break;
+        case 'view-gestion-clientes':
+            inicializarVistaGestionClientes();
+            break;
+    }
+});
+
 console.log('app.js cargado correctamente');
