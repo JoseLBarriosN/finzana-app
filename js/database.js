@@ -4,7 +4,6 @@
 
 const database = {
     // Habilita la persistencia offline de Firestore.
-    // Esta línea hace que la app funcione sin conexión automáticamente.
     enableOffline: () => {
         db.enablePersistence().catch((err) => {
             if (err.code == 'failed-precondition') {
@@ -51,11 +50,9 @@ const database = {
         const snapshot = await query.get();
         let clientes = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-        // Filtros no indexados se aplican después
         if (filtros.nombre) {
             clientes = clientes.filter(c => c.nombre.toLowerCase().includes(filtros.nombre));
         }
-        // Aquí se podrían añadir más filtros post-consulta si es necesario
 
         return clientes;
     },
@@ -114,10 +111,13 @@ const database = {
 
     agregarPago: async (pagoData) => {
         const creditoRef = db.collection('creditos').doc(pagoData.idCredito);
+
         try {
             await db.runTransaction(async (transaction) => {
                 const creditoDoc = await transaction.get(creditoRef);
-                if (!creditoDoc.exists) throw "El crédito no existe.";
+                if (!creditoDoc.exists) {
+                    throw "El crédito no existe.";
+                }
 
                 const credito = creditoDoc.data();
                 const nuevoSaldo = credito.saldo - pagoData.monto;
@@ -150,6 +150,7 @@ const database = {
 
         const batch = db.batch();
         let errores = [];
+        let importados = 0;
 
         try {
             if (tipo === 'clientes') {
@@ -162,61 +163,139 @@ const database = {
                         telefono: campos[4], fechaRegistro: campos[5] || new Date().toISOString(),
                         poblacion_grupo: campos[6], office: office
                     });
+                    importados++;
                 }
             } else if (tipo === 'colocacion') {
-                const procesador = (office === 'GDL') ? (linea, i, office, errores) => {
-                    const campos = linea.split(',').map(c => c.trim());
-                    if (campos.length < 13) { errores.push(`Línea ${i + 1}: Faltan columnas`); return null; }
-                    return {
-                        id: campos[2], office, curpCliente: campos[0], nombreCliente: campos[1],
-                        fechaCreacion: campos[3], tipo: campos[4], monto: parseFloat(campos[5]),
-                        plazo: parseInt(campos[6]), montoTotal: parseFloat(campos[7]), curpAval: campos[8],
-                        nombreAval: campos[9], poblacion_grupo: campos[10], ruta: campos[11],
-                        saldo: parseFloat(campos[12]), estado: parseFloat(campos[12]) > 0.01 ? 'activo' : 'liquidado'
-                    };
-                } : (linea, i, office, errores) => {
-                    const campos = linea.split(',').map(c => c.trim());
-                     if (campos.length < 20) { errores.push(`Línea ${i + 1}: Faltan columnas`); return null; }
-                     return {
-                        id: campos[2], office, curpCliente: campos[0], nombreCliente: campos[1], 
-                        fechaCreacion: campos[3], tipo: campos[4], monto: parseFloat(campos[5]),
-                        plazo: parseInt(campos[6]), montoTotal: parseFloat(campos[7]), curpAval: campos[8],
-                        nombreAval: campos[9], poblacion_grupo: campos[10], ruta: campos[11],
-                        interes: parseFloat(campos[12]), saldo: parseFloat(campos[13]),
-                        ultimoPago: campos[14], saldoVencido: parseFloat(campos[15]), status: campos[16],
-                        saldoCapital: parseFloat(campos[17]), saldoInteres: parseFloat(campos[18]), stj150: campos[19],
-                        estado: parseFloat(campos[13]) > 0.01 ? 'activo' : 'liquidado'
-                    };
-                };
+                const procesador = (office === 'GDL') ? database._procesarColocacionGDL : database._procesarColocacionLEON;
                 for (const [i, linea] of lineas.entries()) {
                     const credito = procesador(linea, i, office, errores);
                     if (credito && credito.id) {
                         const docRef = db.collection('creditos').doc(credito.id);
                         batch.set(docRef, credito);
-                    } else {
+                        importados++;
+                    } else if (!errores.find(e => e.includes(`Línea ${i+1}`))) {
                         errores.push(`Línea ${i+1}: ID de crédito inválido o faltante.`);
                     }
                 }
             } else if (tipo === 'cobranza') {
-                // La importación de cobranza es más compleja por la actualización de saldos,
-                // por lo que es mejor hacerla con transacciones individuales en un bucle.
-                // Esta parte no se puede optimizar con un solo batch.
+                // La importación de cobranza es más compleja y se ejecuta una por una para actualizar saldos.
+                // Esto es más lento pero garantiza la integridad de los datos.
                 console.warn("Importación de cobranza se realizará registro por registro.");
+                const procesador = (office === 'GDL') ? database._procesarCobranzaGDL : database._procesarCobranzaLEON;
                 for (const [i, linea] of lineas.entries()) {
-                    // Implementar la lógica de agregar un pago y actualizar el crédito asociado, uno por uno.
-                    // Esta parte se deja como pendiente para no introducir una operación masiva y lenta.
+                    const {pago, creditoActualizado} = procesador(linea, i, office, {}, errores); // No se usa creditosMap aquí
+                    if (pago && creditoActualizado) {
+                        try {
+                            await database.agregarPago(pago); // Reutiliza la lógica de transacción
+                            importados++;
+                        } catch (e) {
+                            errores.push(`Línea ${i+1}: Error al procesar pago - ${e.message}`);
+                        }
+                    }
                 }
-                errores.push("La importación masiva de cobranza aún no está optimizada.");
             }
 
             if (tipo !== 'cobranza') {
                  await batch.commit();
             }
 
-            return { success: true, total: lineas.length, importados: lineas.length - errores.length, errores };
+            return { success: true, total: lineas.length, importados: importados, errores };
         } catch(error) {
+            console.error("Error en importación masiva: ", error);
             return { success: false, message: `Error crítico durante la importación: ${error.message}`, errores: [error.message] };
         }
+    },
+    
+    _procesarColocacionGDL: (linea, i, office, errores) => {
+        const campos = linea.split(',').map(c => c.trim());
+        if (campos.length < 13) { errores.push(`Línea ${i + 1}: Formato GDL-Colocación incorrecto`); return null; }
+        return {
+            id: campos[2], office, curpCliente: campos[0], nombreCliente: campos[1],
+            fechaCreacion: campos[3], tipo: campos[4], monto: parseFloat(campos[5] || 0),
+            plazo: parseInt(campos[6] || 0), montoTotal: parseFloat(campos[7] || 0), curpAval: campos[8],
+            nombreAval: campos[9], poblacion_grupo: campos[10], ruta: campos[11],
+            saldo: parseFloat(campos[12] || 0), estado: parseFloat(campos[12] || 0) > 0.01 ? 'activo' : 'liquidado'
+        };
+    },
+    
+    _procesarColocacionLEON: (linea, i, office, errores) => {
+        const campos = linea.split(',').map(c => c.trim());
+        if (campos.length < 20) { errores.push(`Línea ${i + 1}: Formato LEON-Colocación incorrecto`); return null; }
+         return {
+            id: campos[2], office, curpCliente: campos[0], nombreCliente: campos[1], 
+            fechaCreacion: campos[3], tipo: campos[4], monto: parseFloat(campos[5] || 0),
+            plazo: parseInt(campos[6] || 0), montoTotal: parseFloat(campos[7] || 0), curpAval: campos[8],
+            nombreAval: campos[9], poblacion_grupo: campos[10], ruta: campos[11],
+            interes: parseFloat(campos[12] || 0), saldo: parseFloat(campos[13] || 0),
+            ultimoPago: campos[14], saldoVencido: parseFloat(campos[15] || 0), status: campos[16],
+            saldoCapital: parseFloat(campos[17] || 0), saldoInteres: parseFloat(campos[18] || 0), stj150: campos[19],
+            estado: parseFloat(campos[13] || 0) > 0.01 ? 'activo' : 'liquidado'
+        };
+    },
+
+    _procesarCobranzaGDL: (linea, i, office, creditosMap, errores) => {
+        const campos = linea.split(',').map(c => c.trim());
+        if (campos.length < 11) { errores.push(`Línea ${i + 1}: Formato GDL-Cobranza incorrecto`); return {}; }
+        const pago = { 
+            office, idCredito: campos[1], monto: parseFloat(campos[3] || 0) 
+            // Podríamos agregar más campos al objeto de pago si es necesario
+        };
+        const creditoActualizado = { id: campos[1], saldo: parseFloat(campos[10] || 0) };
+        return {pago, creditoActualizado};
+    },
+    _procesarCobranzaLEON: (linea, i, office, creditosMap, errores) => {
+        const campos = linea.split(',').map(c => c.trim());
+        if (campos.length < 11) { errores.push(`Línea ${i + 1}: Formato LEON-Cobranza incorrecto`); return {}; }
+        const pago = { 
+            office, idCredito: campos[1], monto: parseFloat(campos[3] || 0)
+        };
+        const creditoActualizado = { id: campos[1], saldo: parseFloat(campos[9] || 0) };
+        return {pago, creditoActualizado};
+    },
+
+    // --- FUNCIONES DE REPORTES Y LÓGICA DE NEGOCIO ---
+    generarReportes: async () => {
+        const [clientesSnap, creditosSnap, pagosSnap] = await Promise.all([
+            db.collection('clientes').get(),
+            db.collection('creditos').get(),
+            db.collection('pagos').get()
+        ]);
+
+        const clientes = clientesSnap.docs.map(doc => doc.data());
+        const creditos = creditosSnap.docs.map(doc => doc.data());
+        const pagos = pagosSnap.docs.map(doc => doc.data());
+
+        const creditosActivos = creditos.filter(c => c.estado === 'activo');
+        const totalCartera = creditosActivos.reduce((sum, credito) => sum + (credito.saldo || 0), 0);
+        
+        const hoy = new Date();
+        const mesActual = hoy.getMonth();
+        const anioActual = hoy.getFullYear();
+
+        const totalPagosMes = pagos.filter(pago => {
+            const fechaPago = new Date(pago.fecha);
+            return fechaPago.getMonth() === mesActual && fechaPago.getFullYear() === anioActual;
+        });
+        
+        const cobradoMes = totalPagosMes.reduce((sum, pago) => sum + (pago.monto || 0), 0);
+        
+        return {
+            totalClientes: clientes.length,
+            totalCreditos: creditosActivos.length,
+            totalCartera: totalCartera,
+            totalVencidos: creditosActivos.filter(c => database.esCreditoVencido(c)).length,
+            pagosRegistrados: totalPagosMes.length,
+            cobradoMes: cobradoMes,
+            totalComisiones: totalPagosMes.reduce((sum, pago) => sum + (pago.comision || 0), 0)
+        };
+    },
+
+    esCreditoVencido: (credito) => {
+        if (credito.estado !== 'activo' || !credito.plazo) return false;
+        const fechaCreacion = new Date(credito.fechaCreacion);
+        const fechaVencimiento = new Date(fechaCreacion);
+        fechaVencimiento.setDate(fechaVencimiento.getDate() + (credito.plazo * 7));
+        return new Date() > fechaVencimiento;
     }
 };
 
