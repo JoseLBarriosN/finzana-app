@@ -10,13 +10,22 @@ document.addEventListener('DOMContentLoaded', function () {
     // La inicialización de Firebase ocurre en index.html
     setupEventListeners();
 
-    // El nuevo manejador de estado de autenticación
+    // El nuevo manejador de estado de autenticación de Firebase
     auth.onAuthStateChanged(user => {
         if (user) {
             // Usuario ha iniciado sesión
             currentUser = user;
-            document.getElementById('user-name').textContent = user.displayName || user.email;
-            document.getElementById('user-role-display').textContent = "Usuario"; 
+            // Busca el perfil del usuario en Firestore para obtener nombre y rol
+            db.collection('users').doc(user.uid).get().then(doc => {
+                if (doc.exists) {
+                    const userData = doc.data();
+                    document.getElementById('user-name').textContent = userData.name || user.email;
+                    document.getElementById('user-role-display').textContent = userData.role || 'Usuario';
+                } else {
+                    document.getElementById('user-name').textContent = user.email;
+                    document.getElementById('user-role-display').textContent = "Rol no definido";
+                }
+            });
             
             document.getElementById('loading-overlay').classList.add('hidden');
             document.getElementById('login-screen').classList.add('hidden');
@@ -51,23 +60,15 @@ function setupEventListeners() {
     document.querySelectorAll('.import-tab').forEach(tab => tab.addEventListener('click', handleTabClick));
     document.getElementById('btn-procesar-importacion').addEventListener('click', handleImport);
     document.getElementById('btn-limpiar-datos').addEventListener('click', async () => {
-        if (confirm('¿Estás seguro de que deseas limpiar TODA la base de datos en la nube? Esta acción no se puede deshacer.')) {
-            // Esta es una operación avanzada, por ahora solo mostraremos un mensaje.
-            // La lógica real requeriría Cloud Functions para borrar colecciones de forma segura.
-            showStatus('estado-importacion', 'La limpieza masiva debe hacerse desde la consola de Firebase.', 'info');
+        if (confirm('¿Estás seguro de que deseas limpiar TODA la base de datos en la nube? Esta acción es experimental y no se puede deshacer.')) {
+            showStatus('estado-importacion', 'La limpieza masiva debe hacerse desde la consola de Firebase o con Cloud Functions para mayor seguridad.', 'info');
         }
     });
 
     // Gestión de Usuarios (Firebase Auth)
     document.getElementById('btn-nuevo-usuario').addEventListener('click', () => {
-        document.getElementById('form-usuario-container').classList.remove('hidden');
-        document.getElementById('form-usuario').reset();
-        document.getElementById('form-usuario-titulo').textContent = 'Nuevo Usuario';
+        showStatus('status_usuarios', 'La creación de usuarios se realiza en la Consola de Firebase > Authentication.', 'info');
     });
-    document.getElementById('btn-cancelar-usuario').addEventListener('click', () => {
-        document.getElementById('form-usuario-container').classList.add('hidden');
-    });
-    document.getElementById('form-usuario').addEventListener('submit', handleUserForm);
 
     // Registrar Cliente
     document.getElementById('form-cliente').addEventListener('submit', handleClientForm);
@@ -87,8 +88,18 @@ function setupEventListeners() {
 
     // Reportes
     document.getElementById('btn-actualizar-reportes').addEventListener('click', async () => {
-        // La lógica de reportes necesitaría reescribirse para leer datos de Firestore.
-        console.warn("La generación de reportes aún no está conectada a Firestore.");
+        const reportes = await database.generarReportes();
+        if (reportes) {
+            document.getElementById('total-clientes').textContent = reportes.totalClientes;
+            document.getElementById('total-creditos').textContent = reportes.totalCreditos;
+            document.getElementById('total-cartera').textContent = `$${reportes.totalCartera.toLocaleString()}`;
+            document.getElementById('total-vencidos').textContent = reportes.totalVencidos;
+            document.getElementById('pagos-registrados').textContent = reportes.pagosRegistrados;
+            document.getElementById('cobrado-mes').textContent = `$${reportes.cobradoMes.toLocaleString()}`;
+            document.getElementById('total-comisiones').textContent = `$${reportes.totalComisiones.toLocaleString()}`;
+            const tasaRecuperacion = (reportes.totalCartera + reportes.cobradoMes) > 0 ? (reportes.cobradoMes / (reportes.totalCartera + reportes.cobradoMes) * 100).toFixed(1) : 0;
+            document.getElementById('tasa-recuperacion').textContent = `${tasaRecuperacion}%`;
+        }
     });
 
     // Eventos de Vistas
@@ -160,11 +171,9 @@ async function handleImport() {
     document.getElementById('resultado-importacion').classList.remove('hidden');
 }
 
-async function handleUserForm(e) {
+function handleUserForm(e) {
     e.preventDefault();
-    // La creación y gestión de usuarios ahora se hace en la consola de Firebase.
-    // Esta función podría adaptarse en el futuro para usar el Admin SDK en un servidor.
-    showStatus('status_usuarios', 'La gestión de usuarios se realiza desde la consola de Firebase.', 'info');
+    showStatus('status_usuarios', 'La gestión de usuarios (crear, editar roles) se realiza desde la consola de Firebase.', 'info');
 }
 
 async function handleClientForm(e) {
@@ -252,18 +261,22 @@ async function handleSearchCreditForPayment() {
         const cliente = await database.buscarClientePorCURP(creditoActual.curpCliente);
         const historial = await obtenerHistorialCreditoCliente(creditoActual.curpCliente);
         
-        document.getElementById('nombre_cobranza').value = cliente ? cliente.nombre : 'N/A';
-        document.getElementById('saldo_cobranza').value = `$${historial.saldoRestante.toLocaleString()}`;
-        document.getElementById('estado_cobranza').value = historial.estado.toUpperCase();
-        document.getElementById('semanas_atraso_cobranza').value = historial.semanasAtraso || 0;
-        document.getElementById('pago_semanal_cobranza').value = `$${historial.pagoSemanal.toLocaleString()}`;
-        document.getElementById('fecha_proximo_pago_cobranza').value = historial.proximaFechaPago;
-        document.getElementById('monto_cobranza').value = historial.pagoSemanal.toFixed(2);
-        
-        handleMontoPagoChange();
-        
-        document.getElementById('form-cobranza').classList.remove('hidden');
-        showStatus('status_cobranza', 'Crédito encontrado.', 'success');
+        if (historial) {
+            document.getElementById('nombre_cobranza').value = cliente ? cliente.nombre : 'N/A';
+            document.getElementById('saldo_cobranza').value = `$${historial.saldoRestante.toLocaleString()}`;
+            document.getElementById('estado_cobranza').value = historial.estado.toUpperCase();
+            document.getElementById('semanas_atraso_cobranza').value = historial.semanasAtraso || 0;
+            document.getElementById('pago_semanal_cobranza').value = `$${historial.pagoSemanal.toLocaleString()}`;
+            document.getElementById('fecha_proximo_pago_cobranza').value = historial.proximaFechaPago;
+            document.getElementById('monto_cobranza').value = historial.pagoSemanal.toFixed(2);
+            
+            handleMontoPagoChange();
+            
+            document.getElementById('form-cobranza').classList.remove('hidden');
+            showStatus('status_cobranza', 'Crédito encontrado.', 'success');
+        } else {
+            showStatus('status_cobranza', 'No se pudo calcular el historial del crédito.', 'error');
+        }
     } else {
         showStatus('status_cobranza', 'Crédito no encontrado.', 'error');
         document.getElementById('form-cobranza').classList.add('hidden');
@@ -506,13 +519,30 @@ async function loadClientesTable() {
 }
 
 async function loadUsersTable() {
-    document.getElementById('tabla-usuarios').innerHTML = `<tr><td colspan="5">La gestión de usuarios ahora se realiza desde la consola de Firebase para mayor seguridad.</td></tr>`;
+    const userList = await database.getAll('users');
+    const tbody = document.getElementById('tabla-usuarios');
+    tbody.innerHTML = '';
+    if(userList && userList.length > 0) {
+        userList.forEach(user => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${user.email}</td>
+                <td>${user.name}</td>
+                <td><span class="role-badge role-${user.role}">${user.role}</span></td>
+                <td>${user.office || 'N/A'}</td>
+                <td>${user.uid}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+    } else {
+        tbody.innerHTML = `<tr><td colspan="5">No hay usuarios en la base de datos de perfiles.</td></tr>`;
+    }
 }
 
 async function editCliente(docId) {
-    alert("Función de editar no implementada en esta versión de Firebase.");
+    alert("La función para editar clientes aún no está implementada en esta versión.");
 }
 
 async function deleteCliente(docId) {
-    alert("La eliminación segura requiere permisos de administrador y se debe gestionar con cuidado. Función no implementada en esta versión.");
+    alert("La función para eliminar clientes aún no está implementada en esta versión.");
 }
