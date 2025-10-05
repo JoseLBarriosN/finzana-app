@@ -5,9 +5,13 @@
 let currentUser = null;
 let creditoActual = null;
 let currentImportTab = 'clientes';
+let reportData = null;
 
 document.addEventListener('DOMContentLoaded', function () {
-    // La inicialización de Firebase ocurre en index.html
+    // Inicializar dropdowns primero
+    inicializarDropdowns();
+    
+    // El resto de la inicialización
     setupEventListeners();
 
     // El nuevo manejador de estado de autenticación de Firebase
@@ -26,7 +30,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     document.getElementById('user-role-display').textContent = "Rol no definido";
                 }
             });
-            
+
             document.getElementById('loading-overlay').classList.add('hidden');
             document.getElementById('login-screen').classList.add('hidden');
             document.getElementById('main-app').classList.remove('hidden');
@@ -86,24 +90,20 @@ function setupEventListeners() {
     document.getElementById('form-pago-submit').addEventListener('submit', handlePaymentForm);
     document.getElementById('monto_cobranza').addEventListener('input', handleMontoPagoChange);
 
-    // Reportes
+    // Reportes Básicos
     document.getElementById('btn-actualizar-reportes').addEventListener('click', async () => {
-        const reportes = await database.generarReportes();
-        if (reportes) {
-            document.getElementById('total-clientes').textContent = reportes.totalClientes;
-            document.getElementById('total-creditos').textContent = reportes.totalCreditos;
-            document.getElementById('total-cartera').textContent = `$${reportes.totalCartera.toLocaleString()}`;
-            document.getElementById('total-vencidos').textContent = reportes.totalVencidos;
-            document.getElementById('pagos-registrados').textContent = reportes.pagosRegistrados;
-            document.getElementById('cobrado-mes').textContent = `$${reportes.cobradoMes.toLocaleString()}`;
-            document.getElementById('total-comisiones').textContent = `$${reportes.totalComisiones.toLocaleString()}`;
-            const tasaRecuperacion = (reportes.totalCartera + reportes.cobradoMes) > 0 ? (reportes.cobradoMes / (reportes.totalCartera + reportes.cobradoMes) * 100).toFixed(1) : 0;
-            document.getElementById('tasa-recuperacion').textContent = `${tasaRecuperacion}%`;
-        }
+        await loadBasicReports();
     });
+
+    // Reportes Avanzados
+    document.getElementById('btn-aplicar-filtros-reportes').addEventListener('click', loadAdvancedReports);
+    document.getElementById('btn-exportar-csv').addEventListener('click', exportToCSV);
+    document.getElementById('btn-exportar-pdf').addEventListener('click', exportToPDF);
+    document.getElementById('btn-limpiar-filtros-reportes').addEventListener('click', limpiarFiltrosReportes);
 
     // Eventos de Vistas
     document.getElementById('view-reportes').addEventListener('viewshown', () => document.getElementById('btn-actualizar-reportes').click());
+    document.getElementById('view-reportes-avanzados').addEventListener('viewshown', inicializarVistaReportesAvanzados);
     document.getElementById('view-usuarios').addEventListener('viewshown', loadUsersTable);
     document.getElementById('view-gestion-clientes').addEventListener('viewshown', inicializarVistaGestionClientes);
 }
@@ -117,7 +117,7 @@ async function handleLogin(e) {
     const email = document.getElementById('email').value;
     const password = document.getElementById('password').value;
     const statusElement = document.getElementById('auth-status');
-    
+
     try {
         statusElement.textContent = 'Iniciando sesión...';
         statusElement.className = 'status-message status-info';
@@ -154,21 +154,33 @@ async function handleImport() {
     const office = document.getElementById('office-select').value;
     const textareaId = `datos-importar-${office.toLowerCase()}-${currentImportTab}`;
     const csvData = document.getElementById(textareaId).value;
+    
     if (!csvData.trim()) {
         showStatus('estado-importacion', 'No hay datos para importar.', 'error');
         document.getElementById('resultado-importacion').classList.remove('hidden');
         return;
     }
-    const resultado = await database.importarDatosDesdeCSV(csvData, currentImportTab, office);
-    let mensaje = `Importación (${office}) completada: ${resultado.importados} de ${resultado.total} registros.`;
-    if (resultado.errores && resultado.errores.length > 0) {
-        mensaje += `<br>Errores: ${resultado.errores.length}`;
-        document.getElementById('detalle-importacion').innerHTML = `<strong>Detalle:</strong><ul>${resultado.errores.map(e => `<li>${e}</li>`).join('')}</ul>`;
-    } else {
-        document.getElementById('detalle-importacion').innerHTML = '';
+
+    showProcessingOverlay(true, 'Importando datos...');
+    
+    try {
+        const resultado = await database.importarDatosDesdeCSV(csvData, currentImportTab, office);
+        let mensaje = `Importación (${office}) completada: ${resultado.importados} de ${resultado.total} registros.`;
+        
+        if (resultado.errores && resultado.errores.length > 0) {
+            mensaje += `<br>Errores: ${resultado.errores.length}`;
+            document.getElementById('detalle-importacion').innerHTML = `<strong>Detalle:</strong><ul>${resultado.errores.map(e => `<li>${e}</li>`).join('')}</ul>`;
+        } else {
+            document.getElementById('detalle-importacion').innerHTML = '';
+        }
+        
+        showStatus('estado-importacion', mensaje, resultado.success ? 'success' : 'error');
+        document.getElementById('resultado-importacion').classList.remove('hidden');
+    } catch (error) {
+        showStatus('estado-importacion', `Error en importación: ${error.message}`, 'error');
+    } finally {
+        showProcessingOverlay(false);
     }
-    showStatus('estado-importacion', mensaje, resultado.success ? 'success' : 'error');
-    document.getElementById('resultado-importacion').classList.remove('hidden');
 }
 
 function handleUserForm(e) {
@@ -215,10 +227,10 @@ async function handleSearchClientForCredit() {
             document.getElementById('form-colocacion').classList.add('hidden');
             return;
         }
-        
+
         const creditoActivo = await database.buscarCreditoActivoPorCliente(curp);
         showStatus('status_colocacion', creditoActivo ? 'Cliente encontrado y elegible para renovación.' : 'Cliente encontrado y elegible para crédito nuevo.', 'success');
-        
+
         document.getElementById('nombre_colocacion').value = cliente.nombre;
         document.getElementById('idCredito_colocacion').value = 'Se asignará automáticamente';
         document.getElementById('form-colocacion').classList.remove('hidden');
@@ -260,7 +272,7 @@ async function handleSearchCreditForPayment() {
     if (creditoActual) {
         const cliente = await database.buscarClientePorCURP(creditoActual.curpCliente);
         const historial = await obtenerHistorialCreditoCliente(creditoActual.curpCliente);
-        
+
         if (historial) {
             document.getElementById('nombre_cobranza').value = cliente ? cliente.nombre : 'N/A';
             document.getElementById('saldo_cobranza').value = `$${historial.saldoRestante.toLocaleString()}`;
@@ -269,9 +281,9 @@ async function handleSearchCreditForPayment() {
             document.getElementById('pago_semanal_cobranza').value = `$${historial.pagoSemanal.toLocaleString()}`;
             document.getElementById('fecha_proximo_pago_cobranza').value = historial.proximaFechaPago;
             document.getElementById('monto_cobranza').value = historial.pagoSemanal.toFixed(2);
-            
+
             handleMontoPagoChange();
-            
+
             document.getElementById('form-cobranza').classList.remove('hidden');
             showStatus('status_cobranza', 'Crédito encontrado.', 'success');
         } else {
@@ -307,7 +319,7 @@ function handleMontoPagoChange() {
     if (!creditoActual) return;
     const monto = parseFloat(document.getElementById('monto_cobranza').value) || 0;
     const saldoDespues = creditoActual.saldo - monto;
-    document.getElementById('saldoDespues_cobranza').value = `$${saldoDespues.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+    document.getElementById('saldoDespues_cobranza').value = `$${saldoDespues.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 // =============================================
@@ -326,7 +338,28 @@ function showView(viewId) {
 function showStatus(elementId, message, type) {
     const element = document.getElementById(elementId);
     element.innerHTML = message;
-    element.className = 'status-message ' + (type === 'success' ? 'status-success' : 'status-error');
+    element.className = 'status-message ' + (type === 'success' ? 'status-success' : type === 'error' ? 'status-error' : 'status-info');
+}
+
+function showProcessingOverlay(show, message = 'Procesando...') {
+    let overlay = document.getElementById('processing-overlay');
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'processing-overlay';
+        overlay.className = 'processing-overlay hidden';
+        overlay.innerHTML = `
+            <div class="processing-spinner"></div>
+            <div id="processing-message">${message}</div>
+        `;
+        document.body.appendChild(overlay);
+    }
+    
+    if (show) {
+        document.getElementById('processing-message').textContent = message;
+        overlay.classList.remove('hidden');
+    } else {
+        overlay.classList.add('hidden');
+    }
 }
 
 function calcularMontoTotalColocacion() {
@@ -349,6 +382,10 @@ function inicializarDropdowns() {
     const tiposCredito = ['NUEVO', 'RENOVACION', 'REINGRESO'];
     const montos = [3000, 3500, 4000, 4500, 5000, 6000, 7000, 8000, 9000, 10000];
     const plazos = [13, 14];
+    const estadosCredito = ['al corriente', 'atrasado', 'cobranza', 'juridico', 'liquidado'];
+    const tiposPago = ['normal', 'extraordinario', 'actualizado'];
+    const sucursales = ['GDL', 'LEON'];
+
     const popularDropdown = (elementId, options, placeholder, isObject = false) => {
         const select = document.getElementById(elementId);
         if (select) {
@@ -361,14 +398,28 @@ function inicializarDropdowns() {
             });
         }
     };
+
+    // Dropdowns para registro de cliente
     popularDropdown('poblacion_grupo_cliente', poblaciones, 'Selecciona población/grupo');
     popularDropdown('ruta_cliente', rutas, 'Selecciona una ruta');
+
+    // Dropdowns para colocación
     popularDropdown('tipo_colocacion', tiposCredito.map(t => ({ value: t.toLowerCase(), text: t })), 'Selecciona tipo', true);
     popularDropdown('monto_colocacion', montos.map(m => ({ value: m, text: `$${m.toLocaleString()}` })), 'Selecciona monto', true);
     popularDropdown('plazo_colocacion', plazos.map(p => ({ value: p, text: `${p} semanas` })), 'Selecciona plazo', true);
+
+    // Dropdowns para filtros de clientes
     popularDropdown('grupo_filtro', poblaciones, 'Todos');
     popularDropdown('tipo_colocacion_filtro', tiposCredito.map(t => ({ value: t.toLowerCase(), text: t })), 'Todos', true);
     popularDropdown('plazo_filtro', plazos.map(p => ({ value: p, text: `${p} semanas` })), 'Todos', true);
+
+    // Dropdowns para reportes avanzados
+    popularDropdown('sucursal_filtro_reporte', sucursales, 'Todas');
+    popularDropdown('grupo_filtro_reporte', poblaciones, 'Todos');
+    popularDropdown('ruta_filtro_reporte', rutas, 'Todas');
+    popularDropdown('tipo_credito_filtro_reporte', tiposCredito.map(t => ({ value: t.toLowerCase(), text: t })), 'Todos', true);
+    popularDropdown('estado_credito_filtro_reporte', estadosCredito.map(e => ({ value: e, text: e.toUpperCase() })), 'Todos', true);
+    popularDropdown('tipo_pago_filtro_reporte', tiposPago.map(t => ({ value: t, text: t.toUpperCase() })), 'Todos', true);
 }
 
 // =============================================
@@ -385,7 +436,7 @@ function _calcularEstadoCredito(credito, pagos) {
     const fechaInicio = new Date(credito.fechaCreacion);
     const diasTranscurridos = (new Date() - fechaInicio) / (1000 * 60 * 60 * 24);
     if (diasTranscurridos < 0) return { estado: 'al corriente', diasAtraso: 0, semanasAtraso: 0, pagoSemanal, proximaFechaPago: 'Futuro' };
-    
+
     const pagoRequerido = (diasTranscurridos / 7) * pagoSemanal;
     const deficit = pagoRequerido - montoPagado;
     const diasAtraso = (deficit > 0) ? (deficit / pagoSemanal) * 7 : 0;
@@ -411,10 +462,10 @@ function _calcularEstadoCredito(credito, pagos) {
 async function obtenerHistorialCreditoCliente(curp) {
     const creditosCliente = await database.buscarCreditosPorCliente(curp);
     if (creditosCliente.length === 0) return null;
-    
+
     creditosCliente.sort((a, b) => new Date(b.fechaCreacion) - new Date(a.fechaCreacion));
     const ultimoCredito = creditosCliente[0];
-    
+
     const pagos = await database.getPagosPorCredito(ultimoCredito.id);
     const ultimoPago = pagos.length > 0 ? pagos[0] : null;
 
@@ -498,8 +549,8 @@ async function loadClientesTable() {
                 case 'liquidado': estadoClase = 'status-al-corriente'; break;
             }
             estadoHTML = `<span class="info-value ${estadoClase}">${historial.estado.toUpperCase()}</span>`;
-            if(historial.estado !== 'liquidado') detallesHTML += `<div class="info-item"><span class="info-label">Saldo:</span><span class="info-value">$${historial.saldoRestante.toLocaleString()}</span></div>`;
-            if(historial.semanasAtraso > 0) detallesHTML += `<div class="info-item"><span class="info-label">Semanas Atraso:</span><span class="info-value">${historial.semanasAtraso}</span></div>`;
+            if (historial.estado !== 'liquidado') detallesHTML += `<div class="info-item"><span class="info-label">Saldo:</span><span class="info-value">$${historial.saldoRestante.toLocaleString()}</span></div>`;
+            if (historial.semanasAtraso > 0) detallesHTML += `<div class="info-item"><span class="info-label">Semanas Atraso:</span><span class="info-value">${historial.semanasAtraso}</span></div>`;
             detallesHTML += `<div class="info-item"><span class="info-label">Último Pago:</span><span class="info-value">${historial.fechaUltimoPago}</span></div>`;
             infoCreditoHTML = `<div class="credito-info"><div class="info-grid"><div class="info-item"><span class="info-label">Último ID:</span><span class="info-value">${historial.idCredito}</span></div><div class="info-item"><span class="info-label">Estado:</span>${estadoHTML}</div>${detallesHTML}</div></div>`;
         }
@@ -522,7 +573,7 @@ async function loadUsersTable() {
     const userList = await database.getAll('users');
     const tbody = document.getElementById('tabla-usuarios');
     tbody.innerHTML = '';
-    if(userList && userList.length > 0) {
+    if (userList && userList.length > 0) {
         userList.forEach(user => {
             const tr = document.createElement('tr');
             tr.innerHTML = `
@@ -539,10 +590,285 @@ async function loadUsersTable() {
     }
 }
 
+// =============================================
+// FUNCIONES DE REPORTES
+// =============================================
+
+async function loadBasicReports() {
+    showProcessingOverlay(true, 'Generando reportes...');
+    try {
+        const reportes = await database.generarReportes();
+        if (reportes) {
+            document.getElementById('total-clientes').textContent = reportes.totalClientes;
+            document.getElementById('total-creditos').textContent = reportes.totalCreditos;
+            document.getElementById('total-cartera').textContent = `$${reportes.totalCartera.toLocaleString()}`;
+            document.getElementById('total-vencidos').textContent = reportes.totalVencidos;
+            document.getElementById('pagos-registrados').textContent = reportes.pagosRegistrados;
+            document.getElementById('cobrado-mes').textContent = `$${reportes.cobradoMes.toLocaleString()}`;
+            document.getElementById('total-comisiones').textContent = `$${reportes.totalComisiones.toLocaleString()}`;
+            const tasaRecuperacion = (reportes.totalCartera + reportes.cobradoMes) > 0 ? (reportes.cobradoMes / (reportes.totalCartera + reportes.cobradoMes) * 100).toFixed(1) : 0;
+            document.getElementById('tasa-recuperacion').textContent = `${tasaRecuperacion}%`;
+        }
+    } catch (error) {
+        console.error('Error cargando reportes:', error);
+        showStatus('status_reportes', 'Error al cargar los reportes: ' + error.message, 'error');
+    } finally {
+        showProcessingOverlay(false);
+    }
+}
+
+function inicializarVistaReportesAvanzados() {
+    document.getElementById('tabla-reportes-avanzados').innerHTML = '<tr><td colspan="10">Aplica los filtros para generar el reporte.</td></tr>';
+    // Establecer fechas por defecto (último mes)
+    const hoy = new Date();
+    const haceUnMes = new Date(hoy.getFullYear(), hoy.getMonth() - 1, hoy.getDate());
+    document.getElementById('fecha_inicio_reporte').value = haceUnMes.toISOString().split('T')[0];
+    document.getElementById('fecha_fin_reporte').value = hoy.toISOString().split('T')[0];
+}
+
+function limpiarFiltrosReportes() {
+    document.getElementById('filtros-reportes-avanzados').querySelectorAll('input, select').forEach(el => {
+        if (el.type !== 'date') el.value = '';
+    });
+    // Restaurar fechas por defecto
+    const hoy = new Date();
+    const haceUnMes = new Date(hoy.getFullYear(), hoy.getMonth() - 1, hoy.getDate());
+    document.getElementById('fecha_inicio_reporte').value = haceUnMes.toISOString().split('T')[0];
+    document.getElementById('fecha_fin_reporte').value = hoy.toISOString().split('T')[0];
+}
+
+async function loadAdvancedReports() {
+    showProcessingOverlay(true, 'Generando reporte avanzado...');
+    
+    try {
+        const filtros = {
+            sucursal: document.getElementById('sucursal_filtro_reporte').value,
+            grupo: document.getElementById('grupo_filtro_reporte').value,
+            ruta: document.getElementById('ruta_filtro_reporte').value,
+            tipoCredito: document.getElementById('tipo_credito_filtro_reporte').value,
+            estadoCredito: document.getElementById('estado_credito_filtro_reporte').value,
+            tipoPago: document.getElementById('tipo_pago_filtro_reporte').value,
+            fechaInicio: document.getElementById('fecha_inicio_reporte').value,
+            fechaFin: document.getElementById('fecha_fin_reporte').value,
+            curpCliente: document.getElementById('curp_filtro_reporte').value,
+            idCredito: document.getElementById('id_credito_filtro_reporte').value
+        };
+
+        reportData = await database.generarReporteAvanzado(filtros);
+        mostrarReporteAvanzado(reportData);
+        
+    } catch (error) {
+        console.error('Error generando reporte avanzado:', error);
+        showStatus('status_reportes_avanzados', 'Error al generar el reporte: ' + error.message, 'error');
+    } finally {
+        showProcessingOverlay(false);
+    }
+}
+
+function mostrarReporteAvanzado(data) {
+    const tbody = document.getElementById('tabla-reportes-avanzados');
+    tbody.innerHTML = '';
+
+    if (!data || data.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="10">No se encontraron datos con los filtros aplicados.</td></tr>';
+        return;
+    }
+
+    data.forEach(item => {
+        const tr = document.createElement('tr');
+        
+        let rowContent = '';
+        if (item.tipo === 'cliente') {
+            rowContent = `
+                <td>CLIENTE</td>
+                <td>${item.curp || ''}</td>
+                <td>${item.nombre || ''}</td>
+                <td>${item.poblacion_grupo || ''}</td>
+                <td>${item.ruta || ''}</td>
+                <td>${item.office || ''}</td>
+                <td>${item.fechaRegistro ? new Date(item.fechaRegistro).toLocaleDateString() : ''}</td>
+                <td>-</td>
+                <td>-</td>
+                <td>-</td>
+            `;
+        } else if (item.tipo === 'credito') {
+            rowContent = `
+                <td>CRÉDITO</td>
+                <td>${item.curpCliente || ''}</td>
+                <td>${item.nombreCliente || ''}</td>
+                <td>${item.poblacion_grupo || ''}</td>
+                <td>${item.ruta || ''}</td>
+                <td>${item.office || ''}</td>
+                <td>${item.fechaCreacion ? new Date(item.fechaCreacion).toLocaleDateString() : ''}</td>
+                <td>${item.tipo || ''}</td>
+                <td>$${item.monto ? item.monto.toLocaleString() : '0'}</td>
+                <td>$${item.saldo ? item.saldo.toLocaleString() : '0'}</td>
+            `;
+        } else if (item.tipo === 'pago') {
+            rowContent = `
+                <td>PAGO</td>
+                <td>${item.curpCliente || ''}</td>
+                <td>${item.nombreCliente || ''}</td>
+                <td>${item.poblacion_grupo || ''}</td>
+                <td>${item.ruta || ''}</td>
+                <td>${item.office || ''}</td>
+                <td>${item.fecha ? new Date(item.fecha).toLocaleDateString() : ''}</td>
+                <td>${item.tipoPago || ''}</td>
+                <td>$${item.monto ? item.monto.toLocaleString() : '0'}</td>
+                <td>$${item.saldoDespues ? item.saldoDespues.toLocaleString() : '0'}</td>
+            `;
+        }
+
+        tr.innerHTML = rowContent;
+        tbody.appendChild(tr);
+    });
+
+    // Mostrar estadísticas del reporte
+    const totalRegistros = data.length;
+    const totalClientes = data.filter(item => item.tipo === 'cliente').length;
+    const totalCreditos = data.filter(item => item.tipo === 'credito').length;
+    const totalPagos = data.filter(item => item.tipo === 'pago').length;
+    const totalMontoPagos = data.filter(item => item.tipo === 'pago').reduce((sum, item) => sum + (item.monto || 0), 0);
+
+    document.getElementById('estadisticas-reporte').innerHTML = `
+        <div class="status-message status-info">
+            <strong>Estadísticas del Reporte:</strong><br>
+            Total Registros: ${totalRegistros} | 
+            Clientes: ${totalClientes} | 
+            Créditos: ${totalCreditos} | 
+            Pagos: ${totalPagos} | 
+            Total Pagado: $${totalMontoPagos.toLocaleString()}
+        </div>
+    `;
+}
+
+function exportToCSV() {
+    if (!reportData || reportData.length === 0) {
+        alert('No hay datos para exportar. Genera un reporte primero.');
+        return;
+    }
+
+    showProcessingOverlay(true, 'Generando archivo CSV...');
+
+    try {
+        const headers = ['Tipo', 'CURP', 'Nombre', 'Grupo/Población', 'Ruta', 'Sucursal', 'Fecha', 'Tipo Operación', 'Monto', 'Saldo'];
+        let csvContent = headers.join(',') + '\n';
+
+        reportData.forEach(item => {
+            let row = [];
+            
+            if (item.tipo === 'cliente') {
+                row = [
+                    'CLIENTE',
+                    item.curp || '',
+                    `"${item.nombre || ''}"`,
+                    item.poblacion_grupo || '',
+                    item.ruta || '',
+                    item.office || '',
+                    item.fechaRegistro ? new Date(item.fechaRegistro).toLocaleDateString() : '',
+                    '',
+                    '',
+                    ''
+                ];
+            } else if (item.tipo === 'credito') {
+                row = [
+                    'CRÉDITO',
+                    item.curpCliente || '',
+                    `"${item.nombreCliente || ''}"`,
+                    item.poblacion_grupo || '',
+                    item.ruta || '',
+                    item.office || '',
+                    item.fechaCreacion ? new Date(item.fechaCreacion).toLocaleDateString() : '',
+                    item.tipo || '',
+                    item.monto || 0,
+                    item.saldo || 0
+                ];
+            } else if (item.tipo === 'pago') {
+                row = [
+                    'PAGO',
+                    item.curpCliente || '',
+                    `"${item.nombreCliente || ''}"`,
+                    item.poblacion_grupo || '',
+                    item.ruta || '',
+                    item.office || '',
+                    item.fecha ? new Date(item.fecha).toLocaleDateString() : '',
+                    item.tipoPago || '',
+                    item.monto || 0,
+                    item.saldoDespues || 0
+                ];
+            }
+
+            csvContent += row.join(',') + '\n';
+        });
+
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        const url = URL.createObjectURL(blob);
+        link.setAttribute('href', url);
+        link.setAttribute('download', `reporte_finzana_${new Date().toISOString().split('T')[0]}.csv`);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        showStatus('status_reportes_avanzados', 'Archivo CSV exportado exitosamente.', 'success');
+    } catch (error) {
+        console.error('Error exportando CSV:', error);
+        showStatus('status_reportes_avanzados', 'Error al exportar CSV: ' + error.message, 'error');
+    } finally {
+        showProcessingOverlay(false);
+    }
+}
+
+function exportToPDF() {
+    if (!reportData || reportData.length === 0) {
+        alert('No hay datos para exportar. Genera un reporte primero.');
+        return;
+    }
+
+    showProcessingOverlay(true, 'Generando archivo PDF...');
+
+    try {
+        // Usar html2pdf para generar el PDF
+        const element = document.getElementById('view-reportes-avanzados');
+        const opt = {
+            margin: 1,
+            filename: `reporte_finzana_${new Date().toISOString().split('T')[0]}.pdf`,
+            image: { type: 'jpeg', quality: 0.98 },
+            html2canvas: { scale: 2 },
+            jsPDF: { unit: 'cm', format: 'a4', orientation: 'landscape' }
+        };
+
+        // Crear una copia temporal del contenido para el PDF
+        const tempElement = element.cloneNode(true);
+        tempElement.style.width = '100%';
+        tempElement.style.padding = '20px';
+        
+        // Ocultar botones de exportación en el PDF
+        const exportButtons = tempElement.querySelector('.export-buttons');
+        if (exportButtons) exportButtons.style.display = 'none';
+
+        document.body.appendChild(tempElement);
+        
+        html2pdf().set(opt).from(tempElement).save().then(() => {
+            document.body.removeChild(tempElement);
+            showStatus('status_reportes_avanzados', 'Archivo PDF exportado exitosamente.', 'success');
+        });
+
+    } catch (error) {
+        console.error('Error exportando PDF:', error);
+        showStatus('status_reportes_avanzados', 'Error al exportar PDF: ' + error.message, 'error');
+        showProcessingOverlay(false);
+    }
+}
+
+// Funciones auxiliares para edición/eliminación (placeholder)
 async function editCliente(docId) {
     alert("La función para editar clientes aún no está implementada en esta versión.");
 }
 
 async function deleteCliente(docId) {
-    alert("La función para eliminar clientes aún no está implementada en esta versión.");
+    if (confirm("¿Estás seguro de que deseas eliminar este cliente? Esta acción no se puede deshacer.")) {
+        alert("La función para eliminar clientes aún no está implementada en esta versión.");
+    }
 }
