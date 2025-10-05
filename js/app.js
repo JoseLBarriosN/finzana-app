@@ -8,14 +8,17 @@ let currentImportTab = 'clientes';
 let reportData = null;
 
 document.addEventListener('DOMContentLoaded', function () {
+    console.log('DOM cargado, inicializando aplicación...');
+    
     // Inicializar dropdowns primero
     inicializarDropdowns();
     
-    // El resto de la inicialización
+    // Configurar event listeners
     setupEventListeners();
 
     // El nuevo manejador de estado de autenticación de Firebase
     auth.onAuthStateChanged(user => {
+        console.log('Estado de autenticación cambiado:', user);
         if (user) {
             // Usuario ha iniciado sesión
             currentUser = user;
@@ -46,66 +49,152 @@ document.addEventListener('DOMContentLoaded', function () {
 });
 
 function setupEventListeners() {
+    console.log('Configurando event listeners...');
+    
     // Sistema de Autenticación
-    document.getElementById('login-form').addEventListener('submit', handleLogin);
-    document.getElementById('logout-btn').addEventListener('click', () => auth.signOut());
+    const loginForm = document.getElementById('login-form');
+    if (loginForm) {
+        loginForm.addEventListener('submit', handleLogin);
+    }
+
+    const logoutBtn = document.getElementById('logout-btn');
+    if (logoutBtn) {
+        logoutBtn.addEventListener('click', () => auth.signOut());
+    }
 
     // Navegación Principal
     document.querySelectorAll('[data-view]').forEach(button => {
-        button.addEventListener('click', function () { showView(this.getAttribute('data-view')); });
+        button.addEventListener('click', function () { 
+            showView(this.getAttribute('data-view')); 
+        });
     });
 
     // Gestión de Clientes
-    document.getElementById('btn-aplicar-filtros').addEventListener('click', loadClientesTable);
-    document.getElementById('btn-limpiar-filtros').addEventListener('click', limpiarFiltrosClientes);
+    const btnAplicarFiltros = document.getElementById('btn-aplicar-filtros');
+    if (btnAplicarFiltros) {
+        btnAplicarFiltros.addEventListener('click', loadClientesTable);
+    }
+
+    const btnLimpiarFiltros = document.getElementById('btn-limpiar-filtros');
+    if (btnLimpiarFiltros) {
+        btnLimpiarFiltros.addEventListener('click', limpiarFiltrosClientes);
+    }
 
     // Importación de Datos
-    document.getElementById('office-select').addEventListener('change', handleOfficeChange);
-    document.querySelectorAll('.import-tab').forEach(tab => tab.addEventListener('click', handleTabClick));
-    document.getElementById('btn-procesar-importacion').addEventListener('click', handleImport);
-    document.getElementById('btn-limpiar-datos').addEventListener('click', async () => {
-        if (confirm('¿Estás seguro de que deseas limpiar TODA la base de datos en la nube? Esta acción es experimental y no se puede deshacer.')) {
-            showStatus('estado-importacion', 'La limpieza masiva debe hacerse desde la consola de Firebase o con Cloud Functions para mayor seguridad.', 'info');
-        }
+    const officeSelect = document.getElementById('office-select');
+    if (officeSelect) {
+        officeSelect.addEventListener('change', handleOfficeChange);
+    }
+
+    document.querySelectorAll('.import-tab').forEach(tab => {
+        tab.addEventListener('click', handleTabClick);
     });
+
+    const btnProcesarImportacion = document.getElementById('btn-procesar-importacion');
+    if (btnProcesarImportacion) {
+        btnProcesarImportacion.addEventListener('click', handleImport);
+    }
+
+    const btnLimpiarDatos = document.getElementById('btn-limpiar-datos');
+    if (btnLimpiarDatos) {
+        btnLimpiarDatos.addEventListener('click', async () => {
+            if (confirm('¿Estás seguro de que deseas limpiar TODA la base de datos en la nube? Esta acción es experimental y no se puede deshacer.')) {
+                showStatus('estado-importacion', 'La limpieza masiva debe hacerse desde la consola de Firebase o con Cloud Functions para mayor seguridad.', 'info');
+            }
+        });
+    }
 
     // Gestión de Usuarios (Firebase Auth)
-    document.getElementById('btn-nuevo-usuario').addEventListener('click', () => {
-        showStatus('status_usuarios', 'La creación de usuarios se realiza en la Consola de Firebase > Authentication.', 'info');
-    });
+    const btnNuevoUsuario = document.getElementById('btn-nuevo-usuario');
+    if (btnNuevoUsuario) {
+        btnNuevoUsuario.addEventListener('click', () => {
+            showStatus('status_usuarios', 'La creación de usuarios se realiza en la Consola de Firebase > Authentication.', 'info');
+        });
+    }
 
     // Registrar Cliente
-    document.getElementById('form-cliente').addEventListener('submit', handleClientForm);
-    document.getElementById('curp_cliente').addEventListener('input', function () { validarCURP(this); });
+    const formCliente = document.getElementById('form-cliente');
+    if (formCliente) {
+        formCliente.addEventListener('submit', handleClientForm);
+    }
+
+    const curpCliente = document.getElementById('curp_cliente');
+    if (curpCliente) {
+        curpCliente.addEventListener('input', function () { validarCURP(this); });
+    }
 
     // Generar Crédito
-    document.getElementById('btnBuscarCliente_colocacion').addEventListener('click', handleSearchClientForCredit);
-    document.getElementById('form-credito-submit').addEventListener('submit', handleCreditForm);
-    document.getElementById('curpAval_colocacion').addEventListener('input', function () { validarCURP(this); });
-    document.getElementById('monto_colocacion').addEventListener('change', calcularMontoTotalColocacion);
-    document.getElementById('plazo_colocacion').addEventListener('change', calcularMontoTotalColocacion);
+    const btnBuscarClienteColocacion = document.getElementById('btnBuscarCliente_colocacion');
+    if (btnBuscarClienteColocacion) {
+        btnBuscarClienteColocacion.addEventListener('click', handleSearchClientForCredit);
+    }
+
+    const formCreditoSubmit = document.getElementById('form-credito-submit');
+    if (formCreditoSubmit) {
+        formCreditoSubmit.addEventListener('submit', handleCreditForm);
+    }
+
+    const curpAvalColocacion = document.getElementById('curpAval_colocacion');
+    if (curpAvalColocacion) {
+        curpAvalColocacion.addEventListener('input', function () { validarCURP(this); });
+    }
+
+    const montoColocacion = document.getElementById('monto_colocacion');
+    if (montoColocacion) {
+        montoColocacion.addEventListener('change', calcularMontoTotalColocacion);
+    }
+
+    const plazoColocacion = document.getElementById('plazo_colocacion');
+    if (plazoColocacion) {
+        plazoColocacion.addEventListener('change', calcularMontoTotalColocacion);
+    }
 
     // Registrar Pago
-    document.getElementById('btnBuscarCredito_cobranza').addEventListener('click', handleSearchCreditForPayment);
-    document.getElementById('form-pago-submit').addEventListener('submit', handlePaymentForm);
-    document.getElementById('monto_cobranza').addEventListener('input', handleMontoPagoChange);
+    const btnBuscarCreditoCobranza = document.getElementById('btnBuscarCredito_cobranza');
+    if (btnBuscarCreditoCobranza) {
+        btnBuscarCreditoCobranza.addEventListener('click', handleSearchCreditForPayment);
+    }
+
+    const formPagoSubmit = document.getElementById('form-pago-submit');
+    if (formPagoSubmit) {
+        formPagoSubmit.addEventListener('submit', handlePaymentForm);
+    }
+
+    const montoCobranza = document.getElementById('monto_cobranza');
+    if (montoCobranza) {
+        montoCobranza.addEventListener('input', handleMontoPagoChange);
+    }
 
     // Reportes Básicos
-    document.getElementById('btn-actualizar-reportes').addEventListener('click', async () => {
-        await loadBasicReports();
-    });
+    const btnActualizarReportes = document.getElementById('btn-actualizar-reportes');
+    if (btnActualizarReportes) {
+        btnActualizarReportes.addEventListener('click', async () => {
+            await loadBasicReports();
+        });
+    }
 
     // Reportes Avanzados
-    document.getElementById('btn-aplicar-filtros-reportes').addEventListener('click', loadAdvancedReports);
-    document.getElementById('btn-exportar-csv').addEventListener('click', exportToCSV);
-    document.getElementById('btn-exportar-pdf').addEventListener('click', exportToPDF);
-    document.getElementById('btn-limpiar-filtros-reportes').addEventListener('click', limpiarFiltrosReportes);
+    const btnAplicarFiltrosReportes = document.getElementById('btn-aplicar-filtros-reportes');
+    if (btnAplicarFiltrosReportes) {
+        btnAplicarFiltrosReportes.addEventListener('click', loadAdvancedReports);
+    }
 
-    // Eventos de Vistas
-    document.getElementById('view-reportes').addEventListener('viewshown', () => document.getElementById('btn-actualizar-reportes').click());
-    document.getElementById('view-reportes-avanzados').addEventListener('viewshown', inicializarVistaReportesAvanzados);
-    document.getElementById('view-usuarios').addEventListener('viewshown', loadUsersTable);
-    document.getElementById('view-gestion-clientes').addEventListener('viewshown', inicializarVistaGestionClientes);
+    const btnExportarCsv = document.getElementById('btn-exportar-csv');
+    if (btnExportarCsv) {
+        btnExportarCsv.addEventListener('click', exportToCSV);
+    }
+
+    const btnExportarPdf = document.getElementById('btn-exportar-pdf');
+    if (btnExportarPdf) {
+        btnExportarPdf.addEventListener('click', exportToPDF);
+    }
+
+    const btnLimpiarFiltrosReportes = document.getElementById('btn-limpiar-filtros-reportes');
+    if (btnLimpiarFiltrosReportes) {
+        btnLimpiarFiltrosReportes.addEventListener('click', limpiarFiltrosReportes);
+    }
+
+    console.log('Event listeners configurados correctamente');
 }
 
 // =============================================
@@ -119,6 +208,7 @@ async function handleLogin(e) {
     const statusElement = document.getElementById('auth-status');
 
     try {
+        showButtonLoading('login-form button', true, 'Iniciando sesión...');
         statusElement.textContent = 'Iniciando sesión...';
         statusElement.className = 'status-message status-info';
         await auth.signInWithEmailAndPassword(email, password);
@@ -127,6 +217,8 @@ async function handleLogin(e) {
         console.error("Error de inicio de sesión:", error.code);
         statusElement.textContent = 'Error: correo o contraseña incorrectos.';
         statusElement.className = 'status-message status-error';
+    } finally {
+        showButtonLoading('login-form button', false);
     }
 }
 
@@ -137,17 +229,25 @@ function handleOfficeChange() {
     document.getElementById('import-leon-section').classList.toggle('hidden', isGDL);
     currentImportTab = 'clientes';
     const selector = isGDL ? '#import-gdl-section .import-tab[data-tab="clientes"]' : '#import-leon-section .import-tab[data-tab="clientes"]';
-    handleTabClick.call(document.querySelector(selector));
+    const tabElement = document.querySelector(selector);
+    if (tabElement) {
+        handleTabClick.call(tabElement);
+    }
 }
 
 function handleTabClick() {
     const parentSection = this.closest('[id$="-section"]');
+    if (!parentSection) return;
+    
     parentSection.querySelectorAll('.import-tab').forEach(t => t.classList.remove('active'));
     this.classList.add('active');
     currentImportTab = this.getAttribute('data-tab');
     parentSection.querySelectorAll('.import-tab-content').forEach(c => c.classList.add('hidden'));
     const officePrefix = parentSection.id.includes('gdl') ? 'gdl' : 'leon';
-    document.getElementById(`tab-${officePrefix}-${currentImportTab}`).classList.remove('hidden');
+    const targetTab = document.getElementById(`tab-${officePrefix}-${currentImportTab}`);
+    if (targetTab) {
+        targetTab.classList.remove('hidden');
+    }
 }
 
 async function handleImport() {
@@ -162,6 +262,7 @@ async function handleImport() {
     }
 
     showProcessingOverlay(true, 'Importando datos...');
+    showButtonLoading('btn-procesar-importacion', true, 'Importando...');
     
     try {
         const resultado = await database.importarDatosDesdeCSV(csvData, currentImportTab, office);
@@ -180,6 +281,7 @@ async function handleImport() {
         showStatus('estado-importacion', `Error en importación: ${error.message}`, 'error');
     } finally {
         showProcessingOverlay(false);
+        showButtonLoading('btn-procesar-importacion', false);
     }
 }
 
@@ -195,6 +297,9 @@ async function handleClientForm(e) {
         showStatus('status_cliente', 'El CURP debe tener 18 caracteres.', 'error');
         return;
     }
+    
+    showButtonLoading('#form-cliente button[type="submit"]', true, 'Guardando...');
+    
     const cliente = {
         curp,
         nombre: document.getElementById('nombre_cliente').value,
@@ -204,13 +309,22 @@ async function handleClientForm(e) {
         poblacion_grupo: document.getElementById('poblacion_grupo_cliente').value,
         ruta: document.getElementById('ruta_cliente').value
     };
+    
     if (!cliente.nombre || !cliente.domicilio || !cliente.poblacion_grupo || !cliente.ruta) {
         showStatus('status_cliente', 'Los campos con * son obligatorios.', 'error');
+        showButtonLoading('#form-cliente button[type="submit"]', false);
         return;
     }
-    const resultado = await database.agregarCliente(cliente);
-    showStatus('status_cliente', resultado.message, resultado.success ? 'success' : 'error');
-    if (resultado.success) e.target.reset();
+    
+    try {
+        const resultado = await database.agregarCliente(cliente);
+        showStatus('status_cliente', resultado.message, resultado.success ? 'success' : 'error');
+        if (resultado.success) e.target.reset();
+    } catch (error) {
+        showStatus('status_cliente', 'Error al guardar el cliente: ' + error.message, 'error');
+    } finally {
+        showButtonLoading('#form-cliente button[type="submit"]', false);
+    }
 }
 
 async function handleSearchClientForCredit() {
@@ -219,24 +333,33 @@ async function handleSearchClientForCredit() {
         showStatus('status_colocacion', 'El CURP debe tener 18 caracteres.', 'error');
         return;
     }
-    const cliente = await database.buscarClientePorCURP(curp);
-    if (cliente) {
-        const esElegible = await verificarElegibilidadRenovacion(curp);
-        if (!esElegible) {
-            showStatus('status_colocacion', `El cliente tiene un crédito activo que no cumple los requisitos para renovación (10 pagos puntuales).`, 'error');
+    
+    showButtonLoading('btnBuscarCliente_colocacion', true, 'Buscando...');
+    
+    try {
+        const cliente = await database.buscarClientePorCURP(curp);
+        if (cliente) {
+            const esElegible = await verificarElegibilidadRenovacion(curp);
+            if (!esElegible) {
+                showStatus('status_colocacion', `El cliente tiene un crédito activo que no cumple los requisitos para renovación (10 pagos puntuales).`, 'error');
+                document.getElementById('form-colocacion').classList.add('hidden');
+                return;
+            }
+
+            const creditoActivo = await database.buscarCreditoActivoPorCliente(curp);
+            showStatus('status_colocacion', creditoActivo ? 'Cliente encontrado y elegible para renovación.' : 'Cliente encontrado y elegible para crédito nuevo.', 'success');
+
+            document.getElementById('nombre_colocacion').value = cliente.nombre;
+            document.getElementById('idCredito_colocacion').value = 'Se asignará automáticamente';
+            document.getElementById('form-colocacion').classList.remove('hidden');
+        } else {
+            showStatus('status_colocacion', 'Cliente no encontrado. Registre al cliente primero.', 'error');
             document.getElementById('form-colocacion').classList.add('hidden');
-            return;
         }
-
-        const creditoActivo = await database.buscarCreditoActivoPorCliente(curp);
-        showStatus('status_colocacion', creditoActivo ? 'Cliente encontrado y elegible para renovación.' : 'Cliente encontrado y elegible para crédito nuevo.', 'success');
-
-        document.getElementById('nombre_colocacion').value = cliente.nombre;
-        document.getElementById('idCredito_colocacion').value = 'Se asignará automáticamente';
-        document.getElementById('form-colocacion').classList.remove('hidden');
-    } else {
-        showStatus('status_colocacion', 'Cliente no encontrado. Registre al cliente primero.', 'error');
-        document.getElementById('form-colocacion').classList.add('hidden');
+    } catch (error) {
+        showStatus('status_colocacion', 'Error al buscar cliente: ' + error.message, 'error');
+    } finally {
+        showButtonLoading('btnBuscarCliente_colocacion', false);
     }
 }
 
@@ -251,47 +374,66 @@ async function handleCreditForm(e) {
         curpAval,
         nombreAval: document.getElementById('nombreAval_colocacion').value
     };
+    
     if (!credito.monto || !credito.plazo || !credito.tipo || !credito.nombreAval.trim() || !validarFormatoCURP(curpAval)) {
         showStatus('status_colocacion', 'Todos los campos son obligatorios y el CURP del aval debe ser válido.', 'error');
         return;
     }
-    const resultado = await database.agregarCredito(credito);
-    if (resultado.success) {
-        showStatus('status_colocacion', `${resultado.message}. ID de crédito: ${resultado.data.id}`, 'success');
-        e.target.reset();
-        document.getElementById('form-colocacion').classList.add('hidden');
-        document.getElementById('curp_colocacion').value = '';
-    } else {
-        showStatus('status_colocacion', resultado.message, 'error');
+    
+    showButtonLoading('#form-credito-submit button[type="submit"]', true, 'Generando crédito...');
+    
+    try {
+        const resultado = await database.agregarCredito(credito);
+        if (resultado.success) {
+            showStatus('status_colocacion', `${resultado.message}. ID de crédito: ${resultado.data.id}`, 'success');
+            e.target.reset();
+            document.getElementById('form-colocacion').classList.add('hidden');
+            document.getElementById('curp_colocacion').value = '';
+        } else {
+            showStatus('status_colocacion', resultado.message, 'error');
+        }
+    } catch (error) {
+        showStatus('status_colocacion', 'Error al generar crédito: ' + error.message, 'error');
+    } finally {
+        showButtonLoading('#form-credito-submit button[type="submit"]', false);
     }
 }
 
 async function handleSearchCreditForPayment() {
     const idCredito = document.getElementById('idCredito_cobranza').value.trim();
-    creditoActual = await database.buscarCreditoPorId(idCredito);
-    if (creditoActual) {
-        const cliente = await database.buscarClientePorCURP(creditoActual.curpCliente);
-        const historial = await obtenerHistorialCreditoCliente(creditoActual.curpCliente);
+    
+    showButtonLoading('btnBuscarCredito_cobranza', true, 'Buscando...');
+    
+    try {
+        creditoActual = await database.buscarCreditoPorId(idCredito);
+        if (creditoActual) {
+            const cliente = await database.buscarClientePorCURP(creditoActual.curpCliente);
+            const historial = await obtenerHistorialCreditoCliente(creditoActual.curpCliente);
 
-        if (historial) {
-            document.getElementById('nombre_cobranza').value = cliente ? cliente.nombre : 'N/A';
-            document.getElementById('saldo_cobranza').value = `$${historial.saldoRestante.toLocaleString()}`;
-            document.getElementById('estado_cobranza').value = historial.estado.toUpperCase();
-            document.getElementById('semanas_atraso_cobranza').value = historial.semanasAtraso || 0;
-            document.getElementById('pago_semanal_cobranza').value = `$${historial.pagoSemanal.toLocaleString()}`;
-            document.getElementById('fecha_proximo_pago_cobranza').value = historial.proximaFechaPago;
-            document.getElementById('monto_cobranza').value = historial.pagoSemanal.toFixed(2);
+            if (historial) {
+                document.getElementById('nombre_cobranza').value = cliente ? cliente.nombre : 'N/A';
+                document.getElementById('saldo_cobranza').value = `$${historial.saldoRestante.toLocaleString()}`;
+                document.getElementById('estado_cobranza').value = historial.estado.toUpperCase();
+                document.getElementById('semanas_atraso_cobranza').value = historial.semanasAtraso || 0;
+                document.getElementById('pago_semanal_cobranza').value = `$${historial.pagoSemanal.toLocaleString()}`;
+                document.getElementById('fecha_proximo_pago_cobranza').value = historial.proximaFechaPago;
+                document.getElementById('monto_cobranza').value = historial.pagoSemanal.toFixed(2);
 
-            handleMontoPagoChange();
+                handleMontoPagoChange();
 
-            document.getElementById('form-cobranza').classList.remove('hidden');
-            showStatus('status_cobranza', 'Crédito encontrado.', 'success');
+                document.getElementById('form-cobranza').classList.remove('hidden');
+                showStatus('status_cobranza', 'Crédito encontrado.', 'success');
+            } else {
+                showStatus('status_cobranza', 'No se pudo calcular el historial del crédito.', 'error');
+            }
         } else {
-            showStatus('status_cobranza', 'No se pudo calcular el historial del crédito.', 'error');
+            showStatus('status_cobranza', 'Crédito no encontrado.', 'error');
+            document.getElementById('form-cobranza').classList.add('hidden');
         }
-    } else {
-        showStatus('status_cobranza', 'Crédito no encontrado.', 'error');
-        document.getElementById('form-cobranza').classList.add('hidden');
+    } catch (error) {
+        showStatus('status_cobranza', 'Error al buscar crédito: ' + error.message, 'error');
+    } finally {
+        showButtonLoading('btnBuscarCredito_cobranza', false);
     }
 }
 
@@ -302,16 +444,26 @@ async function handlePaymentForm(e) {
         monto: parseFloat(document.getElementById('monto_cobranza').value),
         tipoPago: document.getElementById('tipo_cobranza').value
     };
+    
     if (!pago.monto || pago.monto <= 0) {
         showStatus('status_cobranza', 'El monto del pago debe ser mayor a cero.', 'error');
         return;
     }
-    const resultado = await database.agregarPago(pago);
-    showStatus('status_cobranza', resultado.message, resultado.success ? 'success' : 'error');
-    if (resultado.success) {
-        document.getElementById('form-cobranza').classList.add('hidden');
-        document.getElementById('idCredito_cobranza').value = '';
-        creditoActual = null;
+    
+    showButtonLoading('#form-pago-submit button[type="submit"]', true, 'Registrando pago...');
+    
+    try {
+        const resultado = await database.agregarPago(pago);
+        showStatus('status_cobranza', resultado.message, resultado.success ? 'success' : 'error');
+        if (resultado.success) {
+            document.getElementById('form-cobranza').classList.add('hidden');
+            document.getElementById('idCredito_cobranza').value = '';
+            creditoActual = null;
+        }
+    } catch (error) {
+        showStatus('status_cobranza', 'Error al registrar pago: ' + error.message, 'error');
+    } finally {
+        showButtonLoading('#form-pago-submit button[type="submit"]', false);
     }
 }
 
@@ -327,18 +479,22 @@ function handleMontoPagoChange() {
 // =============================================
 
 function showView(viewId) {
+    console.log('Mostrando vista:', viewId);
     document.querySelectorAll('.view').forEach(view => view.classList.add('hidden'));
     const targetView = document.getElementById(viewId);
     if (targetView) {
         targetView.classList.remove('hidden');
-        targetView.dispatchEvent(new Event('viewshown'));
+        // Disparar evento personalizado para que las vistas se inicialicen
+        targetView.dispatchEvent(new CustomEvent('viewshown', { detail: { viewId } }));
     }
 }
 
 function showStatus(elementId, message, type) {
     const element = document.getElementById(elementId);
-    element.innerHTML = message;
-    element.className = 'status-message ' + (type === 'success' ? 'status-success' : type === 'error' ? 'status-error' : 'status-info');
+    if (element) {
+        element.innerHTML = message;
+        element.className = 'status-message ' + (type === 'success' ? 'status-success' : type === 'error' ? 'status-error' : 'status-info');
+    }
 }
 
 function showProcessingOverlay(show, message = 'Procesando...') {
@@ -349,16 +505,70 @@ function showProcessingOverlay(show, message = 'Procesando...') {
         overlay.className = 'processing-overlay hidden';
         overlay.innerHTML = `
             <div class="processing-spinner"></div>
-            <div id="processing-message">${message}</div>
+            <div id="processing-message" class="processing-message">${message}</div>
         `;
         document.body.appendChild(overlay);
     }
     
+    const messageElement = document.getElementById('processing-message');
+    if (messageElement) {
+        messageElement.textContent = message;
+    }
+    
     if (show) {
-        document.getElementById('processing-message').textContent = message;
         overlay.classList.remove('hidden');
     } else {
         overlay.classList.add('hidden');
+    }
+}
+
+function showButtonLoading(selector, show, text = 'Procesando...') {
+    const button = document.querySelector(selector);
+    if (!button) return;
+    
+    if (show) {
+        const originalText = button.textContent;
+        button.setAttribute('data-original-text', originalText);
+        button.innerHTML = text;
+        button.classList.add('btn-loading');
+        button.disabled = true;
+    } else {
+        const originalText = button.getAttribute('data-original-text') || button.textContent;
+        button.innerHTML = originalText;
+        button.classList.remove('btn-loading');
+        button.disabled = false;
+    }
+}
+
+function showProgress(percent, message = '') {
+    let progressContainer = document.getElementById('progress-container');
+    let progressBar = document.getElementById('progress-bar');
+    let progressText = document.getElementById('progress-text');
+    
+    if (!progressContainer) {
+        progressContainer = document.createElement('div');
+        progressContainer.id = 'progress-container';
+        progressContainer.className = 'progress-container';
+        progressContainer.innerHTML = `
+            <div id="progress-bar" class="progress-bar"></div>
+            <div id="progress-text" class="progress-text"></div>
+        `;
+        document.body.appendChild(progressContainer);
+    }
+    
+    if (progressBar) {
+        progressBar.style.width = percent + '%';
+    }
+    
+    if (progressText && message) {
+        progressText.textContent = message;
+    }
+}
+
+function hideProgress() {
+    const progressContainer = document.getElementById('progress-container');
+    if (progressContainer) {
+        progressContainer.remove();
     }
 }
 
@@ -377,6 +587,7 @@ function validarFormatoCURP(curp) {
 }
 
 function inicializarDropdowns() {
+    console.log('Inicializando dropdowns...');
     const poblaciones = ['LA CALERA', 'ATEQUIZA', 'SAN JACINTO', 'PONCITLAN', 'OCOTLAN', 'ARENAL', 'AMATITAN', 'ACATLAN DE JUAREZ', 'BELLAVISTA', 'SAN ISIDRO MAZATEPEC', 'TALA', 'CUISILLOS', 'HUAXTLA', 'NEXTIPAC', 'SANTA LUCIA', 'JAMAY', 'LA BARCA', 'SAN JUAN DE OCOTAN', 'TALA 2', 'EL HUMEDO', 'NEXTIPAC 2', 'ZZ PUEBLO'];
     const rutas = ['AUDITORIA', 'SUPERVISION', 'ADMINISTRACION', 'DIRECCION', 'COMERCIAL', 'COBRANZA', 'R1', 'R2', 'R3', 'JC1', 'RX'];
     const tiposCredito = ['NUEVO', 'RENOVACION', 'REINGRESO'];
@@ -420,6 +631,8 @@ function inicializarDropdowns() {
     popularDropdown('tipo_credito_filtro_reporte', tiposCredito.map(t => ({ value: t.toLowerCase(), text: t })), 'Todos', true);
     popularDropdown('estado_credito_filtro_reporte', estadosCredito.map(e => ({ value: e, text: e.toUpperCase() })), 'Todos', true);
     popularDropdown('tipo_pago_filtro_reporte', tiposPago.map(t => ({ value: t, text: t.toUpperCase() })), 'Todos', true);
+    
+    console.log('Dropdowns inicializados correctamente');
 }
 
 // =============================================
@@ -497,96 +710,141 @@ async function verificarElegibilidadRenovacion(curp) {
 // =============================================
 
 function inicializarVistaGestionClientes() {
-    document.getElementById('tabla-clientes').innerHTML = `<tr><td colspan="6">Utiliza los filtros para buscar y mostrar clientes.</td></tr>`;
+    const tbody = document.getElementById('tabla-clientes');
+    if (tbody) {
+        tbody.innerHTML = `<tr><td colspan="6">Utiliza los filtros para buscar y mostrar clientes.</td></tr>`;
+    }
 }
 
 function limpiarFiltrosClientes() {
-    document.getElementById('filtros-grid').querySelectorAll('input, select').forEach(el => el.value = '');
+    const filtrosGrid = document.getElementById('filtros-grid');
+    if (filtrosGrid) {
+        filtrosGrid.querySelectorAll('input, select').forEach(el => el.value = '');
+    }
     inicializarVistaGestionClientes();
 }
 
 async function loadClientesTable() {
     const tbody = document.getElementById('tabla-clientes');
+    if (!tbody) return;
+    
     tbody.innerHTML = '<tr><td colspan="6">Buscando...</td></tr>';
-    const filtros = {
-        sucursal: document.getElementById('sucursal_filtro').value,
-        curp: document.getElementById('curp_filtro').value.toLowerCase(),
-        nombre: document.getElementById('nombre_filtro').value.toLowerCase(),
-        fechaRegistro: document.getElementById('fecha_registro_filtro').value,
-        fechaCredito: document.getElementById('fecha_credito_filtro').value,
-        tipo: document.getElementById('tipo_colocacion_filtro').value,
-        plazo: document.getElementById('plazo_filtro').value,
-        curpAval: document.getElementById('curp_aval_filtro').value.toLowerCase(),
-        grupo: document.getElementById('grupo_filtro').value
-    };
+    
+    showButtonLoading('btn-aplicar-filtros', true, 'Buscando...');
+    
+    try {
+        const filtros = {
+            sucursal: document.getElementById('sucursal_filtro')?.value || '',
+            curp: document.getElementById('curp_filtro')?.value.toLowerCase() || '',
+            nombre: document.getElementById('nombre_filtro')?.value.toLowerCase() || '',
+            fechaRegistro: document.getElementById('fecha_registro_filtro')?.value || '',
+            fechaCredito: document.getElementById('fecha_credito_filtro')?.value || '',
+            tipo: document.getElementById('tipo_colocacion_filtro')?.value || '',
+            plazo: document.getElementById('plazo_filtro')?.value || '',
+            curpAval: document.getElementById('curp_aval_filtro')?.value.toLowerCase() || '',
+            grupo: document.getElementById('grupo_filtro')?.value || ''
+        };
 
-    const hayFiltros = Object.values(filtros).some(val => val && val.trim() !== '');
-    if (!hayFiltros) {
-        tbody.innerHTML = '<tr><td colspan="6">Por favor, especifica al menos un criterio de búsqueda.</td></tr>';
-        return;
-    }
-
-    const clientesFiltrados = await database.buscarClientes(filtros);
-
-    tbody.innerHTML = '';
-    if (clientesFiltrados.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6">No se encontraron clientes con los filtros aplicados.</td></tr>';
-        return;
-    }
-
-    for (const cliente of clientesFiltrados) {
-        const tr = document.createElement('tr');
-        const historial = await obtenerHistorialCreditoCliente(cliente.curp);
-        let infoCreditoHTML = '<em>Sin historial</em>';
-
-        if (historial) {
-            let estadoHTML = '', detallesHTML = '', estadoClase = '';
-            switch (historial.estado) {
-                case 'al corriente': estadoClase = 'status-al-corriente'; break;
-                case 'atrasado': estadoClase = 'status-atrasado'; break;
-                case 'cobranza': estadoClase = 'status-cobranza'; break;
-                case 'juridico': estadoClase = 'status-juridico'; break;
-                case 'liquidado': estadoClase = 'status-al-corriente'; break;
-            }
-            estadoHTML = `<span class="info-value ${estadoClase}">${historial.estado.toUpperCase()}</span>`;
-            if (historial.estado !== 'liquidado') detallesHTML += `<div class="info-item"><span class="info-label">Saldo:</span><span class="info-value">$${historial.saldoRestante.toLocaleString()}</span></div>`;
-            if (historial.semanasAtraso > 0) detallesHTML += `<div class="info-item"><span class="info-label">Semanas Atraso:</span><span class="info-value">${historial.semanasAtraso}</span></div>`;
-            detallesHTML += `<div class="info-item"><span class="info-label">Último Pago:</span><span class="info-value">${historial.fechaUltimoPago}</span></div>`;
-            infoCreditoHTML = `<div class="credito-info"><div class="info-grid"><div class="info-item"><span class="info-label">Último ID:</span><span class="info-value">${historial.idCredito}</span></div><div class="info-item"><span class="info-label">Estado:</span>${estadoHTML}</div>${detallesHTML}</div></div>`;
+        const hayFiltros = Object.values(filtros).some(val => val && val.trim() !== '');
+        if (!hayFiltros) {
+            tbody.innerHTML = '<tr><td colspan="6">Por favor, especifica al menos un criterio de búsqueda.</td></tr>';
+            return;
         }
 
-        tr.innerHTML = `
-            <td>${cliente.office || 'N/A'}</td>
-            <td>${cliente.curp}</td>
-            <td>${cliente.nombre}</td>
-            <td>${cliente.poblacion_grupo}</td>
-            <td>${infoCreditoHTML}</td>
-            <td class="action-buttons">
-                <button class="btn btn-sm btn-secondary" onclick="editCliente('${cliente.id}')"><i class="fas fa-edit"></i></button>
-                <button class="btn btn-sm btn-danger" onclick="deleteCliente('${cliente.id}')"><i class="fas fa-trash"></i></button>
-            </td>`;
-        tbody.appendChild(tr);
+        const clientesFiltrados = await database.buscarClientes(filtros);
+
+        tbody.innerHTML = '';
+        if (clientesFiltrados.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6">No se encontraron clientes con los filtros aplicados.</td></tr>';
+            return;
+        }
+
+        // Mostrar progreso para muchos clientes
+        if (clientesFiltrados.length > 10) {
+            showProgress(0, 'Cargando información de clientes...');
+        }
+
+        for (let i = 0; i < clientesFiltrados.length; i++) {
+            const cliente = clientesFiltrados[i];
+            const tr = document.createElement('tr');
+            const historial = await obtenerHistorialCreditoCliente(cliente.curp);
+            let infoCreditoHTML = '<em>Sin historial</em>';
+
+            if (historial) {
+                let estadoHTML = '', detallesHTML = '', estadoClase = '';
+                switch (historial.estado) {
+                    case 'al corriente': estadoClase = 'status-al-corriente'; break;
+                    case 'atrasado': estadoClase = 'status-atrasado'; break;
+                    case 'cobranza': estadoClase = 'status-cobranza'; break;
+                    case 'juridico': estadoClase = 'status-juridico'; break;
+                    case 'liquidado': estadoClase = 'status-al-corriente'; break;
+                }
+                estadoHTML = `<span class="info-value ${estadoClase}">${historial.estado.toUpperCase()}</span>`;
+                if (historial.estado !== 'liquidado') detallesHTML += `<div class="info-item"><span class="info-label">Saldo:</span><span class="info-value">$${historial.saldoRestante.toLocaleString()}</span></div>`;
+                if (historial.semanasAtraso > 0) detallesHTML += `<div class="info-item"><span class="info-label">Semanas Atraso:</span><span class="info-value">${historial.semanasAtraso}</span></div>`;
+                detallesHTML += `<div class="info-item"><span class="info-label">Último Pago:</span><span class="info-value">${historial.fechaUltimoPago}</span></div>`;
+                infoCreditoHTML = `<div class="credito-info"><div class="info-grid"><div class="info-item"><span class="info-label">Último ID:</span><span class="info-value">${historial.idCredito}</span></div><div class="info-item"><span class="info-label">Estado:</span>${estadoHTML}</div>${detallesHTML}</div></div>`;
+            }
+
+            tr.innerHTML = `
+                <td>${cliente.office || 'N/A'}</td>
+                <td>${cliente.curp}</td>
+                <td>${cliente.nombre}</td>
+                <td>${cliente.poblacion_grupo}</td>
+                <td>${infoCreditoHTML}</td>
+                <td class="action-buttons">
+                    <button class="btn btn-sm btn-secondary" onclick="editCliente('${cliente.id}')"><i class="fas fa-edit"></i></button>
+                    <button class="btn btn-sm btn-danger" onclick="deleteCliente('${cliente.id}')"><i class="fas fa-trash"></i></button>
+                </td>`;
+            tbody.appendChild(tr);
+            
+            // Actualizar progreso
+            if (clientesFiltrados.length > 10) {
+                showProgress(Math.round((i + 1) / clientesFiltrados.length * 100), `Procesando cliente ${i + 1} de ${clientesFiltrados.length}`);
+            }
+        }
+        
+        if (clientesFiltrados.length > 10) {
+            hideProgress();
+        }
+        
+    } catch (error) {
+        console.error('Error cargando clientes:', error);
+        tbody.innerHTML = '<tr><td colspan="6">Error al cargar los clientes.</td></tr>';
+    } finally {
+        showButtonLoading('btn-aplicar-filtros', false);
     }
 }
 
 async function loadUsersTable() {
-    const userList = await database.getAll('users');
     const tbody = document.getElementById('tabla-usuarios');
-    tbody.innerHTML = '';
-    if (userList && userList.length > 0) {
-        userList.forEach(user => {
-            const tr = document.createElement('tr');
-            tr.innerHTML = `
-                <td>${user.email}</td>
-                <td>${user.name}</td>
-                <td><span class="role-badge role-${user.role}">${user.role}</span></td>
-                <td>${user.office || 'N/A'}</td>
-                <td>${user.uid}</td>
-            `;
-            tbody.appendChild(tr);
-        });
-    } else {
-        tbody.innerHTML = `<tr><td colspan="5">No hay usuarios en la base de datos de perfiles.</td></tr>`;
+    if (!tbody) return;
+    
+    showProcessingOverlay(true, 'Cargando usuarios...');
+    
+    try {
+        const userList = await database.getAll('users');
+        tbody.innerHTML = '';
+        if (userList && userList.length > 0) {
+            userList.forEach(user => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${user.email}</td>
+                    <td>${user.name}</td>
+                    <td><span class="role-badge role-${user.role}">${user.role}</span></td>
+                    <td>${user.office || 'N/A'}</td>
+                    <td>${user.uid}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        } else {
+            tbody.innerHTML = `<tr><td colspan="5">No hay usuarios en la base de datos de perfiles.</td></tr>`;
+        }
+    } catch (error) {
+        console.error('Error cargando usuarios:', error);
+        tbody.innerHTML = `<tr><td colspan="5">Error al cargar usuarios.</td></tr>`;
+    } finally {
+        showProcessingOverlay(false);
     }
 }
 
@@ -596,6 +854,8 @@ async function loadUsersTable() {
 
 async function loadBasicReports() {
     showProcessingOverlay(true, 'Generando reportes...');
+    showButtonLoading('btn-actualizar-reportes', true, 'Generando...');
+    
     try {
         const reportes = await database.generarReportes();
         if (reportes) {
@@ -614,44 +874,58 @@ async function loadBasicReports() {
         showStatus('status_reportes', 'Error al cargar los reportes: ' + error.message, 'error');
     } finally {
         showProcessingOverlay(false);
+        showButtonLoading('btn-actualizar-reportes', false);
     }
 }
 
 function inicializarVistaReportesAvanzados() {
-    document.getElementById('tabla-reportes-avanzados').innerHTML = '<tr><td colspan="10">Aplica los filtros para generar el reporte.</td></tr>';
+    const tbody = document.getElementById('tabla-reportes-avanzados');
+    if (tbody) {
+        tbody.innerHTML = '<tr><td colspan="10">Aplica los filtros para generar el reporte.</td></tr>';
+    }
     // Establecer fechas por defecto (último mes)
     const hoy = new Date();
     const haceUnMes = new Date(hoy.getFullYear(), hoy.getMonth() - 1, hoy.getDate());
-    document.getElementById('fecha_inicio_reporte').value = haceUnMes.toISOString().split('T')[0];
-    document.getElementById('fecha_fin_reporte').value = hoy.toISOString().split('T')[0];
+    const fechaInicio = document.getElementById('fecha_inicio_reporte');
+    const fechaFin = document.getElementById('fecha_fin_reporte');
+    
+    if (fechaInicio) fechaInicio.value = haceUnMes.toISOString().split('T')[0];
+    if (fechaFin) fechaFin.value = hoy.toISOString().split('T')[0];
 }
 
 function limpiarFiltrosReportes() {
-    document.getElementById('filtros-reportes-avanzados').querySelectorAll('input, select').forEach(el => {
-        if (el.type !== 'date') el.value = '';
-    });
+    const filtrosContainer = document.getElementById('filtros-reportes-avanzados');
+    if (filtrosContainer) {
+        filtrosContainer.querySelectorAll('input, select').forEach(el => {
+            if (el.type !== 'date') el.value = '';
+        });
+    }
     // Restaurar fechas por defecto
     const hoy = new Date();
     const haceUnMes = new Date(hoy.getFullYear(), hoy.getMonth() - 1, hoy.getDate());
-    document.getElementById('fecha_inicio_reporte').value = haceUnMes.toISOString().split('T')[0];
-    document.getElementById('fecha_fin_reporte').value = hoy.toISOString().split('T')[0];
+    const fechaInicio = document.getElementById('fecha_inicio_reporte');
+    const fechaFin = document.getElementById('fecha_fin_reporte');
+    
+    if (fechaInicio) fechaInicio.value = haceUnMes.toISOString().split('T')[0];
+    if (fechaFin) fechaFin.value = hoy.toISOString().split('T')[0];
 }
 
 async function loadAdvancedReports() {
     showProcessingOverlay(true, 'Generando reporte avanzado...');
+    showButtonLoading('btn-aplicar-filtros-reportes', true, 'Generando...');
     
     try {
         const filtros = {
-            sucursal: document.getElementById('sucursal_filtro_reporte').value,
-            grupo: document.getElementById('grupo_filtro_reporte').value,
-            ruta: document.getElementById('ruta_filtro_reporte').value,
-            tipoCredito: document.getElementById('tipo_credito_filtro_reporte').value,
-            estadoCredito: document.getElementById('estado_credito_filtro_reporte').value,
-            tipoPago: document.getElementById('tipo_pago_filtro_reporte').value,
-            fechaInicio: document.getElementById('fecha_inicio_reporte').value,
-            fechaFin: document.getElementById('fecha_fin_reporte').value,
-            curpCliente: document.getElementById('curp_filtro_reporte').value,
-            idCredito: document.getElementById('id_credito_filtro_reporte').value
+            sucursal: document.getElementById('sucursal_filtro_reporte')?.value || '',
+            grupo: document.getElementById('grupo_filtro_reporte')?.value || '',
+            ruta: document.getElementById('ruta_filtro_reporte')?.value || '',
+            tipoCredito: document.getElementById('tipo_credito_filtro_reporte')?.value || '',
+            estadoCredito: document.getElementById('estado_credito_filtro_reporte')?.value || '',
+            tipoPago: document.getElementById('tipo_pago_filtro_reporte')?.value || '',
+            fechaInicio: document.getElementById('fecha_inicio_reporte')?.value || '',
+            fechaFin: document.getElementById('fecha_fin_reporte')?.value || '',
+            curpCliente: document.getElementById('curp_filtro_reporte')?.value || '',
+            idCredito: document.getElementById('id_credito_filtro_reporte')?.value || ''
         };
 
         reportData = await database.generarReporteAvanzado(filtros);
@@ -662,11 +936,14 @@ async function loadAdvancedReports() {
         showStatus('status_reportes_avanzados', 'Error al generar el reporte: ' + error.message, 'error');
     } finally {
         showProcessingOverlay(false);
+        showButtonLoading('btn-aplicar-filtros-reportes', false);
     }
 }
 
 function mostrarReporteAvanzado(data) {
     const tbody = document.getElementById('tabla-reportes-avanzados');
+    if (!tbody) return;
+    
     tbody.innerHTML = '';
 
     if (!data || data.length === 0) {
@@ -730,16 +1007,19 @@ function mostrarReporteAvanzado(data) {
     const totalPagos = data.filter(item => item.tipo === 'pago').length;
     const totalMontoPagos = data.filter(item => item.tipo === 'pago').reduce((sum, item) => sum + (item.monto || 0), 0);
 
-    document.getElementById('estadisticas-reporte').innerHTML = `
-        <div class="status-message status-info">
-            <strong>Estadísticas del Reporte:</strong><br>
-            Total Registros: ${totalRegistros} | 
-            Clientes: ${totalClientes} | 
-            Créditos: ${totalCreditos} | 
-            Pagos: ${totalPagos} | 
-            Total Pagado: $${totalMontoPagos.toLocaleString()}
-        </div>
-    `;
+    const estadisticasElement = document.getElementById('estadisticas-reporte');
+    if (estadisticasElement) {
+        estadisticasElement.innerHTML = `
+            <div class="status-message status-info">
+                <strong>Estadísticas del Reporte:</strong><br>
+                Total Registros: ${totalRegistros} | 
+                Clientes: ${totalClientes} | 
+                Créditos: ${totalCreditos} | 
+                Pagos: ${totalPagos} | 
+                Total Pagado: $${totalMontoPagos.toLocaleString()}
+            </div>
+        `;
+    }
 }
 
 function exportToCSV() {
@@ -749,6 +1029,7 @@ function exportToCSV() {
     }
 
     showProcessingOverlay(true, 'Generando archivo CSV...');
+    showButtonLoading('btn-exportar-csv', true, 'Generando CSV...');
 
     try {
         const headers = ['Tipo', 'CURP', 'Nombre', 'Grupo/Población', 'Ruta', 'Sucursal', 'Fecha', 'Tipo Operación', 'Monto', 'Saldo'];
@@ -817,6 +1098,7 @@ function exportToCSV() {
         showStatus('status_reportes_avanzados', 'Error al exportar CSV: ' + error.message, 'error');
     } finally {
         showProcessingOverlay(false);
+        showButtonLoading('btn-exportar-csv', false);
     }
 }
 
@@ -827,6 +1109,7 @@ function exportToPDF() {
     }
 
     showProcessingOverlay(true, 'Generando archivo PDF...');
+    showButtonLoading('btn-exportar-pdf', true, 'Generando PDF...');
 
     try {
         // Usar html2pdf para generar el PDF
@@ -853,12 +1136,20 @@ function exportToPDF() {
         html2pdf().set(opt).from(tempElement).save().then(() => {
             document.body.removeChild(tempElement);
             showStatus('status_reportes_avanzados', 'Archivo PDF exportado exitosamente.', 'success');
+            showProcessingOverlay(false);
+            showButtonLoading('btn-exportar-pdf', false);
+        }).catch(error => {
+            console.error('Error generando PDF:', error);
+            showStatus('status_reportes_avanzados', 'Error al exportar PDF: ' + error.message, 'error');
+            showProcessingOverlay(false);
+            showButtonLoading('btn-exportar-pdf', false);
         });
 
     } catch (error) {
         console.error('Error exportando PDF:', error);
         showStatus('status_reportes_avanzados', 'Error al exportar PDF: ' + error.message, 'error');
         showProcessingOverlay(false);
+        showButtonLoading('btn-exportar-pdf', false);
     }
 }
 
@@ -872,3 +1163,24 @@ async function deleteCliente(docId) {
         alert("La función para eliminar clientes aún no está implementada en esta versión.");
     }
 }
+
+// Eventos de Vistas
+document.addEventListener('viewshown', function(e) {
+    const viewId = e.detail.viewId;
+    console.log('Vista mostrada:', viewId);
+    
+    switch(viewId) {
+        case 'view-reportes':
+            document.getElementById('btn-actualizar-reportes')?.click();
+            break;
+        case 'view-reportes-avanzados':
+            inicializarVistaReportesAvanzados();
+            break;
+        case 'view-usuarios':
+            loadUsersTable();
+            break;
+        case 'view-gestion-clientes':
+            inicializarVistaGestionClientes();
+            break;
+    }
+});
