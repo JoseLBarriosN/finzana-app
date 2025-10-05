@@ -16,7 +16,6 @@ document.addEventListener('DOMContentLoaded', function () {
             // Usuario ha iniciado sesión
             currentUser = user;
             document.getElementById('user-name').textContent = user.displayName || user.email;
-            // Podríamos añadir roles en el futuro usando "custom claims" de Firebase
             document.getElementById('user-role-display').textContent = "Usuario"; 
             
             document.getElementById('loading-overlay').classList.add('hidden');
@@ -94,7 +93,7 @@ function setupEventListeners() {
 
     // Eventos de Vistas
     document.getElementById('view-reportes').addEventListener('viewshown', () => document.getElementById('btn-actualizar-reportes').click());
-    document.getElementById('view-usuarios').addEventListener('viewshown', () => { console.log("Cargando vista de usuarios..."); });
+    document.getElementById('view-usuarios').addEventListener('viewshown', loadUsersTable);
     document.getElementById('view-gestion-clientes').addEventListener('viewshown', inicializarVistaGestionClientes);
 }
 
@@ -165,7 +164,7 @@ async function handleUserForm(e) {
     e.preventDefault();
     // La creación y gestión de usuarios ahora se hace en la consola de Firebase.
     // Esta función podría adaptarse en el futuro para usar el Admin SDK en un servidor.
-    showStatus('status_usuarios', 'La gestión de usuarios se realiza en la consola de Firebase.', 'info');
+    showStatus('status_usuarios', 'La gestión de usuarios se realiza desde la consola de Firebase.', 'info');
 }
 
 async function handleClientForm(e) {
@@ -507,18 +506,13 @@ async function loadClientesTable() {
 }
 
 async function loadUsersTable() {
-    // Esta función necesitaría una implementación con Firebase Admin SDK en un servidor
-    // para listar usuarios de forma segura. Por ahora, se deja vacía.
-    document.getElementById('tabla-usuarios').innerHTML = `<tr><td colspan="5">La gestión de usuarios se realiza en la consola de Firebase.</td></tr>`;
+    document.getElementById('tabla-usuarios').innerHTML = `<tr><td colspan="5">La gestión de usuarios ahora se realiza desde la consola de Firebase para mayor seguridad.</td></tr>`;
 }
 
 async function editCliente(docId) {
-    // La lógica de edición para Firebase es más compleja y se omite por brevedad,
-    // ya que requiere cargar datos en el formulario y luego actualizarlos.
     alert("Función de editar no implementada en esta versión de Firebase.");
 }
 
 async function deleteCliente(docId) {
-    // La lógica de borrado para Firebase es más compleja y se omite.
-    alert("Función de borrar no implementada en esta versión de Firebase.");
+    alert("La eliminación segura requiere permisos de administrador y se debe gestionar con cuidado. Función no implementada en esta versión.");
 }
