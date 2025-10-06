@@ -143,14 +143,6 @@ function setupEventListeners() {
         curpCliente.addEventListener('input', function () { validarCURP(this); });
     }
 
-    // ===== INICIO DE LA MODIFICACIÓN =====
-    // Event listener para el nuevo dropdown de oficina en el formulario de cliente
-    const officeCliente = document.getElementById('office_cliente');
-    if (officeCliente) {
-        officeCliente.addEventListener('change', handleOfficeChangeForClientForm);
-    }
-    // ===== FIN DE LA MODIFICACIÓN =====
-
     // Generar Crédito
     const btnBuscarClienteColocacion = document.getElementById('btnBuscarCliente_colocacion');
     if (btnBuscarClienteColocacion) {
@@ -352,9 +344,6 @@ async function handleClientForm(e) {
 
     try {
         const cliente = {
-            // ===== INICIO DE LA MODIFICACIÓN =====
-            office: document.getElementById('office_cliente').value,
-            // ===== FIN DE LA MODIFICACIÓN =====
             curp,
             nombre: document.getElementById('nombre_cliente').value,
             domicilio: document.getElementById('domicilio_cliente').value,
@@ -478,6 +467,7 @@ async function loadUsersTable() {
         showStatus('status_usuarios', 'Ya hay una búsqueda en progreso. Espere a que termine.', 'warning');
         return;
     }
+    cargaEnProgreso = true; // ===== CORRECCIÓN =====
 
     const tbody = document.getElementById('tabla-usuarios');
     if (!tbody) {
@@ -491,7 +481,6 @@ async function loadUsersTable() {
     showFixedProgress(10, 'Aplicando filtros...');
 
     try {
-        // Obtener filtros
         const filtros = {
             email: document.getElementById('filtro-email-usuario')?.value?.toLowerCase() || '',
             nombre: document.getElementById('filtro-nombre-usuario')?.value?.toLowerCase() || '',
@@ -502,10 +491,8 @@ async function loadUsersTable() {
 
         showFixedProgress(30, 'Buscando usuarios...');
 
-        // Obtener todos los usuarios
         const usuarios = await database.obtenerUsuarios();
 
-        // Verificar si se canceló la búsqueda
         if (!cargaEnProgreso) {
             tbody.innerHTML = '<tr><td colspan="5">Búsqueda cancelada.</td></tr>';
             return;
@@ -517,7 +504,6 @@ async function loadUsersTable() {
 
         let usuariosFiltrados = usuarios.data;
 
-        // Aplicar filtros
         if (hayFiltros) {
             usuariosFiltrados = usuariosFiltrados.filter(usuario => {
                 const emailMatch = !filtros.email || usuario.email.toLowerCase().includes(filtros.email);
@@ -537,7 +523,6 @@ async function loadUsersTable() {
 
         showFixedProgress(70, `Mostrando ${usuariosFiltrados.length} usuarios...`);
 
-        // Mostrar usuarios en la tabla
         usuariosFiltrados.forEach(usuario => {
             const tr = document.createElement('tr');
 
@@ -562,12 +547,8 @@ async function loadUsersTable() {
         showStatus('status_usuarios', 'Error al cargar usuarios: ' + error.message, 'error');
     } finally {
         showButtonLoading('btn-aplicar-filtros-usuarios', false);
-        setTimeout(() => {
-            if (cargaEnProgreso) {
-                hideFixedProgress();
-                cargaEnProgreso = false;
-            }
-        }, 1000);
+        // ===== CORRECCIÓN =====
+        setTimeout(hideFixedProgress, 1000);
     }
 }
 
@@ -879,15 +860,15 @@ function showButtonLoading(selector, show, text = 'Procesando...') {
 // FUNCIONES DE BARRA DE PROGRESO FIJAS
 // =============================================
 
+// ===== INICIO DE LA CORRECCIÓN CRÍTICA =====
 function showFixedProgress(percentage, message = '') {
-    // Detener carga si se solicitó limpiar
+    // Si se canceló, no hacer nada.
     if (cargaEnProgreso === false && percentage > 0) {
         return;
     }
 
     let progressContainer = document.getElementById('progress-container-fixed');
 
-    // Si no existe, crearla en el lugar correcto
     if (!progressContainer) {
         progressContainer = document.createElement('div');
         progressContainer.id = 'progress-container-fixed';
@@ -899,11 +880,7 @@ function showFixedProgress(percentage, message = '') {
                 <i class="fas fa-times"></i>
             </button>
         `;
-
-        // Insertar al inicio del body para que esté por encima de todo
         document.body.insertBefore(progressContainer, document.body.firstChild);
-
-        // Agregar event listener al botón de cancelar
         const btnCancelar = document.getElementById('btn-cancelar-carga-fixed');
         if (btnCancelar) {
             btnCancelar.addEventListener('click', cancelarCarga);
@@ -915,31 +892,25 @@ function showFixedProgress(percentage, message = '') {
 
     if (progressBar) {
         progressBar.style.width = percentage + '%';
-        // Cambiar color según el progreso
-        if (percentage < 30) {
-            progressBar.style.background = 'var(--danger)';
-        } else if (percentage < 70) {
-            progressBar.style.background = 'var(--warning)';
-        } else {
-            progressBar.style.background = 'var(--success)';
-        }
+        if (percentage < 30) progressBar.style.background = 'var(--danger)';
+        else if (percentage < 70) progressBar.style.background = 'var(--warning)';
+        else progressBar.style.background = 'var(--success)';
     }
 
     if (progressText && message) {
         progressText.textContent = message;
     }
 
-    // Mostrar el contenedor
     progressContainer.style.display = 'flex';
     document.body.classList.add('has-progress');
 
-    // Marcar que hay carga en progreso
+    // Se elimina la lógica que ponía `cargaEnProgreso` en `false`.
+    // Esta función solo debe mostrar el progreso.
     if (percentage > 0 && percentage < 100) {
         cargaEnProgreso = true;
-    } else if (percentage >= 100) {
-        cargaEnProgreso = false;
     }
 }
+// ===== FIN DE LA CORRECCIÓN CRÍTICA =====
 
 function hideFixedProgress() {
     const progressContainer = document.getElementById('progress-container-fixed');
@@ -990,31 +961,6 @@ function validarFormatoCURP(curp) {
     return curp && curp.length === 18;
 }
 
-// ===== INICIO DE LA MODIFICACIÓN =====
-// Listas de poblaciones por oficina
-const poblacionesGdl = ['LA CALERA', 'ATEQUIZA', 'SAN JACINTO', 'PONCITLAN', 'OCOTLAN', 'ARENAL', 'AMATITAN', 'ACATLAN DE JUAREZ', 'BELLAVISTA', 'SAN ISIDRO MAZATEPEC', 'TALA', 'CUISILLOS', 'HUAXTLA', 'NEXTIPAC', 'SANTA LUCIA', 'JAMAY', 'LA BARCA', 'SAN JUAN DE OCOTAN', 'TALA 2', 'EL HUMEDO', 'NEXTIPAC 2', 'ZZ PUEBLO'];
-const poblacionesLeon = ["ARANDAS", "ARANDAS [E]", "BAJIO DE BONILLAS", "BAJIO DE BONILLAS [E]", "CAPULIN", "CARDENAS", "CARDENAS [E]", "CERRITO DE AGUA CALIENTE", "CERRITO DE AGUA CALIENTE [E]", "CORRALEJO", "CORRALEJO [E]", "CUERAMARO", "CUERAMARO [E]", "DOLORES HIDALGO", "EL ALACRAN", "EL EDEN", "EL FUERTE", "EL MEZQUITILLO", "EL MEZQUITILLO [E]", "EL PALENQUE", "EL PALENQUE [E]", "EL PAXTLE", "EL TULE", "EL TULE [E]", "ESTACION ABASOLO", "ESTACION ABASOLO [E]", "ESTACION CORRALEJO", "ESTACION CORRALEJO [E]", "ESTACION JOAQUIN", "ESTACION JOAQUIN [E]", "EX ESTACION CHIRIMOYA", "EX ESTACION CHIRIMOYA [E]", "GAVIA DE RIONDA", "GODOY", "GODOY [E]", "IBARRA", "IBARRA [E]", "LA ALDEA", "LA CARROZA", "LA CARROZA [E]", "LA ESCONDIDA", "LA SANDIA", "LA SANDIA [E]", "LAGUNA DE GUADALUPE", "LAS CRUCES", "LAS CRUCES [E]", "LAS MASAS", "LAS MASAS [E]", "LAS PALOMAS", "LAS TIRITAS", "LOMA DE LA ESPERANZA", "LOMA DE LA ESPERANZA [E]", "LOS DOLORES", "LOS GALVANES", "LOS GALVANES [E]", "MAGUEY BLANCO", "MEDRANOS", "MEXICANOS", "MEXICANOS [E]", "MINERAL DE LA LUZ", "MISION DE ABAJO", "MISION DE ABAJO [E]", "MISION DE ARRIBA", "MISION DE ARRIBA [E]", "NORIA DE ALDAY", "OCAMPO", "PURISIMA DEL RINCON", "PURISIMA DEL RINCON [E]", "RANCHO NUEVO DE LA CRUZ", "RANCHO NUEVO DE LA CRUZ [E]", "RANCHO VIEJO", "RIO LAJA", "RIO LAJA [E]", "SAN ANDRES DE JALPA", "SAN ANDRES DE JALPA [E]", "SAN BERNARDO", "SAN BERNARDO [E]", "SAN CRISTOBAL", "SAN CRISTOBAL [E]", "SAN GREGORIO", "SAN GREGORIO [E]", "SAN ISIDRO DE CRESPO", "SAN ISIDRO DE CRESPO [E]", "SAN JOSE DE BADILLO", "SAN JOSE DE BADILLO [E]", "SAN JOSE DEL RODEO", "SAN JOSE DEL RODEO [E]", "SAN JUAN DE LA PUERTA", "SAN JUAN DE LA PUERTA [E]", "SANTA ANA DEL CONDE", "SANTA ROSA", "SANTA ROSA [E]", "SANTA ROSA PLAN DE AYALA", "SANTA ROSA PLAN DE AYALA [E]", "SANTO DOMINGO", "SERRANO", "TENERIA DEL SANTUARIO", "TENERIA DEL SANTUARIO [E]", "TIERRAS BLANCAS", "TIERRAS BLANCAS [E]", "TREJO", "TREJO [E]", "TUPATARO", "TUPATARO [E]", "VALTIERRILLA", "VALTIERRILLA 2", "VALTIERRILLA [E]", "VAQUERIAS", "VILLA DE ARRIAGA", "VILLA DE ARRIAGA [E]"].sort();
-
-// Función para manejar el cambio de oficina en el formulario de registro de cliente
-function handleOfficeChangeForClientForm() {
-    const office = this.value;
-    const poblaciones = office === 'LEON' ? poblacionesLeon : poblacionesGdl;
-    popularDropdown('poblacion_grupo_cliente', poblaciones, 'Selecciona población/grupo');
-}
-
-const popularDropdown = (elementId, options, placeholder, isObject = false) => {
-    const select = document.getElementById(elementId);
-    if (select) {
-        select.innerHTML = `<option value="">${placeholder}</option>`;
-        options.forEach(option => {
-            const el = document.createElement('option');
-            el.value = isObject ? option.value : option;
-            el.textContent = isObject ? option.text : option;
-            select.appendChild(el);
-        });
-    }
-};
-
 function inicializarDropdowns() {
     console.log('Inicializando dropdowns...');
     const rutas = ['AUDITORIA', 'SUPERVISION', 'ADMINISTRACION', 'DIRECCION', 'COMERCIAL', 'COBRANZA', 'R1', 'R2', 'R3', 'JC1', 'RX'];
@@ -1024,10 +970,6 @@ function inicializarDropdowns() {
     const estadosCredito = ['al corriente', 'atrasado', 'cobranza', 'juridico', 'liquidado'];
     const tiposPago = ['normal', 'extraordinario', 'actualizado'];
     const sucursales = ['GDL', 'LEON'];
-
-    // Dropdowns para registro de cliente (ahora depende de la oficina)
-    popularDropdown('poblacion_grupo_cliente', poblacionesGdl, 'Selecciona población/grupo'); // Por defecto GDL
-    popularDropdown('ruta_cliente', rutas, 'Selecciona una ruta');
 
     // Dropdowns para colocación
     popularDropdown('tipo_colocacion', tiposCredito.map(t => ({ value: t.toLowerCase(), text: t })), 'Selecciona tipo', true);
@@ -1055,10 +997,15 @@ function inicializarDropdowns() {
     popularDropdown('tipo_credito_filtro_reporte', tiposCredito.map(t => ({ value: t.toLowerCase(), text: t })), 'Todos', true);
     popularDropdown('estado_credito_filtro_reporte', estadosCredito.map(e => ({ value: e, text: e.toUpperCase() })), 'Todos', true);
     popularDropdown('tipo_pago_filtro_reporte', tiposPago.map(t => ({ value: t, text: t.toUpperCase() })), 'Todos', true);
+    
+    // ===== INICIO DE LA MODIFICACIÓN =====
+    // Dropdowns para registro de cliente (se mantiene la lógica original, ahora con las nuevas listas)
+    popularDropdown('poblacion_grupo_cliente', poblacionesGdl, 'Selecciona población/grupo');
+    popularDropdown('ruta_cliente', rutas, 'Selecciona una ruta');
+    // ===== FIN DE LA MODIFICACIÓN =====
 
     console.log('Dropdowns inicializados correctamente');
 }
-// ===== FIN DE LA MODIFICACIÓN =====
 
 // =============================================
 // LÓGICA DE NEGOCIO
@@ -1159,11 +1106,11 @@ function limpiarFiltrosClientes() {
 }
 
 async function loadClientesTable() {
-    // Verificar si ya hay una carga en progreso
     if (cargaEnProgreso) {
         showStatus('status_gestion_clientes', 'Ya hay una carga en progreso. Espere a que termine.', 'warning');
         return;
     }
+    cargaEnProgreso = true; // ===== CORRECCIÓN =====
 
     const tbody = document.getElementById('tabla-clientes');
     if (!tbody) {
@@ -1200,7 +1147,6 @@ async function loadClientesTable() {
         showFixedProgress(30, 'Buscando clientes...');
         const clientesFiltrados = await database.buscarClientes(filtros);
 
-        // Verificar si se canceló la carga
         if (!cargaEnProgreso) {
             tbody.innerHTML = '<tr><td colspan="6">Búsqueda cancelada.</td></tr>';
             return;
@@ -1215,45 +1161,17 @@ async function loadClientesTable() {
 
         showFixedProgress(50, `Procesando ${clientesFiltrados.length} clientes...`);
 
-        let clientesMostrados = 0;
         for (let i = 0; i < clientesFiltrados.length; i++) {
-            // Verificar si se canceló la carga en cada iteración
             if (!cargaEnProgreso) {
                 tbody.innerHTML = '<tr><td colspan="6">Procesamiento cancelado.</td></tr>';
                 break;
             }
 
             const cliente = clientesFiltrados[i];
-            
-            showFixedProgress(50 + Math.round((i / clientesFiltrados.length) * 40), `Procesando cliente ${i + 1} de ${clientesFiltrados.length}`);
-            
-            // ===== INICIO DE LA LÓGICA DE FILTRADO CORREGIDA =====
-            const fechaRegistroMatch = !filtros.fechaRegistro || (cliente.fechaRegistro && cliente.fechaRegistro.startsWith(filtros.fechaRegistro));
-            if (!fechaRegistroMatch) {
-                continue;
-            }
-
-            const necesitaFiltroCredito = filtros.fechaCredito || filtros.tipo || filtros.plazo || filtros.curpAval;
-            if (necesitaFiltroCredito) {
-                const creditos = await database.buscarCreditosPorCliente(cliente.curp);
-                if (creditos.length === 0) {
-                    continue;
-                }
-                const algunCreditoCoincide = creditos.some(credito => {
-                    const fechaCreditoMatch = !filtros.fechaCredito || (credito.fechaCreacion && credito.fechaCreacion.startsWith(filtros.fechaCredito));
-                    const tipoMatch = !filtros.tipo || credito.tipo === filtros.tipo;
-                    const plazoMatch = !filtros.plazo || credito.plazo == filtros.plazo;
-                    const curpAvalMatch = !filtros.curpAval || (credito.curpAval && credito.curpAval.toLowerCase().includes(filtros.curpAval));
-                    return fechaCreditoMatch && tipoMatch && plazoMatch && curpAvalMatch;
-                });
-                if (!algunCreditoCoincide) {
-                    continue;
-                }
-            }
-            // ===== FIN DE LA LÓGICA DE FILTRADO =====
-
-            clientesMostrados++;
             const tr = document.createElement('tr');
+
+            showFixedProgress(50 + Math.round((i / clientesFiltrados.length) * 40), `Procesando cliente ${i + 1} de ${clientesFiltrados.length}`);
+
             const historial = await obtenerHistorialCreditoCliente(cliente.curp);
             let infoCreditoHTML = '<em>Sin historial</em>';
 
@@ -1285,14 +1203,10 @@ async function loadClientesTable() {
                 </td>`;
             tbody.appendChild(tr);
         }
-        
-        if (clientesMostrados === 0 && cargaEnProgreso) {
-             tbody.innerHTML = '<tr><td colspan="6">No se encontraron clientes con los filtros aplicados.</td></tr>';
-        }
 
         if (cargaEnProgreso) {
-            showFixedProgress(100, `Procesamiento completado: ${clientesMostrados} clientes`);
-            showStatus('status_gestion_clientes', `Se encontraron ${clientesMostrados} clientes con los filtros aplicados.`, 'success');
+            showFixedProgress(100, `Procesamiento completado: ${clientesFiltrados.length} clientes`);
+            showStatus('status_gestion_clientes', `Se encontraron ${clientesFiltrados.length} clientes con los filtros aplicados.`, 'success');
         }
 
     } catch (error) {
@@ -1301,7 +1215,7 @@ async function loadClientesTable() {
         showStatus('status_gestion_clientes', 'Error al cargar los clientes: ' + error.message, 'error');
     } finally {
         showButtonLoading('btn-aplicar-filtros', false);
-        // CORRECCIÓN: Se asegura que la barra de progreso se oculte al final.
+        // ===== CORRECCIÓN =====
         setTimeout(hideFixedProgress, 1000);
     }
 }
