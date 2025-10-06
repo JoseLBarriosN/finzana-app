@@ -143,6 +143,14 @@ function setupEventListeners() {
         curpCliente.addEventListener('input', function () { validarCURP(this); });
     }
 
+    // ===== INICIO DE LA MODIFICACIÓN =====
+    // Event listener para el nuevo dropdown de oficina en el formulario de cliente
+    const officeCliente = document.getElementById('office_cliente');
+    if (officeCliente) {
+        officeCliente.addEventListener('change', handleOfficeChangeForClientForm);
+    }
+    // ===== FIN DE LA MODIFICACIÓN =====
+
     // Generar Crédito
     const btnBuscarClienteColocacion = document.getElementById('btnBuscarCliente_colocacion');
     if (btnBuscarClienteColocacion) {
@@ -344,6 +352,9 @@ async function handleClientForm(e) {
 
     try {
         const cliente = {
+            // ===== INICIO DE LA MODIFICACIÓN =====
+            office: document.getElementById('office_cliente').value,
+            // ===== FIN DE LA MODIFICACIÓN =====
             curp,
             nombre: document.getElementById('nombre_cliente').value,
             domicilio: document.getElementById('domicilio_cliente').value,
@@ -979,9 +990,33 @@ function validarFormatoCURP(curp) {
     return curp && curp.length === 18;
 }
 
+// ===== INICIO DE LA MODIFICACIÓN =====
+// Listas de poblaciones por oficina
+const poblacionesGdl = ['LA CALERA', 'ATEQUIZA', 'SAN JACINTO', 'PONCITLAN', 'OCOTLAN', 'ARENAL', 'AMATITAN', 'ACATLAN DE JUAREZ', 'BELLAVISTA', 'SAN ISIDRO MAZATEPEC', 'TALA', 'CUISILLOS', 'HUAXTLA', 'NEXTIPAC', 'SANTA LUCIA', 'JAMAY', 'LA BARCA', 'SAN JUAN DE OCOTAN', 'TALA 2', 'EL HUMEDO', 'NEXTIPAC 2', 'ZZ PUEBLO'];
+const poblacionesLeon = ["ARANDAS", "ARANDAS [E]", "BAJIO DE BONILLAS", "BAJIO DE BONILLAS [E]", "CAPULIN", "CARDENAS", "CARDENAS [E]", "CERRITO DE AGUA CALIENTE", "CERRITO DE AGUA CALIENTE [E]", "CORRALEJO", "CORRALEJO [E]", "CUERAMARO", "CUERAMARO [E]", "DOLORES HIDALGO", "EL ALACRAN", "EL EDEN", "EL FUERTE", "EL MEZQUITILLO", "EL MEZQUITILLO [E]", "EL PALENQUE", "EL PALENQUE [E]", "EL PAXTLE", "EL TULE", "EL TULE [E]", "ESTACION ABASOLO", "ESTACION ABASOLO [E]", "ESTACION CORRALEJO", "ESTACION CORRALEJO [E]", "ESTACION JOAQUIN", "ESTACION JOAQUIN [E]", "EX ESTACION CHIRIMOYA", "EX ESTACION CHIRIMOYA [E]", "GAVIA DE RIONDA", "GODOY", "GODOY [E]", "IBARRA", "IBARRA [E]", "LA ALDEA", "LA CARROZA", "LA CARROZA [E]", "LA ESCONDIDA", "LA SANDIA", "LA SANDIA [E]", "LAGUNA DE GUADALUPE", "LAS CRUCES", "LAS CRUCES [E]", "LAS MASAS", "LAS MASAS [E]", "LAS PALOMAS", "LAS TIRITAS", "LOMA DE LA ESPERANZA", "LOMA DE LA ESPERANZA [E]", "LOS DOLORES", "LOS GALVANES", "LOS GALVANES [E]", "MAGUEY BLANCO", "MEDRANOS", "MEXICANOS", "MEXICANOS [E]", "MINERAL DE LA LUZ", "MISION DE ABAJO", "MISION DE ABAJO [E]", "MISION DE ARRIBA", "MISION DE ARRIBA [E]", "NORIA DE ALDAY", "OCAMPO", "PURISIMA DEL RINCON", "PURISIMA DEL RINCON [E]", "RANCHO NUEVO DE LA CRUZ", "RANCHO NUEVO DE LA CRUZ [E]", "RANCHO VIEJO", "RIO LAJA", "RIO LAJA [E]", "SAN ANDRES DE JALPA", "SAN ANDRES DE JALPA [E]", "SAN BERNARDO", "SAN BERNARDO [E]", "SAN CRISTOBAL", "SAN CRISTOBAL [E]", "SAN GREGORIO", "SAN GREGORIO [E]", "SAN ISIDRO DE CRESPO", "SAN ISIDRO DE CRESPO [E]", "SAN JOSE DE BADILLO", "SAN JOSE DE BADILLO [E]", "SAN JOSE DEL RODEO", "SAN JOSE DEL RODEO [E]", "SAN JUAN DE LA PUERTA", "SAN JUAN DE LA PUERTA [E]", "SANTA ANA DEL CONDE", "SANTA ROSA", "SANTA ROSA [E]", "SANTA ROSA PLAN DE AYALA", "SANTA ROSA PLAN DE AYALA [E]", "SANTO DOMINGO", "SERRANO", "TENERIA DEL SANTUARIO", "TENERIA DEL SANTUARIO [E]", "TIERRAS BLANCAS", "TIERRAS BLANCAS [E]", "TREJO", "TREJO [E]", "TUPATARO", "TUPATARO [E]", "VALTIERRILLA", "VALTIERRILLA 2", "VALTIERRILLA [E]", "VAQUERIAS", "VILLA DE ARRIAGA", "VILLA DE ARRIAGA [E]"].sort();
+
+// Función para manejar el cambio de oficina en el formulario de registro de cliente
+function handleOfficeChangeForClientForm() {
+    const office = this.value;
+    const poblaciones = office === 'LEON' ? poblacionesLeon : poblacionesGdl;
+    popularDropdown('poblacion_grupo_cliente', poblaciones, 'Selecciona población/grupo');
+}
+
+const popularDropdown = (elementId, options, placeholder, isObject = false) => {
+    const select = document.getElementById(elementId);
+    if (select) {
+        select.innerHTML = `<option value="">${placeholder}</option>`;
+        options.forEach(option => {
+            const el = document.createElement('option');
+            el.value = isObject ? option.value : option;
+            el.textContent = isObject ? option.text : option;
+            select.appendChild(el);
+        });
+    }
+};
+
 function inicializarDropdowns() {
     console.log('Inicializando dropdowns...');
-    const poblaciones = ['LA CALERA', 'ATEQUIZA', 'SAN JACINTO', 'PONCITLAN', 'OCOTLAN', 'ARENAL', 'AMATITAN', 'ACATLAN DE JUAREZ', 'BELLAVISTA', 'SAN ISIDRO MAZATEPEC', 'TALA', 'CUISILLOS', 'HUAXTLA', 'NEXTIPAC', 'SANTA LUCIA', 'JAMAY', 'LA BARCA', 'SAN JUAN DE OCOTAN', 'TALA 2', 'EL HUMEDO', 'NEXTIPAC 2', 'ZZ PUEBLO'];
     const rutas = ['AUDITORIA', 'SUPERVISION', 'ADMINISTRACION', 'DIRECCION', 'COMERCIAL', 'COBRANZA', 'R1', 'R2', 'R3', 'JC1', 'RX'];
     const tiposCredito = ['NUEVO', 'RENOVACION', 'REINGRESO'];
     const montos = [3000, 3500, 4000, 4500, 5000, 6000, 7000, 8000, 9000, 10000];
@@ -990,21 +1025,8 @@ function inicializarDropdowns() {
     const tiposPago = ['normal', 'extraordinario', 'actualizado'];
     const sucursales = ['GDL', 'LEON'];
 
-    const popularDropdown = (elementId, options, placeholder, isObject = false) => {
-        const select = document.getElementById(elementId);
-        if (select) {
-            select.innerHTML = `<option value="">${placeholder}</option>`;
-            options.forEach(option => {
-                const el = document.createElement('option');
-                el.value = isObject ? option.value : option;
-                el.textContent = isObject ? option.text : option;
-                select.appendChild(el);
-            });
-        }
-    };
-
-    // Dropdowns para registro de cliente
-    popularDropdown('poblacion_grupo_cliente', poblaciones, 'Selecciona población/grupo');
+    // Dropdowns para registro de cliente (ahora depende de la oficina)
+    popularDropdown('poblacion_grupo_cliente', poblacionesGdl, 'Selecciona población/grupo'); // Por defecto GDL
     popularDropdown('ruta_cliente', rutas, 'Selecciona una ruta');
 
     // Dropdowns para colocación
@@ -1013,7 +1035,8 @@ function inicializarDropdowns() {
     popularDropdown('plazo_colocacion', plazos.map(p => ({ value: p, text: `${p} semanas` })), 'Selecciona plazo', true);
 
     // Dropdowns para filtros de clientes
-    popularDropdown('grupo_filtro', poblaciones, 'Todos');
+    const todasLasPoblaciones = [...new Set([...poblacionesGdl, ...poblacionesLeon])].sort();
+    popularDropdown('grupo_filtro', todasLasPoblaciones, 'Todos');
     popularDropdown('tipo_colocacion_filtro', tiposCredito.map(t => ({ value: t.toLowerCase(), text: t })), 'Todos', true);
     popularDropdown('plazo_filtro', plazos.map(p => ({ value: p, text: `${p} semanas` })), 'Todos', true);
 
@@ -1027,7 +1050,7 @@ function inicializarDropdowns() {
 
     // Dropdowns para reportes avanzados
     popularDropdown('sucursal_filtro_reporte', sucursales, 'Todas');
-    popularDropdown('grupo_filtro_reporte', poblaciones, 'Todos');
+    popularDropdown('grupo_filtro_reporte', todasLasPoblaciones, 'Todos');
     popularDropdown('ruta_filtro_reporte', rutas, 'Todas');
     popularDropdown('tipo_credito_filtro_reporte', tiposCredito.map(t => ({ value: t.toLowerCase(), text: t })), 'Todos', true);
     popularDropdown('estado_credito_filtro_reporte', estadosCredito.map(e => ({ value: e, text: e.toUpperCase() })), 'Todos', true);
@@ -1035,6 +1058,7 @@ function inicializarDropdowns() {
 
     console.log('Dropdowns inicializados correctamente');
 }
+// ===== FIN DE LA MODIFICACIÓN =====
 
 // =============================================
 // LÓGICA DE NEGOCIO
@@ -1176,6 +1200,7 @@ async function loadClientesTable() {
         showFixedProgress(30, 'Buscando clientes...');
         const clientesFiltrados = await database.buscarClientes(filtros);
 
+        // Verificar si se canceló la carga
         if (!cargaEnProgreso) {
             tbody.innerHTML = '<tr><td colspan="6">Búsqueda cancelada.</td></tr>';
             return;
@@ -1192,6 +1217,7 @@ async function loadClientesTable() {
 
         let clientesMostrados = 0;
         for (let i = 0; i < clientesFiltrados.length; i++) {
+            // Verificar si se canceló la carga en cada iteración
             if (!cargaEnProgreso) {
                 tbody.innerHTML = '<tr><td colspan="6">Procesamiento cancelado.</td></tr>';
                 break;
@@ -1200,7 +1226,7 @@ async function loadClientesTable() {
             const cliente = clientesFiltrados[i];
             
             showFixedProgress(50 + Math.round((i / clientesFiltrados.length) * 40), `Procesando cliente ${i + 1} de ${clientesFiltrados.length}`);
-
+            
             // ===== INICIO DE LA LÓGICA DE FILTRADO CORREGIDA =====
             const fechaRegistroMatch = !filtros.fechaRegistro || (cliente.fechaRegistro && cliente.fechaRegistro.startsWith(filtros.fechaRegistro));
             if (!fechaRegistroMatch) {
