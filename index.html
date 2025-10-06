@@ -727,12 +727,28 @@
         <div class="processing-message" id="processing-message">Procesando...</div>
     </div>
 
-    <!-- Scripts -->
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-storage.js"></script>
-    <script src="js/firebase-config.js"></script>
+    <!-- Scripts de Firebase y configuración -->
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
+
+    <script>
+        // Configuración de Firebase - INTEGRADA DESDE TU CÓDIGO ORIGINAL
+        const firebaseConfig = {
+            apiKey: "AIzaSyBNt_JKONVgOXS4fgJrj3qldb1JBdOgPoE",
+            authDomain: "finzana-app.firebaseapp.com",
+            projectId: "finzana-app",
+            storageBucket: "finzana-app.firebasestorage.app",
+            messagingSenderId: "779745085151",
+            appId: "1:779745085151:web:2d470408b6267e3e16cb6a"
+        };
+        
+        // Inicializar Firebase
+        firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+        const db = firebase.firestore();
+    </script>
+    
     <script src="js/app.js"></script>
 </body>
 </html>
