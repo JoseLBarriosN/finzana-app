@@ -925,7 +925,7 @@ function showFixedProgress(percentage, message = '') {
     // Marcar que hay carga en progreso
     if (percentage > 0 && percentage < 100) {
         cargaEnProgreso = true;
-    } else if (percentage >= 100) { // Usar >= para asegurar que se marque como falso
+    } else if (percentage >= 100) {
         cargaEnProgreso = false;
     }
 }
@@ -1153,6 +1153,7 @@ async function loadClientesTable() {
     showFixedProgress(10, 'Aplicando filtros...');
 
     try {
+        // CORRECCIÓN CRÍTICA: Usar operador de encadenamiento opcional y valores por defecto
         const filtros = {
             sucursal: document.getElementById('sucursal_filtro')?.value || '',
             curp: document.getElementById('curp_filtro')?.value?.toLowerCase() || '',
@@ -1168,30 +1169,31 @@ async function loadClientesTable() {
         const hayFiltros = Object.values(filtros).some(val => val && val.trim() !== '');
         if (!hayFiltros) {
             tbody.innerHTML = '<tr><td colspan="6">Por favor, especifica al menos un criterio de búsqueda.</td></tr>';
-            showFixedProgress(100, 'Búsqueda detenida');
+            showButtonLoading('btn-aplicar-filtros', false);
+            hideFixedProgress();
             return;
         }
 
         showFixedProgress(30, 'Buscando clientes...');
         const clientesFiltrados = await database.buscarClientes(filtros);
 
+        // Verificar si se canceló la carga
         if (!cargaEnProgreso) {
             tbody.innerHTML = '<tr><td colspan="6">Búsqueda cancelada.</td></tr>';
             return;
         }
 
-        tbody.innerHTML = ''; // Limpiar la tabla antes de renderizar
+        tbody.innerHTML = '';
         if (clientesFiltrados.length === 0) {
             showFixedProgress(100, 'No se encontraron clientes');
             tbody.innerHTML = '<tr><td colspan="6">No se encontraron clientes con los filtros aplicados.</td></tr>';
             return;
         }
 
-        let clientesMostrados = 0;
         showFixedProgress(50, `Procesando ${clientesFiltrados.length} clientes...`);
 
+        let clientesMostrados = 0;
         for (let i = 0; i < clientesFiltrados.length; i++) {
-            // Verificar si se canceló la carga en cada iteración
             if (!cargaEnProgreso) {
                 tbody.innerHTML = '<tr><td colspan="6">Procesamiento cancelado.</td></tr>';
                 break;
@@ -1200,25 +1202,19 @@ async function loadClientesTable() {
             const cliente = clientesFiltrados[i];
             
             showFixedProgress(50 + Math.round((i / clientesFiltrados.length) * 40), `Procesando cliente ${i + 1} de ${clientesFiltrados.length}`);
-            
-            // --- INICIO DE LA LÓGICA DE FILTRADO CORREGIDA ---
-            // Filtro por fecha de registro del cliente
+
+            // ===== INICIO DE LA LÓGICA DE FILTRADO CORREGIDA =====
             const fechaRegistroMatch = !filtros.fechaRegistro || (cliente.fechaRegistro && cliente.fechaRegistro.startsWith(filtros.fechaRegistro));
             if (!fechaRegistroMatch) {
-                continue; // Si no coincide, saltar al siguiente cliente
+                continue;
             }
 
-            // Verificar si se necesita filtrar por datos de crédito
             const necesitaFiltroCredito = filtros.fechaCredito || filtros.tipo || filtros.plazo || filtros.curpAval;
             if (necesitaFiltroCredito) {
                 const creditos = await database.buscarCreditosPorCliente(cliente.curp);
-                
-                // Si el cliente no tiene créditos, no puede coincidir con un filtro de crédito
                 if (creditos.length === 0) {
                     continue;
                 }
-
-                // Verificar si ALGUNO de los créditos del cliente coincide con los filtros
                 const algunCreditoCoincide = creditos.some(credito => {
                     const fechaCreditoMatch = !filtros.fechaCredito || (credito.fechaCreacion && credito.fechaCreacion.startsWith(filtros.fechaCredito));
                     const tipoMatch = !filtros.tipo || credito.tipo === filtros.tipo;
@@ -1226,15 +1222,12 @@ async function loadClientesTable() {
                     const curpAvalMatch = !filtros.curpAval || (credito.curpAval && credito.curpAval.toLowerCase().includes(filtros.curpAval));
                     return fechaCreditoMatch && tipoMatch && plazoMatch && curpAvalMatch;
                 });
-
-                // Si ninguno de sus créditos coincide, saltar al siguiente cliente
                 if (!algunCreditoCoincide) {
                     continue;
                 }
             }
-            // --- FIN DE LA LÓGICA DE FILTRADO ---
+            // ===== FIN DE LA LÓGICA DE FILTRADO =====
 
-            // Si el código llega hasta aquí, el cliente ha pasado todos los filtros.
             clientesMostrados++;
             const tr = document.createElement('tr');
             const historial = await obtenerHistorialCreditoCliente(cliente.curp);
@@ -1268,11 +1261,11 @@ async function loadClientesTable() {
                 </td>`;
             tbody.appendChild(tr);
         }
-
-        if (clientesMostrados === 0) {
-            tbody.innerHTML = '<tr><td colspan="6">No se encontraron clientes con los filtros aplicados.</td></tr>';
-        }
         
+        if (clientesMostrados === 0 && cargaEnProgreso) {
+             tbody.innerHTML = '<tr><td colspan="6">No se encontraron clientes con los filtros aplicados.</td></tr>';
+        }
+
         if (cargaEnProgreso) {
             showFixedProgress(100, `Procesamiento completado: ${clientesMostrados} clientes`);
             showStatus('status_gestion_clientes', `Se encontraron ${clientesMostrados} clientes con los filtros aplicados.`, 'success');
@@ -1284,11 +1277,10 @@ async function loadClientesTable() {
         showStatus('status_gestion_clientes', 'Error al cargar los clientes: ' + error.message, 'error');
     } finally {
         showButtonLoading('btn-aplicar-filtros', false);
-        // CORRECCIÓN CLAVE: El timeout ahora solo llama a la función para ocultar la barra.
+        // CORRECCIÓN: Se asegura que la barra de progreso se oculte al final.
         setTimeout(hideFixedProgress, 1000);
     }
 }
-
 
 // =============================================
 // FUNCIONES DE REPORTES - CON BARRA DE PROGRESO
