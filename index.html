@@ -82,43 +82,43 @@
                     <div class="menu-card" data-view="view-usuarios">
                         <div class="menu-icon icon-usuarios"><i class="fas fa-user-cog"></i></div>
                         <h3>Gestión de Usuarios</h3>
-                        <p>Administra usuarios del sistema</p>
+                        <p>Administra usuarios y permisos</p>
                         <button class="btn btn-primary" data-view="view-usuarios"><i class="fas fa-arrow-right"></i> Acceder</button>
                     </div>
                     <div class="menu-card" data-view="view-importar">
                         <div class="menu-icon icon-importar"><i class="fas fa-file-import"></i></div>
-                        <h3>Importar Datos</h3>
-                        <p>Carga información desde CSV</p>
+                        <h3>Importar Información</h3>
+                        <p>Importa datos desde Excel</p>
                         <button class="btn btn-primary" data-view="view-importar"><i class="fas fa-arrow-right"></i> Acceder</button>
                     </div>
-                    <div class="menu-card" data-view="view-cliente">
+                    <div class="menu-card" data-view="view-registrar">
                         <div class="menu-icon icon-registrar"><i class="fas fa-user-plus"></i></div>
                         <h3>Registrar Cliente</h3>
-                        <p>Agrega nuevos clientes</p>
-                        <button class="btn btn-primary" data-view="view-cliente"><i class="fas fa-arrow-right"></i> Acceder</button>
+                        <p>Agregar nuevo cliente</p>
+                        <button class="btn btn-primary" data-view="view-registrar"><i class="fas fa-arrow-right"></i> Acceder</button>
                     </div>
                     <div class="menu-card" data-view="view-colocacion">
                         <div class="menu-icon icon-colocacion"><i class="fas fa-hand-holding-usd"></i></div>
-                        <h3>Generar Crédito</h3>
-                        <p>Crea nuevos créditos</p>
+                        <h3>Colocación</h3>
+                        <p>Gestión de colocaciones</p>
                         <button class="btn btn-primary" data-view="view-colocacion"><i class="fas fa-arrow-right"></i> Acceder</button>
                     </div>
                     <div class="menu-card" data-view="view-cobranza">
                         <div class="menu-icon icon-cobranza"><i class="fas fa-cash-register"></i></div>
-                        <h3>Registrar Pago</h3>
-                        <p>Registra pagos de créditos</p>
+                        <h3>Cobranza</h3>
+                        <p>Gestión de cobranza</p>
                         <button class="btn btn-primary" data-view="view-cobranza"><i class="fas fa-arrow-right"></i> Acceder</button>
                     </div>
                     <div class="menu-card" data-view="view-reportes">
                         <div class="menu-icon icon-reportes"><i class="fas fa-chart-bar"></i></div>
-                        <h3>Reportes Básicos</h3>
-                        <p>Consulta estadísticas generales</p>
+                        <h3>Reportes</h3>
+                        <p>Reportes generales</p>
                         <button class="btn btn-primary" data-view="view-reportes"><i class="fas fa-arrow-right"></i> Acceder</button>
                     </div>
                     <div class="menu-card" data-view="view-reportes-avanzados">
                         <div class="menu-icon icon-reportes-avanzados"><i class="fas fa-chart-line"></i></div>
                         <h3>Reportes Avanzados</h3>
-                        <p>Reportes detallados con filtros</p>
+                        <p>Reportes detallados</p>
                         <button class="btn btn-primary" data-view="view-reportes-avanzados"><i class="fas fa-arrow-right"></i> Acceder</button>
                     </div>
                 </div>
@@ -127,100 +127,91 @@
             <!-- Vista Gestión de Clientes -->
             <div id="view-gestion-clientes" class="view hidden">
                 <div class="view-header">
-                    <h2>Gestión de Clientes</h2>
+                    <h2><i class="fas fa-users"></i> Gestión de Clientes</h2>
                     <button class="btn btn-secondary" data-view="view-main-menu"><i class="fas fa-arrow-left"></i> Volver al Menú</button>
                 </div>
                 <div class="filtros-container">
                     <h3>Filtros de Búsqueda</h3>
-                    <div id="filtros-grid" class="filtros-grid">
+                    <div class="filtros-grid">
                         <div class="form-group">
-                            <label for="sucursal_filtro">Sucursal</label>
-                            <select id="sucursal_filtro">
-                                <option value="">Todas</option>
-                                <option value="GDL">Guadalajara</option>
-                                <option value="LEON">León</option>
+                            <label for="filtro-nombre">Nombre</label>
+                            <input type="text" id="filtro-nombre" placeholder="Buscar por nombre...">
+                        </div>
+                        <div class="form-group">
+                            <label for="filtro-identificacion">Identificación</label>
+                            <input type="text" id="filtro-identificacion" placeholder="Buscar por identificación...">
+                        </div>
+                        <div class="form-group">
+                            <label for="filtro-estado">Estado del Crédito</label>
+                            <select id="filtro-estado">
+                                <option value="">Todos los estados</option>
+                                <option value="Al Corriente">Al Corriente</option>
+                                <option value="Atrasado">Atrasado</option>
+                                <option value="Cobranza">Cobranza</option>
+                                <option value="Jurídico">Jurídico</option>
                             </select>
                         </div>
                         <div class="form-group">
-                            <label for="curp_filtro">CURP Cliente</label>
-                            <input type="text" id="curp_filtro" placeholder="Buscar por CURP...">
-                        </div>
-                        <div class="form-group">
-                            <label for="nombre_filtro">Nombre Cliente</label>
-                            <input type="text" id="nombre_filtro" placeholder="Buscar por nombre...">
-                        </div>
-                        <div class="form-group">
-                            <label for="fecha_registro_filtro">Fecha de Registro</label>
-                            <input type="date" id="fecha_registro_filtro">
-                        </div>
-                        <div class="form-group">
-                            <label for="fecha_credito_filtro">Fecha de Crédito</label>
-                            <input type="date" id="fecha_credito_filtro">
-                        </div>
-                        <div class="form-group">
-                            <label for="tipo_colocacion_filtro">Tipo de Colocación</label>
-                            <select id="tipo_colocacion_filtro"></select>
-                        </div>
-                        <div class="form-group">
-                            <label for="plazo_filtro">Plazo</label>
-                            <select id="plazo_filtro"></select>
-                        </div>
-                        <div class="form-group">
-                            <label for="curp_aval_filtro">CURP Aval</label>
-                            <input type="text" id="curp_aval_filtro" placeholder="Buscar por CURP de aval...">
-                        </div>
-                        <div class="form-group">
-                            <label for="grupo_filtro">Grupo o Población</label>
-                            <select id="grupo_filtro"></select>
+                            <label for="filtro-cobrador">Cobrador</label>
+                            <select id="filtro-cobrador">
+                                <option value="">Todos los cobradores</option>
+                            </select>
                         </div>
                     </div>
                     <div class="filtros-actions">
-                        <button id="btn-aplicar-filtros" class="btn btn-primary"><i class="fas fa-search"></i> Filtrar</button>
-                        <button id="btn-limpiar-filtros" class="btn btn-secondary"><i class="fas fa-times"></i> Limpiar</button>
+                        <button id="btn-filtrar-clientes" class="btn btn-primary"><i class="fas fa-filter"></i> Filtrar</button>
+                        <button id="btn-limpiar-filtros-clientes" class="btn btn-secondary"><i class="fas fa-broom"></i> Limpiar Filtros</button>
+                        <button id="btn-exportar-clientes" class="btn btn-success"><i class="fas fa-file-export"></i> Exportar a Excel</button>
                     </div>
                 </div>
-                <div id="status_gestion_clientes"></div>
-                <table class="client-table">
-                    <thead>
-                        <tr>
-                            <th>Sucursal</th>
-                            <th>CURP</th>
-                            <th>Nombre</th>
-                            <th>Grupo</th>
-                            <th>Información de Crédito</th>
-                            <th>Acciones</th>
-                        </tr>
-                    </thead>
-                    <tbody id="tabla-clientes">
-                        <tr>
-                            <td colspan="6">Utiliza los filtros para buscar y mostrar clientes.</td>
-                        </tr>
-                    </tbody>
-                </table>
+                <div id="status-message-clientes" class="status-message hidden"></div>
+                <div class="table-responsive">
+                    <table class="client-table">
+                        <thead>
+                            <tr>
+                                <th>Nombre</th>
+                                <th>Identificación</th>
+                                <th>Teléfono</th>
+                                <th>Estado Crédito</th>
+                                <th>Cobrador</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tabla-clientes-body">
+                            <tr>
+                                <td colspan="6" style="text-align: center; padding: 40px;">
+                                    <i class="fas fa-search" style="font-size: 48px; color: #ddd; margin-bottom: 15px;"></i>
+                                    <p>Utilice los filtros para buscar clientes</p>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
             </div>
 
-            <!-- Vista Gestión de Usuarios - CORREGIDA -->
+            <!-- Vista Gestión de Usuarios -->
             <div id="view-usuarios" class="view hidden">
                 <div class="view-header">
-                    <h2>Gestión de Usuarios</h2>
-                    <button class="btn btn-secondary" data-view="view-main-menu"><i class="fas fa-arrow-left"></i> Volver al Menú</button>
+                    <h2><i class="fas fa-user-cog"></i> Gestión de Usuarios</h2>
+                    <div>
+                        <button class="btn btn-primary" id="btn-nuevo-usuario"><i class="fas fa-user-plus"></i> Nuevo Usuario</button>
+                        <button class="btn btn-secondary" data-view="view-main-menu"><i class="fas fa-arrow-left"></i> Volver al Menú</button>
+                    </div>
                 </div>
-                
-                <!-- FILTROS PARA USUARIOS - NUEVO -->
                 <div class="filtros-usuarios">
                     <h3>Filtros de Búsqueda</h3>
                     <div class="filtros-usuarios-grid">
                         <div class="form-group">
-                            <label for="filtro-email-usuario">Email</label>
-                            <input type="text" id="filtro-email-usuario" placeholder="Buscar por email...">
+                            <label for="filtro-usuario-nombre">Nombre</label>
+                            <input type="text" id="filtro-usuario-nombre" placeholder="Buscar por nombre...">
                         </div>
                         <div class="form-group">
-                            <label for="filtro-nombre-usuario">Nombre</label>
-                            <input type="text" id="filtro-nombre-usuario" placeholder="Buscar por nombre...">
+                            <label for="filtro-usuario-email">Email</label>
+                            <input type="text" id="filtro-usuario-email" placeholder="Buscar por email...">
                         </div>
                         <div class="form-group">
-                            <label for="filtro-rol-usuario">Rol</label>
-                            <select id="filtro-rol-usuario">
+                            <label for="filtro-usuario-rol">Rol</label>
+                            <select id="filtro-usuario-rol">
                                 <option value="">Todos los roles</option>
                                 <option value="admin">Administrador</option>
                                 <option value="supervisor">Supervisor</option>
@@ -230,320 +221,259 @@
                         </div>
                     </div>
                     <div class="filtros-usuarios-actions">
-                        <button id="btn-aplicar-filtros-usuarios" class="btn btn-primary">
-                            <i class="fas fa-search"></i> Buscar
-                        </button>
-                        <button id="btn-limpiar-filtros-usuarios" class="btn btn-secondary">
-                            <i class="fas fa-times"></i> Limpiar Filtros
-                        </button>
+                        <button id="btn-filtrar-usuarios" class="btn btn-primary"><i class="fas fa-filter"></i> Filtrar</button>
+                        <button id="btn-limpiar-filtros-usuarios" class="btn btn-secondary"><i class="fas fa-broom"></i> Limpiar Filtros</button>
+                        <button id="btn-cancelar-busqueda-usuarios" class="btn btn-danger"><i class="fas fa-times"></i> Cancelar Búsqueda</button>
                     </div>
                 </div>
-                
-                <button id="btn-nuevo-usuario" class="btn btn-primary"><i class="fas fa-user-plus"></i> Nuevo Usuario</button>
-                <div id="status_usuarios"></div>
-                <div id="form-usuario-container" class="hidden">
-                    <h3 id="form-usuario-titulo">Nuevo Usuario</h3>
-                    <form id="form-usuario">
-                        <div class="form-group">
-                            <label for="nuevo-email">Email <span class="required">*</span></label>
-                            <input type="email" id="nuevo-email" required>
-                        </div>
-                        <div class="form-group">
-                            <label for="nuevo-password">Contraseña <span class="required">*</span></label>
-                            <input type="password" id="nuevo-password" required>
-                        </div>
-                        <div class="form-group">
-                            <label for="nuevo-nombre">Nombre Completo <span class="required">*</span></label>
-                            <input type="text" id="nuevo-nombre" required>
-                        </div>
-                        <div class="form-group">
-                            <label for="nuevo-rol">Rol <span class="required">*</span></label>
-                            <select id="nuevo-rol" required>
-                                <option value="admin">Administrador</option>
-                                <option value="supervisor">Supervisor</option>
-                                <option value="cobrador">Cobrador</option>
-                                <option value="consulta">Consulta</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <button type="submit" class="btn btn-success"><i class="fas fa-save"></i> Guardar</button>
-                            <button type="button" id="btn-cancelar-usuario" class="btn btn-secondary"><i class="fas fa-times"></i> Cancelar</button>
-                        </div>
-                    </form>
+                <div id="status-message-usuarios" class="status-message hidden"></div>
+                <div class="table-responsive">
+                    <table class="user-table">
+                        <thead>
+                            <tr>
+                                <th>Nombre</th>
+                                <th>Email</th>
+                                <th>Rol</th>
+                                <th>Estado</th>
+                                <th>Último Acceso</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tabla-usuarios-body">
+                            <tr>
+                                <td colspan="6" style="text-align: center; padding: 40px;">
+                                    <i class="fas fa-search" style="font-size: 48px; color: #ddd; margin-bottom: 15px;"></i>
+                                    <p>Utilice los filtros para buscar usuarios</p>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
                 </div>
-                <table class="user-table">
-                    <thead>
-                        <tr>
-                            <th>Email</th>
-                            <th>Nombre</th>
-                            <th>Rol</th>
-                            <th>Sucursal</th>
-                            <th>UID</th>
-                        </tr>
-                    </thead>
-                    <tbody id="tabla-usuarios">
-                        <tr>
-                            <td colspan="5">No hay usuarios en la base de datos de perfiles.</td>
-                        </tr>
-                    </tbody>
-                </table>
             </div>
 
-            <!-- Vista Importar Datos -->
+            <!-- Vista Importar Información -->
             <div id="view-importar" class="view hidden">
                 <div class="view-header">
-                    <h2>Importar Datos</h2>
+                    <h2><i class="fas fa-file-import"></i> Importar Información</h2>
                     <button class="btn btn-secondary" data-view="view-main-menu"><i class="fas fa-arrow-left"></i> Volver al Menú</button>
                 </div>
-                <div class="form-group">
-                    <label for="office-select">Selecciona la Sucursal para Importar</label>
-                    <select id="office-select">
-                        <option value="GDL">Guadalajara</option>
-                        <option value="LEON">León</option>
-                    </select>
-                </div>
-
-                <div id="import-gdl-section">
+                <div class="import-section">
                     <div class="import-tabs">
                         <div class="import-tab active" data-tab="clientes">Clientes</div>
-                        <div class="import-tab" data-tab="colocacion">Colocación</div>
-                        <div class="import-tab" data-tab="cobranza">Cobranza</div>
+                        <div class="import-tab" data-tab="creditos">Créditos</div>
+                        <div class="import-tab" data-tab="pagos">Pagos</div>
                     </div>
-                    <div id="tab-gdl-clientes" class="import-tab-content">
-                        <div class="import-section">
-                            <h4>Formato Guadalajara - Clientes (7 columnas)</h4>
-                            <p>CURP, NOMBRE, DOMICILIO, CP, TELEFONO, FECHA REGISTRO, GRUPO</p>
+                    <div class="import-tab-content">
+                        <div id="tab-clientes" class="tab-content active">
+                            <h4>Importar Clientes</h4>
+                            <p>Selecciona un archivo Excel con los datos de clientes</p>
+                            <div class="form-group">
+                                <label for="archivo-clientes">Archivo Excel</label>
+                                <input type="file" id="archivo-clientes" accept=".xlsx, .xls">
+                            </div>
+                            <button id="btn-importar-clientes" class="btn btn-primary"><i class="fas fa-upload"></i> Importar Clientes</button>
                         </div>
-                        <textarea id="datos-importar-gdl-clientes" rows="8" placeholder="Pega aquí los datos CSV..."></textarea>
-                    </div>
-                    <div id="tab-gdl-colocacion" class="import-tab-content hidden">
-                        <div class="import-section">
-                            <h4>Formato Guadalajara - Colocación (13 columnas)</h4>
-                            <p>CURP, NOMBRE, ID, FECHA, TIPO, MONTO, PLAZO, MONTO A PAGAR, CURP AVAL, NOMBRE AVAL, GRUPO, RUTA, SALDO</p>
+                        <div id="tab-creditos" class="tab-content hidden">
+                            <h4>Importar Créditos</h4>
+                            <p>Selecciona un archivo Excel con los datos de créditos</p>
+                            <div class="form-group">
+                                <label for="archivo-creditos">Archivo Excel</label>
+                                <input type="file" id="archivo-creditos" accept=".xlsx, .xls">
+                            </div>
+                            <button id="btn-importar-creditos" class="btn btn-primary"><i class="fas fa-upload"></i> Importar Créditos</button>
                         </div>
-                        <textarea id="datos-importar-gdl-colocacion" rows="8" placeholder="Pega aquí los datos CSV..."></textarea>
-                    </div>
-                    <div id="tab-gdl-cobranza" class="import-tab-content hidden">
-                        <div class="import-section">
-                            <h4>Formato Guadalajara - Cobranza (11 columnas)</h4>
-                            <p>NOMBRE, ID CREDITO, FECHA, MONTO PAGO, COBRO SEMANA, COMISION, TIPO PAGO, GRUPO, RUTA, SEMANA CREDITO, SALDO</p>
+                        <div id="tab-pagos" class="tab-content hidden">
+                            <h4>Importar Pagos</h4>
+                            <p>Selecciona un archivo Excel con los datos de pagos</p>
+                            <div class="form-group">
+                                <label for="archivo-pagos">Archivo Excel</label>
+                                <input type="file" id="archivo-pagos" accept=".xlsx, .xls">
+                            </div>
+                            <button id="btn-importar-pagos" class="btn btn-primary"><i class="fas fa-upload"></i> Importar Pagos</button>
                         </div>
-                        <textarea id="datos-importar-gdl-cobranza" rows="8" placeholder="Pega aquí los datos CSV..."></textarea>
                     </div>
                 </div>
-
-                <div id="import-leon-section" class="hidden">
-                    <div class="import-tabs">
-                        <div class="import-tab active" data-tab="clientes">Clientas</div>
-                        <div class="import-tab" data-tab="colocacion">Colocación</div>
-                        <div class="import-tab" data-tab="cobranza">Cobranza</div>
-                    </div>
-                    <div id="tab-leon-clientes" class="import-tab-content">
-                        <div class="import-section">
-                            <h4>Formato León - Clientas (7 columnas)</h4>
-                            <p>CURP, NOMBRE, DOMICILIO, CP, TELEFONO, FECHA REGISTRO, GRUPO</p>
-                        </div>
-                        <textarea id="datos-importar-leon-clientes" rows="8" placeholder="Pega aquí los datos CSV..."></textarea>
-                    </div>
-                    <div id="tab-leon-colocacion" class="import-tab-content hidden">
-                        <div class="import-section">
-                            <h4>Formato León - Colocación (20 columnas)</h4>
-                            <p>CURP, NOMBRE, ID, FECHA, TIPO, MONTO, PLAZO, MONTO A PAGAR, CURP AVAL, NOMBRE AVAL, GRUPO, RUTA, INTERES, SALDO, ULTIMO PAGO, SALDO VENCIDO, STATUS, SALDO CAPITAL, SALDO INTERES, STJ150</p>
-                        </div>
-                        <textarea id="datos-importar-leon-colocacion" rows="8" placeholder="Pega aquí los datos CSV..."></textarea>
-                    </div>
-                    <div id="tab-leon-cobranza" class="import-tab-content hidden">
-                        <div class="import-section">
-                            <h4>Formato León - Cobranza (11 columnas)</h4>
-                            <p>NOMBRE, ID CREDITO, FECHA, MONTO PAGO, COMISION, TIPO PAGO, GRUPO, RUTA, INTERES COBRADO, SALDO, COBRADO POR</p>
-                        </div>
-                        <textarea id="datos-importar-leon-cobranza" rows="8" placeholder="Pega aquí los datos CSV..."></textarea>
-                    </div>
-                </div>
-
-                <div class="form-group" style="margin-top: 20px;">
-                    <button id="btn-procesar-importacion" class="btn btn-primary"><i class="fas fa-file-import"></i> Procesar</button>
-                    <button id="btn-limpiar-datos" class="btn btn-danger"><i class="fas fa-trash"></i> Limpiar BD</button>
-                </div>
-                <div id="resultado-importacion" class="hidden">
-                    <div id="estado-importacion"></div>
-                    <div id="detalle-importacion"></div>
-                </div>
+                <div id="import-result" class="hidden"></div>
             </div>
 
             <!-- Vista Registrar Cliente -->
-            <div id="view-cliente" class="view hidden">
+            <div id="view-registrar" class="view hidden">
                 <div class="view-header">
-                    <h2>Registrar Cliente</h2>
+                    <h2><i class="fas fa-user-plus"></i> Registrar Nuevo Cliente</h2>
                     <button class="btn btn-secondary" data-view="view-main-menu"><i class="fas fa-arrow-left"></i> Volver al Menú</button>
                 </div>
-                <form id="form-cliente">
-                    <div class="form-group">
-                        <label for="curp_cliente">CURP <span class="required">*</span></label>
-                        <input type="text" id="curp_cliente" placeholder="18 caracteres" required maxlength="18">
-                        <div class="field-note">18 caracteres</div>
+                <form id="form-registrar-cliente">
+                    <div class="filtros-grid">
+                        <div class="form-group">
+                            <label for="cliente-nombre">Nombre Completo <span class="required">*</span></label>
+                            <input type="text" id="cliente-nombre" placeholder="Ingresa el nombre completo" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="cliente-identificacion">Identificación <span class="required">*</span></label>
+                            <input type="text" id="cliente-identificacion" placeholder="Número de identificación" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="cliente-telefono">Teléfono</label>
+                            <input type="tel" id="cliente-telefono" placeholder="Número de teléfono">
+                        </div>
+                        <div class="form-group">
+                            <label for="cliente-email">Email</label>
+                            <input type="email" id="cliente-email" placeholder="Correo electrónico">
+                        </div>
+                        <div class="form-group">
+                            <label for="cliente-direccion">Dirección</label>
+                            <textarea id="cliente-direccion" placeholder="Dirección completa" rows="3"></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label for="cliente-cobrador">Cobrador Asignado</label>
+                            <select id="cliente-cobrador">
+                                <option value="">Seleccionar cobrador</option>
+                            </select>
+                        </div>
                     </div>
-                    <div class="form-group">
-                        <label for="nombre_cliente">Nombre Completo <span class="required">*</span></label>
-                        <input type="text" id="nombre_cliente" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="domicilio_cliente">Domicilio <span class="required">*</span></label>
-                        <input type="text" id="domicilio_cliente" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="cp_cliente">Código Postal</label>
-                        <input type="text" id="cp_cliente">
-                    </div>
-                    <div class="form-group">
-                        <label for="telefono_cliente">Teléfono</label>
-                        <input type="text" id="telefono_cliente">
-                    </div>
-                    <div class="form-group">
-                        <label for="poblacion_grupo_cliente">Población/Grupo <span class="required">*</span></label>
-                        <select id="poblacion_grupo_cliente" required></select>
-                    </div>
-                    <div class="form-group">
-                        <label for="ruta_cliente">Ruta <span class="required">*</span></label>
-                        <select id="ruta_cliente" required></select>
-                    </div>
-                    <div class="form-group">
-                        <button type="submit" class="btn btn-success"><i class="fas fa-save"></i> Guardar Cliente</button>
-                        <button type="button" class="btn btn-secondary" data-view="view-main-menu"><i class="fas fa-times"></i> Cancelar</button>
+                    <div class="filtros-actions">
+                        <button type="submit" class="btn btn-success"><i class="fas fa-save"></i> Registrar Cliente</button>
+                        <button type="reset" class="btn btn-secondary"><i class="fas fa-undo"></i> Limpiar Formulario</button>
                     </div>
                 </form>
-                <div id="status_cliente"></div>
+                <div id="status-message-registrar" class="status-message hidden"></div>
             </div>
 
-            <!-- Vista Generar Crédito -->
+            <!-- Vista Colocación -->
             <div id="view-colocacion" class="view hidden">
                 <div class="view-header">
-                    <h2>Generar Crédito</h2>
+                    <h2><i class="fas fa-hand-holding-usd"></i> Colocación de Créditos</h2>
                     <button class="btn btn-secondary" data-view="view-main-menu"><i class="fas fa-arrow-left"></i> Volver al Menú</button>
                 </div>
-                <div class="form-group">
-                    <label for="curp_colocacion">CURP del Cliente <span class="required">*</span></label>
+                <div class="filtros-container">
+                    <h3>Buscar Cliente para Colocación</h3>
                     <div class="search-group">
-                        <input type="text" id="curp_colocacion" required>
-                        <button id="btnBuscarCliente_colocacion" class="btn btn-primary"><i class="fas fa-search"></i> Buscar</button>
+                        <input type="text" id="buscar-cliente-colocacion" placeholder="Ingresa nombre o identificación del cliente...">
+                        <button id="btn-buscar-cliente-colocacion" class="btn btn-primary"><i class="fas fa-search"></i> Buscar</button>
                     </div>
                 </div>
-                <div id="form-colocacion" class="hidden">
-                    <form id="form-credito-submit">
-                        <div class="form-group">
-                            <label>Nombre del Cliente</label>
-                            <input type="text" id="nombre_colocacion" readonly>
+                <div id="resultado-busqueda-colocacion"></div>
+                <div id="formulario-colocacion" class="hidden">
+                    <h3>Datos del Crédito</h3>
+                    <form id="form-colocacion">
+                        <div class="filtros-grid">
+                            <div class="form-group">
+                                <label for="monto-credito">Monto del Crédito <span class="required">*</span></label>
+                                <input type="number" id="monto-credito" placeholder="Monto del crédito" required step="0.01">
+                            </div>
+                            <div class="form-group">
+                                <label for="plazo-credito">Plazo (meses) <span class="required">*</span></label>
+                                <input type="number" id="plazo-credito" placeholder="Plazo en meses" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="tasa-interes">Tasa de Interés (%) <span class="required">*</span></label>
+                                <input type="number" id="tasa-interes" placeholder="Tasa de interés" required step="0.01">
+                            </div>
+                            <div class="form-group">
+                                <label for="fecha-desembolso">Fecha de Desembolso <span class="required">*</span></label>
+                                <input type="date" id="fecha-desembolso" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="tipo-credito">Tipo de Crédito</label>
+                                <select id="tipo-credito">
+                                    <option value="Personal">Personal</option>
+                                    <option value="Comercial">Comercial</option>
+                                    <option value="Hipotecario">Hipotecario</option>
+                                    <option value="Vehicular">Vehicular</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="garantia">Tipo de Garantía</label>
+                                <select id="garantia">
+                                    <option value="Personal">Personal</option>
+                                    <option value="Prendaria">Prendaria</option>
+                                    <option value="Hipotecaria">Hipotecaria</option>
+                                    <option value="Mixta">Mixta</option>
+                                </select>
+                            </div>
                         </div>
-                        <div class="form-group">
-                            <label>ID del Crédito</label>
-                            <input type="text" id="idCredito_colocacion" readonly>
-                        </div>
-                        <div class="form-group">
-                            <label for="tipo_colocacion">Tipo <span class="required">*</span></label>
-                            <select id="tipo_colocacion" required></select>
-                        </div>
-                        <div class="form-group">
-                            <label for="monto_colocacion">Monto <span class="required">*</span></label>
-                            <select id="monto_colocacion" required></select>
-                        </div>
-                        <div class="form-group">
-                            <label for="plazo_colocacion">Plazo (semanas) <span class="required">*</span></label>
-                            <select id="plazo_colocacion" required></select>
-                        </div>
-                        <div class="form-group">
-                            <label>Monto Total a Pagar</label>
-                            <input type="text" id="montoTotal_colocacion" readonly>
-                            <div class="field-note">Incluye 30% de interés</div>
-                        </div>
-                        <div class="form-group">
-                            <label for="curpAval_colocacion">CURP Aval <span class="required">*</span></label>
-                            <input type="text" id="curpAval_colocacion" placeholder="18 caracteres" required maxlength="18">
-                            <div class="field-note">18 caracteres</div>
-                        </div>
-                        <div class="form-group">
-                            <label for="nombreAval_colocacion">Nombre Aval <span class="required">*</span></label>
-                            <input type="text" id="nombreAval_colocacion" required>
-                        </div>
-                        <div class="form-group">
-                            <button type="submit" class="btn btn-success"><i class="fas fa-hand-holding-usd"></i> Generar Crédito</button>
-                            <button type="button" class="btn btn-secondary" data-view="view-main-menu"><i class="fas fa-times"></i> Cancelar</button>
+                        <div class="filtros-actions">
+                            <button type="submit" class="btn btn-success"><i class="fas fa-check"></i> Aprobar Crédito</button>
+                            <button type="button" id="btn-cancelar-colocacion" class="btn btn-secondary"><i class="fas fa-times"></i> Cancelar</button>
                         </div>
                     </form>
                 </div>
-                <div id="status_colocacion"></div>
+                <div id="status-message-colocacion" class="status-message hidden"></div>
             </div>
 
-            <!-- Vista Registrar Pago -->
+            <!-- Vista Cobranza -->
             <div id="view-cobranza" class="view hidden">
                 <div class="view-header">
-                    <h2>Registrar Pago</h2>
+                    <h2><i class="fas fa-cash-register"></i> Gestión de Cobranza</h2>
                     <button class="btn btn-secondary" data-view="view-main-menu"><i class="fas fa-arrow-left"></i> Volver al Menú</button>
                 </div>
-                <div class="form-group">
-                    <label for="idCredito_cobranza">ID del Crédito <span class="required">*</span></label>
-                    <div class="search-group">
-                        <input type="text" id="idCredito_cobranza" required>
-                        <button id="btnBuscarCredito_cobranza" class="btn btn-primary"><i class="fas fa-search"></i> Buscar</button>
-                    </div>
-                </div>
-                <div id="form-cobranza" class="hidden">
-                    <form id="form-pago-submit">
+                <div class="filtros-container">
+                    <h3>Filtros de Cobranza</h3>
+                    <div class="filtros-grid">
                         <div class="form-group">
-                            <label>Nombre Cliente</label>
-                            <input type="text" id="nombre_cobranza" readonly>
-                        </div>
-                        <div class="form-group">
-                            <label>Saldo Actual</label>
-                            <input type="text" id="saldo_cobranza" readonly>
-                        </div>
-                        <div class="form-group">
-                            <label>Estado del Crédito</label>
-                            <input type="text" id="estado_cobranza" readonly>
-                        </div>
-                        <div class="form-group">
-                            <label>Semanas de Atraso</label>
-                            <input type="text" id="semanas_atraso_cobranza" readonly>
-                        </div>
-                        <div class="form-group">
-                            <label for="pago_semanal_cobranza">Monto de Pago Semanal</label>
-                            <input type="text" id="pago_semanal_cobranza" readonly>
-                        </div>
-                        <div class="form-group">
-                            <label for="fecha_proximo_pago_cobranza">Fecha Próximo Pago</label>
-                            <input type="text" id="fecha_proximo_pago_cobranza" readonly>
-                        </div>
-                        <div class="form-group">
-                            <label for="monto_cobranza">Monto del Pago <span class="required">*</span></label>
-                            <input type="number" id="monto_cobranza" min="0.01" step="0.01" required>
-                        </div>
-                        <div class="form-group">
-                            <label for="tipo_cobranza">Tipo de Pago <span class="required">*</span></label>
-                            <select id="tipo_cobranza" required>
-                                <option value="normal">Normal</option>
-                                <option value="extraordinario">Extraordinario</option>
-                                <option value="actualizado">Actualizado</option>
+                            <label for="filtro-cobranza-estado">Estado</label>
+                            <select id="filtro-cobranza-estado">
+                                <option value="">Todos los estados</option>
+                                <option value="Atrasado">Atrasado</option>
+                                <option value="Cobranza">Cobranza</option>
+                                <option value="Jurídico">Jurídico</option>
                             </select>
                         </div>
                         <div class="form-group">
-                            <label>Saldo Después del Pago</label>
-                            <input type="text" id="saldoDespues_cobranza" readonly>
+                            <label for="filtro-cobranza-cobrador">Cobrador</label>
+                            <select id="filtro-cobranza-cobrador">
+                                <option value="">Todos los cobradores</option>
+                            </select>
                         </div>
                         <div class="form-group">
-                            <button type="submit" class="btn btn-success"><i class="fas fa-cash-register"></i> Registrar Pago</button>
-                            <button type="button" class="btn btn-secondary" data-view="view-main-menu"><i class="fas fa-times"></i> Cancelar</button>
+                            <label for="filtro-cobranza-fecha">Días de Atraso</label>
+                            <select id="filtro-cobranza-fecha">
+                                <option value="">Todos</option>
+                                <option value="1-7">1-7 días</option>
+                                <option value="8-30">8-30 días</option>
+                                <option value="31-90">31-90 días</option>
+                                <option value="91+">Más de 90 días</option>
+                            </select>
                         </div>
-                    </form>
+                    </div>
+                    <div class="filtros-actions">
+                        <button id="btn-filtrar-cobranza" class="btn btn-primary"><i class="fas fa-filter"></i> Filtrar</button>
+                        <button id="btn-exportar-cobranza" class="btn btn-success"><i class="fas fa-file-export"></i> Exportar</button>
+                    </div>
                 </div>
-                <div id="status_cobranza"></div>
+                <div id="status-message-cobranza" class="status-message hidden"></div>
+                <div class="table-responsive">
+                    <table class="client-table">
+                        <thead>
+                            <tr>
+                                <th>Cliente</th>
+                                <th>Identificación</th>
+                                <th>Teléfono</th>
+                                <th>Estado</th>
+                                <th>Días Atraso</th>
+                                <th>Saldo Pendiente</th>
+                                <th>Cobrador</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tabla-cobranza-body">
+                            <tr>
+                                <td colspan="8" style="text-align: center; padding: 40px;">
+                                    <i class="fas fa-search" style="font-size: 48px; color: #ddd; margin-bottom: 15px;"></i>
+                                    <p>Utilice los filtros para buscar registros de cobranza</p>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
             </div>
 
-            <!-- Vista Reportes Básicos -->
+            <!-- Vista Reportes -->
             <div id="view-reportes" class="view hidden">
                 <div class="view-header">
-                    <h2>Reportes del Sistema</h2>
+                    <h2><i class="fas fa-chart-bar"></i> Reportes Generales</h2>
                     <button class="btn btn-secondary" data-view="view-main-menu"><i class="fas fa-arrow-left"></i> Volver al Menú</button>
                 </div>
-                <button id="btn-actualizar-reportes" class="btn btn-primary"><i class="fas fa-sync-alt"></i> Actualizar Reportes</button>
                 <div class="report-grid">
                     <div class="report-card">
                         <div class="report-icon"><i class="fas fa-users"></i></div>
@@ -551,182 +481,258 @@
                         <div class="report-label">Total Clientes</div>
                     </div>
                     <div class="report-card">
-                        <div class="report-icon"><i class="fas fa-file-invoice-dollar"></i></div>
+                        <div class="report-icon"><i class="fas fa-hand-holding-usd"></i></div>
                         <div class="report-value" id="total-creditos">0</div>
                         <div class="report-label">Créditos Activos</div>
                     </div>
                     <div class="report-card">
-                        <div class="report-icon"><i class="fas fa-money-bill-wave"></i></div>
-                        <div class="report-value" id="total-cartera">$0</div>
-                        <div class="report-label">Total Cartera</div>
+                        <div class="report-icon"><i class="fas fa-chart-line"></i></div>
+                        <div class="report-value" id="cartera-total">$0</div>
+                        <div class="report-label">Cartera Total</div>
                     </div>
                     <div class="report-card">
                         <div class="report-icon"><i class="fas fa-exclamation-triangle"></i></div>
-                        <div class="report-value" id="total-vencidos">0</div>
-                        <div class="report-label">Créditos Vencidos</div>
-                    </div>
-                    <div class="report-card">
-                        <div class="report-icon"><i class="fas fa-receipt"></i></div>
-                        <div class="report-value" id="pagos-registrados">0</div>
-                        <div class="report-label">Pagos del Mes</div>
-                    </div>
-                    <div class="report-card">
-                        <div class="report-icon"><i class="fas fa-coins"></i></div>
-                        <div class="report-value" id="cobrado-mes">$0</div>
-                        <div class="report-label">Cobrado Este Mes</div>
-                    </div>
-                    <div class="report-card">
-                        <div class="report-icon"><i class="fas fa-percentage"></i></div>
-                        <div class="report-value" id="tasa-recuperacion">0%</div>
-                        <div class="report-label">Tasa de Recuperación</div>
-                    </div>
-                    <div class="report-card">
-                        <div class="report-icon"><i class="fas fa-hand-holding-usd"></i></div>
-                        <div class="report-value" id="total-comisiones">$0</div>
-                        <div class="report-label">Comisiones del Mes</div>
+                        <div class="report-value" id="creditos-atrasados">0</div>
+                        <div class="report-label">Créditos Atrasados</div>
                     </div>
                 </div>
-                <div id="status_reportes"></div>
+                <div class="export-buttons">
+                    <button id="btn-exportar-reporte-general" class="btn btn-success"><i class="fas fa-file-excel"></i> Exportar Reporte General</button>
+                    <button id="btn-exportar-cartera" class="btn btn-info"><i class="fas fa-file-pdf"></i> Exportar Cartera PDF</button>
+                </div>
+                <div class="filtros-container">
+                    <h3>Reporte Detallado</h3>
+                    <div class="filtros-grid">
+                        <div class="form-group">
+                            <label for="reporte-tipo">Tipo de Reporte</label>
+                            <select id="reporte-tipo">
+                                <option value="estado-creditos">Estado de Créditos</option>
+                                <option value="cobradores">Desempeño por Cobrador</option>
+                                <option value="colocacion-mensual">Colocación Mensual</option>
+                                <option value="cobranza-mensual">Cobranza Mensual</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="reporte-fecha-inicio">Fecha Inicio</label>
+                            <input type="date" id="reporte-fecha-inicio">
+                        </div>
+                        <div class="form-group">
+                            <label for="reporte-fecha-fin">Fecha Fin</label>
+                            <input type="date" id="reporte-fecha-fin">
+                        </div>
+                    </div>
+                    <div class="filtros-actions">
+                        <button id="btn-generar-reporte" class="btn btn-primary"><i class="fas fa-chart-bar"></i> Generar Reporte</button>
+                    </div>
+                </div>
+                <div id="resultado-reporte"></div>
             </div>
 
             <!-- Vista Reportes Avanzados -->
             <div id="view-reportes-avanzados" class="view hidden">
                 <div class="view-header">
-                    <h2>Reportes Avanzados</h2>
+                    <h2><i class="fas fa-chart-line"></i> Reportes Avanzados</h2>
                     <button class="btn btn-secondary" data-view="view-main-menu"><i class="fas fa-arrow-left"></i> Volver al Menú</button>
                 </div>
-
                 <div class="advanced-filters">
-                    <h3>Filtros de Reporte</h3>
-                    <div id="filtros-reportes-avanzados" class="filtros-grid">
-                        <div class="form-group">
-                            <label for="sucursal_filtro_reporte">Sucursal</label>
-                            <select id="sucursal_filtro_reporte">
-                                <option value="">Todas</option>
-                                <option value="GDL">Guadalajara</option>
-                                <option value="LEON">León</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label for="grupo_filtro_reporte">Grupo/Población</label>
-                            <select id="grupo_filtro_reporte">
-                                <option value="">Todos</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label for="ruta_filtro_reporte">Ruta</label>
-                            <select id="ruta_filtro_reporte">
-                                <option value="">Todas</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label for="tipo_credito_filtro_reporte">Tipo de Crédito</label>
-                            <select id="tipo_credito_filtro_reporte">
-                                <option value="">Todos</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label for="estado_credito_filtro_reporte">Estado de Crédito</label>
-                            <select id="estado_credito_filtro_reporte">
-                                <option value="">Todos</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label for="tipo_pago_filtro_reporte">Tipo de Pago</label>
-                            <select id="tipo_pago_filtro_reporte">
-                                <option value="">Todos</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label for="curp_filtro_reporte">CURP Cliente</label>
-                            <input type="text" id="curp_filtro_reporte" placeholder="Filtrar por CURP...">
-                        </div>
-                        <div class="form-group">
-                            <label for="id_credito_filtro_reporte">ID Crédito</label>
-                            <input type="text" id="id_credito_filtro_reporte" placeholder="Filtrar por ID crédito...">
-                        </div>
-                    </div>
-
                     <div class="filter-section">
-                        <div class="filter-section-title">Rango de Fechas</div>
-                        <div class="date-range">
+                        <div class="filter-section-title">Filtros Avanzados</div>
+                        <div class="filtros-grid">
                             <div class="form-group">
-                                <label for="fecha_inicio_reporte">Fecha Inicio</label>
-                                <input type="date" id="fecha_inicio_reporte">
+                                <label for="avanzado-fecha-inicio">Fecha Inicio</label>
+                                <input type="date" id="avanzado-fecha-inicio">
                             </div>
                             <div class="form-group">
-                                <label for="fecha_fin_reporte">Fecha Fin</label>
-                                <input type="date" id="fecha_fin_reporte">
+                                <label for="avanzado-fecha-fin">Fecha Fin</label>
+                                <input type="date" id="avanzado-fecha-fin">
+                            </div>
+                            <div class="form-group">
+                                <label for="avanzado-cobrador">Cobrador</label>
+                                <select id="avanzado-cobrador">
+                                    <option value="">Todos los cobradores</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="avanzado-estado">Estado</label>
+                                <select id="avanzado-estado">
+                                    <option value="">Todos los estados</option>
+                                    <option value="Al Corriente">Al Corriente</option>
+                                    <option value="Atrasado">Atrasado</option>
+                                    <option value="Cobranza">Cobranza</option>
+                                    <option value="Jurídico">Jurídico</option>
+                                </select>
                             </div>
                         </div>
                     </div>
-
+                    <div class="filter-section">
+                        <div class="filter-section-title">Tipo de Análisis</div>
+                        <div class="filtros-grid">
+                            <div class="form-group">
+                                <label for="avanzado-tipo-analisis">Análisis</label>
+                                <select id="avanzado-tipo-analisis">
+                                    <option value="comportamiento-pagos">Comportamiento de Pagos</option>
+                                    <option value="eficiencia-cobradores">Eficiencia de Cobradores</option>
+                                    <option value="concentracion-cartera">Concentración de Cartera</option>
+                                    <option value="proyeccion-cobranza">Proyección de Cobranza</option>
+                                    <option value="analisis-riesgo">Análisis de Riesgo</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="avanzado-metrica">Métrica Principal</label>
+                                <select id="avanzado-metrica">
+                                    <option value="monto">Monto</option>
+                                    <option value="cantidad">Cantidad</option>
+                                    <option value="porcentaje">Porcentaje</option>
+                                    <option value="tendencia">Tendencia</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
                     <div class="filtros-actions">
-                        <button id="btn-aplicar-filtros-reportes" class="btn btn-primary">
-                            <i class="fas fa-search"></i> Generar Reporte
-                        </button>
-                        <button id="btn-limpiar-filtros-reportes" class="btn btn-secondary">
-                            <i class="fas fa-times"></i> Limpiar Filtros
-                        </button>
+                        <button id="btn-generar-reporte-avanzado" class="btn btn-primary"><i class="fas fa-chart-line"></i> Generar Reporte Avanzado</button>
+                        <button id="btn-exportar-reporte-avanzado" class="btn btn-success"><i class="fas fa-file-export"></i> Exportar a Excel</button>
                     </div>
                 </div>
-
-                <div id="estadisticas-reporte"></div>
-
-                <div class="export-buttons">
-                    <button id="btn-exportar-csv" class="btn btn-success">
-                        <i class="fas fa-file-csv"></i> Exportar CSV
-                    </button>
-                    <button id="btn-exportar-pdf" class="btn btn-danger">
-                        <i class="fas fa-file-pdf"></i> Exportar PDF
-                    </button>
-                </div>
-
-                <div id="status_reportes_avanzados"></div>
-
-                <table class="report-table">
-                    <thead>
-                        <tr>
-                            <th>Tipo</th>
-                            <th>CURP</th>
-                            <th>Nombre</th>
-                            <th>Grupo/Población</th>
-                            <th>Ruta</th>
-                            <th>Sucursal</th>
-                            <th>Fecha</th>
-                            <th>Tipo Operación</th>
-                            <th>Monto</th>
-                            <th>Saldo</th>
-                        </tr>
-                    </thead>
-                    <tbody id="tabla-reportes-avanzados">
-                        <tr>
-                            <td colspan="10">Aplica los filtros para generar el reporte.</td>
-                        </tr>
-                    </tbody>
-                </table>
+                <div id="resultado-reporte-avanzado"></div>
             </div>
         </main>
     </div>
 
-    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
+    <!-- Modal para Nuevo Usuario -->
+    <div id="modal-nuevo-usuario" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3><i class="fas fa-user-plus"></i> Nuevo Usuario</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="form-nuevo-usuario">
+                    <div class="form-group">
+                        <label for="nuevo-usuario-nombre">Nombre Completo <span class="required">*</span></label>
+                        <input type="text" id="nuevo-usuario-nombre" placeholder="Ingresa el nombre completo" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="nuevo-usuario-email">Correo Electrónico <span class="required">*</span></label>
+                        <input type="email" id="nuevo-usuario-email" placeholder="Ingresa el correo electrónico" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="nuevo-usuario-password">Contraseña <span class="required">*</span></label>
+                        <input type="password" id="nuevo-usuario-password" placeholder="Ingresa la contraseña" required>
+                        <div class="field-note">Mínimo 6 caracteres</div>
+                    </div>
+                    <div class="form-group">
+                        <label for="nuevo-usuario-rol">Rol <span class="required">*</span></label>
+                        <select id="nuevo-usuario-rol" required>
+                            <option value="">Seleccionar rol</option>
+                            <option value="admin">Administrador</option>
+                            <option value="supervisor">Supervisor</option>
+                            <option value="cobrador">Cobrador</option>
+                            <option value="consulta">Consulta</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="nuevo-usuario-activo">Estado</label>
+                        <select id="nuevo-usuario-activo">
+                            <option value="true">Activo</option>
+                            <option value="false">Inactivo</option>
+                        </select>
+                    </div>
+                    <div class="form-actions">
+                        <button type="submit" class="btn btn-success"><i class="fas fa-save"></i> Crear Usuario</button>
+                        <button type="button" class="btn btn-secondary modal-close"><i class="fas fa-times"></i> Cancelar</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
 
-    <script>
-        const firebaseConfig = {
-            apiKey: "AIzaSyBNt_JKONVgOXS4fgJrj3qldb1JBdOgPoE",
-            authDomain: "finzana-app.firebaseapp.com",
-            projectId: "finzana-app",
-            storageBucket: "finzana-app.firebasestorage.app",
-            messagingSenderId: "779745085151",
-            appId: "1:779745085151:web:2d470408b6267e3e16cb6a"
-        };
-        firebase.initializeApp(firebaseConfig);
-        const auth = firebase.auth();
-        const db = firebase.firestore();
-    </script>
-    <script src="js/database.js"></script>
+    <!-- Modal para Editar Usuario -->
+    <div id="modal-editar-usuario" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3><i class="fas fa-user-edit"></i> Editar Usuario</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="form-editar-usuario">
+                    <input type="hidden" id="editar-usuario-id">
+                    <div class="form-group">
+                        <label for="editar-usuario-nombre">Nombre Completo <span class="required">*</span></label>
+                        <input type="text" id="editar-usuario-nombre" placeholder="Ingresa el nombre completo" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="editar-usuario-email">Correo Electrónico <span class="required">*</span></label>
+                        <input type="email" id="editar-usuario-email" placeholder="Ingresa el correo electrónico" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="editar-usuario-password">Nueva Contraseña</label>
+                        <input type="password" id="editar-usuario-password" placeholder="Dejar vacío para mantener la actual">
+                        <div class="field-note">Mínimo 6 caracteres</div>
+                    </div>
+                    <div class="form-group">
+                        <label for="editar-usuario-rol">Rol <span class="required">*</span></label>
+                        <select id="editar-usuario-rol" required>
+                            <option value="">Seleccionar rol</option>
+                            <option value="admin">Administrador</option>
+                            <option value="supervisor">Supervisor</option>
+                            <option value="cobrador">Cobrador</option>
+                            <option value="consulta">Consulta</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="editar-usuario-activo">Estado</label>
+                        <select id="editar-usuario-activo">
+                            <option value="true">Activo</option>
+                            <option value="false">Inactivo</option>
+                        </select>
+                    </div>
+                    <div class="form-actions">
+                        <button type="submit" class="btn btn-success"><i class="fas fa-save"></i> Guardar Cambios</button>
+                        <button type="button" class="btn btn-secondary modal-close"><i class="fas fa-times"></i> Cancelar</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal para Confirmar Eliminación -->
+    <div id="modal-confirmar-eliminar" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3><i class="fas fa-exclamation-triangle"></i> Confirmar Eliminación</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p id="confirmar-eliminar-mensaje">¿Estás seguro de que deseas eliminar este registro?</p>
+                <div class="form-actions">
+                    <button id="btn-confirmar-eliminar" class="btn btn-danger"><i class="fas fa-trash"></i> Eliminar</button>
+                    <button type="button" class="btn btn-secondary modal-close"><i class="fas fa-times"></i> Cancelar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Barra de Progreso Mejorada - FIJADA EN PARTE SUPERIOR -->
+    <div id="progress-container" class="progress-container-fixed hidden">
+        <div class="progress-text-fixed" id="progress-text">Procesando...</div>
+        <div class="progress-bar-fixed" id="progress-bar"></div>
+        <button class="btn-cancelar-carga-fixed" id="btn-cancelar-carga" title="Cancelar operación">
+            <i class="fas fa-times"></i>
+        </button>
+    </div>
+
+    <!-- Overlay de procesamiento -->
+    <div id="processing-overlay" class="processing-overlay hidden">
+        <div class="processing-spinner"></div>
+        <div class="processing-message" id="processing-message">Procesando...</div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-storage.js"></script>
+    <script src="js/firebase-config.js"></script>
     <script src="js/app.js"></script>
 </body>
 </html>
