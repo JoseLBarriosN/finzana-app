@@ -1,4 +1,4 @@
-// =============================================
+﻿// =============================================
 // INICIALIZACIÓN DE LA APLICACIÓN CON FIREBASE - CORREGIDO COMPLETO
 // =============================================
 
@@ -6,7 +6,8 @@ let currentUser = null;
 let creditoActual = null;
 let currentImportTab = 'clientes';
 let reportData = null;
-let cargaEnProgreso = false; // Variable global para controlar carga
+let cargaEnProgreso = false;
+let currentSearchOperation = null;
 
 document.addEventListener('DOMContentLoaded', function () {
     console.log('DOM cargado, inicializando aplicación...');
@@ -70,7 +71,7 @@ function setupEventListeners() {
         });
     });
 
-    // Gestión de Clientes - CORREGIDO: Verificar que los elementos existen
+    // Gestión de Clientes
     const btnAplicarFiltros = document.getElementById('btn-aplicar-filtros');
     if (btnAplicarFiltros) {
         btnAplicarFiltros.addEventListener('click', loadClientesTable);
@@ -79,6 +80,32 @@ function setupEventListeners() {
     const btnLimpiarFiltros = document.getElementById('btn-limpiar-filtros');
     if (btnLimpiarFiltros) {
         btnLimpiarFiltros.addEventListener('click', limpiarFiltrosClientes);
+    }
+
+    // Gestión de Usuarios - CORREGIDO
+    const btnAplicarFiltrosUsuarios = document.getElementById('btn-aplicar-filtros-usuarios');
+    if (btnAplicarFiltrosUsuarios) {
+        btnAplicarFiltrosUsuarios.addEventListener('click', loadUsersTable);
+    }
+
+    const btnLimpiarFiltrosUsuarios = document.getElementById('btn-limpiar-filtros-usuarios');
+    if (btnLimpiarFiltrosUsuarios) {
+        btnLimpiarFiltrosUsuarios.addEventListener('click', limpiarFiltrosUsuarios);
+    }
+
+    const btnNuevoUsuario = document.getElementById('btn-nuevo-usuario');
+    if (btnNuevoUsuario) {
+        btnNuevoUsuario.addEventListener('click', mostrarFormularioUsuario);
+    }
+
+    const btnCancelarUsuario = document.getElementById('btn-cancelar-usuario');
+    if (btnCancelarUsuario) {
+        btnCancelarUsuario.addEventListener('click', ocultarFormularioUsuario);
+    }
+
+    const formUsuario = document.getElementById('form-usuario');
+    if (formUsuario) {
+        formUsuario.addEventListener('submit', handleUserForm);
     }
 
     // Importación de Datos
@@ -102,14 +129,6 @@ function setupEventListeners() {
             if (confirm('¿Estás seguro de que deseas limpiar TODA la base de datos en la nube? Esta acción es experimental y no se puede deshacer.')) {
                 showStatus('estado-importacion', 'La limpieza masiva debe hacerse desde la consola de Firebase o con Cloud Functions para mayor seguridad.', 'info');
             }
-        });
-    }
-
-    // Gestión de Usuarios (Firebase Auth)
-    const btnNuevoUsuario = document.getElementById('btn-nuevo-usuario');
-    if (btnNuevoUsuario) {
-        btnNuevoUsuario.addEventListener('click', () => {
-            showStatus('status_usuarios', 'La creación de usuarios se realiza en la Consola de Firebase > Authentication.', 'info');
         });
     }
 
@@ -278,14 +297,14 @@ async function handleImport() {
     showButtonLoading('btn-procesar-importacion', true, 'Importando...');
 
     try {
-        // Mostrar barra de progreso para importación
-        showProgress(0, 'Iniciando importación...');
-        
+        // Mostrar barra de progreso fija para importación
+        showFixedProgress(0, 'Iniciando importación...');
+
         const resultado = await database.importarDatosDesdeCSV(csvData, currentImportTab, office);
-        
+
         // Actualizar progreso al finalizar
-        showProgress(100, 'Importación completada');
-        
+        showFixedProgress(100, 'Importación completada');
+
         let mensaje = `Importación (${office}) completada: ${resultado.importados} de ${resultado.total} registros.`;
 
         if (resultado.errores && resultado.errores.length > 0) {
@@ -308,7 +327,7 @@ async function handleImport() {
     } finally {
         showProcessingOverlay(false);
         showButtonLoading('btn-procesar-importacion', false);
-        hideProgress();
+        setTimeout(hideFixedProgress, 1000);
     }
 }
 
@@ -321,7 +340,7 @@ async function handleClientForm(e) {
     }
 
     showButtonLoading('#form-cliente button[type="submit"]', true, 'Guardando...');
-    showProgress(50, 'Registrando cliente...');
+    showFixedProgress(50, 'Registrando cliente...');
 
     try {
         const cliente = {
@@ -337,20 +356,232 @@ async function handleClientForm(e) {
         if (!cliente.nombre || !cliente.domicilio || !cliente.poblacion_grupo || !cliente.ruta) {
             showStatus('status_cliente', 'Los campos con * son obligatorios.', 'error');
             showButtonLoading('#form-cliente button[type="submit"]', false);
-            hideProgress();
+            hideFixedProgress();
             return;
         }
 
         const resultado = await database.agregarCliente(cliente);
-        showProgress(100, 'Cliente registrado exitosamente');
+        showFixedProgress(100, 'Cliente registrado exitosamente');
         showStatus('status_cliente', resultado.message, resultado.success ? 'success' : 'error');
         if (resultado.success) e.target.reset();
     } catch (error) {
         showStatus('status_cliente', 'Error al guardar el cliente: ' + error.message, 'error');
     } finally {
         showButtonLoading('#form-cliente button[type="submit"]', false);
-        setTimeout(hideProgress, 1000);
+        setTimeout(hideFixedProgress, 1000);
     }
+}
+
+// =============================================
+// GESTIÓN DE USUARIOS - COMPLETAMENTE CORREGIDA
+// =============================================
+
+function mostrarFormularioUsuario() {
+    const formContainer = document.getElementById('form-usuario-container');
+    const formTitulo = document.getElementById('form-usuario-titulo');
+    const form = document.getElementById('form-usuario');
+    
+    if (formContainer && formTitulo && form) {
+        formTitulo.textContent = 'Nuevo Usuario';
+        form.reset();
+        formContainer.classList.remove('hidden');
+    }
+}
+
+function ocultarFormularioUsuario() {
+    const formContainer = document.getElementById('form-usuario-container');
+    if (formContainer) {
+        formContainer.classList.add('hidden');
+    }
+}
+
+async function handleUserForm(e) {
+    e.preventDefault();
+    
+    const email = document.getElementById('nuevo-email').value;
+    const password = document.getElementById('nuevo-password').value;
+    const nombre = document.getElementById('nuevo-nombre').value;
+    const rol = document.getElementById('nuevo-rol').value;
+    
+    if (!email || !password || !nombre || !rol) {
+        showStatus('status_usuarios', 'Todos los campos son obligatorios.', 'error');
+        return;
+    }
+    
+    showButtonLoading('#form-usuario button[type="submit"]', true, 'Creando usuario...');
+    showFixedProgress(30, 'Creando usuario en Firebase Auth...');
+    
+    try {
+        // Crear usuario en Firebase Authentication
+        const userCredential = await auth.createUserWithEmailAndPassword(email, password);
+        const user = userCredential.user;
+        
+        showFixedProgress(60, 'Guardando perfil de usuario...');
+        
+        // Guardar información adicional en Firestore
+        await db.collection('users').doc(user.uid).set({
+            email: email,
+            name: nombre,
+            role: rol,
+            createdAt: new Date().toISOString()
+        });
+        
+        showFixedProgress(100, 'Usuario creado exitosamente');
+        showStatus('status_usuarios', 'Usuario creado exitosamente.', 'success');
+        
+        // Limpiar formulario y ocultarlo
+        e.target.reset();
+        ocultarFormularioUsuario();
+        
+        // Recargar tabla de usuarios
+        await loadUsersTable();
+        
+    } catch (error) {
+        console.error('Error creando usuario:', error);
+        let mensajeError = 'Error al crear usuario: ';
+        
+        switch (error.code) {
+            case 'auth/email-already-in-use':
+                mensajeError += 'El correo electrónico ya está en uso.';
+                break;
+            case 'auth/invalid-email':
+                mensajeError += 'El correo electrónico no es válido.';
+                break;
+            case 'auth/weak-password':
+                mensajeError += 'La contraseña es demasiado débil.';
+                break;
+            default:
+                mensajeError += error.message;
+        }
+        
+        showStatus('status_usuarios', mensajeError, 'error');
+    } finally {
+        showButtonLoading('#form-usuario button[type="submit"]', false);
+        setTimeout(hideFixedProgress, 1000);
+    }
+}
+
+async function loadUsersTable() {
+    // Verificar si ya hay una carga en progreso
+    if (cargaEnProgreso) {
+        showStatus('status_usuarios', 'Ya hay una búsqueda en progreso. Espere a que termine.', 'warning');
+        return;
+    }
+
+    const tbody = document.getElementById('tabla-usuarios');
+    if (!tbody) {
+        console.error('No se encontró el elemento tabla-usuarios');
+        return;
+    }
+
+    tbody.innerHTML = '<tr><td colspan="5">Buscando usuarios...</td></tr>';
+
+    showButtonLoading('btn-aplicar-filtros-usuarios', true, 'Buscando...');
+    showFixedProgress(10, 'Aplicando filtros...');
+
+    try {
+        // Obtener filtros
+        const filtros = {
+            email: document.getElementById('filtro-email-usuario')?.value?.toLowerCase() || '',
+            nombre: document.getElementById('filtro-nombre-usuario')?.value?.toLowerCase() || '',
+            rol: document.getElementById('filtro-rol-usuario')?.value || ''
+        };
+
+        const hayFiltros = Object.values(filtros).some(val => val && val.trim() !== '');
+        
+        showFixedProgress(30, 'Buscando usuarios...');
+        
+        // Obtener todos los usuarios
+        const usuarios = await database.obtenerUsuarios();
+        
+        // Verificar si se canceló la búsqueda
+        if (!cargaEnProgreso) {
+            tbody.innerHTML = '<tr><td colspan="5">Búsqueda cancelada.</td></tr>';
+            return;
+        }
+
+        if (!usuarios.success) {
+            throw new Error(usuarios.message);
+        }
+
+        let usuariosFiltrados = usuarios.data;
+
+        // Aplicar filtros
+        if (hayFiltros) {
+            usuariosFiltrados = usuariosFiltrados.filter(usuario => {
+                const emailMatch = !filtros.email || usuario.email.toLowerCase().includes(filtros.email);
+                const nombreMatch = !filtros.nombre || usuario.name.toLowerCase().includes(filtros.nombre);
+                const rolMatch = !filtros.rol || usuario.role === filtros.rol;
+                return emailMatch && nombreMatch && rolMatch;
+            });
+        }
+
+        tbody.innerHTML = '';
+
+        if (usuariosFiltrados.length === 0) {
+            showFixedProgress(100, 'No se encontraron usuarios');
+            tbody.innerHTML = '<tr><td colspan="5">No se encontraron usuarios con los filtros aplicados.</td></tr>';
+            return;
+        }
+
+        showFixedProgress(70, `Mostrando ${usuariosFiltrados.length} usuarios...`);
+
+        // Mostrar usuarios en la tabla
+        usuariosFiltrados.forEach(usuario => {
+            const tr = document.createElement('tr');
+            
+            const roleBadgeClass = `role-${usuario.role}`;
+            
+            tr.innerHTML = `
+                <td>${usuario.email}</td>
+                <td>${usuario.name}</td>
+                <td><span class="role-badge ${roleBadgeClass}">${usuario.role}</span></td>
+                <td>${usuario.office || 'N/A'}</td>
+                <td>${usuario.uid || 'N/A'}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+
+        showFixedProgress(100, `${usuariosFiltrados.length} usuarios encontrados`);
+        showStatus('status_usuarios', `Se encontraron ${usuariosFiltrados.length} usuarios.`, 'success');
+
+    } catch (error) {
+        console.error('Error cargando usuarios:', error);
+        tbody.innerHTML = '<tr><td colspan="5">Error al cargar los usuarios.</td></tr>';
+        showStatus('status_usuarios', 'Error al cargar usuarios: ' + error.message, 'error');
+    } finally {
+        showButtonLoading('btn-aplicar-filtros-usuarios', false);
+        setTimeout(() => {
+            if (cargaEnProgreso) {
+                hideFixedProgress();
+                cargaEnProgreso = false;
+            }
+        }, 1000);
+    }
+}
+
+function limpiarFiltrosUsuarios() {
+    // Cancelar búsqueda en curso si existe
+    if (cargaEnProgreso) {
+        cargaEnProgreso = false;
+        hideFixedProgress();
+        showStatus('status_usuarios', 'Búsqueda cancelada.', 'info');
+    }
+
+    // Limpiar campos de filtro
+    const filtroEmail = document.getElementById('filtro-email-usuario');
+    const filtroNombre = document.getElementById('filtro-nombre-usuario');
+    const filtroRol = document.getElementById('filtro-rol-usuario');
+
+    if (filtroEmail) filtroEmail.value = '';
+    if (filtroNombre) filtroNombre.value = '';
+    if (filtroRol) filtroRol.value = '';
+
+    // Restablecer botones
+    showButtonLoading('btn-aplicar-filtros-usuarios', false);
+
+    // Recargar tabla sin filtros
+    loadUsersTable();
 }
 
 async function handleSearchClientForCredit() {
@@ -364,12 +595,12 @@ async function handleSearchClientForCredit() {
     }
 
     showButtonLoading('btnBuscarCliente_colocacion', true, 'Buscando...');
-    showProgress(30, 'Buscando cliente...');
+    showFixedProgress(30, 'Buscando cliente...');
 
     try {
         const cliente = await database.buscarClientePorCURP(curp);
-        showProgress(70, 'Verificando elegibilidad...');
-        
+        showFixedProgress(70, 'Verificando elegibilidad...');
+
         if (cliente) {
             const esElegible = await verificarElegibilidadRenovacion(curp);
             if (!esElegible) {
@@ -380,7 +611,7 @@ async function handleSearchClientForCredit() {
             }
 
             const creditoActivo = await database.buscarCreditoActivoPorCliente(curp);
-            showProgress(100, 'Cliente encontrado');
+            showFixedProgress(100, 'Cliente encontrado');
             showStatus('status_colocacion', creditoActivo ? 'Cliente encontrado y elegible para renovación.' : 'Cliente encontrado y elegible para crédito nuevo.', 'success');
 
             const nombreColocacion = document.getElementById('nombre_colocacion');
@@ -391,7 +622,7 @@ async function handleSearchClientForCredit() {
             if (idCreditoColocacion) idCreditoColocacion.value = 'Se asignará automáticamente';
             if (formColocacion) formColocacion.classList.remove('hidden');
         } else {
-            showProgress(100, 'Cliente no encontrado');
+            showFixedProgress(100, 'Cliente no encontrado');
             showStatus('status_colocacion', 'Cliente no encontrado. Registre al cliente primero.', 'error');
             const formColocacion = document.getElementById('form-colocacion');
             if (formColocacion) formColocacion.classList.add('hidden');
@@ -400,7 +631,7 @@ async function handleSearchClientForCredit() {
         showStatus('status_colocacion', 'Error al buscar cliente: ' + error.message, 'error');
     } finally {
         showButtonLoading('btnBuscarCliente_colocacion', false);
-        setTimeout(hideProgress, 1000);
+        setTimeout(hideFixedProgress, 1000);
     }
 }
 
@@ -422,12 +653,12 @@ async function handleCreditForm(e) {
     }
 
     showButtonLoading('#form-credito-submit button[type="submit"]', true, 'Generando crédito...');
-    showProgress(50, 'Procesando crédito...');
+    showFixedProgress(50, 'Procesando crédito...');
 
     try {
         const resultado = await database.agregarCredito(credito);
-        showProgress(100, 'Crédito generado exitosamente');
-        
+        showFixedProgress(100, 'Crédito generado exitosamente');
+
         if (resultado.success) {
             showStatus('status_colocacion', `${resultado.message}. ID de crédito: ${resultado.data.id}`, 'success');
             e.target.reset();
@@ -442,7 +673,7 @@ async function handleCreditForm(e) {
         showStatus('status_colocacion', 'Error al generar crédito: ' + error.message, 'error');
     } finally {
         showButtonLoading('#form-credito-submit button[type="submit"]', false);
-        setTimeout(hideProgress, 1000);
+        setTimeout(hideFixedProgress, 1000);
     }
 }
 
@@ -453,16 +684,16 @@ async function handleSearchCreditForPayment() {
     const idCredito = idCreditoInput.value.trim();
 
     showButtonLoading('btnBuscarCredito_cobranza', true, 'Buscando...');
-    showProgress(30, 'Buscando crédito...');
+    showFixedProgress(30, 'Buscando crédito...');
 
     try {
         creditoActual = await database.buscarCreditoPorId(idCredito);
-        showProgress(60, 'Obteniendo información del cliente...');
-        
+        showFixedProgress(60, 'Obteniendo información del cliente...');
+
         if (creditoActual) {
             const cliente = await database.buscarClientePorCURP(creditoActual.curpCliente);
-            showProgress(80, 'Calculando historial...');
-            
+            showFixedProgress(80, 'Calculando historial...');
+
             const historial = await obtenerHistorialCreditoCliente(creditoActual.curpCliente);
 
             if (historial) {
@@ -489,7 +720,7 @@ async function handleSearchCreditForPayment() {
                 });
 
                 handleMontoPagoChange();
-                showProgress(100, 'Crédito encontrado');
+                showFixedProgress(100, 'Crédito encontrado');
 
                 const formCobranza = document.getElementById('form-cobranza');
                 if (formCobranza) formCobranza.classList.remove('hidden');
@@ -498,7 +729,7 @@ async function handleSearchCreditForPayment() {
                 showStatus('status_cobranza', 'No se pudo calcular el historial del crédito.', 'error');
             }
         } else {
-            showProgress(100, 'Crédito no encontrado');
+            showFixedProgress(100, 'Crédito no encontrado');
             showStatus('status_cobranza', 'Crédito no encontrado.', 'error');
             const formCobranza = document.getElementById('form-cobranza');
             if (formCobranza) formCobranza.classList.add('hidden');
@@ -507,7 +738,7 @@ async function handleSearchCreditForPayment() {
         showStatus('status_cobranza', 'Error al buscar crédito: ' + error.message, 'error');
     } finally {
         showButtonLoading('btnBuscarCredito_cobranza', false);
-        setTimeout(hideProgress, 1000);
+        setTimeout(hideFixedProgress, 1000);
     }
 }
 
@@ -530,12 +761,12 @@ async function handlePaymentForm(e) {
     }
 
     showButtonLoading('#form-pago-submit button[type="submit"]', true, 'Registrando pago...');
-    showProgress(50, 'Procesando pago...');
+    showFixedProgress(50, 'Procesando pago...');
 
     try {
         const resultado = await database.agregarPago(pago);
-        showProgress(100, 'Pago registrado exitosamente');
-        
+        showFixedProgress(100, 'Pago registrado exitosamente');
+
         showStatus('status_cobranza', resultado.message, resultado.success ? 'success' : 'error');
         if (resultado.success) {
             const formCobranza = document.getElementById('form-cobranza');
@@ -548,7 +779,7 @@ async function handlePaymentForm(e) {
         showStatus('status_cobranza', 'Error al registrar pago: ' + error.message, 'error');
     } finally {
         showButtonLoading('#form-pago-submit button[type="submit"]', false);
-        setTimeout(hideProgress, 1000);
+        setTimeout(hideFixedProgress, 1000);
     }
 }
 
@@ -591,7 +822,7 @@ function showStatus(elementId, message, type) {
 function showProcessingOverlay(show, message = 'Procesando...') {
     const overlay = document.getElementById('processing-overlay');
     const messageElement = document.getElementById('processing-message');
-    
+
     if (!overlay) {
         // Crear overlay si no existe
         const newOverlay = document.createElement('div');
@@ -606,7 +837,7 @@ function showProcessingOverlay(show, message = 'Procesando...') {
 
     const currentOverlay = document.getElementById('processing-overlay');
     const currentMessage = document.getElementById('processing-message');
-    
+
     if (show) {
         if (currentMessage) currentMessage.textContent = message;
         currentOverlay.classList.remove('hidden');
@@ -633,47 +864,50 @@ function showButtonLoading(selector, show, text = 'Procesando...') {
     }
 }
 
-// FUNCIONES DE BARRA DE PROGRESO MEJORADAS
-function showProgress(percent, message = '') {
+// =============================================
+// FUNCIONES DE BARRA DE PROGRESO FIJAS
+// =============================================
+
+function showFixedProgress(percentage, message = '') {
     // Detener carga si se solicitó limpiar
-    if (cargaEnProgreso === false && percent > 0) {
+    if (cargaEnProgreso === false && percentage > 0) {
         return;
     }
 
-    let progressContainer = document.getElementById('progress-container');
-    
+    let progressContainer = document.getElementById('progress-container-fixed');
+
     // Si no existe, crearla en el lugar correcto
     if (!progressContainer) {
         progressContainer = document.createElement('div');
-        progressContainer.id = 'progress-container';
-        progressContainer.className = 'progress-container';
+        progressContainer.id = 'progress-container-fixed';
+        progressContainer.className = 'progress-container-fixed';
         progressContainer.innerHTML = `
-            <div id="progress-bar" class="progress-bar"></div>
-            <div id="progress-text" class="progress-text"></div>
-            <button id="btn-cancelar-carga" class="btn-cancelar-carga" title="Cancelar carga">
+            <div id="progress-bar-fixed" class="progress-bar-fixed"></div>
+            <div id="progress-text-fixed" class="progress-text-fixed"></div>
+            <button id="btn-cancelar-carga-fixed" class="btn-cancelar-carga-fixed" title="Cancelar carga">
                 <i class="fas fa-times"></i>
             </button>
         `;
-        
+
         // Insertar al inicio del body para que esté por encima de todo
         document.body.insertBefore(progressContainer, document.body.firstChild);
-        
+
         // Agregar event listener al botón de cancelar
-        const btnCancelar = document.getElementById('btn-cancelar-carga');
+        const btnCancelar = document.getElementById('btn-cancelar-carga-fixed');
         if (btnCancelar) {
             btnCancelar.addEventListener('click', cancelarCarga);
         }
     }
 
-    const progressBar = document.getElementById('progress-bar');
-    const progressText = document.getElementById('progress-text');
+    const progressBar = document.getElementById('progress-bar-fixed');
+    const progressText = document.getElementById('progress-text-fixed');
 
     if (progressBar) {
-        progressBar.style.width = percent + '%';
+        progressBar.style.width = percentage + '%';
         // Cambiar color según el progreso
-        if (percent < 30) {
+        if (percentage < 30) {
             progressBar.style.background = 'var(--danger)';
-        } else if (percent < 70) {
+        } else if (percentage < 70) {
             progressBar.style.background = 'var(--warning)';
         } else {
             progressBar.style.background = 'var(--success)';
@@ -685,23 +919,24 @@ function showProgress(percent, message = '') {
     }
 
     // Mostrar el contenedor
-    progressContainer.style.display = 'block';
-    progressContainer.classList.remove('hidden');
-    
+    progressContainer.style.display = 'flex';
+    document.body.classList.add('has-progress');
+
     // Marcar que hay carga en progreso
-    if (percent > 0 && percent < 100) {
+    if (percentage > 0 && percentage < 100) {
         cargaEnProgreso = true;
-    } else if (percent === 100) {
+    } else if (percentage === 100) {
         cargaEnProgreso = false;
     }
 }
 
-function hideProgress() {
-    const progressContainer = document.getElementById('progress-container');
+function hideFixedProgress() {
+    const progressContainer = document.getElementById('progress-container-fixed');
     if (progressContainer) {
-        progressContainer.classList.add('hidden');
+        progressContainer.style.display = 'none';
+        document.body.classList.remove('has-progress');
         // Resetear la barra
-        const progressBar = document.getElementById('progress-bar');
+        const progressBar = document.getElementById('progress-bar-fixed');
         if (progressBar) {
             progressBar.style.width = '0%';
         }
@@ -711,17 +946,18 @@ function hideProgress() {
 
 function cancelarCarga() {
     cargaEnProgreso = false;
-    hideProgress();
+    hideFixedProgress();
     showStatus('status_gestion_clientes', 'Carga cancelada por el usuario.', 'info');
-    
+
     // También detener cualquier procesamiento en curso
     const tbody = document.getElementById('tabla-clientes');
     if (tbody) {
         tbody.innerHTML = '<tr><td colspan="6">Carga cancelada.</td></tr>';
     }
-    
+
     // Restablecer botones
     showButtonLoading('btn-aplicar-filtros', false);
+    showButtonLoading('btn-aplicar-filtros-usuarios', false);
 }
 
 function calcularMontoTotalColocacion() {
@@ -780,6 +1016,14 @@ function inicializarDropdowns() {
     popularDropdown('grupo_filtro', poblaciones, 'Todos');
     popularDropdown('tipo_colocacion_filtro', tiposCredito.map(t => ({ value: t.toLowerCase(), text: t })), 'Todos', true);
     popularDropdown('plazo_filtro', plazos.map(p => ({ value: p, text: `${p} semanas` })), 'Todos', true);
+
+    // Dropdowns para filtros de usuarios
+    popularDropdown('filtro-rol-usuario', [
+        { value: 'admin', text: 'Administrador' },
+        { value: 'supervisor', text: 'Supervisor' },
+        { value: 'cobrador', text: 'Cobrador' },
+        { value: 'consulta', text: 'Consulta' }
+    ], 'Todos los roles', true);
 
     // Dropdowns para reportes avanzados
     popularDropdown('sucursal_filtro_reporte', sucursales, 'Todas');
@@ -876,16 +1120,16 @@ function inicializarVistaGestionClientes() {
 function limpiarFiltrosClientes() {
     // Cancelar cualquier carga en progreso
     cargaEnProgreso = false;
-    hideProgress();
-    
+    hideFixedProgress();
+
     const filtrosGrid = document.getElementById('filtros-grid');
     if (filtrosGrid) {
         filtrosGrid.querySelectorAll('input, select').forEach(el => el.value = '');
     }
-    
+
     // Restablecer botones
     showButtonLoading('btn-aplicar-filtros', false);
-    
+
     inicializarVistaGestionClientes();
     showStatus('status_gestion_clientes', 'Filtros limpiados correctamente.', 'success');
 }
@@ -906,7 +1150,7 @@ async function loadClientesTable() {
     tbody.innerHTML = '<tr><td colspan="6">Buscando...</td></tr>';
 
     showButtonLoading('btn-aplicar-filtros', true, 'Buscando...');
-    showProgress(10, 'Aplicando filtros...');
+    showFixedProgress(10, 'Aplicando filtros...');
 
     try {
         // CORRECCIÓN CRÍTICA: Usar operador de encadenamiento opcional y valores por defecto
@@ -926,11 +1170,11 @@ async function loadClientesTable() {
         if (!hayFiltros) {
             tbody.innerHTML = '<tr><td colspan="6">Por favor, especifica al menos un criterio de búsqueda.</td></tr>';
             showButtonLoading('btn-aplicar-filtros', false);
-            hideProgress();
+            hideFixedProgress();
             return;
         }
 
-        showProgress(30, 'Buscando clientes...');
+        showFixedProgress(30, 'Buscando clientes...');
         const clientesFiltrados = await database.buscarClientes(filtros);
 
         // Verificar si se canceló la carga
@@ -941,12 +1185,12 @@ async function loadClientesTable() {
 
         tbody.innerHTML = '';
         if (clientesFiltrados.length === 0) {
-            showProgress(100, 'No se encontraron clientes');
+            showFixedProgress(100, 'No se encontraron clientes');
             tbody.innerHTML = '<tr><td colspan="6">No se encontraron clientes con los filtros aplicados.</td></tr>';
             return;
         }
 
-        showProgress(50, `Procesando ${clientesFiltrados.length} clientes...`);
+        showFixedProgress(50, `Procesando ${clientesFiltrados.length} clientes...`);
 
         for (let i = 0; i < clientesFiltrados.length; i++) {
             // Verificar si se canceló la carga en cada iteración
@@ -957,9 +1201,9 @@ async function loadClientesTable() {
 
             const cliente = clientesFiltrados[i];
             const tr = document.createElement('tr');
-            
-            showProgress(50 + Math.round((i / clientesFiltrados.length) * 40), `Procesando cliente ${i + 1} de ${clientesFiltrados.length}`);
-            
+
+            showFixedProgress(50 + Math.round((i / clientesFiltrados.length) * 40), `Procesando cliente ${i + 1} de ${clientesFiltrados.length}`);
+
             const historial = await obtenerHistorialCreditoCliente(cliente.curp);
             let infoCreditoHTML = '<em>Sin historial</em>';
 
@@ -993,7 +1237,7 @@ async function loadClientesTable() {
         }
 
         if (cargaEnProgreso) {
-            showProgress(100, `Procesamiento completado: ${clientesFiltrados.length} clientes`);
+            showFixedProgress(100, `Procesamiento completado: ${clientesFiltrados.length} clientes`);
             showStatus('status_gestion_clientes', `Se encontraron ${clientesFiltrados.length} clientes con los filtros aplicados.`, 'success');
         }
 
@@ -1005,50 +1249,10 @@ async function loadClientesTable() {
         showButtonLoading('btn-aplicar-filtros', false);
         setTimeout(() => {
             if (cargaEnProgreso) {
-                hideProgress();
+                hideFixedProgress();
                 cargaEnProgreso = false;
             }
         }, 1000);
-    }
-}
-
-async function loadUsersTable() {
-    showProcessingOverlay(true, 'Cargando usuarios...');
-    showProgress(50, 'Obteniendo lista de usuarios...');
-
-    try {
-        const userList = await database.getAll('users');
-        const tbody = document.getElementById('tabla-usuarios');
-        tbody.innerHTML = '';
-        
-        if (userList && userList.length > 0) {
-            showProgress(80, 'Mostrando usuarios...');
-            userList.forEach(user => {
-                const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td>${user.email}</td>
-                    <td>${user.name}</td>
-                    <td><span class="role-badge role-${user.role}">${user.role}</span></td>
-                    <td>${user.office || 'N/A'}</td>
-                    <td>${user.uid}</td>
-                `;
-                tbody.appendChild(tr);
-            });
-            showProgress(100, `${userList.length} usuarios cargados`);
-        } else {
-            tbody.innerHTML = `<tr><td colspan="5">No hay usuarios en la base de datos de perfiles.</td></tr>`;
-            showProgress(100, 'No se encontraron usuarios');
-        }
-    } catch (error) {
-        console.error('Error cargando usuarios:', error);
-        const tbody = document.getElementById('tabla-usuarios');
-        if (tbody) {
-            tbody.innerHTML = `<tr><td colspan="5">Error al cargar usuarios.</td></tr>`;
-        }
-        showStatus('status_usuarios', 'Error al cargar usuarios: ' + error.message, 'error');
-    } finally {
-        showProcessingOverlay(false);
-        setTimeout(hideProgress, 1000);
     }
 }
 
@@ -1059,18 +1263,18 @@ async function loadUsersTable() {
 async function loadBasicReports() {
     showProcessingOverlay(true, 'Generando reportes...');
     showButtonLoading('btn-actualizar-reportes', true, 'Generando...');
-    showProgress(30, 'Recopilando datos...');
+    showFixedProgress(30, 'Recopilando datos...');
 
     try {
-        showProgress(60, 'Generando estadísticas...');
+        showFixedProgress(60, 'Generando estadísticas...');
         const reportes = await database.generarReportes();
-        
+
         if (!reportes) {
             showStatus('status_reportes', 'Error al generar reportes.', 'error');
             return;
         }
 
-        showProgress(80, 'Actualizando interfaz...');
+        showFixedProgress(80, 'Actualizando interfaz...');
         // Actualizar tarjetas de métricas
         const elementos = {
             'total-clientes': reportes.totalClientes,
@@ -1093,7 +1297,7 @@ async function loadBasicReports() {
         const tasaElement = document.getElementById('tasa-recuperacion');
         if (tasaElement) tasaElement.textContent = `${tasaRecuperacion}%`;
 
-        showProgress(100, 'Reportes actualizados');
+        showFixedProgress(100, 'Reportes actualizados');
         showStatus('status_reportes', 'Reportes actualizados correctamente.', 'success');
     } catch (error) {
         console.error('Error cargando reportes:', error);
@@ -1101,7 +1305,7 @@ async function loadBasicReports() {
     } finally {
         showProcessingOverlay(false);
         showButtonLoading('btn-actualizar-reportes', false);
-        setTimeout(hideProgress, 1000);
+        setTimeout(hideFixedProgress, 1000);
     }
 }
 
@@ -1123,8 +1327,8 @@ function inicializarVistaReportesAvanzados() {
 function limpiarFiltrosReportes() {
     // Cancelar cualquier carga en progreso
     cargaEnProgreso = false;
-    hideProgress();
-    
+    hideFixedProgress();
+
     const filtrosContainer = document.getElementById('filtros-reportes-avanzados');
     if (filtrosContainer) {
         filtrosContainer.querySelectorAll('input, select').forEach(el => {
@@ -1139,10 +1343,10 @@ function limpiarFiltrosReportes() {
 
     if (fechaInicio) fechaInicio.value = haceUnMes.toISOString().split('T')[0];
     if (fechaFin) fechaFin.value = hoy.toISOString().split('T')[0];
-    
+
     // Restablecer botones
     showButtonLoading('btn-aplicar-filtros-reportes', false);
-    
+
     showStatus('status_reportes_avanzados', 'Filtros limpiados correctamente.', 'success');
 }
 
@@ -1155,7 +1359,7 @@ async function loadAdvancedReports() {
 
     showProcessingOverlay(true, 'Generando reporte avanzado...');
     showButtonLoading('btn-aplicar-filtros-reportes', true, 'Generando...');
-    showProgress(20, 'Aplicando filtros...');
+    showFixedProgress(20, 'Aplicando filtros...');
 
     try {
         const filtros = {
@@ -1171,17 +1375,17 @@ async function loadAdvancedReports() {
             idCredito: document.getElementById('id_credito_filtro_reporte')?.value || ''
         };
 
-        showProgress(50, 'Generando reporte...');
+        showFixedProgress(50, 'Generando reporte...');
         reportData = await database.generarReporteAvanzado(filtros);
-        
+
         // Verificar si se canceló la carga
         if (!cargaEnProgreso) {
             return;
         }
 
-        showProgress(80, 'Mostrando resultados...');
+        showFixedProgress(80, 'Mostrando resultados...');
         mostrarReporteAvanzado(reportData);
-        showProgress(100, 'Reporte generado');
+        showFixedProgress(100, 'Reporte generado');
 
         showStatus('status_reportes_avanzados', `Reporte generado: ${reportData.length} registros encontrados.`, 'success');
 
@@ -1193,7 +1397,7 @@ async function loadAdvancedReports() {
         showButtonLoading('btn-aplicar-filtros-reportes', false);
         setTimeout(() => {
             if (cargaEnProgreso) {
-                hideProgress();
+                hideFixedProgress();
                 cargaEnProgreso = false;
             }
         }, 1000);
@@ -1290,13 +1494,13 @@ function exportToCSV() {
 
     showProcessingOverlay(true, 'Generando archivo CSV...');
     showButtonLoading('btn-exportar-csv', true, 'Generando CSV...');
-    showProgress(50, 'Preparando datos...');
+    showFixedProgress(50, 'Preparando datos...');
 
     try {
         const headers = ['Tipo', 'CURP', 'Nombre', 'Grupo/Población', 'Ruta', 'Sucursal', 'Fecha', 'Tipo Operación', 'Monto', 'Saldo'];
         let csvContent = headers.join(',') + '\n';
 
-        showProgress(70, 'Generando CSV...');
+        showFixedProgress(70, 'Generando CSV...');
         reportData.forEach(item => {
             let row = [];
 
@@ -1344,7 +1548,7 @@ function exportToCSV() {
             csvContent += row.join(',') + '\n';
         });
 
-        showProgress(90, 'Creando archivo...');
+        showFixedProgress(90, 'Creando archivo...');
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
         const link = document.createElement('a');
         const url = URL.createObjectURL(blob);
@@ -1355,7 +1559,7 @@ function exportToCSV() {
         link.click();
         document.body.removeChild(link);
 
-        showProgress(100, 'Archivo exportado');
+        showFixedProgress(100, 'Archivo exportado');
         showStatus('status_reportes_avanzados', 'Archivo CSV exportado exitosamente.', 'success');
     } catch (error) {
         console.error('Error exportando CSV:', error);
@@ -1363,7 +1567,7 @@ function exportToCSV() {
     } finally {
         showProcessingOverlay(false);
         showButtonLoading('btn-exportar-csv', false);
-        setTimeout(hideProgress, 1000);
+        setTimeout(hideFixedProgress, 1000);
     }
 }
 
@@ -1375,7 +1579,7 @@ function exportToPDF() {
 
     showProcessingOverlay(true, 'Generando archivo PDF...');
     showButtonLoading('btn-exportar-pdf', true, 'Generando PDF...');
-    showProgress(50, 'Preparando PDF...');
+    showFixedProgress(50, 'Preparando PDF...');
 
     try {
         // Usar html2pdf para generar el PDF
@@ -1392,7 +1596,7 @@ function exportToPDF() {
             jsPDF: { unit: 'cm', format: 'a4', orientation: 'landscape' }
         };
 
-        showProgress(80, 'Generando PDF...');
+        showFixedProgress(80, 'Generando PDF...');
         // Crear una copia temporal del contenido para el PDF
         const tempElement = element.cloneNode(true);
         tempElement.style.width = '100%';
@@ -1406,17 +1610,17 @@ function exportToPDF() {
 
         html2pdf().set(opt).from(tempElement).save().then(() => {
             document.body.removeChild(tempElement);
-            showProgress(100, 'PDF generado');
+            showFixedProgress(100, 'PDF generado');
             showStatus('status_reportes_avanzados', 'Archivo PDF exportado exitosamente.', 'success');
             showProcessingOverlay(false);
             showButtonLoading('btn-exportar-pdf', false);
-            setTimeout(hideProgress, 1000);
+            setTimeout(hideFixedProgress, 1000);
         }).catch(error => {
             console.error('Error generando PDF:', error);
             showStatus('status_reportes_avanzados', 'Error al exportar PDF: ' + error.message, 'error');
             showProcessingOverlay(false);
             showButtonLoading('btn-exportar-pdf', false);
-            setTimeout(hideProgress, 1000);
+            setTimeout(hideFixedProgress, 1000);
         });
 
     } catch (error) {
@@ -1424,7 +1628,7 @@ function exportToPDF() {
         showStatus('status_reportes_avanzados', 'Error al exportar PDF: ' + error.message, 'error');
         showProcessingOverlay(false);
         showButtonLoading('btn-exportar-pdf', false);
-        setTimeout(hideProgress, 1000);
+        setTimeout(hideFixedProgress, 1000);
     }
 }
 
