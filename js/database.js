@@ -1,4 +1,4 @@
-// =============================================
+﻿// =============================================
 // CAPA DE SERVICIO DE FIREBASE (database.js) - CORREGIDO
 // =============================================
 
@@ -28,6 +28,28 @@ const database = {
         } catch (error) {
             console.error(`Error obteniendo ${collection}:`, error);
             return [];
+        }
+    },
+
+    // --- MÉTODOS DE USUARIOS ---
+    obtenerUsuarios: async () => {
+        try {
+            const snapshot = await db.collection('users').get();
+            const users = snapshot.docs.map(doc => ({ 
+                id: doc.id, 
+                ...doc.data() 
+            }));
+            
+            return {
+                success: true,
+                data: users
+            };
+        } catch (error) {
+            console.error("Error obteniendo usuarios:", error);
+            return {
+                success: false,
+                message: 'Error al obtener usuarios: ' + error.message
+            };
         }
     },
 
