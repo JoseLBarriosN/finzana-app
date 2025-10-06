@@ -82,7 +82,7 @@ function setupEventListeners() {
         btnLimpiarFiltros.addEventListener('click', limpiarFiltrosClientes);
     }
 
-    // Gestión de Usuarios - CORREGIDO
+    // Gestión de Usuarios
     const btnAplicarFiltrosUsuarios = document.getElementById('btn-aplicar-filtros-usuarios');
     if (btnAplicarFiltrosUsuarios) {
         btnAplicarFiltrosUsuarios.addEventListener('click', loadUsersTable);
@@ -141,6 +141,11 @@ function setupEventListeners() {
     const curpCliente = document.getElementById('curp_cliente');
     if (curpCliente) {
         curpCliente.addEventListener('input', function () { validarCURP(this); });
+    }
+    
+    const officeCliente = document.getElementById('office_cliente');
+    if (officeCliente) {
+        officeCliente.addEventListener('change', handleOfficeChangeForClientForm);
     }
 
     // Generar Crédito
@@ -344,6 +349,7 @@ async function handleClientForm(e) {
 
     try {
         const cliente = {
+            office: document.getElementById('office_cliente').value,
             curp,
             nombre: document.getElementById('nombre_cliente').value,
             domicilio: document.getElementById('domicilio_cliente').value,
@@ -363,7 +369,11 @@ async function handleClientForm(e) {
         const resultado = await database.agregarCliente(cliente);
         showFixedProgress(100, 'Cliente registrado exitosamente');
         showStatus('status_cliente', resultado.message, resultado.success ? 'success' : 'error');
-        if (resultado.success) e.target.reset();
+        if (resultado.success) {
+            e.target.reset();
+            // Resetear el dropdown de población al de GDL por defecto
+            handleOfficeChangeForClientForm.call({ value: 'GDL' });
+        }
     } catch (error) {
         showStatus('status_cliente', 'Error al guardar el cliente: ' + error.message, 'error');
     } finally {
@@ -373,7 +383,7 @@ async function handleClientForm(e) {
 }
 
 // =============================================
-// GESTIÓN DE USUARIOS - COMPLETAMENTE CORREGIDA
+// GESTIÓN DE USUARIOS
 // =============================================
 
 function mostrarFormularioUsuario() {
@@ -412,13 +422,11 @@ async function handleUserForm(e) {
     showFixedProgress(30, 'Creando usuario en Firebase Auth...');
 
     try {
-        // Crear usuario en Firebase Authentication
         const userCredential = await auth.createUserWithEmailAndPassword(email, password);
         const user = userCredential.user;
 
         showFixedProgress(60, 'Guardando perfil de usuario...');
 
-        // Guardar información adicional en Firestore
         await db.collection('users').doc(user.uid).set({
             email: email,
             name: nombre,
@@ -429,11 +437,9 @@ async function handleUserForm(e) {
         showFixedProgress(100, 'Usuario creado exitosamente');
         showStatus('status_usuarios', 'Usuario creado exitosamente.', 'success');
 
-        // Limpiar formulario y ocultarlo
         e.target.reset();
         ocultarFormularioUsuario();
 
-        // Recargar tabla de usuarios
         await loadUsersTable();
 
     } catch (error) {
@@ -462,21 +468,20 @@ async function handleUserForm(e) {
 }
 
 async function loadUsersTable() {
-    // Verificar si ya hay una carga en progreso
     if (cargaEnProgreso) {
         showStatus('status_usuarios', 'Ya hay una búsqueda en progreso. Espere a que termine.', 'warning');
         return;
     }
-    cargaEnProgreso = true; // ===== CORRECCIÓN =====
+    cargaEnProgreso = true;
 
     const tbody = document.getElementById('tabla-usuarios');
     if (!tbody) {
         console.error('No se encontró el elemento tabla-usuarios');
+        cargaEnProgreso = false;
         return;
     }
 
     tbody.innerHTML = '<tr><td colspan="5">Buscando usuarios...</td></tr>';
-
     showButtonLoading('btn-aplicar-filtros-usuarios', true, 'Buscando...');
     showFixedProgress(10, 'Aplicando filtros...');
 
@@ -506,8 +511,8 @@ async function loadUsersTable() {
 
         if (hayFiltros) {
             usuariosFiltrados = usuariosFiltrados.filter(usuario => {
-                const emailMatch = !filtros.email || usuario.email.toLowerCase().includes(filtros.email);
-                const nombreMatch = !filtros.nombre || usuario.name.toLowerCase().includes(filtros.nombre);
+                const emailMatch = !filtros.email || (usuario.email && usuario.email.toLowerCase().includes(filtros.email));
+                const nombreMatch = !filtros.nombre || (usuario.name && usuario.name.toLowerCase().includes(filtros.nombre));
                 const rolMatch = !filtros.rol || usuario.role === filtros.rol;
                 return emailMatch && nombreMatch && rolMatch;
             });
@@ -525,13 +530,11 @@ async function loadUsersTable() {
 
         usuariosFiltrados.forEach(usuario => {
             const tr = document.createElement('tr');
-
-            const roleBadgeClass = `role-${usuario.role}`;
-
+            const roleBadgeClass = `role-${usuario.role || 'default'}`;
             tr.innerHTML = `
-                <td>${usuario.email}</td>
-                <td>${usuario.name}</td>
-                <td><span class="role-badge ${roleBadgeClass}">${usuario.role}</span></td>
+                <td>${usuario.email || 'N/A'}</td>
+                <td>${usuario.name || 'N/A'}</td>
+                <td><span class="role-badge ${roleBadgeClass}">${usuario.role || 'N/A'}</span></td>
                 <td>${usuario.office || 'N/A'}</td>
                 <td>${usuario.uid || 'N/A'}</td>
             `;
@@ -547,33 +550,26 @@ async function loadUsersTable() {
         showStatus('status_usuarios', 'Error al cargar usuarios: ' + error.message, 'error');
     } finally {
         showButtonLoading('btn-aplicar-filtros-usuarios', false);
-        // ===== CORRECCIÓN =====
         setTimeout(hideFixedProgress, 1000);
     }
 }
 
 function limpiarFiltrosUsuarios() {
-    // Cancelar búsqueda en curso si existe
     if (cargaEnProgreso) {
-        cargaEnProgreso = false;
-        hideFixedProgress();
-        showStatus('status_usuarios', 'Búsqueda cancelada.', 'info');
+        cancelarCarga();
     }
 
-    // Limpiar campos de filtro
     const filtroEmail = document.getElementById('filtro-email-usuario');
-    const filtroNombre = document.getElementById('filtro-nombre-usuario');
-    const filtroRol = document.getElementById('filtro-rol-usuario');
-
     if (filtroEmail) filtroEmail.value = '';
+    const filtroNombre = document.getElementById('filtro-nombre-usuario');
     if (filtroNombre) filtroNombre.value = '';
-    if (filtroRol) filtroRol.value = '';
+    const filtroRol = document.getElementById('filtro-rol-usuario');
+    if(filtroRol) filtroRol.value = '';
 
-    // Restablecer botones
     showButtonLoading('btn-aplicar-filtros-usuarios', false);
-
-    // Recargar tabla sin filtros
-    loadUsersTable();
+    
+    const tbody = document.getElementById('tabla-usuarios');
+    if(tbody) tbody.innerHTML = '';
 }
 
 async function handleSearchClientForCredit() {
@@ -788,7 +784,7 @@ function handleMontoPagoChange() {
 }
 
 // =============================================
-// FUNCIONES DE VISTA Y AUXILIARES - CORREGIDAS
+// FUNCIONES DE VISTA Y AUXILIARES
 // =============================================
 
 function showView(viewId) {
@@ -797,7 +793,6 @@ function showView(viewId) {
     const targetView = document.getElementById(viewId);
     if (targetView) {
         targetView.classList.remove('hidden');
-        // Disparar evento personalizado para que las vistas se inicialicen
         const event = new CustomEvent('viewshown', { detail: { viewId } });
         targetView.dispatchEvent(event);
     }
@@ -816,7 +811,6 @@ function showProcessingOverlay(show, message = 'Procesando...') {
     const messageElement = document.getElementById('processing-message');
 
     if (!overlay) {
-        // Crear overlay si no existe
         const newOverlay = document.createElement('div');
         newOverlay.id = 'processing-overlay';
         newOverlay.className = 'processing-overlay hidden';
@@ -857,12 +851,10 @@ function showButtonLoading(selector, show, text = 'Procesando...') {
 }
 
 // =============================================
-// FUNCIONES DE BARRA DE PROGRESO FIJAS
+// FUNCIONES DE BARRA DE PROGRESO Y UTILIDADES
 // =============================================
 
-// ===== INICIO DE LA CORRECCIÓN CRÍTICA =====
 function showFixedProgress(percentage, message = '') {
-    // Si se canceló, no hacer nada.
     if (cargaEnProgreso === false && percentage > 0) {
         return;
     }
@@ -903,41 +895,33 @@ function showFixedProgress(percentage, message = '') {
 
     progressContainer.style.display = 'flex';
     document.body.classList.add('has-progress');
-
-    // Se elimina la lógica que ponía `cargaEnProgreso` en `false`.
-    // Esta función solo debe mostrar el progreso.
-    if (percentage > 0 && percentage < 100) {
-        cargaEnProgreso = true;
-    }
 }
-// ===== FIN DE LA CORRECCIÓN CRÍTICA =====
 
 function hideFixedProgress() {
     const progressContainer = document.getElementById('progress-container-fixed');
     if (progressContainer) {
         progressContainer.style.display = 'none';
         document.body.classList.remove('has-progress');
-        // Resetear la barra
         const progressBar = document.getElementById('progress-bar-fixed');
         if (progressBar) {
             progressBar.style.width = '0%';
         }
-        cargaEnProgreso = false;
     }
+    cargaEnProgreso = false;
 }
 
 function cancelarCarga() {
     cargaEnProgreso = false;
     hideFixedProgress();
     showStatus('status_gestion_clientes', 'Carga cancelada por el usuario.', 'info');
+    showStatus('status_usuarios', 'Carga cancelada por el usuario.', 'info');
 
-    // También detener cualquier procesamiento en curso
-    const tbody = document.getElementById('tabla-clientes');
-    if (tbody) {
-        tbody.innerHTML = '<tr><td colspan="6">Carga cancelada.</td></tr>';
-    }
+    const tablaClientes = document.getElementById('tabla-clientes');
+    if (tablaClientes) tablaClientes.innerHTML = '<tr><td colspan="6">Carga cancelada.</td></tr>';
+    
+    const tablaUsuarios = document.getElementById('tabla-usuarios');
+    if (tablaUsuarios) tablaUsuarios.innerHTML = '<tr><td colspan="5">Carga cancelada.</td></tr>';
 
-    // Restablecer botones
     showButtonLoading('btn-aplicar-filtros', false);
     showButtonLoading('btn-aplicar-filtros-usuarios', false);
 }
@@ -961,8 +945,31 @@ function validarFormatoCURP(curp) {
     return curp && curp.length === 18;
 }
 
+const popularDropdown = (elementId, options, placeholder, isObject = false) => {
+    const select = document.getElementById(elementId);
+    if (select) {
+        select.innerHTML = `<option value="">${placeholder}</option>`;
+        options.forEach(option => {
+            const el = document.createElement('option');
+            el.value = isObject ? option.value : option;
+            el.textContent = isObject ? option.text : option;
+            select.appendChild(el);
+        });
+    }
+};
+
+function handleOfficeChangeForClientForm() {
+    const office = this.value;
+    const poblacionesGdl = ['LA CALERA', 'ATEQUIZA', 'SAN JACINTO', 'PONCITLAN', 'OCOTLAN', 'ARENAL', 'AMATITAN', 'ACATLAN DE JUAREZ', 'BELLAVISTA', 'SAN ISIDRO MAZATEPEC', 'TALA', 'CUISILLOS', 'HUAXTLA', 'NEXTIPAC', 'SANTA LUCIA', 'JAMAY', 'LA BARCA', 'SAN JUAN DE OCOTAN', 'TALA 2', 'EL HUMEDO', 'NEXTIPAC 2', 'ZZ PUEBLO'];
+    const poblacionesLeon = ["ARANDAS", "ARANDAS [E]", "BAJIO DE BONILLAS", "BAJIO DE BONILLAS [E]", "CAPULIN", "CARDENAS", "CARDENAS [E]", "CERRITO DE AGUA CALIENTE", "CERRITO DE AGUA CALIENTE [E]", "CORRALEJO", "CORRALEJO [E]", "CUERAMARO", "CUERAMARO [E]", "DOLORES HIDALGO", "EL ALACRAN", "EL EDEN", "EL FUERTE", "EL MEZQUITILLO", "EL MEZQUITILLO [E]", "EL PALENQUE", "EL PALENQUE [E]", "EL PAXTLE", "EL TULE", "EL TULE [E]", "ESTACION ABASOLO", "ESTACION ABASOLO [E]", "ESTACION CORRALEJO", "ESTACION CORRALEJO [E]", "ESTACION JOAQUIN", "ESTACION JOAQUIN [E]", "EX ESTACION CHIRIMOYA", "EX ESTACION CHIRIMOYA [E]", "GAVIA DE RIONDA", "GODOY", "GODOY [E]", "IBARRA", "IBARRA [E]", "LA ALDEA", "LA CARROZA", "LA CARROZA [E]", "LA ESCONDIDA", "LA SANDIA", "LA SANDIA [E]", "LAGUNA DE GUADALUPE", "LAS CRUCES", "LAS CRUCES [E]", "LAS MASAS", "LAS MASAS [E]", "LAS PALOMAS", "LAS TIRITAS", "LOMA DE LA ESPERANZA", "LOMA DE LA ESPERANZA [E]", "LOS DOLORES", "LOS GALVANES", "LOS GALVANES [E]", "MAGUEY BLANCO", "MEDRANOS", "MEXICANOS", "MEXICANOS [E]", "MINERAL DE LA LUZ", "MISION DE ABAJO", "MISION DE ABAJO [E]", "MISION DE ARRIBA", "MISION DE ARRIBA [E]", "NORIA DE ALDAY", "OCAMPO", "PURISIMA DEL RINCON", "PURISIMA DEL RINCON [E]", "RANCHO NUEVO DE LA CRUZ", "RANCHO NUEVO DE LA CRUZ [E]", "RANCHO VIEJO", "RIO LAJA", "RIO LAJA [E]", "SAN ANDRES DE JALPA", "SAN ANDRES DE JALPA [E]", "SAN BERNARDO", "SAN BERNARDO [E]", "SAN CRISTOBAL", "SAN CRISTOBAL [E]", "SAN GREGORIO", "SAN GREGORIO [E]", "SAN ISIDRO DE CRESPO", "SAN ISIDRO DE CRESPO [E]", "SAN JOSE DE BADILLO", "SAN JOSE DE BADILLO [E]", "SAN JOSE DEL RODEO", "SAN JOSE DEL RODEO [E]", "SAN JUAN DE LA PUERTA", "SAN JUAN DE LA PUERTA [E]", "SANTA ANA DEL CONDE", "SANTA ROSA", "SANTA ROSA [E]", "SANTA ROSA PLAN DE AYALA", "SANTA ROSA PLAN DE AYALA [E]", "SANTO DOMINGO", "SERRANO", "TENERIA DEL SANTUARIO", "TENERIA DEL SANTUARIO [E]", "TIERRAS BLANCAS", "TIERRAS BLANCAS [E]", "TREJO", "TREJO [E]", "TUPATARO", "TUPATARO [E]", "VALTIERRILLA", "VALTIERRILLA 2", "VALTIERRILLA [E]", "VAQUERIAS", "VILLA DE ARRIAGA", "VILLA DE ARRIAGA [E]"].sort();
+    const poblaciones = office === 'LEON' ? poblacionesLeon : poblacionesGdl;
+    popularDropdown('poblacion_grupo_cliente', poblaciones, 'Selecciona población/grupo');
+}
+
 function inicializarDropdowns() {
     console.log('Inicializando dropdowns...');
+    const poblacionesGdl = ['LA CALERA', 'ATEQUIZA', 'SAN JACINTO', 'PONCITLAN', 'OCOTLAN', 'ARENAL', 'AMATITAN', 'ACATLAN DE JUAREZ', 'BELLAVISTA', 'SAN ISIDRO MAZATEPEC', 'TALA', 'CUISILLOS', 'HUAXTLA', 'NEXTIPAC', 'SANTA LUCIA', 'JAMAY', 'LA BARCA', 'SAN JUAN DE OCOTAN', 'TALA 2', 'EL HUMEDO', 'NEXTIPAC 2', 'ZZ PUEBLO'];
+    const poblacionesLeon = ["ARANDAS", "ARANDAS [E]", "BAJIO DE BONILLAS", "BAJIO DE BONILLAS [E]", "CAPULIN", "CARDENAS", "CARDENAS [E]", "CERRITO DE AGUA CALIENTE", "CERRITO DE AGUA CALIENTE [E]", "CORRALEJO", "CORRALEJO [E]", "CUERAMARO", "CUERAMARO [E]", "DOLORES HIDALGO", "EL ALACRAN", "EL EDEN", "EL FUERTE", "EL MEZQUITILLO", "EL MEZQUITILLO [E]", "EL PALENQUE", "EL PALENQUE [E]", "EL PAXTLE", "EL TULE", "EL TULE [E]", "ESTACION ABASOLO", "ESTACION ABASOLO [E]", "ESTACION CORRALEJO", "ESTACION CORRALEJO [E]", "ESTACION JOAQUIN", "ESTACION JOAQUIN [E]", "EX ESTACION CHIRIMOYA", "EX ESTACION CHIRIMOYA [E]", "GAVIA DE RIONDA", "GODOY", "GODOY [E]", "IBARRA", "IBARRA [E]", "LA ALDEA", "LA CARROZA", "LA CARROZA [E]", "LA ESCONDIDA", "LA SANDIA", "LA SANDIA [E]", "LAGUNA DE GUADALUPE", "LAS CRUCES", "LAS CRUCES [E]", "LAS MASAS", "LAS MASAS [E]", "LAS PALOMAS", "LAS TIRITAS", "LOMA DE LA ESPERANZA", "LOMA DE LA ESPERANZA [E]", "LOS DOLORES", "LOS GALVANES", "LOS GALVANES [E]", "MAGUEY BLANCO", "MEDRANOS", "MEXICANOS", "MEXICANOS [E]", "MINERAL DE LA LUZ", "MISION DE ABAJO", "MISION DE ABAJO [E]", "MISION DE ARRIBA", "MISION DE ARRIBA [E]", "NORIA DE ALDAY", "OCAMPO", "PURISIMA DEL RINCON", "PURISIMA DEL RINCON [E]", "RANCHO NUEVO DE LA CRUZ", "RANCHO NUEVO DE LA CRUZ [E]", "RANCHO VIEJO", "RIO LAJA", "RIO LAJA [E]", "SAN ANDRES DE JALPA", "SAN ANDRES DE JALPA [E]", "SAN BERNARDO", "SAN BERNARDO [E]", "SAN CRISTOBAL", "SAN CRISTOBAL [E]", "SAN GREGORIO", "SAN GREGORIO [E]", "SAN ISIDRO DE CRESPO", "SAN ISIDRO DE CRESPO [E]", "SAN JOSE DE BADILLO", "SAN JOSE DE BADILLO [E]", "SAN JOSE DEL RODEO", "SAN JOSE DEL RODEO [E]", "SAN JUAN DE LA PUERTA", "SAN JUAN DE LA PUERTA [E]", "SANTA ANA DEL CONDE", "SANTA ROSA", "SANTA ROSA [E]", "SANTA ROSA PLAN DE AYALA", "SANTA ROSA PLAN DE AYALA [E]", "SANTO DOMINGO", "SERRANO", "TENERIA DEL SANTUARIO", "TENERIA DEL SANTUARIO [E]", "TIERRAS BLANCAS", "TIERRAS BLANCAS [E]", "TREJO", "TREJO [E]", "TUPATARO", "TUPATARO [E]", "VALTIERRILLA", "VALTIERRILLA 2", "VALTIERRILLA [E]", "VAQUERIAS", "VILLA DE ARRIAGA", "VILLA DE ARRIAGA [E]"].sort();
     const rutas = ['AUDITORIA', 'SUPERVISION', 'ADMINISTRACION', 'DIRECCION', 'COMERCIAL', 'COBRANZA', 'R1', 'R2', 'R3', 'JC1', 'RX'];
     const tiposCredito = ['NUEVO', 'RENOVACION', 'REINGRESO'];
     const montos = [3000, 3500, 4000, 4500, 5000, 6000, 7000, 8000, 9000, 10000];
@@ -971,18 +978,18 @@ function inicializarDropdowns() {
     const tiposPago = ['normal', 'extraordinario', 'actualizado'];
     const sucursales = ['GDL', 'LEON'];
 
-    // Dropdowns para colocación
+    popularDropdown('poblacion_grupo_cliente', poblacionesGdl, 'Selecciona población/grupo');
+    popularDropdown('ruta_cliente', rutas, 'Selecciona una ruta');
+
     popularDropdown('tipo_colocacion', tiposCredito.map(t => ({ value: t.toLowerCase(), text: t })), 'Selecciona tipo', true);
     popularDropdown('monto_colocacion', montos.map(m => ({ value: m, text: `$${m.toLocaleString()}` })), 'Selecciona monto', true);
     popularDropdown('plazo_colocacion', plazos.map(p => ({ value: p, text: `${p} semanas` })), 'Selecciona plazo', true);
 
-    // Dropdowns para filtros de clientes
     const todasLasPoblaciones = [...new Set([...poblacionesGdl, ...poblacionesLeon])].sort();
     popularDropdown('grupo_filtro', todasLasPoblaciones, 'Todos');
     popularDropdown('tipo_colocacion_filtro', tiposCredito.map(t => ({ value: t.toLowerCase(), text: t })), 'Todos', true);
     popularDropdown('plazo_filtro', plazos.map(p => ({ value: p, text: `${p} semanas` })), 'Todos', true);
 
-    // Dropdowns para filtros de usuarios
     popularDropdown('filtro-rol-usuario', [
         { value: 'admin', text: 'Administrador' },
         { value: 'supervisor', text: 'Supervisor' },
@@ -990,19 +997,12 @@ function inicializarDropdowns() {
         { value: 'consulta', text: 'Consulta' }
     ], 'Todos los roles', true);
 
-    // Dropdowns para reportes avanzados
     popularDropdown('sucursal_filtro_reporte', sucursales, 'Todas');
     popularDropdown('grupo_filtro_reporte', todasLasPoblaciones, 'Todos');
     popularDropdown('ruta_filtro_reporte', rutas, 'Todas');
     popularDropdown('tipo_credito_filtro_reporte', tiposCredito.map(t => ({ value: t.toLowerCase(), text: t })), 'Todos', true);
     popularDropdown('estado_credito_filtro_reporte', estadosCredito.map(e => ({ value: e, text: e.toUpperCase() })), 'Todos', true);
     popularDropdown('tipo_pago_filtro_reporte', tiposPago.map(t => ({ value: t, text: t.toUpperCase() })), 'Todos', true);
-    
-    // ===== INICIO DE LA MODIFICACIÓN =====
-    // Dropdowns para registro de cliente (se mantiene la lógica original, ahora con las nuevas listas)
-    popularDropdown('poblacion_grupo_cliente', poblacionesGdl, 'Selecciona población/grupo');
-    popularDropdown('ruta_cliente', rutas, 'Selecciona una ruta');
-    // ===== FIN DE LA MODIFICACIÓN =====
 
     console.log('Dropdowns inicializados correctamente');
 }
@@ -1078,7 +1078,7 @@ async function verificarElegibilidadRenovacion(curp) {
 }
 
 // =============================================
-// FUNCIONES DE CARGA DE DATOS PARA VISTAS - CORREGIDAS
+// FUNCIONES DE CARGA DE DATOS PARA VISTAS
 // =============================================
 
 function inicializarVistaGestionClientes() {
@@ -1089,16 +1089,15 @@ function inicializarVistaGestionClientes() {
 }
 
 function limpiarFiltrosClientes() {
-    // Cancelar cualquier carga en progreso
-    cargaEnProgreso = false;
-    hideFixedProgress();
+    if (cargaEnProgreso) {
+        cancelarCarga();
+    }
 
     const filtrosGrid = document.getElementById('filtros-grid');
     if (filtrosGrid) {
         filtrosGrid.querySelectorAll('input, select').forEach(el => el.value = '');
     }
 
-    // Restablecer botones
     showButtonLoading('btn-aplicar-filtros', false);
 
     inicializarVistaGestionClientes();
@@ -1110,16 +1109,16 @@ async function loadClientesTable() {
         showStatus('status_gestion_clientes', 'Ya hay una carga en progreso. Espere a que termine.', 'warning');
         return;
     }
-    cargaEnProgreso = true; // ===== CORRECCIÓN =====
+    cargaEnProgreso = true;
 
     const tbody = document.getElementById('tabla-clientes');
     if (!tbody) {
         console.error('No se encontró el elemento tabla-clientes');
+        cargaEnProgreso = false;
         return;
     }
 
     tbody.innerHTML = '<tr><td colspan="6">Buscando...</td></tr>';
-
     showButtonLoading('btn-aplicar-filtros', true, 'Buscando...');
     showFixedProgress(10, 'Aplicando filtros...');
 
@@ -1155,12 +1154,13 @@ async function loadClientesTable() {
         tbody.innerHTML = '';
         if (clientesFiltrados.length === 0) {
             showFixedProgress(100, 'No se encontraron clientes');
-            tbody.innerHTML = '<tr><td colspan="6">No se encontraron clientes con los filtros aplicados.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="6">No se encontraron clientes con los filtros iniciales.</td></tr>';
             return;
         }
 
         showFixedProgress(50, `Procesando ${clientesFiltrados.length} clientes...`);
 
+        let clientesMostrados = 0;
         for (let i = 0; i < clientesFiltrados.length; i++) {
             if (!cargaEnProgreso) {
                 tbody.innerHTML = '<tr><td colspan="6">Procesamiento cancelado.</td></tr>';
@@ -1168,10 +1168,34 @@ async function loadClientesTable() {
             }
 
             const cliente = clientesFiltrados[i];
-            const tr = document.createElement('tr');
-
+            
             showFixedProgress(50 + Math.round((i / clientesFiltrados.length) * 40), `Procesando cliente ${i + 1} de ${clientesFiltrados.length}`);
+            
+            const fechaRegistroMatch = !filtros.fechaRegistro || (cliente.fechaRegistro && cliente.fechaRegistro.startsWith(filtros.fechaRegistro));
+            if (!fechaRegistroMatch) {
+                continue;
+            }
 
+            const necesitaFiltroCredito = filtros.fechaCredito || filtros.tipo || filtros.plazo || filtros.curpAval;
+            if (necesitaFiltroCredito) {
+                const creditos = await database.buscarCreditosPorCliente(cliente.curp);
+                if (creditos.length === 0) {
+                    continue;
+                }
+                const algunCreditoCoincide = creditos.some(credito => {
+                    const fechaCreditoMatch = !filtros.fechaCredito || (credito.fechaCreacion && credito.fechaCreacion.startsWith(filtros.fechaCredito));
+                    const tipoMatch = !filtros.tipo || credito.tipo === filtros.tipo;
+                    const plazoMatch = !filtros.plazo || credito.plazo == filtros.plazo;
+                    const curpAvalMatch = !filtros.curpAval || (credito.curpAval && credito.curpAval.toLowerCase().includes(filtros.curpAval));
+                    return fechaCreditoMatch && tipoMatch && plazoMatch && curpAvalMatch;
+                });
+                if (!algunCreditoCoincide) {
+                    continue;
+                }
+            }
+            
+            clientesMostrados++;
+            const tr = document.createElement('tr');
             const historial = await obtenerHistorialCreditoCliente(cliente.curp);
             let infoCreditoHTML = '<em>Sin historial</em>';
 
@@ -1203,10 +1227,14 @@ async function loadClientesTable() {
                 </td>`;
             tbody.appendChild(tr);
         }
+        
+        if (clientesMostrados === 0 && cargaEnProgreso) {
+             tbody.innerHTML = '<tr><td colspan="6">No se encontraron clientes con los filtros aplicados.</td></tr>';
+        }
 
         if (cargaEnProgreso) {
-            showFixedProgress(100, `Procesamiento completado: ${clientesFiltrados.length} clientes`);
-            showStatus('status_gestion_clientes', `Se encontraron ${clientesFiltrados.length} clientes con los filtros aplicados.`, 'success');
+            showFixedProgress(100, `Procesamiento completado: ${clientesMostrados} clientes`);
+            showStatus('status_gestion_clientes', `Se encontraron ${clientesMostrados} clientes con los filtros aplicados.`, 'success');
         }
 
     } catch (error) {
@@ -1215,13 +1243,12 @@ async function loadClientesTable() {
         showStatus('status_gestion_clientes', 'Error al cargar los clientes: ' + error.message, 'error');
     } finally {
         showButtonLoading('btn-aplicar-filtros', false);
-        // ===== CORRECCIÓN =====
         setTimeout(hideFixedProgress, 1000);
     }
 }
 
 // =============================================
-// FUNCIONES DE REPORTES - CON BARRA DE PROGRESO
+// FUNCIONES DE REPORTES
 // =============================================
 
 async function loadBasicReports() {
@@ -1239,7 +1266,6 @@ async function loadBasicReports() {
         }
 
         showFixedProgress(80, 'Actualizando interfaz...');
-        // Actualizar tarjetas de métricas
         const elementos = {
             'total-clientes': reportes.totalClientes,
             'total-creditos': reportes.totalCreditos,
@@ -1278,7 +1304,6 @@ function inicializarVistaReportesAvanzados() {
     if (tbody) {
         tbody.innerHTML = '<tr><td colspan="10">Aplica los filtros para generar el reporte.</td></tr>';
     }
-    // Establecer fechas por defecto (último mes)
     const hoy = new Date();
     const haceUnMes = new Date(hoy.getFullYear(), hoy.getMonth() - 1, hoy.getDate());
     const fechaInicio = document.getElementById('fecha_inicio_reporte');
@@ -1289,9 +1314,9 @@ function inicializarVistaReportesAvanzados() {
 }
 
 function limpiarFiltrosReportes() {
-    // Cancelar cualquier carga en progreso
-    cargaEnProgreso = false;
-    hideFixedProgress();
+    if (cargaEnProgreso) {
+        cancelarCarga();
+    }
 
     const filtrosContainer = document.getElementById('filtros-reportes-avanzados');
     if (filtrosContainer) {
@@ -1299,7 +1324,6 @@ function limpiarFiltrosReportes() {
             if (el.type !== 'date') el.value = '';
         });
     }
-    // Restaurar fechas por defecto
     const hoy = new Date();
     const haceUnMes = new Date(hoy.getFullYear(), hoy.getMonth() - 1, hoy.getDate());
     const fechaInicio = document.getElementById('fecha_inicio_reporte');
@@ -1308,18 +1332,17 @@ function limpiarFiltrosReportes() {
     if (fechaInicio) fechaInicio.value = haceUnMes.toISOString().split('T')[0];
     if (fechaFin) fechaFin.value = hoy.toISOString().split('T')[0];
 
-    // Restablecer botones
     showButtonLoading('btn-aplicar-filtros-reportes', false);
 
     showStatus('status_reportes_avanzados', 'Filtros limpiados correctamente.', 'success');
 }
 
 async function loadAdvancedReports() {
-    // Verificar si ya hay una carga en progreso
     if (cargaEnProgreso) {
         showStatus('status_reportes_avanzados', 'Ya hay una carga en progreso. Espere a que termine.', 'warning');
         return;
     }
+    cargaEnProgreso = true;
 
     showProcessingOverlay(true, 'Generando reporte avanzado...');
     showButtonLoading('btn-aplicar-filtros-reportes', true, 'Generando...');
@@ -1342,7 +1365,6 @@ async function loadAdvancedReports() {
         showFixedProgress(50, 'Generando reporte...');
         reportData = await database.generarReporteAvanzado(filtros);
 
-        // Verificar si se canceló la carga
         if (!cargaEnProgreso) {
             return;
         }
@@ -1359,12 +1381,7 @@ async function loadAdvancedReports() {
     } finally {
         showProcessingOverlay(false);
         showButtonLoading('btn-aplicar-filtros-reportes', false);
-        setTimeout(() => {
-            if (cargaEnProgreso) {
-                hideFixedProgress();
-                cargaEnProgreso = false;
-            }
-        }, 1000);
+        setTimeout(hideFixedProgress, 1000);
     }
 }
 
@@ -1428,7 +1445,6 @@ function mostrarReporteAvanzado(data) {
         tbody.appendChild(tr);
     });
 
-    // Mostrar estadísticas del reporte
     const totalRegistros = data.length;
     const totalClientes = data.filter(item => item.tipo === 'cliente').length;
     const totalCreditos = data.filter(item => item.tipo === 'credito').length;
@@ -1546,7 +1562,6 @@ function exportToPDF() {
     showFixedProgress(50, 'Preparando PDF...');
 
     try {
-        // Usar html2pdf para generar el PDF
         const element = document.getElementById('view-reportes-avanzados');
         if (!element) {
             throw new Error('No se encontró el elemento para exportar');
@@ -1561,12 +1576,10 @@ function exportToPDF() {
         };
 
         showFixedProgress(80, 'Generando PDF...');
-        // Crear una copia temporal del contenido para el PDF
         const tempElement = element.cloneNode(true);
         tempElement.style.width = '100%';
         tempElement.style.padding = '20px';
 
-        // Ocultar botones de exportación en el PDF
         const exportButtons = tempElement.querySelector('.export-buttons');
         if (exportButtons) exportButtons.style.display = 'none';
 
