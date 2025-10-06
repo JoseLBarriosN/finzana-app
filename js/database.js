@@ -1,4 +1,4 @@
-﻿// =============================================
+// =============================================
 // CAPA DE SERVICIO DE FIREBASE (database.js) - CORREGIDO
 // =============================================
 
@@ -35,11 +35,11 @@ const database = {
     obtenerUsuarios: async () => {
         try {
             const snapshot = await db.collection('users').get();
-            const users = snapshot.docs.map(doc => ({ 
-                id: doc.id, 
-                ...doc.data() 
+            const users = snapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
             }));
-            
+
             return {
                 success: true,
                 data: users
@@ -88,7 +88,8 @@ const database = {
         try {
             let query = db.collection('clientes');
 
-            // Aplicar filtros condicionalmente
+            // CORRECCIÓN: Aplicar solo los filtros que son eficientes en el servidor (índices).
+            // El resto de los filtros (nombre, fechas, etc.) se aplicarán en el cliente.
             if (filtros.sucursal && filtros.sucursal.trim() !== '') {
                 query = query.where('office', '==', filtros.sucursal);
             }
@@ -100,16 +101,9 @@ const database = {
             }
 
             const snapshot = await query.get();
-            let clientes = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            // Simplemente devuelve los resultados; el filtrado adicional se hace en app.js
+            return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-            // Aplicar filtros adicionales en memoria
-            if (filtros.nombre && filtros.nombre.trim() !== '') {
-                clientes = clientes.filter(c =>
-                    c.nombre && c.nombre.toLowerCase().includes(filtros.nombre.toLowerCase())
-                );
-            }
-
-            return clientes;
         } catch (error) {
             console.error("Error buscando clientes:", error);
             return [];
