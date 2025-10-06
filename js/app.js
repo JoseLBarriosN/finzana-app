@@ -6,6 +6,7 @@ let currentUser = null;
 let creditoActual = null;
 let currentImportTab = 'clientes';
 let reportData = null;
+let cargaEnProgreso = false; // Variable global para controlar carga
 
 document.addEventListener('DOMContentLoaded', function () {
     console.log('DOM cargado, inicializando aplicación...');
@@ -277,7 +278,13 @@ async function handleImport() {
     showButtonLoading('btn-procesar-importacion', true, 'Importando...');
 
     try {
+        // Mostrar barra de progreso para importación
+        showProgress(0, 'Iniciando importación...');
+        
         const resultado = await database.importarDatosDesdeCSV(csvData, currentImportTab, office);
+        
+        // Actualizar progreso al finalizar
+        showProgress(100, 'Importación completada');
         
         let mensaje = `Importación (${office}) completada: ${resultado.importados} de ${resultado.total} registros.`;
 
@@ -301,6 +308,7 @@ async function handleImport() {
     } finally {
         showProcessingOverlay(false);
         showButtonLoading('btn-procesar-importacion', false);
+        hideProgress();
     }
 }
 
@@ -313,31 +321,35 @@ async function handleClientForm(e) {
     }
 
     showButtonLoading('#form-cliente button[type="submit"]', true, 'Guardando...');
-
-    const cliente = {
-        curp,
-        nombre: document.getElementById('nombre_cliente').value,
-        domicilio: document.getElementById('domicilio_cliente').value,
-        cp: document.getElementById('cp_cliente').value,
-        telefono: document.getElementById('telefono_cliente').value,
-        poblacion_grupo: document.getElementById('poblacion_grupo_cliente').value,
-        ruta: document.getElementById('ruta_cliente').value
-    };
-
-    if (!cliente.nombre || !cliente.domicilio || !cliente.poblacion_grupo || !cliente.ruta) {
-        showStatus('status_cliente', 'Los campos con * son obligatorios.', 'error');
-        showButtonLoading('#form-cliente button[type="submit"]', false);
-        return;
-    }
+    showProgress(50, 'Registrando cliente...');
 
     try {
+        const cliente = {
+            curp,
+            nombre: document.getElementById('nombre_cliente').value,
+            domicilio: document.getElementById('domicilio_cliente').value,
+            cp: document.getElementById('cp_cliente').value,
+            telefono: document.getElementById('telefono_cliente').value,
+            poblacion_grupo: document.getElementById('poblacion_grupo_cliente').value,
+            ruta: document.getElementById('ruta_cliente').value
+        };
+
+        if (!cliente.nombre || !cliente.domicilio || !cliente.poblacion_grupo || !cliente.ruta) {
+            showStatus('status_cliente', 'Los campos con * son obligatorios.', 'error');
+            showButtonLoading('#form-cliente button[type="submit"]', false);
+            hideProgress();
+            return;
+        }
+
         const resultado = await database.agregarCliente(cliente);
+        showProgress(100, 'Cliente registrado exitosamente');
         showStatus('status_cliente', resultado.message, resultado.success ? 'success' : 'error');
         if (resultado.success) e.target.reset();
     } catch (error) {
         showStatus('status_cliente', 'Error al guardar el cliente: ' + error.message, 'error');
     } finally {
         showButtonLoading('#form-cliente button[type="submit"]', false);
+        setTimeout(hideProgress, 1000);
     }
 }
 
@@ -352,9 +364,12 @@ async function handleSearchClientForCredit() {
     }
 
     showButtonLoading('btnBuscarCliente_colocacion', true, 'Buscando...');
+    showProgress(30, 'Buscando cliente...');
 
     try {
         const cliente = await database.buscarClientePorCURP(curp);
+        showProgress(70, 'Verificando elegibilidad...');
+        
         if (cliente) {
             const esElegible = await verificarElegibilidadRenovacion(curp);
             if (!esElegible) {
@@ -365,6 +380,7 @@ async function handleSearchClientForCredit() {
             }
 
             const creditoActivo = await database.buscarCreditoActivoPorCliente(curp);
+            showProgress(100, 'Cliente encontrado');
             showStatus('status_colocacion', creditoActivo ? 'Cliente encontrado y elegible para renovación.' : 'Cliente encontrado y elegible para crédito nuevo.', 'success');
 
             const nombreColocacion = document.getElementById('nombre_colocacion');
@@ -375,6 +391,7 @@ async function handleSearchClientForCredit() {
             if (idCreditoColocacion) idCreditoColocacion.value = 'Se asignará automáticamente';
             if (formColocacion) formColocacion.classList.remove('hidden');
         } else {
+            showProgress(100, 'Cliente no encontrado');
             showStatus('status_colocacion', 'Cliente no encontrado. Registre al cliente primero.', 'error');
             const formColocacion = document.getElementById('form-colocacion');
             if (formColocacion) formColocacion.classList.add('hidden');
@@ -383,6 +400,7 @@ async function handleSearchClientForCredit() {
         showStatus('status_colocacion', 'Error al buscar cliente: ' + error.message, 'error');
     } finally {
         showButtonLoading('btnBuscarCliente_colocacion', false);
+        setTimeout(hideProgress, 1000);
     }
 }
 
@@ -404,9 +422,12 @@ async function handleCreditForm(e) {
     }
 
     showButtonLoading('#form-credito-submit button[type="submit"]', true, 'Generando crédito...');
+    showProgress(50, 'Procesando crédito...');
 
     try {
         const resultado = await database.agregarCredito(credito);
+        showProgress(100, 'Crédito generado exitosamente');
+        
         if (resultado.success) {
             showStatus('status_colocacion', `${resultado.message}. ID de crédito: ${resultado.data.id}`, 'success');
             e.target.reset();
@@ -421,6 +442,7 @@ async function handleCreditForm(e) {
         showStatus('status_colocacion', 'Error al generar crédito: ' + error.message, 'error');
     } finally {
         showButtonLoading('#form-credito-submit button[type="submit"]', false);
+        setTimeout(hideProgress, 1000);
     }
 }
 
@@ -431,11 +453,16 @@ async function handleSearchCreditForPayment() {
     const idCredito = idCreditoInput.value.trim();
 
     showButtonLoading('btnBuscarCredito_cobranza', true, 'Buscando...');
+    showProgress(30, 'Buscando crédito...');
 
     try {
         creditoActual = await database.buscarCreditoPorId(idCredito);
+        showProgress(60, 'Obteniendo información del cliente...');
+        
         if (creditoActual) {
             const cliente = await database.buscarClientePorCURP(creditoActual.curpCliente);
+            showProgress(80, 'Calculando historial...');
+            
             const historial = await obtenerHistorialCreditoCliente(creditoActual.curpCliente);
 
             if (historial) {
@@ -462,6 +489,7 @@ async function handleSearchCreditForPayment() {
                 });
 
                 handleMontoPagoChange();
+                showProgress(100, 'Crédito encontrado');
 
                 const formCobranza = document.getElementById('form-cobranza');
                 if (formCobranza) formCobranza.classList.remove('hidden');
@@ -470,6 +498,7 @@ async function handleSearchCreditForPayment() {
                 showStatus('status_cobranza', 'No se pudo calcular el historial del crédito.', 'error');
             }
         } else {
+            showProgress(100, 'Crédito no encontrado');
             showStatus('status_cobranza', 'Crédito no encontrado.', 'error');
             const formCobranza = document.getElementById('form-cobranza');
             if (formCobranza) formCobranza.classList.add('hidden');
@@ -478,6 +507,7 @@ async function handleSearchCreditForPayment() {
         showStatus('status_cobranza', 'Error al buscar crédito: ' + error.message, 'error');
     } finally {
         showButtonLoading('btnBuscarCredito_cobranza', false);
+        setTimeout(hideProgress, 1000);
     }
 }
 
@@ -500,9 +530,12 @@ async function handlePaymentForm(e) {
     }
 
     showButtonLoading('#form-pago-submit button[type="submit"]', true, 'Registrando pago...');
+    showProgress(50, 'Procesando pago...');
 
     try {
         const resultado = await database.agregarPago(pago);
+        showProgress(100, 'Pago registrado exitosamente');
+        
         showStatus('status_cobranza', resultado.message, resultado.success ? 'success' : 'error');
         if (resultado.success) {
             const formCobranza = document.getElementById('form-cobranza');
@@ -515,6 +548,7 @@ async function handlePaymentForm(e) {
         showStatus('status_cobranza', 'Error al registrar pago: ' + error.message, 'error');
     } finally {
         showButtonLoading('#form-pago-submit button[type="submit"]', false);
+        setTimeout(hideProgress, 1000);
     }
 }
 
@@ -531,7 +565,7 @@ function handleMontoPagoChange() {
 }
 
 // =============================================
-// FUNCIONES DE VISTA Y AUXILIARES
+// FUNCIONES DE VISTA Y AUXILIARES - CORREGIDAS
 // =============================================
 
 function showView(viewId) {
@@ -555,27 +589,29 @@ function showStatus(elementId, message, type) {
 }
 
 function showProcessingOverlay(show, message = 'Procesando...') {
-    let overlay = document.getElementById('processing-overlay');
+    const overlay = document.getElementById('processing-overlay');
+    const messageElement = document.getElementById('processing-message');
+    
     if (!overlay) {
-        overlay = document.createElement('div');
-        overlay.id = 'processing-overlay';
-        overlay.className = 'processing-overlay hidden';
-        overlay.innerHTML = `
+        // Crear overlay si no existe
+        const newOverlay = document.createElement('div');
+        newOverlay.id = 'processing-overlay';
+        newOverlay.className = 'processing-overlay hidden';
+        newOverlay.innerHTML = `
             <div class="processing-spinner"></div>
             <div id="processing-message" class="processing-message">${message}</div>
         `;
-        document.body.appendChild(overlay);
+        document.body.appendChild(newOverlay);
     }
 
-    const messageElement = document.getElementById('processing-message');
-    if (messageElement) {
-        messageElement.textContent = message;
-    }
-
+    const currentOverlay = document.getElementById('processing-overlay');
+    const currentMessage = document.getElementById('processing-message');
+    
     if (show) {
-        overlay.classList.remove('hidden');
+        if (currentMessage) currentMessage.textContent = message;
+        currentOverlay.classList.remove('hidden');
     } else {
-        overlay.classList.add('hidden');
+        currentOverlay.classList.add('hidden');
     }
 }
 
@@ -597,8 +633,16 @@ function showButtonLoading(selector, show, text = 'Procesando...') {
     }
 }
 
+// FUNCIONES DE BARRA DE PROGRESO MEJORADAS
 function showProgress(percent, message = '') {
+    // Detener carga si se solicitó limpiar
+    if (cargaEnProgreso === false && percent > 0) {
+        return;
+    }
+
     let progressContainer = document.getElementById('progress-container');
+    
+    // Si no existe, crearla en el lugar correcto
     if (!progressContainer) {
         progressContainer = document.createElement('div');
         progressContainer.id = 'progress-container';
@@ -606,8 +650,19 @@ function showProgress(percent, message = '') {
         progressContainer.innerHTML = `
             <div id="progress-bar" class="progress-bar"></div>
             <div id="progress-text" class="progress-text"></div>
+            <button id="btn-cancelar-carga" class="btn-cancelar-carga" title="Cancelar carga">
+                <i class="fas fa-times"></i>
+            </button>
         `;
-        document.body.appendChild(progressContainer);
+        
+        // Insertar al inicio del body para que esté por encima de todo
+        document.body.insertBefore(progressContainer, document.body.firstChild);
+        
+        // Agregar event listener al botón de cancelar
+        const btnCancelar = document.getElementById('btn-cancelar-carga');
+        if (btnCancelar) {
+            btnCancelar.addEventListener('click', cancelarCarga);
+        }
     }
 
     const progressBar = document.getElementById('progress-bar');
@@ -615,18 +670,58 @@ function showProgress(percent, message = '') {
 
     if (progressBar) {
         progressBar.style.width = percent + '%';
+        // Cambiar color según el progreso
+        if (percent < 30) {
+            progressBar.style.background = 'var(--danger)';
+        } else if (percent < 70) {
+            progressBar.style.background = 'var(--warning)';
+        } else {
+            progressBar.style.background = 'var(--success)';
+        }
     }
 
     if (progressText && message) {
         progressText.textContent = message;
+    }
+
+    // Mostrar el contenedor
+    progressContainer.style.display = 'block';
+    progressContainer.classList.remove('hidden');
+    
+    // Marcar que hay carga en progreso
+    if (percent > 0 && percent < 100) {
+        cargaEnProgreso = true;
+    } else if (percent === 100) {
+        cargaEnProgreso = false;
     }
 }
 
 function hideProgress() {
     const progressContainer = document.getElementById('progress-container');
     if (progressContainer) {
-        progressContainer.remove();
+        progressContainer.classList.add('hidden');
+        // Resetear la barra
+        const progressBar = document.getElementById('progress-bar');
+        if (progressBar) {
+            progressBar.style.width = '0%';
+        }
+        cargaEnProgreso = false;
     }
+}
+
+function cancelarCarga() {
+    cargaEnProgreso = false;
+    hideProgress();
+    showStatus('status_gestion_clientes', 'Carga cancelada por el usuario.', 'info');
+    
+    // También detener cualquier procesamiento en curso
+    const tbody = document.getElementById('tabla-clientes');
+    if (tbody) {
+        tbody.innerHTML = '<tr><td colspan="6">Carga cancelada.</td></tr>';
+    }
+    
+    // Restablecer botones
+    showButtonLoading('btn-aplicar-filtros', false);
 }
 
 function calcularMontoTotalColocacion() {
@@ -681,7 +776,7 @@ function inicializarDropdowns() {
     popularDropdown('monto_colocacion', montos.map(m => ({ value: m, text: `$${m.toLocaleString()}` })), 'Selecciona monto', true);
     popularDropdown('plazo_colocacion', plazos.map(p => ({ value: p, text: `${p} semanas` })), 'Selecciona plazo', true);
 
-    // Dropdowns para filtros de clientes - CORREGIDO: Usar IDs correctos
+    // Dropdowns para filtros de clientes
     popularDropdown('grupo_filtro', poblaciones, 'Todos');
     popularDropdown('tipo_colocacion_filtro', tiposCredito.map(t => ({ value: t.toLowerCase(), text: t })), 'Todos', true);
     popularDropdown('plazo_filtro', plazos.map(p => ({ value: p, text: `${p} semanas` })), 'Todos', true);
@@ -779,14 +874,29 @@ function inicializarVistaGestionClientes() {
 }
 
 function limpiarFiltrosClientes() {
+    // Cancelar cualquier carga en progreso
+    cargaEnProgreso = false;
+    hideProgress();
+    
     const filtrosGrid = document.getElementById('filtros-grid');
     if (filtrosGrid) {
         filtrosGrid.querySelectorAll('input, select').forEach(el => el.value = '');
     }
+    
+    // Restablecer botones
+    showButtonLoading('btn-aplicar-filtros', false);
+    
     inicializarVistaGestionClientes();
+    showStatus('status_gestion_clientes', 'Filtros limpiados correctamente.', 'success');
 }
 
 async function loadClientesTable() {
+    // Verificar si ya hay una carga en progreso
+    if (cargaEnProgreso) {
+        showStatus('status_gestion_clientes', 'Ya hay una carga en progreso. Espere a que termine.', 'warning');
+        return;
+    }
+
     const tbody = document.getElementById('tabla-clientes');
     if (!tbody) {
         console.error('No se encontró el elemento tabla-clientes');
@@ -796,6 +906,7 @@ async function loadClientesTable() {
     tbody.innerHTML = '<tr><td colspan="6">Buscando...</td></tr>';
 
     showButtonLoading('btn-aplicar-filtros', true, 'Buscando...');
+    showProgress(10, 'Aplicando filtros...');
 
     try {
         // CORRECCIÓN CRÍTICA: Usar operador de encadenamiento opcional y valores por defecto
@@ -814,25 +925,41 @@ async function loadClientesTable() {
         const hayFiltros = Object.values(filtros).some(val => val && val.trim() !== '');
         if (!hayFiltros) {
             tbody.innerHTML = '<tr><td colspan="6">Por favor, especifica al menos un criterio de búsqueda.</td></tr>';
+            showButtonLoading('btn-aplicar-filtros', false);
+            hideProgress();
             return;
         }
 
+        showProgress(30, 'Buscando clientes...');
         const clientesFiltrados = await database.buscarClientes(filtros);
+
+        // Verificar si se canceló la carga
+        if (!cargaEnProgreso) {
+            tbody.innerHTML = '<tr><td colspan="6">Búsqueda cancelada.</td></tr>';
+            return;
+        }
 
         tbody.innerHTML = '';
         if (clientesFiltrados.length === 0) {
+            showProgress(100, 'No se encontraron clientes');
             tbody.innerHTML = '<tr><td colspan="6">No se encontraron clientes con los filtros aplicados.</td></tr>';
             return;
         }
 
-        // Mostrar progreso para muchos clientes
-        if (clientesFiltrados.length > 10) {
-            showProgress(0, 'Cargando información de clientes...');
-        }
+        showProgress(50, `Procesando ${clientesFiltrados.length} clientes...`);
 
         for (let i = 0; i < clientesFiltrados.length; i++) {
+            // Verificar si se canceló la carga en cada iteración
+            if (!cargaEnProgreso) {
+                tbody.innerHTML = '<tr><td colspan="6">Procesamiento cancelado.</td></tr>';
+                break;
+            }
+
             const cliente = clientesFiltrados[i];
             const tr = document.createElement('tr');
+            
+            showProgress(50 + Math.round((i / clientesFiltrados.length) * 40), `Procesando cliente ${i + 1} de ${clientesFiltrados.length}`);
+            
             const historial = await obtenerHistorialCreditoCliente(cliente.curp);
             let infoCreditoHTML = '<em>Sin historial</em>';
 
@@ -863,35 +990,39 @@ async function loadClientesTable() {
                     <button class="btn btn-sm btn-danger" onclick="deleteCliente('${cliente.id}')"><i class="fas fa-trash"></i></button>
                 </td>`;
             tbody.appendChild(tr);
-
-            // Actualizar progreso
-            if (clientesFiltrados.length > 10) {
-                showProgress(Math.round((i + 1) / clientesFiltrados.length * 100), `Procesando cliente ${i + 1} de ${clientesFiltrados.length}`);
-            }
         }
 
-        if (clientesFiltrados.length > 10) {
-            hideProgress();
+        if (cargaEnProgreso) {
+            showProgress(100, `Procesamiento completado: ${clientesFiltrados.length} clientes`);
+            showStatus('status_gestion_clientes', `Se encontraron ${clientesFiltrados.length} clientes con los filtros aplicados.`, 'success');
         }
 
     } catch (error) {
         console.error('Error cargando clientes:', error);
         tbody.innerHTML = '<tr><td colspan="6">Error al cargar los clientes.</td></tr>';
+        showStatus('status_gestion_clientes', 'Error al cargar los clientes: ' + error.message, 'error');
     } finally {
         showButtonLoading('btn-aplicar-filtros', false);
+        setTimeout(() => {
+            if (cargaEnProgreso) {
+                hideProgress();
+                cargaEnProgreso = false;
+            }
+        }, 1000);
     }
 }
 
 async function loadUsersTable() {
-    const tbody = document.getElementById('tabla-usuarios');
-    if (!tbody) return;
-
     showProcessingOverlay(true, 'Cargando usuarios...');
+    showProgress(50, 'Obteniendo lista de usuarios...');
 
     try {
         const userList = await database.getAll('users');
+        const tbody = document.getElementById('tabla-usuarios');
         tbody.innerHTML = '';
+        
         if (userList && userList.length > 0) {
+            showProgress(80, 'Mostrando usuarios...');
             userList.forEach(user => {
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
@@ -903,55 +1034,74 @@ async function loadUsersTable() {
                 `;
                 tbody.appendChild(tr);
             });
+            showProgress(100, `${userList.length} usuarios cargados`);
         } else {
             tbody.innerHTML = `<tr><td colspan="5">No hay usuarios en la base de datos de perfiles.</td></tr>`;
+            showProgress(100, 'No se encontraron usuarios');
         }
     } catch (error) {
         console.error('Error cargando usuarios:', error);
-        tbody.innerHTML = `<tr><td colspan="5">Error al cargar usuarios.</td></tr>`;
+        const tbody = document.getElementById('tabla-usuarios');
+        if (tbody) {
+            tbody.innerHTML = `<tr><td colspan="5">Error al cargar usuarios.</td></tr>`;
+        }
+        showStatus('status_usuarios', 'Error al cargar usuarios: ' + error.message, 'error');
     } finally {
         showProcessingOverlay(false);
+        setTimeout(hideProgress, 1000);
     }
 }
 
 // =============================================
-// FUNCIONES DE REPORTES
+// FUNCIONES DE REPORTES - CON BARRA DE PROGRESO
 // =============================================
 
 async function loadBasicReports() {
     showProcessingOverlay(true, 'Generando reportes...');
     showButtonLoading('btn-actualizar-reportes', true, 'Generando...');
+    showProgress(30, 'Recopilando datos...');
 
     try {
+        showProgress(60, 'Generando estadísticas...');
         const reportes = await database.generarReportes();
-        if (reportes) {
-            const elementos = {
-                'total-clientes': reportes.totalClientes,
-                'total-creditos': reportes.totalCreditos,
-                'total-cartera': `$${reportes.totalCartera.toLocaleString()}`,
-                'total-vencidos': reportes.totalVencidos,
-                'pagos-registrados': reportes.pagosRegistrados,
-                'cobrado-mes': `$${reportes.cobradoMes.toLocaleString()}`,
-                'total-comisiones': `$${reportes.totalComisiones.toLocaleString()}`
-            };
-
-            Object.entries(elementos).forEach(([id, valor]) => {
-                const element = document.getElementById(id);
-                if (element) element.textContent = valor;
-            });
-
-            const tasaRecuperacion = (reportes.totalCartera + reportes.cobradoMes) > 0 ?
-                (reportes.cobradoMes / (reportes.totalCartera + reportes.cobradoMes) * 100).toFixed(1) : 0;
-
-            const tasaElement = document.getElementById('tasa-recuperacion');
-            if (tasaElement) tasaElement.textContent = `${tasaRecuperacion}%`;
+        
+        if (!reportes) {
+            showStatus('status_reportes', 'Error al generar reportes.', 'error');
+            return;
         }
+
+        showProgress(80, 'Actualizando interfaz...');
+        // Actualizar tarjetas de métricas
+        const elementos = {
+            'total-clientes': reportes.totalClientes,
+            'total-creditos': reportes.totalCreditos,
+            'total-cartera': `$${reportes.totalCartera.toLocaleString()}`,
+            'total-vencidos': reportes.totalVencidos,
+            'pagos-registrados': reportes.pagosRegistrados,
+            'cobrado-mes': `$${reportes.cobradoMes.toLocaleString()}`,
+            'total-comisiones': `$${reportes.totalComisiones.toLocaleString()}`
+        };
+
+        Object.entries(elementos).forEach(([id, valor]) => {
+            const element = document.getElementById(id);
+            if (element) element.textContent = valor;
+        });
+
+        const tasaRecuperacion = (reportes.totalCartera + reportes.cobradoMes) > 0 ?
+            (reportes.cobradoMes / (reportes.totalCartera + reportes.cobradoMes) * 100).toFixed(1) : 0;
+
+        const tasaElement = document.getElementById('tasa-recuperacion');
+        if (tasaElement) tasaElement.textContent = `${tasaRecuperacion}%`;
+
+        showProgress(100, 'Reportes actualizados');
+        showStatus('status_reportes', 'Reportes actualizados correctamente.', 'success');
     } catch (error) {
         console.error('Error cargando reportes:', error);
         showStatus('status_reportes', 'Error al cargar los reportes: ' + error.message, 'error');
     } finally {
         showProcessingOverlay(false);
         showButtonLoading('btn-actualizar-reportes', false);
+        setTimeout(hideProgress, 1000);
     }
 }
 
@@ -971,6 +1121,10 @@ function inicializarVistaReportesAvanzados() {
 }
 
 function limpiarFiltrosReportes() {
+    // Cancelar cualquier carga en progreso
+    cargaEnProgreso = false;
+    hideProgress();
+    
     const filtrosContainer = document.getElementById('filtros-reportes-avanzados');
     if (filtrosContainer) {
         filtrosContainer.querySelectorAll('input, select').forEach(el => {
@@ -985,11 +1139,23 @@ function limpiarFiltrosReportes() {
 
     if (fechaInicio) fechaInicio.value = haceUnMes.toISOString().split('T')[0];
     if (fechaFin) fechaFin.value = hoy.toISOString().split('T')[0];
+    
+    // Restablecer botones
+    showButtonLoading('btn-aplicar-filtros-reportes', false);
+    
+    showStatus('status_reportes_avanzados', 'Filtros limpiados correctamente.', 'success');
 }
 
 async function loadAdvancedReports() {
+    // Verificar si ya hay una carga en progreso
+    if (cargaEnProgreso) {
+        showStatus('status_reportes_avanzados', 'Ya hay una carga en progreso. Espere a que termine.', 'warning');
+        return;
+    }
+
     showProcessingOverlay(true, 'Generando reporte avanzado...');
     showButtonLoading('btn-aplicar-filtros-reportes', true, 'Generando...');
+    showProgress(20, 'Aplicando filtros...');
 
     try {
         const filtros = {
@@ -1005,8 +1171,19 @@ async function loadAdvancedReports() {
             idCredito: document.getElementById('id_credito_filtro_reporte')?.value || ''
         };
 
+        showProgress(50, 'Generando reporte...');
         reportData = await database.generarReporteAvanzado(filtros);
+        
+        // Verificar si se canceló la carga
+        if (!cargaEnProgreso) {
+            return;
+        }
+
+        showProgress(80, 'Mostrando resultados...');
         mostrarReporteAvanzado(reportData);
+        showProgress(100, 'Reporte generado');
+
+        showStatus('status_reportes_avanzados', `Reporte generado: ${reportData.length} registros encontrados.`, 'success');
 
     } catch (error) {
         console.error('Error generando reporte avanzado:', error);
@@ -1014,6 +1191,12 @@ async function loadAdvancedReports() {
     } finally {
         showProcessingOverlay(false);
         showButtonLoading('btn-aplicar-filtros-reportes', false);
+        setTimeout(() => {
+            if (cargaEnProgreso) {
+                hideProgress();
+                cargaEnProgreso = false;
+            }
+        }, 1000);
     }
 }
 
@@ -1101,17 +1284,19 @@ function mostrarReporteAvanzado(data) {
 
 function exportToCSV() {
     if (!reportData || reportData.length === 0) {
-        alert('No hay datos para exportar. Genera un reporte primero.');
+        showStatus('status_reportes_avanzados', 'No hay datos para exportar.', 'error');
         return;
     }
 
     showProcessingOverlay(true, 'Generando archivo CSV...');
     showButtonLoading('btn-exportar-csv', true, 'Generando CSV...');
+    showProgress(50, 'Preparando datos...');
 
     try {
         const headers = ['Tipo', 'CURP', 'Nombre', 'Grupo/Población', 'Ruta', 'Sucursal', 'Fecha', 'Tipo Operación', 'Monto', 'Saldo'];
         let csvContent = headers.join(',') + '\n';
 
+        showProgress(70, 'Generando CSV...');
         reportData.forEach(item => {
             let row = [];
 
@@ -1159,6 +1344,7 @@ function exportToCSV() {
             csvContent += row.join(',') + '\n';
         });
 
+        showProgress(90, 'Creando archivo...');
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
         const link = document.createElement('a');
         const url = URL.createObjectURL(blob);
@@ -1169,6 +1355,7 @@ function exportToCSV() {
         link.click();
         document.body.removeChild(link);
 
+        showProgress(100, 'Archivo exportado');
         showStatus('status_reportes_avanzados', 'Archivo CSV exportado exitosamente.', 'success');
     } catch (error) {
         console.error('Error exportando CSV:', error);
@@ -1176,6 +1363,7 @@ function exportToCSV() {
     } finally {
         showProcessingOverlay(false);
         showButtonLoading('btn-exportar-csv', false);
+        setTimeout(hideProgress, 1000);
     }
 }
 
@@ -1187,6 +1375,7 @@ function exportToPDF() {
 
     showProcessingOverlay(true, 'Generando archivo PDF...');
     showButtonLoading('btn-exportar-pdf', true, 'Generando PDF...');
+    showProgress(50, 'Preparando PDF...');
 
     try {
         // Usar html2pdf para generar el PDF
@@ -1203,6 +1392,7 @@ function exportToPDF() {
             jsPDF: { unit: 'cm', format: 'a4', orientation: 'landscape' }
         };
 
+        showProgress(80, 'Generando PDF...');
         // Crear una copia temporal del contenido para el PDF
         const tempElement = element.cloneNode(true);
         tempElement.style.width = '100%';
@@ -1216,14 +1406,17 @@ function exportToPDF() {
 
         html2pdf().set(opt).from(tempElement).save().then(() => {
             document.body.removeChild(tempElement);
+            showProgress(100, 'PDF generado');
             showStatus('status_reportes_avanzados', 'Archivo PDF exportado exitosamente.', 'success');
             showProcessingOverlay(false);
             showButtonLoading('btn-exportar-pdf', false);
+            setTimeout(hideProgress, 1000);
         }).catch(error => {
             console.error('Error generando PDF:', error);
             showStatus('status_reportes_avanzados', 'Error al exportar PDF: ' + error.message, 'error');
             showProcessingOverlay(false);
             showButtonLoading('btn-exportar-pdf', false);
+            setTimeout(hideProgress, 1000);
         });
 
     } catch (error) {
@@ -1231,6 +1424,7 @@ function exportToPDF() {
         showStatus('status_reportes_avanzados', 'Error al exportar PDF: ' + error.message, 'error');
         showProcessingOverlay(false);
         showButtonLoading('btn-exportar-pdf', false);
+        setTimeout(hideProgress, 1000);
     }
 }
 
