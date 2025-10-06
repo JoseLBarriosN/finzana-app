@@ -1153,7 +1153,6 @@ async function loadClientesTable() {
     showFixedProgress(10, 'Aplicando filtros...');
 
     try {
-        // CORRECCIÓN CRÍTICA: Usar operador de encadenamiento opcional y valores por defecto
         const filtros = {
             sucursal: document.getElementById('sucursal_filtro')?.value || '',
             curp: document.getElementById('curp_filtro')?.value?.toLowerCase() || '',
@@ -1177,7 +1176,6 @@ async function loadClientesTable() {
         showFixedProgress(30, 'Buscando clientes...');
         const clientesFiltrados = await database.buscarClientes(filtros);
 
-        // Verificar si se canceló la carga
         if (!cargaEnProgreso) {
             tbody.innerHTML = '<tr><td colspan="6">Búsqueda cancelada.</td></tr>';
             return;
