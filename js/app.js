@@ -9,6 +9,42 @@ let reportData = null;
 let cargaEnProgreso = false;
 let currentSearchOperation = null;
 
+// ===== INICIO DE LA MODIFICACIÓN (Traductor de Fechas) =====
+/**
+ * Parsea de forma segura una fecha que puede estar en formato dd-mm-yyyy o ISO.
+ * @param {string} fechaStr La cadena de texto de la fecha.
+ * @returns {Date|null} Un objeto Date válido o null si el formato es incorrecto.
+ */
+function parsearFecha_DDMMYYYY(fechaStr) {
+    if (!fechaStr || typeof fechaStr !== 'string') {
+        return null;
+    }
+    // Si ya es un formato ISO completo (generado por la app), úsalo directamente.
+    if (fechaStr.includes('T') && fechaStr.includes('Z')) {
+        const fecha = new Date(fechaStr);
+        return isNaN(fecha.getTime()) ? null : fecha;
+    }
+    
+    // Intenta parsear el formato dd-mm-yyyy
+    const partes = fechaStr.split('-');
+    if (partes.length === 3) {
+        // Reordena a yyyy-mm-dd, un formato que new Date() entiende de forma fiable.
+        const [dia, mes, anio] = partes;
+        if (dia.length === 2 && mes.length === 2 && anio.length === 4) {
+            const fechaISO = `${anio}-${mes}-${dia}`;
+            const fecha = new Date(fechaISO);
+            // Comprueba que la fecha resultante sea válida
+            return isNaN(fecha.getTime()) ? null : fecha;
+        }
+    }
+
+    // Si todo lo demás falla, intenta un último parseo directo (puede ser yyyy-mm-dd)
+    const fechaDirecta = new Date(fechaStr);
+    return isNaN(fechaDirecta.getTime()) ? null : fechaDirecta;
+}
+// ===== FIN DE LA MODIFICACIÓN =====
+
+
 document.addEventListener('DOMContentLoaded', function () {
     console.log('DOM cargado, inicializando aplicación...');
 
@@ -855,7 +891,7 @@ function showButtonLoading(selector, show, text = 'Procesando...') {
 // =============================================
 
 function showFixedProgress(percentage, message = '') {
-    if (cargaEnProgreso === false && percentage > 0) {
+    if (cargaEnProgreso === false && percentage > 0 && percentage < 100) {
         return;
     }
 
@@ -1012,13 +1048,18 @@ function inicializarDropdowns() {
 // =============================================
 
 function _calcularEstadoCredito(credito, pagos) {
-    if (!credito) return null;
+    if (!credito || !credito.fechaCreacion) return null;
     if (credito.saldo <= 0.01) {
         return { estado: 'liquidado', diasAtraso: 0, semanasAtraso: 0, pagoSemanal: 0, proximaFechaPago: 'N/A' };
     }
     const pagoSemanal = (credito.plazo > 0) ? credito.montoTotal / credito.plazo : 0;
     const montoPagado = credito.montoTotal - credito.saldo;
-    const fechaInicio = new Date(credito.fechaCreacion);
+    
+    // ===== INICIO DE LA MODIFICACIÓN (Uso del traductor de fechas) =====
+    const fechaInicio = parsearFecha_DDMMYYYY(credito.fechaCreacion);
+    if (!fechaInicio) return null; // No se puede calcular si la fecha es inválida
+    // ===== FIN DE LA MODIFICACIÓN =====
+
     const diasTranscurridos = (new Date() - fechaInicio) / (1000 * 60 * 60 * 24);
     if (diasTranscurridos < 0) return { estado: 'al corriente', diasAtraso: 0, semanasAtraso: 0, pagoSemanal, proximaFechaPago: 'Futuro' };
 
@@ -1048,7 +1089,12 @@ async function obtenerHistorialCreditoCliente(curp) {
     const creditosCliente = await database.buscarCreditosPorCliente(curp);
     if (creditosCliente.length === 0) return null;
 
-    creditosCliente.sort((a, b) => new Date(b.fechaCreacion) - new Date(a.fechaCreacion));
+    creditosCliente.sort((a, b) => {
+        const fechaA = parsearFecha_DDMMYYYY(a.fechaCreacion);
+        const fechaB = parsearFecha_DDMMYYYY(b.fechaCreacion);
+        if (!fechaA || !fechaB) return 0;
+        return fechaB - fechaA;
+    });
     const ultimoCredito = creditosCliente[0];
 
     const pagos = await database.getPagosPorCredito(ultimoCredito.id);
@@ -1056,10 +1102,15 @@ async function obtenerHistorialCreditoCliente(curp) {
 
     const estadoCalculado = _calcularEstadoCredito(ultimoCredito, pagos);
 
+    // ===== INICIO DE LA MODIFICACIÓN (Uso del traductor de fechas) =====
+    const fechaUltimoPagoObj = ultimoPago ? parsearFecha_DDMMYYYY(ultimoPago.fecha) : null;
+    const fechaUltimoPagoStr = fechaUltimoPagoObj ? fechaUltimoPagoObj.toLocaleDateString() : 'N/A';
+    // ===== FIN DE LA MODIFICACIÓN =====
+
     return {
         idCredito: ultimoCredito.id,
         saldoRestante: ultimoCredito.saldo,
-        fechaUltimoPago: ultimoPago ? new Date(ultimoPago.fecha).toLocaleDateString() : 'N/A',
+        fechaUltimoPago: fechaUltimoPagoStr,
         ...estadoCalculado,
         semanaActual: Math.floor(pagos.length) + 1,
         plazoTotal: ultimoCredito.plazo,
@@ -1068,11 +1119,17 @@ async function obtenerHistorialCreditoCliente(curp) {
 
 async function verificarElegibilidadRenovacion(curp) {
     const credito = await database.buscarCreditoActivoPorCliente(curp);
-    if (!credito) return true; // Si no hay crédito activo, es elegible
+    if (!credito) return true;
 
     const pagos = await database.getPagosPorCredito(credito.id);
     const estado = _calcularEstadoCredito(credito, pagos);
-    const semanasTranscurridas = Math.floor((new Date() - new Date(credito.fechaCreacion)) / (1000 * 60 * 60 * 24 * 7));
+    
+    // ===== INICIO DE LA MODIFICACIÓN (Uso del traductor de fechas) =====
+    const fechaCreacionObj = parsearFecha_DDMMYYYY(credito.fechaCreacion);
+    if (!estado || !fechaCreacionObj) return false; // No es elegible si no se pueden calcular los datos
+    // ===== FIN DE LA MODIFICACIÓN =====
+
+    const semanasTranscurridas = Math.floor((new Date() - fechaCreacionObj) / (1000 * 60 * 60 * 24 * 7));
 
     return semanasTranscurridas >= 10 && estado.estado === 'al corriente';
 }
@@ -1398,6 +1455,12 @@ function mostrarReporteAvanzado(data) {
 
     data.forEach(item => {
         const tr = document.createElement('tr');
+        
+        // ===== INICIO DE LA MODIFICACIÓN (Uso del traductor de fechas) =====
+        const fechaRegistro = parsearFecha_DDMMYYYY(item.fechaRegistro)?.toLocaleDateString() || '';
+        const fechaCreacion = parsearFecha_DDMMYYYY(item.fechaCreacion)?.toLocaleDateString() || '';
+        const fechaPago = parsearFecha_DDMMYYYY(item.fecha)?.toLocaleDateString() || '';
+        // ===== FIN DE LA MODIFICACIÓN =====
 
         let rowContent = '';
         if (item.tipo === 'cliente') {
@@ -1408,7 +1471,7 @@ function mostrarReporteAvanzado(data) {
                 <td>${item.poblacion_grupo || ''}</td>
                 <td>${item.ruta || ''}</td>
                 <td>${item.office || ''}</td>
-                <td>${item.fechaRegistro ? new Date(item.fechaRegistro).toLocaleDateString() : ''}</td>
+                <td>${fechaRegistro}</td>
                 <td>-</td>
                 <td>-</td>
                 <td>-</td>
@@ -1421,7 +1484,7 @@ function mostrarReporteAvanzado(data) {
                 <td>${item.poblacion_grupo || ''}</td>
                 <td>${item.ruta || ''}</td>
                 <td>${item.office || ''}</td>
-                <td>${item.fechaCreacion ? new Date(item.fechaCreacion).toLocaleDateString() : ''}</td>
+                <td>${fechaCreacion}</td>
                 <td>${item.tipo || ''}</td>
                 <td>$${item.monto ? item.monto.toLocaleString() : '0'}</td>
                 <td>$${item.saldo ? item.saldo.toLocaleString() : '0'}</td>
@@ -1434,7 +1497,7 @@ function mostrarReporteAvanzado(data) {
                 <td>${item.poblacion_grupo || ''}</td>
                 <td>${item.ruta || ''}</td>
                 <td>${item.office || ''}</td>
-                <td>${item.fecha ? new Date(item.fecha).toLocaleDateString() : ''}</td>
+                <td>${fechaPago}</td>
                 <td>${item.tipoPago || ''}</td>
                 <td>$${item.monto ? item.monto.toLocaleString() : '0'}</td>
                 <td>$${item.saldoDespues ? item.saldoDespues.toLocaleString() : '0'}</td>
@@ -1492,7 +1555,7 @@ function exportToCSV() {
                     item.poblacion_grupo || '',
                     item.ruta || '',
                     item.office || '',
-                    item.fechaRegistro ? new Date(item.fechaRegistro).toLocaleDateString() : '',
+                    item.fechaRegistro ? (parsearFecha_DDMMYYYY(item.fechaRegistro)?.toLocaleDateString() || '') : '',
                     '',
                     '',
                     ''
@@ -1505,7 +1568,7 @@ function exportToCSV() {
                     item.poblacion_grupo || '',
                     item.ruta || '',
                     item.office || '',
-                    item.fechaCreacion ? new Date(item.fechaCreacion).toLocaleDateString() : '',
+                    item.fechaCreacion ? (parsearFecha_DDMMYYYY(item.fechaCreacion)?.toLocaleDateString() || '') : '',
                     item.tipo || '',
                     item.monto || 0,
                     item.saldo || 0
@@ -1518,7 +1581,7 @@ function exportToCSV() {
                     item.poblacion_grupo || '',
                     item.ruta || '',
                     item.office || '',
-                    item.fecha ? new Date(item.fecha).toLocaleDateString() : '',
+                    item.fecha ? (parsearFecha_DDMMYYYY(item.fecha)?.toLocaleDateString() || '') : '',
                     item.tipoPago || '',
                     item.monto || 0,
                     item.saldoDespues || 0
