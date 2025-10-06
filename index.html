@@ -25,9 +25,9 @@
             gap: 10px;
         }
 
-        .search-group input {
-            flex: 1;
-        }
+            .search-group input {
+                flex: 1;
+            }
     </style>
 </head>
 <body>
@@ -199,12 +199,46 @@
                 </table>
             </div>
 
-            <!-- Vista Gestión de Usuarios -->
+            <!-- Vista Gestión de Usuarios - CORREGIDA -->
             <div id="view-usuarios" class="view hidden">
                 <div class="view-header">
                     <h2>Gestión de Usuarios</h2>
                     <button class="btn btn-secondary" data-view="view-main-menu"><i class="fas fa-arrow-left"></i> Volver al Menú</button>
                 </div>
+                
+                <!-- FILTROS PARA USUARIOS - NUEVO -->
+                <div class="filtros-usuarios">
+                    <h3>Filtros de Búsqueda</h3>
+                    <div class="filtros-usuarios-grid">
+                        <div class="form-group">
+                            <label for="filtro-email-usuario">Email</label>
+                            <input type="text" id="filtro-email-usuario" placeholder="Buscar por email...">
+                        </div>
+                        <div class="form-group">
+                            <label for="filtro-nombre-usuario">Nombre</label>
+                            <input type="text" id="filtro-nombre-usuario" placeholder="Buscar por nombre...">
+                        </div>
+                        <div class="form-group">
+                            <label for="filtro-rol-usuario">Rol</label>
+                            <select id="filtro-rol-usuario">
+                                <option value="">Todos los roles</option>
+                                <option value="admin">Administrador</option>
+                                <option value="supervisor">Supervisor</option>
+                                <option value="cobrador">Cobrador</option>
+                                <option value="consulta">Consulta</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="filtros-usuarios-actions">
+                        <button id="btn-aplicar-filtros-usuarios" class="btn btn-primary">
+                            <i class="fas fa-search"></i> Buscar
+                        </button>
+                        <button id="btn-limpiar-filtros-usuarios" class="btn btn-secondary">
+                            <i class="fas fa-times"></i> Limpiar Filtros
+                        </button>
+                    </div>
+                </div>
+                
                 <button id="btn-nuevo-usuario" class="btn btn-primary"><i class="fas fa-user-plus"></i> Nuevo Usuario</button>
                 <div id="status_usuarios"></div>
                 <div id="form-usuario-container" class="hidden">
@@ -696,8 +730,3 @@
     <script src="js/app.js"></script>
 </body>
 </html>
-
-
-
-
-
