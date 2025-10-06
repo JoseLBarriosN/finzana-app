@@ -88,8 +88,7 @@ const database = {
         try {
             let query = db.collection('clientes');
 
-            // CORRECCIÓN: Aplicar solo los filtros que son eficientes en el servidor (índices).
-            // El resto de los filtros (nombre, fechas, etc.) se aplicarán en el cliente.
+            // Aplicar filtros condicionalmente
             if (filtros.sucursal && filtros.sucursal.trim() !== '') {
                 query = query.where('office', '==', filtros.sucursal);
             }
@@ -101,9 +100,16 @@ const database = {
             }
 
             const snapshot = await query.get();
-            // Simplemente devuelve los resultados; el filtrado adicional se hace en app.js
-            return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            let clientes = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
+            // Aplicar filtros adicionales en memoria
+            if (filtros.nombre && filtros.nombre.trim() !== '') {
+                clientes = clientes.filter(c =>
+                    c.nombre && c.nombre.toLowerCase().includes(filtros.nombre.toLowerCase())
+                );
+            }
+
+            return clientes;
         } catch (error) {
             console.error("Error buscando clientes:", error);
             return [];
