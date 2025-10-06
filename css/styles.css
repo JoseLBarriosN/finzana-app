@@ -1,4 +1,4 @@
-﻿:root {
+:root {
     --primary: #2E8B57;
     --primary-dark: #1e6b47;
     --secondary: #1E90FF;
@@ -1268,7 +1268,7 @@ body.has-progress {
         width: 25px;
         height: 25px;
     }
-    
+
     body.has-progress {
         padding-top: 50px;
     }
@@ -1279,7 +1279,7 @@ body.has-progress {
         font-size: 11px;
         min-width: 120px;
     }
-    
+
     body.has-progress {
         padding-top: 50px;
     }
