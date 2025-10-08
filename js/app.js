@@ -44,10 +44,8 @@ async function sincronizarDatosParaOffline() {
     if (!overlay || overlay.classList.contains('hidden')) { 
         showProcessingOverlay(true, 'Preparando datos para modo offline...');
     }
-
+    
     try {
-        // AVISO: Las siguientes líneas descargarán TODA la información de estas colecciones.
-        // Si tus colecciones son muy grandes (miles de registros), esto puede ser lento y consumir datos.
         console.log('Sincronizando usuarios...');
         await database.getAll('users');
         console.log('Sincronizando créditos...');
@@ -406,7 +404,6 @@ async function handleClientForm(e) {
             poblacion_grupo: document.getElementById('poblacion_grupo_cliente').value,
             ruta: document.getElementById('ruta_cliente').value
         };
-        if (!cliente.nombre || !cliente.domicilio || !cliente.poblacion_grupo || !cliente.ruta) {
         if (!cliente.nombre || !cliente.domicilio || !cliente.poblacion_grupo || !cliente.ruta || !cliente.office) {
             showStatus('status_cliente', 'Los campos con * son obligatorios.', 'error');
             showButtonLoading('#form-cliente button[type="submit"]', false);
@@ -967,7 +964,6 @@ function _calcularEstadoCredito(credito, pagos) {
         diasAtraso: Math.round(diasAtraso),
         semanasAtraso: Math.ceil(diasAtraso / 7),
         pagoSemanal,
-        proximaFechaPago: proximaFecha.toLocaleDateString()
         proximaFechaPago: formatearFechaParaVista(proximaFecha)
     };
 }
@@ -986,7 +982,6 @@ async function obtenerHistorialCreditoCliente(curp) {
     const ultimoPago = pagos.length > 0 ? pagos[0] : null;
     const estadoCalculado = _calcularEstadoCredito(ultimoCredito, pagos);
     const fechaUltimoPagoObj = ultimoPago ? parsearFecha_DDMMYYYY(ultimoPago.fecha) : null;
-    const fechaUltimoPagoStr = fechaUltimoPagoObj ? fechaUltimoPagoObj.toLocaleDateString() : 'N/A';
     const fechaUltimoPagoStr = formatearFechaParaVista(fechaUltimoPagoObj);
     return {
         idCredito: ultimoCredito.id,
@@ -1277,9 +1272,6 @@ function mostrarReporteAvanzado(data) {
     }
     data.forEach(item => {
         const tr = document.createElement('tr');
-        const fechaRegistro = parsearFecha_DDMMYYYY(item.fechaRegistro)?.toLocaleDateString() || '';
-        const fechaCreacion = parsearFecha_DDMMYYYY(item.fechaCreacion)?.toLocaleDateString() || '';
-        const fechaPago = parsearFecha_DDMMYYYY(item.fecha)?.toLocaleDateString() || '';
         const fechaRegistro = formatearFechaParaVista(parsearFecha_DDMMYYYY(item.fechaRegistro)) || '';
         const fechaCreacion = formatearFechaParaVista(parsearFecha_DDMMYYYY(item.fechaCreacion)) || '';
         const fechaPago = formatearFechaParaVista(parsearFecha_DDMMYYYY(item.fecha)) || '';
@@ -1320,13 +1312,10 @@ function exportToCSV() {
         reportData.forEach(item => {
             let row = [];
             if (item.tipo === 'cliente') {
-                row = ['CLIENTE', item.curp || '', `"${item.nombre||''}"`, item.poblacion_grupo || '', item.ruta || '', item.office || '', item.fechaRegistro ? (parsearFecha_DDMMYYYY(item.fechaRegistro)?.toLocaleDateString() || '') : '', '', '', ''];
                 row = ['CLIENTE', item.curp || '', `"${item.nombre||''}"`, item.poblacion_grupo || '', item.ruta || '', item.office || '', item.fechaRegistro ? (formatearFechaParaVista(parsearFecha_DDMMYYYY(item.fechaRegistro)) || '') : '', '', '', ''];
             } else if (item.tipo === 'credito') {
-                row = ['CRÉDITO', item.curpCliente || '', `"${item.nombreCliente||''}"`, item.poblacion_grupo || '', item.ruta || '', item.office || '', item.fechaCreacion ? (parsearFecha_DDMMYYYY(item.fechaCreacion)?.toLocaleDateString() || '') : '', item.tipo || '', item.monto || 0, item.saldo || 0];
                 row = ['CRÉDITO', item.curpCliente || '', `"${item.nombreCliente||''}"`, item.poblacion_grupo || '', item.ruta || '', item.office || '', item.fechaCreacion ? (formatearFechaParaVista(parsearFecha_DDMMYYYY(item.fechaCreacion)) || '') : '', item.tipo || '', item.monto || 0, item.saldo || 0];
             } else if (item.tipo === 'pago') {
-                row = ['PAGO', item.curpCliente || '', `"${item.nombreCliente||''}"`, item.poblacion_grupo || '', item.ruta || '', item.office || '', item.fecha ? (parsearFecha_DDMMYYYY(item.fecha)?.toLocaleDateString() || '') : '', item.tipoPago || '', item.monto || 0, item.saldoDespues || 0];
                 row = ['PAGO', item.curpCliente || '', `"${item.nombreCliente||''}"`, item.poblacion_grupo || '', item.ruta || '', item.office || '', item.fecha ? (formatearFechaParaVista(parsearFecha_DDMMYYYY(item.fecha)) || '') : '', item.tipoPago || '', item.monto || 0, item.saldoDespues || 0];
             }
             csvContent += row.join(',') + '\n';
