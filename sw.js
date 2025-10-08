@@ -1,4 +1,4 @@
-const CACHE_NAME = 'finzana-cache-v2'; // Versión actualizada para forzar la actualización
+const CACHE_NAME = 'finzana-cache-v3'; // Versión actualizada para forzar la actualización
 // Lista de archivos que componen la aplicación para que funcione offline
 const urlsToCache = [
   '/',
@@ -46,16 +46,19 @@ self.addEventListener('activate', event => {
 // Evento fetch: intercepta las peticiones de red
 self.addEventListener('fetch', event => {
     // CORRECCIÓN CRÍTICA: Ignorar las peticiones que no son GET (como POST para el login)
-    // Esto permite que el inicio de sesión funcione correctamente.
-    if (event.request.method !== 'GET') {
-        return; 
+    // y las peticiones a los servicios de Google/Firebase.
+    // Esto permite que el inicio de sesión y otras operaciones de Firebase funcionen correctamente.
+    if (event.request.method !== 'GET' || event.request.url.includes('googleapis.com')) {
+        // Dejar que el navegador maneje estas peticiones normalmente.
+        return;
     }
 
-    // Estrategia: Cache, con fallback a la red.
+    // Estrategia: Network falling back to Cache.
+    // Intenta ir a la red primero para obtener la versión más fresca.
+    // Si la red falla (estás offline), sirve la versión de la caché.
     event.respondWith(
-        caches.match(event.request)
-        .then(response => {
-            return response || fetch(event.request);
+        fetch(event.request).catch(() => {
+            return caches.match(event.request);
         })
     );
 });
