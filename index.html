@@ -4,30 +4,19 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Finzana - Sistema de Gestión de Créditos</title>
+
+    <link rel="manifest" href="/manifest.json">
+    <link rel="apple-touch-icon" href="/assets/logo_192.png">
+    <meta name="theme-color" content="#2E8B57"/>
     <link rel="icon" type="image/x-icon" href="/favicon.ico">
     <link rel="stylesheet" href="css/styles.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     <style>
-        .required {
-            color: var(--danger);
-            font-weight: bold;
-        }
-
-        .field-note {
-            font-size: 12px;
-            color: var(--gray);
-            margin-top: 5px;
-        }
-
-        .search-group {
-            display: flex;
-            gap: 10px;
-        }
-
-            .search-group input {
-                flex: 1;
-            }
+        .required { color: var(--danger); font-weight: bold; }
+        .field-note { font-size: 12px; color: var(--gray); margin-top: 5px; }
+        .search-group { display: flex; gap: 10px; }
+        .search-group input { flex: 1; }
     </style>
 </head>
 <body>
@@ -65,13 +54,14 @@
                     <div id="user-role-display">Sistema de Créditos</div>
                 </div>
             </div>
+            <button id="install-btn" class="btn btn-info hidden"><i class="fas fa-download"></i> Instalar App</button>
             <button id="logout-btn" class="btn btn-secondary"><i class="fas fa-sign-out-alt"></i> Cerrar Sesión</button>
         </header>
 
         <main class="app-content">
             <div id="view-main-menu" class="view">
                 <h2>Panel de Control</h2>
-                <div class="menu-grid">
+                <div id="status-main-menu"></div> <div class="menu-grid">
                     <div class="menu-card" data-view="view-gestion-clientes">
                         <div class="menu-icon icon-clientes"><i class="fas fa-users"></i></div>
                         <h3>Gestión de Clientes</h3>
