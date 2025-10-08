@@ -1,5 +1,4 @@
-const CACHE_NAME = 'finzana-cache-v3'; // Versión actualizada para forzar la actualización
-// Lista de archivos que componen la aplicación para que funcione offline
+const CACHE_NAME = 'finzana-cache-v4'; // Versión actualizada para forzar la actualización
 const urlsToCache = [
   '/',
   '/index.html',
@@ -15,7 +14,7 @@ const urlsToCache = [
   'https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js'
 ];
 
-// Evento de instalación: se abre la caché y se guardan los archivos
+// Evento de instalación: guarda los archivos del "cascarón" de la app en la caché
 self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE_NAME)
@@ -26,7 +25,7 @@ self.addEventListener('install', event => {
   );
 });
 
-// Evento de activación: limpia las cachés antiguas
+// Evento de activación: limpia las cachés antiguas para asegurar que la app se actualice
 self.addEventListener('activate', event => {
   const cacheWhitelist = [CACHE_NAME];
   event.waitUntil(
@@ -43,22 +42,30 @@ self.addEventListener('activate', event => {
   );
 });
 
-// Evento fetch: intercepta las peticiones de red
+// Evento fetch: decide cómo manejar cada petición (red o caché)
 self.addEventListener('fetch', event => {
-    // CORRECCIÓN CRÍTICA: Ignorar las peticiones que no son GET (como POST para el login)
-    // y las peticiones a los servicios de Google/Firebase.
-    // Esto permite que el inicio de sesión y otras operaciones de Firebase funcionen correctamente.
-    if (event.request.method !== 'GET' || event.request.url.includes('googleapis.com')) {
-        // Dejar que el navegador maneje estas peticiones normalmente.
-        return;
-    }
+  // Ignora las peticiones que no son GET (como POST para el login) y las que van a los servicios de Google/Firebase.
+  // Esto es CRÍTICO para que el inicio de sesión y la sincronización de datos funcionen siempre.
+  if (event.request.method !== 'GET' || event.request.url.includes('googleapis.com')) {
+    // Deja que el navegador maneje estas peticiones normalmente.
+    return;
+  }
 
-    // Estrategia: Network falling back to Cache.
-    // Intenta ir a la red primero para obtener la versión más fresca.
-    // Si la red falla (estás offline), sirve la versión de la caché.
-    event.respondWith(
-        fetch(event.request).catch(() => {
-            return caches.match(event.request);
-        })
-    );
+  // Estrategia: "Network falling back to Cache" (Red primero, luego caché).
+  // Intenta obtener la versión más nueva de la red. Si falla (estás sin conexión),
+  // entrega la versión que está guardada en la caché.
+  event.respondWith(
+    fetch(event.request)
+      .then(networkResponse => {
+        // Si la petición a la red fue exitosa, la guardamos en caché para futuras visitas offline
+        return caches.open(CACHE_NAME).then(cache => {
+          cache.put(event.request, networkResponse.clone());
+          return networkResponse;
+        });
+      })
+      .catch(() => {
+        // Si la red falla, busca la respuesta en la caché
+        return caches.match(event.request);
+      })
+  );
 });
