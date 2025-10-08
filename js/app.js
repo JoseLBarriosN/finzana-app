@@ -46,8 +46,6 @@ async function sincronizarDatosParaOffline() {
     }
     
     try {
-        // AVISO: Las siguientes líneas descargarán TODA la información de estas colecciones.
-        // Si tus colecciones son muy grandes (miles de registros), esto puede ser lento y consumir datos.
         console.log('Sincronizando usuarios...');
         await database.getAll('users');
         console.log('Sincronizando créditos...');
