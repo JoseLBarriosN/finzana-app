@@ -1,4 +1,4 @@
-const CACHE_NAME = 'finzana-cache-v1';
+const CACHE_NAME = 'finzana-cache-v2'; // Versión actualizada para forzar la actualización
 // Lista de archivos que componen la aplicación para que funcione offline
 const urlsToCache = [
   '/',
@@ -26,14 +26,36 @@ self.addEventListener('install', event => {
   );
 });
 
+// Evento de activación: limpia las cachés antiguas
+self.addEventListener('activate', event => {
+  const cacheWhitelist = [CACHE_NAME];
+  event.waitUntil(
+    caches.keys().then(cacheNames => {
+      return Promise.all(
+        cacheNames.map(cacheName => {
+          if (cacheWhitelist.indexOf(cacheName) === -1) {
+            console.log('Eliminando caché antigua:', cacheName);
+            return caches.delete(cacheName);
+          }
+        })
+      );
+    })
+  );
+});
+
 // Evento fetch: intercepta las peticiones de red
 self.addEventListener('fetch', event => {
-  event.respondWith(
-    // Intenta encontrar la respuesta en la caché primero
-    caches.match(event.request)
-      .then(response => {
-        // Si está en caché, la devuelve. Si no, busca en la red.
-        return response || fetch(event.request);
-      })
-  );
+    // CORRECCIÓN CRÍTICA: Ignorar las peticiones que no son GET (como POST para el login)
+    // Esto permite que el inicio de sesión funcione correctamente.
+    if (event.request.method !== 'GET') {
+        return; 
+    }
+
+    // Estrategia: Cache, con fallback a la red.
+    event.respondWith(
+        caches.match(event.request)
+        .then(response => {
+            return response || fetch(event.request);
+        })
+    );
 });
