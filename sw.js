@@ -1,5 +1,4 @@
-const CACHE_NAME = 'finzana-cache-v2'; // Versión actualizada para forzar la actualización
-// Lista de archivos que componen la aplicación para que funcione offline
+const CACHE_NAME = 'finzana-cache-v4'; // Versión actualizada para forzar la actualización
 const urlsToCache = [
   '/',
   '/index.html',
@@ -15,7 +14,6 @@ const urlsToCache = [
   'https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js'
 ];
 
-// Evento de instalación: se abre la caché y se guardan los archivos
 self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE_NAME)
@@ -26,7 +24,6 @@ self.addEventListener('install', event => {
   );
 });
 
-// Evento de activación: limpia las cachés antiguas
 self.addEventListener('activate', event => {
   const cacheWhitelist = [CACHE_NAME];
   event.waitUntil(
@@ -43,19 +40,21 @@ self.addEventListener('activate', event => {
   );
 });
 
-// Evento fetch: intercepta las peticiones de red
 self.addEventListener('fetch', event => {
-    // CORRECCIÓN CRÍTICA: Ignorar las peticiones que no son GET (como POST para el login)
-    // Esto permite que el inicio de sesión funcione correctamente.
-    if (event.request.method !== 'GET') {
-        return; 
+    if (event.request.method !== 'GET' || event.request.url.includes('googleapis.com')) {
+        return;
     }
 
-    // Estrategia: Cache, con fallback a la red.
     event.respondWith(
-        caches.match(event.request)
-        .then(response => {
-            return response || fetch(event.request);
-        })
+        fetch(event.request)
+          .then(networkResponse => {
+            return caches.open(CACHE_NAME).then(cache => {
+              cache.put(event.request, networkResponse.clone());
+              return networkResponse;
+            });
+          })
+          .catch(() => {
+            return caches.match(event.request);
+          })
     );
 });
