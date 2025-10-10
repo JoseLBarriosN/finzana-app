@@ -12,7 +12,6 @@ let editingClientId = null; // Para saber si estamos editando un cliente
 let editingUserId = null; // Para saber si estamos editando un usuario
 let isOnline = true; // Para saber el estado de la conexión
 
-// ===== INICIO DE LA MODIFICACIÓN (Función de parseo de fechas robusta) =====
 /**
  * Parsea de forma segura una fecha que puede ser un string (dd-mm-yyyy, yyyy-mm-dd, ISO)
  * o un objeto Timestamp de Firestore.
@@ -69,9 +68,7 @@ function parsearFecha_DDMMYYYY(fechaInput) {
     console.error("No se pudo parsear el formato de fecha:", fechaInput);
     return null; // Si ningún formato coincide
 }
-// ===== FIN DE LA MODIFICACIÓN =====
 
-// ===== INICIO DE LA MODIFICACIÓN (Función para manejar el estado de conexión) =====
 /**
  * Actualiza la UI para mostrar el estado actual de la conexión a internet y gestionar el botón de logout.
  */
@@ -105,7 +102,6 @@ function updateConnectionStatus() {
         logoutBtn.title = 'No puedes cerrar sesión sin conexión';
     }
 }
-// ===== FIN DE LA MODIFICACIÓN =====
 
 document.addEventListener('DOMContentLoaded', function () {
     console.log('DOM cargado, inicializando aplicación...');
@@ -408,16 +404,11 @@ async function handleImport() {
     showButtonLoading('btn-procesar-importacion', true, 'Importando...');
 
     try {
-        // Mostrar barra de progreso fija para importación
         showFixedProgress(0, 'Iniciando importación...');
-
         const resultado = await database.importarDatosDesdeCSV(csvData, currentImportTab, office);
-
-        // Actualizar progreso al finalizar
         showFixedProgress(100, 'Importación completada');
 
         let mensaje = `Importación (${office}) completada: ${resultado.importados} de ${resultado.total} registros.`;
-
         if (resultado.errores && resultado.errores.length > 0) {
             mensaje += `<br>Errores: ${resultado.errores.length}`;
             const detalleImportacion = document.getElementById('detalle-importacion');
@@ -428,7 +419,6 @@ async function handleImport() {
             const detalleImportacion = document.getElementById('detalle-importacion');
             if (detalleImportacion) detalleImportacion.innerHTML = '';
         }
-
         showStatus('estado-importacion', mensaje, resultado.success ? 'success' : 'error');
         const resultadoImportacion = document.getElementById('resultado-importacion');
         if (resultadoImportacion) resultadoImportacion.classList.remove('hidden');
@@ -490,7 +480,7 @@ async function handleClientForm(e) {
         if (editingClientId) {
             resultado = await database.actualizarCliente(editingClientId, clienteData);
         } else {
-            // En modo creación, verificar si el cliente ya existe
+             // En modo creación, verificar si el cliente ya existe
             const existe = await database.buscarClientePorCURP(clienteData.curp);
             if (existe) {
                 showStatus('status_cliente', 'Ya existe un cliente con esta CURP.', 'error');
@@ -607,8 +597,7 @@ async function handleUserForm(e) {
 
         showButtonLoading(submitButton, true, 'Creando...');
         try {
-            // Nota: La creación de usuarios de Auth requiere conexión. Esto fallará offline.
-            if (!isOnline) {
+             if (!isOnline) {
                 throw new Error("La creación de nuevos usuarios requiere conexión a internet.");
             }
             const userCredential = await auth.createUserWithEmailAndPassword(email, password);
@@ -675,6 +664,8 @@ async function loadUsersTable() {
                 tr.title = 'Este usuario está deshabilitado';
             }
             const roleBadgeClass = `role-${usuario.role || 'default'}`;
+            const usuarioJsonString = JSON.stringify(usuario).replace(/'/g, "&apos;");
+
             tr.innerHTML = `
                 <td>${usuario.email || 'N/A'}</td>
                 <td>${usuario.name || 'N/A'}</td>
@@ -682,7 +673,7 @@ async function loadUsersTable() {
                 <td>${usuario.office || 'N/A'}</td>
                 <td>${usuario.status === 'disabled' ? 'Deshabilitado' : 'Activo'}</td>
                 <td class="action-buttons">
-                    <button class="btn btn-sm btn-info" onclick='editUsuario(${JSON.stringify(usuario)})' title="Editar"><i class="fas fa-edit"></i></button>
+                    <button class="btn btn-sm btn-info" onclick='editUsuario(${usuarioJsonString})' title="Editar"><i class="fas fa-edit"></i></button>
                     ${usuario.status !== 'disabled' ? `<button class="btn btn-sm btn-warning" onclick="disableUsuario('${usuario.id}', '${usuario.name}')" title="Deshabilitar"><i class="fas fa-user-slash"></i></button>` : ''}
                 </td>
             `;
@@ -1007,7 +998,7 @@ function showButtonLoading(selector, show, text = 'Procesando...') {
 }
 
 // =============================================
-// FUNCIONES DE BARRA DE PROGRESO Y UTILIDADES
+// FUNCIONES DE BARRA DE PROGRESO Y UTILIDADES (RESTAURADAS)
 // =============================================
 
 function showFixedProgress(percentage, message = '') {
@@ -1293,30 +1284,88 @@ async function loadClientesTable() {
     const tbody = document.getElementById('tabla-clientes');
     tbody.innerHTML = '<tr><td colspan="6">Buscando...</td></tr>';
     showButtonLoading('btn-aplicar-filtros', true, 'Buscando...');
+    showFixedProgress(10, 'Aplicando filtros...');
 
     try {
         const filtros = {
             sucursal: document.getElementById('sucursal_filtro')?.value || '',
-            curp: document.getElementById('curp_filtro')?.value || '',
-            nombre: document.getElementById('nombre_filtro')?.value || '',
+            curp: document.getElementById('curp_filtro')?.value?.toLowerCase() || '',
+            nombre: document.getElementById('nombre_filtro')?.value?.toLowerCase() || '',
+            fechaRegistro: document.getElementById('fecha_registro_filtro')?.value || '',
+            fechaCredito: document.getElementById('fecha_credito_filtro')?.value || '',
+            tipo: document.getElementById('tipo_colocacion_filtro')?.value || '',
+            plazo: document.getElementById('plazo_filtro')?.value || '',
+            curpAval: document.getElementById('curp_aval_filtro')?.value?.toLowerCase() || '',
             grupo: document.getElementById('grupo_filtro')?.value || ''
         };
 
-        const clientesFiltrados = await database.buscarClientes(filtros);
-        tbody.innerHTML = '';
-
-        if (clientesFiltrados.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="6">No se encontraron clientes con los filtros aplicados.</td></tr>';
+        const hayFiltros = Object.values(filtros).some(val => val && val.trim() !== '');
+        if (!hayFiltros) {
+            tbody.innerHTML = '<tr><td colspan="6">Por favor, especifica al menos un criterio de búsqueda.</td></tr>';
+            showButtonLoading('btn-aplicar-filtros', false);
+            hideFixedProgress();
+            cargaEnProgreso = false;
             return;
         }
 
-        for (const cliente of clientesFiltrados) {
+        showFixedProgress(30, 'Buscando clientes...');
+        const clientesFiltrados = await database.buscarClientes(filtros);
+
+        if (!cargaEnProgreso) {
+            tbody.innerHTML = '<tr><td colspan="6">Búsqueda cancelada.</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = '';
+        if (clientesFiltrados.length === 0) {
+            showFixedProgress(100, 'No se encontraron clientes');
+            tbody.innerHTML = '<tr><td colspan="6">No se encontraron clientes con los filtros iniciales.</td></tr>';
+            return;
+        }
+
+        showFixedProgress(50, `Procesando ${clientesFiltrados.length} clientes...`);
+
+        let clientesMostrados = 0;
+        for (let i = 0; i < clientesFiltrados.length; i++) {
+            if (!cargaEnProgreso) {
+                tbody.innerHTML = '<tr><td colspan="6">Procesamiento cancelado.</td></tr>';
+                break;
+            }
+
+            const cliente = clientesFiltrados[i];
+
+            showFixedProgress(50 + Math.round((i / clientesFiltrados.length) * 40), `Procesando cliente ${i + 1} de ${clientesFiltrados.length}`);
+
+            const fechaRegistroMatch = !filtros.fechaRegistro || (cliente.fechaRegistro && cliente.fechaRegistro.startsWith(filtros.fechaRegistro));
+            if (!fechaRegistroMatch) {
+                continue;
+            }
+
+            const necesitaFiltroCredito = filtros.fechaCredito || filtros.tipo || filtros.plazo || filtros.curpAval;
+            if (necesitaFiltroCredito) {
+                const creditos = await database.buscarCreditosPorCliente(cliente.curp);
+                if (creditos.length === 0) {
+                    continue;
+                }
+                const algunCreditoCoincide = creditos.some(credito => {
+                    const fechaCreditoMatch = !filtros.fechaCredito || (credito.fechaCreacion && credito.fechaCreacion.startsWith(filtros.fechaCredito));
+                    const tipoMatch = !filtros.tipo || credito.tipo === filtros.tipo;
+                    const plazoMatch = !filtros.plazo || credito.plazo == filtros.plazo;
+                    const curpAvalMatch = !filtros.curpAval || (credito.curpAval && credito.curpAval.toLowerCase().includes(filtros.curpAval));
+                    return fechaCreditoMatch && tipoMatch && plazoMatch && curpAvalMatch;
+                });
+                if (!algunCreditoCoincide) {
+                    continue;
+                }
+            }
+
+            clientesMostrados++;
             const tr = document.createElement('tr');
             const historial = await obtenerHistorialCreditoCliente(cliente.curp);
             let infoCreditoHTML = '<em>Sin historial</em>';
 
             if (historial) {
-                let estadoClase = '';
+                let estadoHTML = '', detallesHTML = '', estadoClase = '';
                 switch (historial.estado) {
                     case 'al corriente': estadoClase = 'status-al-corriente'; break;
                     case 'atrasado': estadoClase = 'status-atrasado'; break;
@@ -1324,11 +1373,11 @@ async function loadClientesTable() {
                     case 'juridico': estadoClase = 'status-juridico'; break;
                     case 'liquidado': estadoClase = 'status-al-corriente'; break;
                 }
-                infoCreditoHTML = `<div class="credito-info">
-                    <div class="info-item"><span class="info-label">Último ID:</span> <span class="info-value">${historial.idCredito}</span></div>
-                    <div class="info-item"><span class="info-label">Estado:</span> <span class="info-value ${estadoClase}">${historial.estado.toUpperCase()}</span></div>
-                    ${historial.estado !== 'liquidado' ? `<div class="info-item"><span class="info-label">Saldo:</span> <span class="info-value">$${historial.saldoRestante.toLocaleString()}</span></div>` : ''}
-                </div>`;
+                estadoHTML = `<span class="info-value ${estadoClase}">${historial.estado.toUpperCase()}</span>`;
+                if (historial.estado !== 'liquidado') detallesHTML += `<div class="info-item"><span class="info-label">Saldo:</span><span class="info-value">$${historial.saldoRestante.toLocaleString()}</span></div>`;
+                if (historial.semanasAtraso > 0) detallesHTML += `<div class="info-item"><span class="info-label">Semanas Atraso:</span><span class="info-value">${historial.semanasAtraso}</span></div>`;
+                detallesHTML += `<div class="info-item"><span class="info-label">Último Pago:</span><span class="info-value">${historial.fechaUltimoPago}</span></div>`;
+                infoCreditoHTML = `<div class="credito-info"><div class="info-grid"><div class="info-item"><span class="info-label">Último ID:</span><span class="info-value">${historial.idCredito}</span></div><div class="info-item"><span class="info-label">Estado:</span>${estadoHTML}</div>${detallesHTML}</div></div>`;
             }
 
             tr.innerHTML = `
@@ -1343,7 +1392,15 @@ async function loadClientesTable() {
                 </td>`;
             tbody.appendChild(tr);
         }
-        showStatus('status_gestion_clientes', `Se encontraron ${clientesFiltrados.length} clientes.`, 'success');
+
+        if (clientesMostrados === 0 && cargaEnProgreso) {
+            tbody.innerHTML = '<tr><td colspan="6">No se encontraron clientes con los filtros aplicados.</td></tr>';
+        }
+
+        if (cargaEnProgreso) {
+            showFixedProgress(100, `Procesamiento completado: ${clientesMostrados} clientes`);
+            showStatus('status_gestion_clientes', `Se encontraron ${clientesMostrados} clientes con los filtros aplicados.`, 'success');
+        }
 
     } catch (error) {
         console.error('Error cargando clientes:', error);
@@ -1351,10 +1408,10 @@ async function loadClientesTable() {
         showStatus('status_gestion_clientes', 'Error al cargar los clientes: ' + error.message, 'error');
     } finally {
         showButtonLoading('btn-aplicar-filtros', false);
+        setTimeout(hideFixedProgress, 1000);
         cargaEnProgreso = false;
     }
 }
-
 
 // =============================================
 // FUNCIONES DE REPORTES
@@ -1720,6 +1777,54 @@ function exportToPDF() {
         showProcessingOverlay(false);
         showButtonLoading('btn-exportar-pdf', false);
         setTimeout(hideFixedProgress, 1000);
+    }
+}
+
+async function editCliente(id) {
+    showProcessingOverlay(true, 'Cargando datos del cliente...');
+    const cliente = await database.obtenerClientePorId(id);
+    showProcessingOverlay(false);
+    if (!cliente) {
+        alert("Error: No se pudo encontrar el cliente para editar.");
+        return;
+    }
+    
+    editingClientId = id;
+
+    document.getElementById('office_cliente').value = cliente.office;
+    handleOfficeChangeForClientForm.call({ value: cliente.office });
+    
+    // Un pequeño delay para asegurar que el dropdown de poblaciones se llene antes de setear el valor
+    setTimeout(() => {
+        document.getElementById('poblacion_grupo_cliente').value = cliente.poblacion_grupo;
+    }, 100);
+
+    document.getElementById('curp_cliente').value = cliente.curp;
+    document.getElementById('curp_cliente').readOnly = true;
+    document.getElementById('nombre_cliente').value = cliente.nombre;
+    document.getElementById('domicilio_cliente').value = cliente.domicilio;
+    document.getElementById('cp_cliente').value = cliente.cp;
+    document.getElementById('telefono_cliente').value = cliente.telefono;
+    document.getElementById('ruta_cliente').value = cliente.ruta;
+
+    document.querySelector('#view-cliente h2').textContent = 'Editar Cliente';
+    document.querySelector('#form-cliente button[type="submit"]').innerHTML = '<i class="fas fa-save"></i> Actualizar Cliente';
+    showView('view-cliente');
+}
+
+async function deleteCliente(id, nombre) {
+    if (confirm(`¿Estás seguro de que deseas eliminar a "${nombre}"? Esta acción no se puede deshacer y podría afectar créditos asociados.`)) {
+        showProcessingOverlay(true, 'Eliminando cliente...');
+        const resultado = await database.eliminarCliente(id);
+        let message = resultado.message;
+        if (!isOnline && resultado.success) {
+            message = 'Cliente marcado para eliminar. Se sincronizará al recuperar la conexión.';
+        }
+        showStatus('status_gestion_clientes', message, resultado.success ? 'success' : 'error');
+        if (resultado.success) {
+            await loadClientesTable();
+        }
+        showProcessingOverlay(false);
     }
 }
 
