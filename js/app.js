@@ -1043,198 +1043,77 @@ function inicializarDropdowns() {
 }
 
 // =============================================
-// LÓGICA MEJORADA DE CÁLCULO DE ESTADOS DE CRÉDITO
+// LÓGICA DE NEGOCIO
 // =============================================
 
 function _calcularEstadoCredito(credito, pagos) {
-    console.log('🔍 Calculando estado del crédito:', credito.id);
-    
-    if (!credito || !credito.fechaCreacion) {
-        console.log('❌ Crédito o fecha de creación inválida');
-        return null;
-    }
-
-    // Si el crédito está liquidado
+    if (!credito || !credito.fechaCreacion) return null;
     if (credito.saldo <= 0.01) {
-        console.log('✅ Crédito liquidado');
-        return { 
-            estado: 'liquidado', 
-            diasAtraso: 0, 
-            semanasAtraso: 0, 
-            pagoSemanal: 0, 
-            proximaFechaPago: 'N/A',
-            montoPagado: credito.montoTotal,
-            porcentajePagado: 100
-        };
+        return { estado: 'liquidado', diasAtraso: 0, semanasAtraso: 0, pagoSemanal: 0, proximaFechaPago: 'N/A' };
     }
-
-    // Calcular pago semanal
     const pagoSemanal = (credito.plazo > 0) ? credito.montoTotal / credito.plazo : 0;
     const montoPagado = credito.montoTotal - credito.saldo;
-    const porcentajePagado = (montoPagado / credito.montoTotal) * 100;
 
-    console.log('📊 Datos del crédito:', {
-        montoTotal: credito.montoTotal,
-        saldo: credito.saldo,
-        montoPagado: montoPagado,
-        porcentajePagado: porcentajePagado,
-        plazo: credito.plazo,
-        pagoSemanal: pagoSemanal
-    });
-
-    // ===== USAR EL TRADUCTOR DE FECHAS =====
+    // ===== INICIO DE LA MODIFICACIÓN (Uso del traductor de fechas) =====
     const fechaInicio = parsearFecha_DDMMYYYY(credito.fechaCreacion);
-    if (!fechaInicio) {
-        console.log('❌ No se pudo parsear la fecha de creación:', credito.fechaCreacion);
-        return null;
-    }
+    if (!fechaInicio) return null; // No se puede calcular si la fecha es inválida
+    // ===== FIN DE LA MODIFICACIÓN =====
 
-    console.log('📅 Fecha de inicio parseada:', fechaInicio.toLocaleDateString());
+    const diasTranscurridos = (new Date() - fechaInicio) / (1000 * 60 * 60 * 24);
+    if (diasTranscurridos < 0) return { estado: 'al corriente', diasAtraso: 0, semanasAtraso: 0, pagoSemanal, proximaFechaPago: 'Futuro' };
 
-    // Calcular tiempo transcurrido
-    const hoy = new Date();
-    const diasTranscurridos = Math.floor((hoy - fechaInicio) / (1000 * 60 * 60 * 24));
-    const semanasTranscurridas = Math.floor(diasTranscurridos / 7);
+    const pagoRequerido = (diasTranscurridos / 7) * pagoSemanal;
+    const deficit = pagoRequerido - montoPagado;
+    const diasAtraso = (deficit > 0) ? (deficit / pagoSemanal) * 7 : 0;
 
-    console.log('⏰ Tiempo transcurrido:', {
-        dias: diasTranscurridos,
-        semanas: semanasTranscurridas
-    });
-
-    // Si el crédito no ha comenzado
-    if (diasTranscurridos < 0) {
-        console.log('⏳ Crédito no ha comenzado');
-        return { 
-            estado: 'al corriente', 
-            diasAtraso: 0, 
-            semanasAtraso: 0, 
-            pagoSemanal, 
-            proximaFechaPago: fechaInicio.toLocaleDateString(),
-            montoPagado: montoPagado,
-            porcentajePagado: porcentajePagado
-        };
-    }
-
-    // Calcular lo que debería estar pagado vs lo que realmente pagó
-    const pagoRequeridoHastaHoy = semanasTranscurridas * pagoSemanal;
-    const deficit = pagoRequeridoHastaHoy - montoPagado;
-
-    console.log('💰 Análisis de pagos:', {
-        pagoRequeridoHastaHoy: pagoRequeridoHastaHoy,
-        montoPagado: montoPagado,
-        deficit: deficit
-    });
-
-    // Calcular atraso
-    let diasAtraso = 0;
-    let semanasAtraso = 0;
-
-    if (deficit > 0 && pagoSemanal > 0) {
-        semanasAtraso = Math.ceil(deficit / pagoSemanal);
-        diasAtraso = semanasAtraso * 7;
-    }
-
-    console.log('📈 Atraso calculado:', {
-        deficit: deficit,
-        semanasAtraso: semanasAtraso,
-        diasAtraso: diasAtraso
-    });
-
-    // Determinar estado basado en el atraso
     let estado = 'al corriente';
-    
-    if (diasAtraso >= 7 && diasAtraso < 30) {
-        estado = 'atrasado';
-    } else if (diasAtraso >= 30 && diasAtraso < 90) {
-        estado = 'cobranza';
-    } else if (diasAtraso >= 90) {
-        estado = 'juridico';
-    }
+    if (diasAtraso > 300) estado = 'juridico';
+    else if (diasAtraso > 150) estado = 'cobranza';
+    else if (diasAtraso >= 7) estado = 'atrasado';
 
-    // Calcular próxima fecha de pago
     const semanasPagadas = (pagoSemanal > 0) ? montoPagado / pagoSemanal : 0;
     const proximaFecha = new Date(fechaInicio);
     proximaFecha.setDate(proximaFecha.getDate() + (Math.floor(semanasPagadas) + 1) * 7);
 
-    console.log('🎯 Estado final:', {
-        estado: estado,
-        proximaFechaPago: proximaFecha.toLocaleDateString(),
-        semanasAtraso: semanasAtraso
-    });
-
     return {
         estado,
-        diasAtraso: Math.max(0, diasAtraso),
-        semanasAtraso: Math.max(0, semanasAtraso),
+        diasAtraso: Math.round(diasAtraso),
+        semanasAtraso: Math.ceil(diasAtraso / 7),
         pagoSemanal,
-        proximaFechaPago: proximaFecha.toLocaleDateString(),
-        montoPagado: montoPagado,
-        porcentajePagado: porcentajePagado,
-        semanasTranscurridas: semanasTranscurridas,
-        pagoRequerido: pagoRequeridoHastaHoy
+        proximaFechaPago: proximaFecha.toLocaleDateString()
     };
 }
 
 async function obtenerHistorialCreditoCliente(curp) {
-    console.log('🔍 Obteniendo historial para CURP:', curp);
-    
-    try {
-        const creditosCliente = await database.buscarCreditosPorCliente(curp);
-        console.log('📋 Créditos encontrados:', creditosCliente.length);
+    const creditosCliente = await database.buscarCreditosPorCliente(curp);
+    if (creditosCliente.length === 0) return null;
 
-        if (creditosCliente.length === 0) {
-            console.log('❌ No se encontraron créditos para el cliente');
-            return null;
-        }
+    creditosCliente.sort((a, b) => {
+        const fechaA = parsearFecha_DDMMYYYY(a.fechaCreacion);
+        const fechaB = parsearFecha_DDMMYYYY(b.fechaCreacion);
+        if (!fechaA || !fechaB) return 0;
+        return fechaB - fechaA;
+    });
+    const ultimoCredito = creditosCliente[0];
 
-        // Ordenar créditos por fecha (más reciente primero)
-        creditosCliente.sort((a, b) => {
-            const fechaA = parsearFecha_DDMMYYYY(a.fechaCreacion);
-            const fechaB = parsearFecha_DDMMYYYY(b.fechaCreacion);
-            if (!fechaA || !fechaB) return 0;
-            return fechaB - fechaA;
-        });
+    const pagos = await database.getPagosPorCredito(ultimoCredito.id);
+    const ultimoPago = pagos.length > 0 ? pagos[0] : null;
 
-        const ultimoCredito = creditosCliente[0];
-        console.log('🎯 Último crédito:', ultimoCredito.id);
+    const estadoCalculado = _calcularEstadoCredito(ultimoCredito, pagos);
 
-        // Obtener pagos del crédito
-        const pagos = await database.getPagosPorCredito(ultimoCredito.id);
-        console.log('💳 Pagos encontrados:', pagos.length);
+    // ===== INICIO DE LA MODIFICACIÓN (Uso del traductor de fechas) =====
+    const fechaUltimoPagoObj = ultimoPago ? parsearFecha_DDMMYYYY(ultimoPago.fecha) : null;
+    const fechaUltimoPagoStr = fechaUltimoPagoObj ? fechaUltimoPagoObj.toLocaleDateString() : 'N/A';
+    // ===== FIN DE LA MODIFICACIÓN =====
 
-        // Calcular estado del crédito
-        const estadoCalculado = _calcularEstadoCredito(ultimoCredito, pagos);
-        
-        if (!estadoCalculado) {
-            console.log('❌ No se pudo calcular el estado del crédito');
-            return null;
-        }
-
-        // Obtener fecha del último pago
-        let fechaUltimoPagoStr = 'N/A';
-        if (pagos.length > 0) {
-            const ultimoPago = pagos[0];
-            const fechaUltimoPagoObj = parsearFecha_DDMMYYYY(ultimoPago.fecha);
-            fechaUltimoPagoStr = fechaUltimoPagoObj ? fechaUltimoPagoObj.toLocaleDateString() : 'N/A';
-        }
-
-        console.log('✅ Historial calculado correctamente:', estadoCalculado.estado);
-
-        return {
-            idCredito: ultimoCredito.id,
-            saldoRestante: ultimoCredito.saldo,
-            fechaUltimoPago: fechaUltimoPagoStr,
-            ...estadoCalculado,
-            semanaActual: Math.floor(pagos.length) + 1,
-            plazoTotal: ultimoCredito.plazo,
-            totalPagos: pagos.length,
-            montoTotalCredito: ultimoCredito.montoTotal
-        };
-
-    } catch (error) {
-        console.error('❌ Error obteniendo historial:', error);
-        return null;
-    }
+    return {
+        idCredito: ultimoCredito.id,
+        saldoRestante: ultimoCredito.saldo,
+        fechaUltimoPago: fechaUltimoPagoStr,
+        ...estadoCalculado,
+        semanaActual: Math.floor(pagos.length) + 1,
+        plazoTotal: ultimoCredito.plazo,
+    };
 }
 
 async function verificarElegibilidadRenovacion(curp) {
@@ -1378,82 +1257,18 @@ async function loadClientesTable() {
 
             if (historial) {
                 let estadoHTML = '', detallesHTML = '', estadoClase = '';
-                
-                // Asignar clases CSS según el estado
                 switch (historial.estado) {
-                    case 'al corriente': 
-                        estadoClase = 'status-al-corriente';
-                        estadoHTML = `<span class="info-value ${estadoClase}">✅ AL CORRIENTE</span>`;
-                        break;
-                    case 'atrasado': 
-                        estadoClase = 'status-atrasado';
-                        estadoHTML = `<span class="info-value ${estadoClase}">⚠️ ATRASADO</span>`;
-                        break;
-                    case 'cobranza': 
-                        estadoClase = 'status-cobranza';
-                        estadoHTML = `<span class="info-value ${estadoClase}">🔴 COBRANZA</span>`;
-                        break;
-                    case 'juridico': 
-                        estadoClase = 'status-juridico';
-                        estadoHTML = `<span class="info-value ${estadoClase}">⚖️ JURÍDICO</span>`;
-                        break;
-                    case 'liquidado': 
-                        estadoClase = 'status-al-corriente';
-                        estadoHTML = `<span class="info-value ${estadoClase}">🏁 LIQUIDADO</span>`;
-                        break;
+                    case 'al corriente': estadoClase = 'status-al-corriente'; break;
+                    case 'atrasado': estadoClase = 'status-atrasado'; break;
+                    case 'cobranza': estadoClase = 'status-cobranza'; break;
+                    case 'juridico': estadoClase = 'status-juridico'; break;
+                    case 'liquidado': estadoClase = 'status-al-corriente'; break;
                 }
-                
-                // Construir detalles del crédito
-                detallesHTML += `
-                    <div class="info-item">
-                        <span class="info-label">Saldo:</span>
-                        <span class="info-value">$${historial.saldoRestante.toLocaleString()}</span>
-                    </div>
-                    <div class="info-item">
-                        <span class="info-label">Pagado:</span>
-                        <span class="info-value">${historial.porcentajePagado ? historial.porcentajePagado.toFixed(1) + '%' : 'N/A'}</span>
-                    </div>
-                `;
-                
-                if (historial.semanasAtraso > 0) {
-                    detallesHTML += `
-                        <div class="info-item">
-                            <span class="info-label">Semanas Atraso:</span>
-                            <span class="info-value">${historial.semanasAtraso}</span>
-                        </div>
-                        <div class="info-item">
-                            <span class="info-label">Días Atraso:</span>
-                            <span class="info-value">${historial.diasAtraso}</span>
-                        </div>
-                    `;
-                }
-                
-                detallesHTML += `
-                    <div class="info-item">
-                        <span class="info-label">Último Pago:</span>
-                        <span class="info-value">${historial.fechaUltimoPago}</span>
-                    </div>
-                    <div class="info-item">
-                        <span class="info-label">Próximo Pago:</span>
-                        <span class="info-value">${historial.proximaFechaPago}</span>
-                    </div>
-                `;
-                
-                infoCreditoHTML = `
-                    <div class="credito-info">
-                        <div class="info-grid">
-                            <div class="info-item">
-                                <span class="info-label">ID Crédito:</span>
-                                <span class="info-value">${historial.idCredito}</span>
-                            </div>
-                            <div class="info-item">
-                                <span class="info-label">Estado:</span>
-                                ${estadoHTML}
-                            </div>
-                            ${detallesHTML}
-                        </div>
-                    </div>
-                `;
+                estadoHTML = `<span class="info-value ${estadoClase}">${historial.estado.toUpperCase()}</span>`;
+                if (historial.estado !== 'liquidado') detallesHTML += `<div class="info-item"><span class="info-label">Saldo:</span><span class="info-value">$${historial.saldoRestante.toLocaleString()}</span></div>`;
+                if (historial.semanasAtraso > 0) detallesHTML += `<div class="info-item"><span class="info-label">Semanas Atraso:</span><span class="info-value">${historial.semanasAtraso}</span></div>`;
+                detallesHTML += `<div class="info-item"><span class="info-label">Último Pago:</span><span class="info-value">${historial.fechaUltimoPago}</span></div>`;
+                infoCreditoHTML = `<div class="credito-info"><div class="info-grid"><div class="info-item"><span class="info-label">Último ID:</span><span class="info-value">${historial.idCredito}</span></div><div class="info-item"><span class="info-label">Estado:</span>${estadoHTML}</div>${detallesHTML}</div></div>`;
             }
 
             tr.innerHTML = `
@@ -1854,46 +1669,6 @@ function exportToPDF() {
         showButtonLoading('btn-exportar-pdf', false);
         setTimeout(hideFixedProgress, 1000);
     }
-}
-
-// =============================================
-// HERRAMIENTAS DE DEPURACIÓN
-// =============================================
-
-function depurarCalculoCredito(creditoId) {
-    console.log('🔧 DEPURACIÓN - Calculando estado del crédito:', creditoId);
-    
-    database.buscarCreditoPorId(creditoId)
-        .then(credito => {
-            if (!credito) {
-                console.log('❌ Crédito no encontrado');
-                return;
-            }
-            
-            console.log('📋 Datos del crédito:', {
-                id: credito.id,
-                fechaCreacion: credito.fechaCreacion,
-                fechaParseada: parsearFecha_DDMMYYYY(credito.fechaCreacion)?.toLocaleDateString(),
-                montoTotal: credito.montoTotal,
-                saldo: credito.saldo,
-                plazo: credito.plazo,
-                estado: credito.estado
-            });
-            
-            return database.getPagosPorCredito(creditoId);
-        })
-        .then(pagos => {
-            console.log('💳 Pagos del crédito:', pagos.length);
-            
-            database.buscarCreditoPorId(creditoId)
-                .then(credito => {
-                    const estado = _calcularEstadoCredito(credito, pagos);
-                    console.log('🎯 Estado calculado:', estado);
-                });
-        })
-        .catch(error => {
-            console.error('❌ Error en depuración:', error);
-        });
 }
 
 // Funciones auxiliares para edición/eliminación (placeholder)
