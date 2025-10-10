@@ -8,6 +8,10 @@ let currentImportTab = 'clientes';
 let reportData = null;
 let cargaEnProgreso = false;
 let currentSearchOperation = null;
+// ===== INICIO DE LA MODIFICACIÓN (Variable de estado de conexión) =====
+let isOnline = true;
+// ===== FIN DE LA MODIFICACIÓN =====
+
 
 // ===== INICIO DE LA MODIFICACIÓN (Traductor de Fechas) =====
 /**
@@ -44,6 +48,36 @@ function parsearFecha_DDMMYYYY(fechaStr) {
 }
 // ===== FIN DE LA MODIFICACIÓN =====
 
+// ===== INICIO DE LA MODIFICACIÓN (Función para manejar el estado de conexión) =====
+/**
+ * Actualiza la UI para mostrar el estado actual de la conexión a internet.
+ */
+function updateConnectionStatus() {
+    const statusDiv = document.getElementById('connection-status');
+    if (!statusDiv) return;
+
+    isOnline = navigator.onLine;
+
+    if (isOnline) {
+        statusDiv.textContent = 'Conexión restablecida. Sincronizando datos...';
+        statusDiv.className = 'connection-status online';
+        statusDiv.classList.remove('hidden');
+
+        // Después de unos segundos, confirma que todo está sincronizado y oculta el mensaje.
+        setTimeout(() => {
+            statusDiv.textContent = 'Datos sincronizados correctamente.';
+            setTimeout(() => {
+                statusDiv.classList.add('hidden');
+            }, 2500);
+        }, 3000);
+    } else {
+        statusDiv.textContent = 'Modo sin conexión. Tus cambios se guardarán y enviarán automáticamente.';
+        statusDiv.className = 'connection-status offline';
+        statusDiv.classList.remove('hidden');
+    }
+}
+// ===== FIN DE LA MODIFICACIÓN =====
+
 document.addEventListener('DOMContentLoaded', function () {
     console.log('DOM cargado, inicializando aplicación...');
 
@@ -74,6 +108,9 @@ document.addEventListener('DOMContentLoaded', function () {
             document.getElementById('loading-overlay').classList.add('hidden');
             document.getElementById('login-screen').classList.add('hidden');
             document.getElementById('main-app').classList.remove('hidden');
+            // ===== INICIO DE LA MODIFICACIÓN (Verificación inicial de conexión) =====
+            updateConnectionStatus();
+            // ===== FIN DE LA MODIFICACIÓN =====
 
         } else {
             // Usuario ha cerrado sesión o no está logueado
@@ -87,6 +124,11 @@ document.addEventListener('DOMContentLoaded', function () {
 
 function setupEventListeners() {
     console.log('Configurando event listeners...');
+    
+    // ===== INICIO DE LA MODIFICACIÓN (Listeners de estado de conexión) =====
+    window.addEventListener('online', updateConnectionStatus);
+    window.addEventListener('offline', updateConnectionStatus);
+    // ===== FIN DE LA MODIFICACIÓN =====
 
     // Sistema de Autenticación
     const loginForm = document.getElementById('login-form');
@@ -403,7 +445,15 @@ async function handleClientForm(e) {
 
         const resultado = await database.agregarCliente(cliente);
         showFixedProgress(100, 'Cliente registrado exitosamente');
-        showStatus('status_cliente', resultado.message, resultado.success ? 'success' : 'error');
+
+        // ===== INICIO DE LA MODIFICACIÓN (Mensaje contextual) =====
+        let successMessage = resultado.message;
+        if (!isOnline && resultado.success) {
+            successMessage = 'Cliente registrado en modo offline. Se sincronizará automáticamente.';
+        }
+        showStatus('status_cliente', successMessage, resultado.success ? 'success' : 'error');
+        // ===== FIN DE LA MODIFICACIÓN =====
+
         if (resultado.success) {
             e.target.reset();
             // Resetear el dropdown de población al de GDL por defecto
@@ -470,7 +520,11 @@ async function handleUserForm(e) {
         });
 
         showFixedProgress(100, 'Usuario creado exitosamente');
-        showStatus('status_usuarios', 'Usuario creado exitosamente.', 'success');
+        let successMessage = 'Usuario creado exitosamente.';
+        if(!isOnline){
+            successMessage = 'Usuario creado en modo offline. Se sincronizará al recuperar la conexión.';
+        }
+        showStatus('status_usuarios', successMessage, 'success');
 
         e.target.reset();
         ocultarFormularioUsuario();
@@ -681,9 +735,19 @@ async function handleCreditForm(e) {
     try {
         const resultado = await database.agregarCredito(credito);
         showFixedProgress(100, 'Crédito generado exitosamente');
+        
+        // ===== INICIO DE LA MODIFICACIÓN (Mensaje contextual) =====
+        let successMessage = resultado.message;
+         if (resultado.success) {
+            successMessage = `${resultado.message}. ID de crédito: ${resultado.data.id}`;
+            if (!isOnline) {
+                successMessage = `Crédito generado en modo offline (ID: ${resultado.data.id}). Se sincronizará automáticamente.`;
+            }
+        }
+        showStatus('status_colocacion', successMessage, resultado.success ? 'success' : 'error');
+        // ===== FIN DE LA MODIFICACIÓN =====
 
         if (resultado.success) {
-            showStatus('status_colocacion', `${resultado.message}. ID de crédito: ${resultado.data.id}`, 'success');
             e.target.reset();
             const formColocacion = document.getElementById('form-colocacion');
             const curpColocacion = document.getElementById('curp_colocacion');
@@ -790,7 +854,14 @@ async function handlePaymentForm(e) {
         const resultado = await database.agregarPago(pago);
         showFixedProgress(100, 'Pago registrado exitosamente');
 
-        showStatus('status_cobranza', resultado.message, resultado.success ? 'success' : 'error');
+        // ===== INICIO DE LA MODIFICACIÓN (Mensaje contextual) =====
+        let successMessage = resultado.message;
+        if (!isOnline && resultado.success) {
+            successMessage = 'Pago registrado en modo offline. Se sincronizará automáticamente.';
+        }
+        showStatus('status_cobranza', successMessage, resultado.success ? 'success' : 'error');
+        // ===== FIN DE LA MODIFICACIÓN =====
+        
         if (resultado.success) {
             const formCobranza = document.getElementById('form-cobranza');
             const idCreditoCobranza = document.getElementById('idCredito_cobranza');
