@@ -1284,3 +1284,26 @@ body.has-progress {
         padding-top: 50px;
     }
 }
+
+/* ===== INICIO DE LA MODIFICACIÓN (Estilos para el indicador de conexión) ===== */
+.connection-status {
+    padding: 12px;
+    text-align: center;
+    font-weight: 600;
+    color: white;
+    font-size: 14px;
+    transition: all 0.5s ease;
+    animation: fadeIn 0.5s;
+}
+
+.connection-status.offline {
+    background-color: var(--warning);
+    color: #333;
+    display: block !important; /* Sobrescribe .hidden cuando está offline */
+}
+
+.connection-status.online {
+    background-color: var(--success);
+    display: block !important; /* Sobrescribe .hidden temporalmente cuando vuelve a estar online */
+}
+/* ===== FIN DE LA MODIFICACIÓN ===== */
