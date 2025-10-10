@@ -746,41 +746,10 @@
     <script src="js/firebase-config.js"></script>
 
     <!-- Nuestra lógica de aplicación -->
-    <script src="js/database.js"></script>
-    <script src="js/app.js"></script>
-
-    <!-- Service Worker y PWA -->
-   <script>
-// Registrar Service Worker
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', function() {
-    navigator.serviceWorker.register('/sw.js')
-      .then(function(registration) {
-        console.log('ServiceWorker registrado correctamente: ', registration.scope);
-      })
-      .catch(function(error) {
-        console.log('Error registrando ServiceWorker: ', error);
-      });
-  });
-}
-
-// Detectar cambios de conexión
-window.addEventListener('online', function() {
-  console.log('Conexión recuperada');
-  // Sincronizar datos pendientes
-  if (typeof database !== 'undefined') {
-    database.sincronizarDatosPendientes();
-  }
-});
-
-window.addEventListener('offline', function() {
-  console.log('Sin conexión - Modo offline activado');
-  // Mostrar notificación de modo offline
-  if (typeof showStatus === 'function') {
-    showStatus('status_general', 'Modo offline activado. Los datos se sincronizarán cuando recuperes la conexión.', 'info');
-  }
-});
-</script>
+  <script src="firebase-config.js"></script>
+  <script src="js/database.js"></script>
+  <script src="js/app.js"></script>
 </body>
 </html>
+
 
