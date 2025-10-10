@@ -3,9 +3,6 @@
 // =============================================
 
 const database = {
-    // NOTA: La activación de la persistencia se movió a firebase-config.js
-    // para asegurar que se ejecute una sola vez y lo antes posible.
-
     // --- MÉTODOS GENERALES ---
     getAll: async (collection) => {
         try {
@@ -26,20 +23,70 @@ const database = {
                 ...doc.data()
             }));
 
-            return {
-                success: true,
-                data: users
-            };
+            return { success: true, data: users };
         } catch (error) {
             console.error("Error obteniendo usuarios:", error);
-            return {
-                success: false,
-                message: 'Error al obtener usuarios: ' + error.message
-            };
+            return { success: false, message: 'Error al obtener usuarios: ' + error.message };
         }
     },
 
+    // ===== INICIO DE LA MODIFICACIÓN (Gestión de Usuarios) =====
+    actualizarUsuario: async (uid, userData) => {
+        try {
+            await db.collection('users').doc(uid).update(userData);
+            return { success: true, message: 'Usuario actualizado correctamente.' };
+        } catch (error) {
+            console.error("Error actualizando usuario:", error);
+            return { success: false, message: `Error al actualizar: ${error.message}` };
+        }
+    },
+
+    deshabilitarUsuario: async (uid) => {
+        try {
+            await db.collection('users').doc(uid).update({ status: 'disabled' });
+            return { success: true, message: 'Usuario deshabilitado.' };
+        } catch (error) {
+            console.error("Error deshabilitando usuario:", error);
+            return { success: false, message: `Error al deshabilitar: ${error.message}` };
+        }
+    },
+    // ===== FIN DE LA MODIFICACIÓN =====
+
     // --- MÉTODOS DE CLIENTES ---
+    // ===== INICIO DE LA MODIFICACIÓN (Gestión de Clientes) =====
+    obtenerClientePorId: async (id) => {
+        try {
+            const doc = await db.collection('clientes').doc(id).get();
+            if (!doc.exists) return null;
+            return { id: doc.id, ...doc.data() };
+        } catch (error) {
+            console.error("Error obteniendo cliente por ID:", error);
+            return null;
+        }
+    },
+
+    actualizarCliente: async (id, clienteData) => {
+        try {
+            clienteData.curp = clienteData.curp.toUpperCase();
+            await db.collection('clientes').doc(id).update(clienteData);
+            return { success: true, message: 'Cliente actualizado exitosamente.' };
+        } catch (error) {
+            console.error("Error actualizando cliente:", error);
+            return { success: false, message: `Error: ${error.message}` };
+        }
+    },
+
+    eliminarCliente: async (id) => {
+        try {
+            await db.collection('clientes').doc(id).delete();
+            return { success: true, message: 'Cliente eliminado exitosamente.' };
+        } catch (error) {
+            console.error("Error eliminando cliente:", error);
+            return { success: false, message: `Error: ${error.message}` };
+        }
+    },
+    // ===== FIN DE LA MODIFICACIÓN =====
+
     buscarClientePorCURP: async (curp) => {
         try {
             const snapshot = await db.collection('clientes').where('curp', '==', curp.toUpperCase()).limit(1).get();
@@ -54,9 +101,12 @@ const database = {
 
     agregarCliente: async (clienteData) => {
         try {
-            const existe = await database.buscarClientePorCURP(clienteData.curp);
-            if (existe) {
-                return { success: false, message: 'Ya existe un cliente con esta CURP.' };
+            // No validar CURP existente si se está actualizando
+            if (!clienteData.id) {
+                const existe = await database.buscarClientePorCURP(clienteData.curp);
+                if (existe) {
+                    return { success: false, message: 'Ya existe un cliente con esta CURP.' };
+                }
             }
             if (!clienteData.fechaRegistro) {
                 clienteData.fechaRegistro = new Date().toISOString();
@@ -73,8 +123,6 @@ const database = {
     buscarClientes: async (filtros) => {
         try {
             let query = db.collection('clientes');
-
-            // Aplicar filtros condicionalmente
             if (filtros.sucursal && filtros.sucursal.trim() !== '') {
                 query = query.where('office', '==', filtros.sucursal);
             }
@@ -84,17 +132,13 @@ const database = {
             if (filtros.curp && filtros.curp.trim() !== '') {
                 query = query.where('curp', '==', filtros.curp.toUpperCase());
             }
-
             const snapshot = await query.get();
             let clientes = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-            // Aplicar filtros adicionales en memoria
             if (filtros.nombre && filtros.nombre.trim() !== '') {
                 clientes = clientes.filter(c =>
                     c.nombre && c.nombre.toLowerCase().includes(filtros.nombre.toLowerCase())
                 );
             }
-
             return clientes;
         } catch (error) {
             console.error("Error buscando clientes:", error);
@@ -137,17 +181,12 @@ const database = {
 
     agregarCredito: async (creditoData) => {
         try {
-            // Verificar si existe el contador
             const counterRef = db.collection('config').doc('credito-counter');
             const counterDoc = await counterRef.get();
-
             if (!counterDoc.exists) {
-                // Crear el contador si no existe
                 await counterRef.set({ value: 20000000 });
             }
-
             let newId;
-
             try {
                 newId = await db.runTransaction(async (transaction) => {
                     const doc = await transaction.get(counterRef);
@@ -190,22 +229,18 @@ const database = {
     agregarPago: async (pagoData) => {
         try {
             const creditoRef = db.collection('creditos').doc(pagoData.idCredito);
-
             await db.runTransaction(async (transaction) => {
                 const creditoDoc = await transaction.get(creditoRef);
                 if (!creditoDoc.exists) {
                     throw "El crédito no existe.";
                 }
-
                 const credito = creditoDoc.data();
                 const nuevoSaldo = credito.saldo - pagoData.monto;
-
                 const actualizacion = {
                     saldo: nuevoSaldo,
                     estado: (nuevoSaldo <= 0.01) ? 'liquidado' : 'activo'
                 };
                 transaction.update(creditoRef, actualizacion);
-
                 const nuevoPago = {
                     ...pagoData,
                     fecha: new Date().toISOString(),
@@ -225,10 +260,8 @@ const database = {
     importarDatosDesdeCSV: async (csvData, tipo, office) => {
         const lineas = csvData.split('\n').filter(linea => linea.trim());
         if (lineas.length === 0) return { success: true, total: 0, importados: 0, errores: [] };
-
         let errores = [];
         let importados = 0;
-
         try {
             if (tipo === 'clientes') {
                 const batch = db.batch();
@@ -238,7 +271,6 @@ const database = {
                         errores.push(`Línea ${i + 1}: Faltan columnas (se esperaban 7, se encontraron ${campos.length})`);
                         continue;
                     }
-
                     const docRef = db.collection('clientes').doc();
                     batch.set(docRef, {
                         curp: campos[0].toUpperCase(),
@@ -254,7 +286,6 @@ const database = {
                     importados++;
                 }
                 await batch.commit();
-
             } else if (tipo === 'colocacion') {
                 const batch = db.batch();
                 for (const [i, linea] of lineas.entries()) {
@@ -263,14 +294,11 @@ const database = {
                         errores.push(`Línea ${i + 1}: Formato incorrecto para colocación (se esperaban 13 columnas, se encontraron ${campos.length})`);
                         continue;
                     }
-
-                    // CORRECCIÓN CRÍTICA: Validar que el ID no esté vacío
                     const creditoId = campos[2].trim();
                     if (!creditoId) {
                         errores.push(`Línea ${i + 1}: El ID del crédito está vacío`);
                         continue;
                     }
-
                     const credito = {
                         id: creditoId,
                         office: office,
@@ -288,15 +316,12 @@ const database = {
                         saldo: parseFloat(campos[12] || 0),
                         estado: parseFloat(campos[12] || 0) > 0.01 ? 'activo' : 'liquidado'
                     };
-
                     const docRef = db.collection('creditos').doc(credito.id);
                     batch.set(docRef, credito);
                     importados++;
                 }
                 await batch.commit();
-
             } else if (tipo === 'cobranza') {
-                // Para cobranza, procesamos uno por uno usando agregarPago
                 for (const [i, linea] of lineas.entries()) {
                     try {
                         const campos = linea.split(',').map(c => c.trim());
@@ -304,14 +329,12 @@ const database = {
                             errores.push(`Línea ${i + 1}: Formato incorrecto para cobranza (se esperaban 11 columnas, se encontraron ${campos.length})`);
                             continue;
                         }
-
                         const pago = {
                             office: office,
                             idCredito: campos[1],
                             monto: parseFloat(campos[3] || 0),
                             tipoPago: 'normal'
                         };
-
                         if (pago.idCredito && pago.monto) {
                             const pagoResult = await database.agregarPago(pago);
                             if (pagoResult.success) {
@@ -327,22 +350,10 @@ const database = {
                     }
                 }
             }
-
-            return {
-                success: true,
-                total: lineas.length,
-                importados: importados,
-                errores: errores
-            };
+            return { success: true, total: lineas.length, importados: importados, errores: errores };
         } catch (error) {
             console.error("Error en importación masiva: ", error);
-            return {
-                success: false,
-                message: `Error crítico: ${error.message}`,
-                total: lineas.length,
-                importados: importados,
-                errores: [error.message]
-            };
+            return { success: false, message: `Error crítico: ${error.message}`, total: lineas.length, importados: importados, errores: [error.message] };
         }
     },
 
@@ -354,46 +365,24 @@ const database = {
                 db.collection('creditos').get(),
                 db.collection('pagos').get()
             ]);
-
             const clientes = clientesSnap.docs.map(doc => doc.data());
             const creditos = creditosSnap.docs.map(doc => doc.data());
             const pagos = pagosSnap.docs.map(doc => doc.data());
-
             const creditosActivos = creditos.filter(c => c.estado === 'activo');
             const totalCartera = creditosActivos.reduce((sum, credito) => sum + (credito.saldo || 0), 0);
-
             const hoy = new Date();
             const mesActual = hoy.getMonth();
             const anioActual = hoy.getFullYear();
-
             const totalPagosMes = pagos.filter(pago => {
                 if (!pago.fecha) return false;
                 const fechaPago = new Date(pago.fecha);
                 return fechaPago.getMonth() === mesActual && fechaPago.getFullYear() === anioActual;
             });
-
             const cobradoMes = totalPagosMes.reduce((sum, pago) => sum + (pago.monto || 0), 0);
-
-            // Calcular tasa de recuperación
             const totalCarteraMasCobrado = totalCartera + cobradoMes;
-            const tasaRecuperacion = totalCarteraMasCobrado > 0 ?
-                (cobradoMes / totalCarteraMasCobrado * 100) : 0;
-
-            // Contar créditos vencidos
-            const totalVencidos = creditosActivos.filter(credito => {
-                return database.esCreditoVencido(credito);
-            }).length;
-
-            return {
-                totalClientes: clientes.length,
-                totalCreditos: creditosActivos.length,
-                totalCartera: totalCartera,
-                totalVencidos: totalVencidos,
-                pagosRegistrados: totalPagosMes.length,
-                cobradoMes: cobradoMes,
-                totalComisiones: totalPagosMes.reduce((sum, pago) => sum + (pago.comision || 0), 0),
-                tasaRecuperacion: tasaRecuperacion
-            };
+            const tasaRecuperacion = totalCarteraMasCobrado > 0 ? (cobradoMes / totalCarteraMasCobrado * 100) : 0;
+            const totalVencidos = creditosActivos.filter(credito => database.esCreditoVencido(credito)).length;
+            return { totalClientes: clientes.length, totalCreditos: creditosActivos.length, totalCartera: totalCartera, totalVencidos: totalVencidos, pagosRegistrados: totalPagosMes.length, cobradoMes: cobradoMes, totalComisiones: totalPagosMes.reduce((sum, pago) => sum + (pago.comision || 0), 0), tasaRecuperacion: tasaRecuperacion };
         } catch (error) {
             console.error("Error generando reportes:", error);
             return null;
@@ -403,75 +392,48 @@ const database = {
     generarReporteAvanzado: async (filtros) => {
         try {
             const resultados = [];
-
-            // Obtener clientes
             let queryClientes = db.collection('clientes');
             if (filtros.sucursal) queryClientes = queryClientes.where('office', '==', filtros.sucursal);
             if (filtros.grupo) queryClientes = queryClientes.where('poblacion_grupo', '==', filtros.grupo);
             if (filtros.ruta) queryClientes = queryClientes.where('ruta', '==', filtros.ruta);
             if (filtros.curpCliente) queryClientes = queryClientes.where('curp', '==', filtros.curpCliente.toUpperCase());
-
             const clientesSnap = await queryClientes.get();
             clientesSnap.forEach(doc => {
                 const cliente = doc.data();
                 if (database._cumpleFiltroFecha(cliente.fechaRegistro, filtros.fechaInicio, filtros.fechaFin)) {
-                    resultados.push({
-                        tipo: 'cliente',
-                        ...cliente
-                    });
+                    resultados.push({ tipo: 'cliente', ...cliente });
                 }
             });
 
-            // Obtener créditos
             let queryCreditos = db.collection('creditos');
             if (filtros.sucursal) queryCreditos = queryCreditos.where('office', '==', filtros.sucursal);
             if (filtros.tipoCredito) queryCreditos = queryCreditos.where('tipo', '==', filtros.tipoCredito);
             if (filtros.estadoCredito) queryCreditos = queryCreditos.where('estado', '==', filtros.estadoCredito);
             if (filtros.idCredito) queryCreditos = queryCreditos.where('id', '==', filtros.idCredito);
-
             const creditosSnap = await queryCreditos.get();
             for (const doc of creditosSnap.docs) {
                 const credito = doc.data();
                 if (database._cumpleFiltroFecha(credito.fechaCreacion, filtros.fechaInicio, filtros.fechaFin)) {
-                    // Buscar información del cliente para el crédito
                     const cliente = await database.buscarClientePorCURP(credito.curpCliente);
-                    resultados.push({
-                        tipo: 'credito',
-                        ...credito,
-                        nombreCliente: cliente ? cliente.nombre : 'N/A',
-                        poblacion_grupo: cliente ? cliente.poblacion_grupo : 'N/A',
-                        ruta: cliente ? cliente.ruta : 'N/A'
-                    });
+                    resultados.push({ tipo: 'credito', ...credito, nombreCliente: cliente ? cliente.nombre : 'N/A', poblacion_grupo: cliente ? cliente.poblacion_grupo : 'N/A', ruta: cliente ? cliente.ruta : 'N/A' });
                 }
             }
 
-            // Obtener pagos
             let queryPagos = db.collection('pagos');
             if (filtros.sucursal) queryPagos = queryPagos.where('office', '==', filtros.sucursal);
             if (filtros.tipoPago) queryPagos = queryPagos.where('tipoPago', '==', filtros.tipoPago);
-
             const pagosSnap = await queryPagos.get();
             for (const doc of pagosSnap.docs) {
                 const pago = doc.data();
                 if (database._cumpleFiltroFecha(pago.fecha, filtros.fechaInicio, filtros.fechaFin)) {
-                    // Buscar información del crédito y cliente para el pago
                     const credito = await database.buscarCreditoPorId(pago.idCredito);
                     if (credito) {
                         const cliente = await database.buscarClientePorCURP(credito.curpCliente);
-                        resultados.push({
-                            tipo: 'pago',
-                            ...pago,
-                            nombreCliente: cliente ? cliente.nombre : 'N/A',
-                            poblacion_grupo: cliente ? cliente.poblacion_grupo : 'N/A',
-                            ruta: cliente ? cliente.ruta : 'N/A',
-                            office: credito.office,
-                            curpCliente: credito.curpCliente
-                        });
+                        resultados.push({ tipo: 'pago', ...pago, nombreCliente: cliente ? cliente.nombre : 'N/A', poblacion_grupo: cliente ? cliente.poblacion_grupo : 'N/A', ruta: cliente ? cliente.ruta : 'N/A', office: credito.office, curpCliente: credito.curpCliente });
                     }
                 }
             }
 
-            // Ordenar por fecha (más reciente primero)
             resultados.sort((a, b) => {
                 const fechaA = new Date(a.fecha || a.fechaCreacion || a.fechaRegistro || 0);
                 const fechaB = new Date(b.fecha || b.fechaCreacion || b.fechaRegistro || 0);
@@ -487,7 +449,6 @@ const database = {
 
     _cumpleFiltroFecha: (fecha, fechaInicio, fechaFin) => {
         if (!fechaInicio && !fechaFin) return true;
-
         const fechaObj = new Date(fecha);
         if (fechaInicio) {
             const inicio = new Date(fechaInicio);
@@ -495,7 +456,7 @@ const database = {
         }
         if (fechaFin) {
             const fin = new Date(fechaFin);
-            fin.setHours(23, 59, 59, 999); // Incluir todo el día
+            fin.setHours(23, 59, 59, 999);
             if (fechaObj > fin) return false;
         }
         return true;
