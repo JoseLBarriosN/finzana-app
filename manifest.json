@@ -1,22 +1,42 @@
 {
-  "name": "Finzana - Gestión de Créditos",
+  "name": "Finzana - Sistema de Gestión de Créditos",
   "short_name": "Finzana",
-  "description": "Sistema de gestión de créditos y cobranza.",
+  "description": "Sistema completo de gestión de créditos para microfinancieras",
   "start_url": "/index.html",
   "display": "standalone",
   "background_color": "#2E8B57",
   "theme_color": "#2E8B57",
   "orientation": "portrait-primary",
+  "scope": "/",
+  "lang": "es",
   "icons": [
     {
-      "src": "assets/logo_192.png",
+      "src": "assets/logo.png",
+      "sizes": "192x192",
       "type": "image/png",
-      "sizes": "192x192"
+      "purpose": "any maskable"
     },
     {
-      "src": "assets/logo_512.png",
+      "src": "assets/logo-512.png",
+      "sizes": "512x512",
       "type": "image/png",
-      "sizes": "512x512"
+      "purpose": "any maskable"
     }
-  ]
+  ],
+  "categories": ["business", "finance", "productivity"],
+  "screenshots": [
+    {
+      "src": "assets/screenshot1.png",
+      "sizes": "640x320",
+      "type": "image/png",
+      "form_factor": "wide"
+    },
+    {
+      "src": "assets/screenshot2.png",
+      "sizes": "320x480",
+      "type": "image/png",
+      "form_factor": "narrow"
+    }
+  ],
+  "prefer_related_applications": false
 }
