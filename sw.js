@@ -1,4 +1,4 @@
-const CACHE_NAME = 'finzana-cache-v4'; // Versión incrementada para forzar la actualización
+const CACHE_NAME = 'finzana-cache-v5'; // Versión incrementada para forzar la actualización
 const urlsToCache = [
     './',
     './index.html',
@@ -21,9 +21,7 @@ self.addEventListener('install', event => {
         caches.open(CACHE_NAME)
             .then(cache => {
                 console.log('Cache abierta y guardando archivos de la app');
-                return cache.addAll(urlsToCache).catch(error => {
-                    console.log('Error cacheando algunos archivos:', error);
-                });
+                return cache.addAll(urlsToCache);
             })
     );
     self.skipWaiting();
@@ -46,32 +44,41 @@ self.addEventListener('activate', event => {
 });
 
 self.addEventListener('fetch', event => {
+    const requestUrl = new URL(event.request.url);
+
+    // ===== INICIO DE LA MODIFICACIÓN (Ignorar peticiones de Firebase) =====
+    // Si la petición es para los servicios de Google o Firebase,
+    // se la pasamos directamente a la red, sin caché.
+    if (requestUrl.hostname.includes('googleapis.com') || requestUrl.hostname.includes('firebaseapp.com')) {
+        event.respondWith(fetch(event.request));
+        return;
+    }
+    // ===== FIN DE LA MODIFICACIÓN =====
+
     if (event.request.method !== 'GET') {
+        event.respondWith(fetch(event.request));
         return;
     }
 
     event.respondWith(
         caches.match(event.request)
-            .then(response => {
-                if (response) {
-                    return response;
+            .then(cachedResponse => {
+                if (cachedResponse) {
+                    return cachedResponse;
                 }
 
-                return fetch(event.request).then(response => {
-                    // Evitar cachear respuestas inválidas o de extensiones
-                    if (!response || response.status !== 200 || response.type !== 'basic' && response.type !== 'cors') {
-                        return response;
+                return fetch(event.request).then(networkResponse => {
+                    // Cachear solo respuestas válidas
+                    if (networkResponse && networkResponse.status === 200) {
+                        const responseToCache = networkResponse.clone();
+                        caches.open(CACHE_NAME)
+                            .then(cache => {
+                                cache.put(event.request, responseToCache);
+                            });
                     }
-
-                    const responseToCache = response.clone();
-                    caches.open(CACHE_NAME)
-                        .then(cache => {
-                            cache.put(event.request, responseToCache);
-                        });
-
-                    return response;
+                    return networkResponse;
                 }).catch(() => {
-                    // Si falla la red y es una página, muestra offline.html
+                    // Fallback para navegación offline
                     if (event.request.mode === 'navigate') {
                         return caches.match('./offline.html');
                     }
