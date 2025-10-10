@@ -23,17 +23,24 @@ try {
 const auth = firebase.auth();
 const db = firebase.firestore();
 
+// ===== INICIO DE LA MODIFICACIÓN (Manejo de errores de persistencia mejorado) =====
 // Configurar persistencia offline
 db.enablePersistence()
-  .then(() => {
-    console.log('✅ Persistencia offline de Firestore activada');
-  })
-  .catch((err) => {
-    if (err.code === 'failed-precondition') {
-      console.warn('⚠️ Persistencia offline falló: Múltiples pestañas abiertas');
-    } else if (err.code === 'unimplemented') {
-      console.warn('⚠️ Persistencia offline no disponible en este navegador');
-    } else {
-      console.error('❌ Error en persistencia offline:', err);
-    }
-  });
+    .then(() => {
+        console.log('✅ Persistencia offline de Firestore activada');
+    })
+    .catch((err) => {
+        let message = '';
+        if (err.code === 'failed-precondition') {
+            message = 'Error Crítico de Persistencia: La aplicación solo puede estar abierta en una pestaña a la vez para que el modo offline funcione. Por favor, cierra las otras pestañas.';
+            console.error(message);
+            alert(message); // Alerta visible para el usuario
+        } else if (err.code === 'unimplemented') {
+            message = '⚠️ Persistencia offline no disponible en este navegador.';
+            console.warn(message);
+        } else {
+            message = `❌ Error en persistencia offline: ${err.message}`;
+            console.error(message);
+        }
+    });
+// ===== FIN DE LA MODIFICACIÓN =====
