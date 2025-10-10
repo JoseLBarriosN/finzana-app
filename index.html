@@ -8,15 +8,17 @@
     <link rel="stylesheet" href="css/styles.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    
     <!-- PWA Meta Tags -->
-<meta name="theme-color" content="#2E8B57">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="apple-mobile-web-app-title" content="Finzana">
-<link rel="apple-touch-icon" href="assets/logo.png">
+    <meta name="theme-color" content="#2E8B57">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="Finzana">
+    <link rel="apple-touch-icon" href="assets/logo.png">
 
-<!-- Manifest -->
-<link rel="manifest" href="manifest.json">
+    <!-- Manifest -->
+    <link rel="manifest" href="manifest.json">
+    
     <style>
         .required {
             color: var(--danger);
@@ -37,6 +39,26 @@
             .search-group input {
                 flex: 1;
             }
+            
+        .status-al-corriente {
+            color: var(--success);
+            font-weight: bold;
+        }
+
+        .status-atrasado {
+            color: var(--warning);
+            font-weight: bold;
+        }
+
+        .status-cobranza {
+            color: var(--danger);
+            font-weight: bold;
+        }
+
+        .status-juridico {
+            color: #B71C1C;
+            font-weight: bold;
+        }
     </style>
 </head>
 <body>
@@ -715,56 +737,107 @@
         </main>
     </div>
 
+    <!-- Firebase -->
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
 
-    <script>
-        const firebaseConfig = {
-            apiKey: "AIzaSyBNt_JKONVgOXS4fgJrj3qldb1JBdOgPoE",
-            authDomain: "finzana-app.firebaseapp.com",
-            projectId: "finzana-app",
-            storageBucket: "finzana-app.firebasestorage.app",
-            messagingSenderId: "779745085151",
-            appId: "1:779745085151:web:2d470408b6267e3e16cb6a"
-        };
-        firebase.initializeApp(firebaseConfig);
-        const auth = firebase.auth();
-        const db = firebase.firestore();
-    </script>
+    <!-- Configuración Firebase -->
+    <script src="js/firebase-config.js"></script>
+
+    <!-- Nuestra lógica de aplicación -->
     <script src="js/database.js"></script>
     <script src="js/app.js"></script>
+
+    <!-- Service Worker y PWA -->
     <script>
-// Registrar Service Worker
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', function() {
-    navigator.serviceWorker.register('/sw.js')
-      .then(function(registration) {
-        console.log('ServiceWorker registrado correctamente: ', registration.scope);
-      })
-      .catch(function(error) {
-        console.log('Error registrando ServiceWorker: ', error);
+    // Registrar Service Worker
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function() {
+        navigator.serviceWorker.register('/sw.js')
+          .then(function(registration) {
+            console.log('✅ ServiceWorker registrado correctamente: ', registration.scope);
+            
+            // Verificar si hay una nueva versión del Service Worker
+            registration.addEventListener('updatefound', () => {
+              const newWorker = registration.installing;
+              console.log('🔄 Nueva versión del Service Worker encontrada');
+              
+              newWorker.addEventListener('statechange', () => {
+                if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                  console.log('🔄 Nueva versión disponible. Recarga la página para actualizar.');
+                  if (typeof showStatus === 'function') {
+                    showStatus('status_general', 'Nueva versión disponible. Recarga la página para actualizar.', 'info');
+                  }
+                }
+              });
+            });
+          })
+          .catch(function(error) {
+            console.log('❌ Error registrando ServiceWorker: ', error);
+          });
       });
-  });
-}
 
-// Detectar cambios de conexión
-window.addEventListener('online', function() {
-  console.log('Conexión recuperada');
-  // Sincronizar datos pendientes
-  if (typeof database !== 'undefined') {
-    database.sincronizarDatosPendientes();
-  }
-});
+      // Detectar cambios de conexión
+      window.addEventListener('online', function() {
+        console.log('🌐 Conexión recuperada - Sincronizando datos...');
+        if (typeof database !== 'undefined' && database.sincronizarDatosPendientes) {
+          database.sincronizarDatosPendientes();
+        }
+        
+        // Mostrar notificación
+        if (typeof showStatus === 'function') {
+          showStatus('status_general', 'Conexión recuperada. Sincronizando datos...', 'success');
+        }
+      });
 
-window.addEventListener('offline', function() {
-  console.log('Sin conexión - Modo offline activado');
-  // Mostrar notificación de modo offline
-  if (typeof showStatus === 'function') {
-    showStatus('status_general', 'Modo offline activado. Los datos se sincronizarán cuando recuperes la conexión.', 'info');
-  }
-});
-</script>
+      window.addEventListener('offline', function() {
+        console.log('📴 Sin conexión - Modo offline activado');
+        if (typeof showStatus === 'function') {
+          showStatus('status_general', 'Modo offline activado. Puedes seguir trabajando.', 'warning');
+        }
+      });
+    }
+
+    // Detectar si la app está instalada
+    window.addEventListener('appinstalled', (evt) => {
+      console.log('📱 Aplicación instalada correctamente');
+    });
+
+    // Función para instalar la PWA
+    let deferredPrompt;
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredPrompt = e;
+      console.log('📲 PWA lista para instalar');
+      
+      // Mostrar botón de instalación
+      const installButton = document.createElement('button');
+      installButton.textContent = '📱 Instalar App';
+      installButton.className = 'btn btn-primary';
+      installButton.style.margin = '10px';
+      installButton.onclick = () => {
+        deferredPrompt.prompt();
+        deferredPrompt.userChoice.then((choiceResult) => {
+          if (choiceResult.outcome === 'accepted') {
+            console.log('✅ Usuario aceptó instalar la PWA');
+            installButton.style.display = 'none';
+          }
+          deferredPrompt = null;
+        });
+      };
+      
+      // Agregar botón al header si existe
+      const appHeader = document.querySelector('.app-header');
+      if (appHeader) {
+        appHeader.appendChild(installButton);
+      }
+    });
+
+    // Verificar si la app se está ejecutando en modo standalone (PWA)
+    if (window.matchMedia('(display-mode: standalone)').matches) {
+      console.log('📱 Ejecutando en modo PWA');
+    }
+    </script>
 </body>
 </html>
-
