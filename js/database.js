@@ -1,5 +1,5 @@
 // =============================================
-// CAPA DE SERVICIO DE FIREBASE (database.js) - CORREGIDO
+// CAPA DE SERVICIO DE FIREBASE (database.js) - CORREGIDO Y MEJORADO
 // =============================================
 
 const database = {
@@ -521,6 +521,46 @@ const database = {
         const fechaVencimiento = new Date(fechaCreacion);
         fechaVencimiento.setDate(fechaVencimiento.getDate() + (credito.plazo * 7));
         return new Date() > fechaVencimiento;
+    },
+
+    // --- MÉTODOS PARA SINCRONIZACIÓN OFFLINE ---
+    sincronizarDatosPendientes: async () => {
+        try {
+            // Aquí puedes implementar la lógica para sincronizar datos pendientes
+            // que se guardaron localmente durante el modo offline
+            console.log('Sincronizando datos pendientes...');
+            
+            // Ejemplo: Sincronizar pagos pendientes
+            const pagosPendientes = JSON.parse(localStorage.getItem('pagosPendientes') || '[]');
+            
+            for (const pago of pagosPendientes) {
+                await database.agregarPago(pago);
+            }
+            
+            // Limpiar pendientes después de sincronizar
+            localStorage.removeItem('pagosPendientes');
+            
+            return { success: true, message: 'Datos sincronizados correctamente' };
+        } catch (error) {
+            console.error('Error sincronizando datos:', error);
+            return { success: false, message: 'Error sincronizando datos: ' + error.message };
+        }
+    },
+
+    guardarPagoPendiente: (pagoData) => {
+        try {
+            const pagosPendientes = JSON.parse(localStorage.getItem('pagosPendientes') || '[]');
+            pagosPendientes.push({
+                ...pagoData,
+                timestamp: new Date().toISOString(),
+                pendiente: true
+            });
+            localStorage.setItem('pagosPendientes', JSON.stringify(pagosPendientes));
+            return true;
+        } catch (error) {
+            console.error('Error guardando pago pendiente:', error);
+            return false;
+        }
     }
 };
 
