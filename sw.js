@@ -1,15 +1,15 @@
-const CACHE_NAME = 'finzana-cache-v3'; // Incrementa versión
+const CACHE_NAME = 'finzana-cache-v4'; // Versión incrementada para forzar la actualización
 const urlsToCache = [
-    '/',
-    '/index.html',
-    '/css/styles.css',
-    '/js/app.js',
-    '/js/database.js',
-    '/firebase-config.js',
-    '/offline.html',
-    '/assets/logo.png',
-    '/assets/logo_192.png',
-    '/assets/logo_512.png',
+    './',
+    './index.html',
+    './css/styles.css',
+    './js/app.js',
+    './js/database.js',
+    './firebase-config.js',
+    './offline.html',
+    './assets/logo.png',
+    './assets/logo_192.png',
+    './assets/logo_512.png',
     'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css',
     'https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js',
     'https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js',
@@ -46,7 +46,6 @@ self.addEventListener('activate', event => {
 });
 
 self.addEventListener('fetch', event => {
-    // Ignorar peticiones que no son GET
     if (event.request.method !== 'GET') {
         return;
     }
@@ -54,14 +53,13 @@ self.addEventListener('fetch', event => {
     event.respondWith(
         caches.match(event.request)
             .then(response => {
-                // Devuelve la respuesta en caché o busca en la red
                 if (response) {
                     return response;
                 }
 
                 return fetch(event.request).then(response => {
-                    // Si la respuesta es válida, la guarda en caché
-                    if (!response || response.status !== 200 || response.type !== 'basic') {
+                    // Evitar cachear respuestas inválidas o de extensiones
+                    if (!response || response.status !== 200 || response.type !== 'basic' && response.type !== 'cors') {
                         return response;
                     }
 
@@ -74,8 +72,8 @@ self.addEventListener('fetch', event => {
                     return response;
                 }).catch(() => {
                     // Si falla la red y es una página, muestra offline.html
-                    if (event.request.headers.get('accept').includes('text/html')) {
-                        return caches.match('/offline.html');
+                    if (event.request.mode === 'navigate') {
+                        return caches.match('./offline.html');
                     }
                 });
             })
