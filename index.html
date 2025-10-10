@@ -750,94 +750,37 @@
     <script src="js/app.js"></script>
 
     <!-- Service Worker y PWA -->
-    <script>
-    // Registrar Service Worker
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', function() {
-        navigator.serviceWorker.register('/sw.js')
-          .then(function(registration) {
-            console.log('✅ ServiceWorker registrado correctamente: ', registration.scope);
-            
-            // Verificar si hay una nueva versión del Service Worker
-            registration.addEventListener('updatefound', () => {
-              const newWorker = registration.installing;
-              console.log('🔄 Nueva versión del Service Worker encontrada');
-              
-              newWorker.addEventListener('statechange', () => {
-                if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                  console.log('🔄 Nueva versión disponible. Recarga la página para actualizar.');
-                  if (typeof showStatus === 'function') {
-                    showStatus('status_general', 'Nueva versión disponible. Recarga la página para actualizar.', 'info');
-                  }
-                }
-              });
-            });
-          })
-          .catch(function(error) {
-            console.log('❌ Error registrando ServiceWorker: ', error);
-          });
+   <script>
+// Registrar Service Worker
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function() {
+    navigator.serviceWorker.register('/sw.js')
+      .then(function(registration) {
+        console.log('ServiceWorker registrado correctamente: ', registration.scope);
+      })
+      .catch(function(error) {
+        console.log('Error registrando ServiceWorker: ', error);
       });
+  });
+}
 
-      // Detectar cambios de conexión
-      window.addEventListener('online', function() {
-        console.log('🌐 Conexión recuperada - Sincronizando datos...');
-        if (typeof database !== 'undefined' && database.sincronizarDatosPendientes) {
-          database.sincronizarDatosPendientes();
-        }
-        
-        // Mostrar notificación
-        if (typeof showStatus === 'function') {
-          showStatus('status_general', 'Conexión recuperada. Sincronizando datos...', 'success');
-        }
-      });
+// Detectar cambios de conexión
+window.addEventListener('online', function() {
+  console.log('Conexión recuperada');
+  // Sincronizar datos pendientes
+  if (typeof database !== 'undefined') {
+    database.sincronizarDatosPendientes();
+  }
+});
 
-      window.addEventListener('offline', function() {
-        console.log('📴 Sin conexión - Modo offline activado');
-        if (typeof showStatus === 'function') {
-          showStatus('status_general', 'Modo offline activado. Puedes seguir trabajando.', 'warning');
-        }
-      });
-    }
-
-    // Detectar si la app está instalada
-    window.addEventListener('appinstalled', (evt) => {
-      console.log('📱 Aplicación instalada correctamente');
-    });
-
-    // Función para instalar la PWA
-    let deferredPrompt;
-    window.addEventListener('beforeinstallprompt', (e) => {
-      e.preventDefault();
-      deferredPrompt = e;
-      console.log('📲 PWA lista para instalar');
-      
-      // Mostrar botón de instalación
-      const installButton = document.createElement('button');
-      installButton.textContent = '📱 Instalar App';
-      installButton.className = 'btn btn-primary';
-      installButton.style.margin = '10px';
-      installButton.onclick = () => {
-        deferredPrompt.prompt();
-        deferredPrompt.userChoice.then((choiceResult) => {
-          if (choiceResult.outcome === 'accepted') {
-            console.log('✅ Usuario aceptó instalar la PWA');
-            installButton.style.display = 'none';
-          }
-          deferredPrompt = null;
-        });
-      };
-      
-      // Agregar botón al header si existe
-      const appHeader = document.querySelector('.app-header');
-      if (appHeader) {
-        appHeader.appendChild(installButton);
-      }
-    });
-
-    // Verificar si la app se está ejecutando en modo standalone (PWA)
-    if (window.matchMedia('(display-mode: standalone)').matches) {
-      console.log('📱 Ejecutando en modo PWA');
-    }
-    </script>
+window.addEventListener('offline', function() {
+  console.log('Sin conexión - Modo offline activado');
+  // Mostrar notificación de modo offline
+  if (typeof showStatus === 'function') {
+    showStatus('status_general', 'Modo offline activado. Los datos se sincronizarán cuando recuperes la conexión.', 'info');
+  }
+});
+</script>
 </body>
 </html>
+
