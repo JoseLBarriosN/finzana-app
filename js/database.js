@@ -3,22 +3,8 @@
 // =============================================
 
 const database = {
-    // Habilita la persistencia offline de Firestore.
-    enableOffline: () => {
-        db.enablePersistence()
-            .then(() => {
-                console.log('Persistencia offline activada correctamente');
-            })
-            .catch((err) => {
-                if (err.code == 'failed-precondition') {
-                    console.warn('Persistencia offline falló: Múltiples pestañas abiertas.');
-                } else if (err.code == 'unimplemented') {
-                    console.warn('Persistencia offline no disponible en este navegador.');
-                } else {
-                    console.error('Error en persistencia offline:', err);
-                }
-            });
-    },
+    // NOTA: La activación de la persistencia se movió a firebase-config.js
+    // para asegurar que se ejecute una sola vez y lo antes posible.
 
     // --- MÉTODOS GENERALES ---
     getAll: async (collection) => {
@@ -278,7 +264,6 @@ const database = {
                         continue;
                     }
 
-                    // CORRECCIÓN CRÍTICA: Validar que el ID no esté vacío
                     const creditoId = campos[2].trim();
                     if (!creditoId) {
                         errores.push(`Línea ${i + 1}: El ID del crédito está vacío`);
@@ -310,7 +295,6 @@ const database = {
                 await batch.commit();
 
             } else if (tipo === 'cobranza') {
-                // Para cobranza, procesamos uno por uno usando agregarPago
                 for (const [i, linea] of lineas.entries()) {
                     try {
                         const campos = linea.split(',').map(c => c.trim());
@@ -388,12 +372,10 @@ const database = {
 
             const cobradoMes = totalPagosMes.reduce((sum, pago) => sum + (pago.monto || 0), 0);
 
-            // Calcular tasa de recuperación
             const totalCarteraMasCobrado = totalCartera + cobradoMes;
             const tasaRecuperacion = totalCarteraMasCobrado > 0 ?
                 (cobradoMes / totalCarteraMasCobrado * 100) : 0;
 
-            // Contar créditos vencidos
             const totalVencidos = creditosActivos.filter(credito => {
                 return database.esCreditoVencido(credito);
             }).length;
@@ -418,7 +400,6 @@ const database = {
         try {
             const resultados = [];
 
-            // Obtener clientes
             let queryClientes = db.collection('clientes');
             if (filtros.sucursal) queryClientes = queryClientes.where('office', '==', filtros.sucursal);
             if (filtros.grupo) queryClientes = queryClientes.where('poblacion_grupo', '==', filtros.grupo);
@@ -436,7 +417,6 @@ const database = {
                 }
             });
 
-            // Obtener créditos
             let queryCreditos = db.collection('creditos');
             if (filtros.sucursal) queryCreditos = queryCreditos.where('office', '==', filtros.sucursal);
             if (filtros.tipoCredito) queryCreditos = queryCreditos.where('tipo', '==', filtros.tipoCredito);
@@ -447,7 +427,6 @@ const database = {
             for (const doc of creditosSnap.docs) {
                 const credito = doc.data();
                 if (database._cumpleFiltroFecha(credito.fechaCreacion, filtros.fechaInicio, filtros.fechaFin)) {
-                    // Buscar información del cliente para el crédito
                     const cliente = await database.buscarClientePorCURP(credito.curpCliente);
                     resultados.push({
                         tipo: 'credito',
@@ -459,7 +438,6 @@ const database = {
                 }
             }
 
-            // Obtener pagos
             let queryPagos = db.collection('pagos');
             if (filtros.sucursal) queryPagos = queryPagos.where('office', '==', filtros.sucursal);
             if (filtros.tipoPago) queryPagos = queryPagos.where('tipoPago', '==', filtros.tipoPago);
@@ -468,7 +446,6 @@ const database = {
             for (const doc of pagosSnap.docs) {
                 const pago = doc.data();
                 if (database._cumpleFiltroFecha(pago.fecha, filtros.fechaInicio, filtros.fechaFin)) {
-                    // Buscar información del crédito y cliente para el pago
                     const credito = await database.buscarCreditoPorId(pago.idCredito);
                     if (credito) {
                         const cliente = await database.buscarClientePorCURP(credito.curpCliente);
@@ -485,7 +462,6 @@ const database = {
                 }
             }
 
-            // Ordenar por fecha (más reciente primero)
             resultados.sort((a, b) => {
                 const fechaA = new Date(a.fecha || a.fechaCreacion || a.fechaRegistro || 0);
                 const fechaB = new Date(b.fecha || b.fechaCreacion || b.fechaRegistro || 0);
@@ -509,7 +485,7 @@ const database = {
         }
         if (fechaFin) {
             const fin = new Date(fechaFin);
-            fin.setHours(23, 59, 59, 999); // Incluir todo el día
+            fin.setHours(23, 59, 59, 999);
             if (fechaObj > fin) return false;
         }
         return true;
@@ -522,47 +498,4 @@ const database = {
         fechaVencimiento.setDate(fechaVencimiento.getDate() + (credito.plazo * 7));
         return new Date() > fechaVencimiento;
     },
-
-    // --- MÉTODOS PARA SINCRONIZACIÓN OFFLINE ---
-    sincronizarDatosPendientes: async () => {
-        try {
-            // Aquí puedes implementar la lógica para sincronizar datos pendientes
-            // que se guardaron localmente durante el modo offline
-            console.log('Sincronizando datos pendientes...');
-            
-            // Ejemplo: Sincronizar pagos pendientes
-            const pagosPendientes = JSON.parse(localStorage.getItem('pagosPendientes') || '[]');
-            
-            for (const pago of pagosPendientes) {
-                await database.agregarPago(pago);
-            }
-            
-            // Limpiar pendientes después de sincronizar
-            localStorage.removeItem('pagosPendientes');
-            
-            return { success: true, message: 'Datos sincronizados correctamente' };
-        } catch (error) {
-            console.error('Error sincronizando datos:', error);
-            return { success: false, message: 'Error sincronizando datos: ' + error.message };
-        }
-    },
-
-    guardarPagoPendiente: (pagoData) => {
-        try {
-            const pagosPendientes = JSON.parse(localStorage.getItem('pagosPendientes') || '[]');
-            pagosPendientes.push({
-                ...pagoData,
-                timestamp: new Date().toISOString(),
-                pendiente: true
-            });
-            localStorage.setItem('pagosPendientes', JSON.stringify(pagosPendientes));
-            return true;
-        } catch (error) {
-            console.error('Error guardando pago pendiente:', error);
-            return false;
-        }
-    }
 };
-
-// Activa la magia del modo offline en cuanto el script carga.
-database.enableOffline();
