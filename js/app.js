@@ -44,7 +44,6 @@ function parsearFecha_DDMMYYYY(fechaStr) {
 }
 // ===== FIN DE LA MODIFICACIÓN =====
 
-
 document.addEventListener('DOMContentLoaded', function () {
     console.log('DOM cargado, inicializando aplicación...');
 
