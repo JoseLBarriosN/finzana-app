@@ -2,7 +2,7 @@
   "name": "Finzana - Sistema de Gestión de Créditos",
   "short_name": "Finzana",
   "description": "Sistema completo de gestión de créditos para microfinancieras",
-  "start_url": "/index.html",
+  "start_url": ".",
   "display": "standalone",
   "background_color": "#2E8B57",
   "theme_color": "#2E8B57",
@@ -23,7 +23,7 @@
       "purpose": "any maskable"
     }
   ],
-  "categories": ["business", "finance", "productivity"],
+  "categories": [ "business", "finance", "productivity" ],
   "screenshots": [
     {
       "src": "assets/screenshot1.png",
