@@ -13,117 +13,72 @@ const firebaseConfig = {
 
 // Inicializar Firebase
 try {
-    // Verificar si Firebase ya está inicializado
-    if (!firebase.apps.length) {
-        firebase.initializeApp(firebaseConfig);
-        console.log('✅ Firebase inicializado correctamente');
-    } else {
-        console.log('✅ Firebase ya estaba inicializado');
-    }
+    firebase.initializeApp(firebaseConfig);
+    console.log('✅ Firebase inicializado correctamente');
 } catch (error) {
     console.error('❌ Error inicializando Firebase:', error);
-    // Mostrar error al usuario
-    document.getElementById('loading-overlay').innerHTML = `
-        <div style="text-align: center; color: white;">
-            <div style="font-size: 48px; margin-bottom: 20px;">❌</div>
-            <h2>Error de Conexión</h2>
-            <p>No se pudo conectar con Firebase. Por favor verifica tu conexión a internet.</p>
-            <p style="font-size: 12px; margin-top: 20px;">Error: ${error.message}</p>
-            <button onclick="window.location.reload()" style="margin-top: 20px; padding: 10px 20px; background: white; border: none; border-radius: 5px; cursor: pointer;">
-                Reintentar
-            </button>
-        </div>
-    `;
 }
 
-// Hacer disponibles las variables globalmente con verificación
-let auth, db;
+// Hacer disponibles las variables globalmente
+const auth = firebase.auth();
+const db = firebase.firestore();
 
-try {
-    auth = firebase.auth();
-    db = firebase.firestore();
-    console.log('✅ Servicios de Firebase disponibles');
-} catch (error) {
-    console.error('❌ Error obteniendo servicios de Firebase:', error);
-}
-
-// ===== MODIFICACIÓN: Persistencia mejorada con manejo de errores =====
-if (auth) {
-    auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL)
-        .then(() => {
-            console.log("✅ Persistencia LOCAL establecida.");
-            
-            // Intentar habilitar persistencia de Firestore pero no bloquear si falla
-            if (db && db.enablePersistence) {
-                return db.enablePersistence({ synchronizeTabs: true })
-                    .catch(err => {
-                        console.warn('⚠️ Persistencia de Firestore no disponible:', err.message);
-                        // No rechazar la promesa para que la app continúe
-                        return Promise.resolve();
-                    });
-            }
-            return Promise.resolve();
-        })
-        .then(() => {
-            console.log('✅ Configuración de persistencia completada');
-            
-            // Verificar si hay usuario autenticado en caché local
-            const currentUser = auth.currentUser;
-            if (currentUser) {
-                console.log('✅ Usuario encontrado en caché local:', currentUser.email);
-            } else {
-                console.log('ℹ️ No hay usuario en caché local');
-            }
-        })
-        .catch((err) => {
-            console.error('❌ Error en configuración de persistencia:', err);
-            // No bloquear la aplicación por errores de persistencia
-        });
-} else {
-    console.error('❌ Auth no disponible para configurar persistencia');
-}
+// ===== MODIFICACIÓN: Persistencia mejorada para modo offline =====
+auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL)
+    .then(() => {
+        console.log("✅ Persistencia LOCAL establecida. La sesión se mantendrá entre sesiones del navegador.");
+        return db.enablePersistence({ synchronizeTabs: true });
+    })
+    .then(() => {
+        console.log('✅ Persistencia offline de Firestore activada');
+        
+        // Verificar si hay usuario autenticado en caché local
+        return auth.currentUser;
+    })
+    .then((user) => {
+        if (user) {
+            console.log('✅ Usuario encontrado en caché local:', user.email);
+            // El estado de autenticación se actualizará automáticamente en app.js
+        }
+    })
+    .catch((err) => {
+        let message = '';
+        if (err.code === 'failed-precondition') {
+            message = 'Error Crítico de Persistencia: La aplicación solo puede estar abierta en una pestaña a la vez para que el modo offline funcione. Por favor, cierra las otras pestañas.';
+            console.error(message);
+            alert(message);
+        } else if (err.code === 'unimplemented') {
+            message = '⚠️ Persistencia offline no disponible en este navegador.';
+            console.warn(message);
+        } else {
+            message = `❌ Error en persistencia: ${err.message}`;
+            console.error(message);
+        }
+    });
 
 // Manejo mejorado de conexión/desconexión
-let onlineStatus = navigator.onLine;
-
-// Crear elemento de estado de conexión si no existe
-if (!document.getElementById('connection-status')) {
-    const connectionStatusDiv = document.createElement('div');
-    connectionStatusDiv.id = 'connection-status';
-    connectionStatusDiv.className = 'connection-status hidden';
-    document.body.appendChild(connectionStatusDiv);
-}
-
-// Función para actualizar estado de conexión
-function updateConnectionStatusUI() {
-    const connectionStatusDiv = document.getElementById('connection-status');
-    if (!connectionStatusDiv) return;
-
-    onlineStatus = navigator.onLine;
-
-    if (onlineStatus) {
-        connectionStatusDiv.textContent = 'Conexión restablecida. Sincronizando datos...';
-        connectionStatusDiv.className = 'connection-status online';
-        connectionStatusDiv.classList.remove('hidden');
-        
-        setTimeout(() => {
-            connectionStatusDiv.textContent = 'Datos sincronizados correctamente.';
-            setTimeout(() => connectionStatusDiv.classList.add('hidden'), 3000);
-        }, 2000);
-    } else {
-        connectionStatusDiv.textContent = 'Modo sin conexión. Los datos se sincronizarán cuando se recupere la conexión.';
-        connectionStatusDiv.className = 'connection-status offline';
-        connectionStatusDiv.classList.remove('hidden');
-    }
-}
+let onlineStatus = true;
+const connectionStatusDiv = document.createElement('div');
+connectionStatusDiv.id = 'connection-status';
+connectionStatusDiv.className = 'connection-status hidden';
+document.body.appendChild(connectionStatusDiv);
 
 // Detectar cambios de conexión
-window.addEventListener('online', updateConnectionStatusUI);
-window.addEventListener('offline', updateConnectionStatusUI);
+window.addEventListener('online', () => {
+    onlineStatus = true;
+    connectionStatusDiv.textContent = 'Conexión restablecida. Sincronizando datos...';
+    connectionStatusDiv.className = 'connection-status online';
+    connectionStatusDiv.classList.remove('hidden');
+    
+    setTimeout(() => {
+        connectionStatusDiv.textContent = 'Datos sincronizados correctamente.';
+        setTimeout(() => connectionStatusDiv.classList.add('hidden'), 3000);
+    }, 2000);
+});
 
-// Inicializar estado de conexión
-updateConnectionStatusUI();
-
-// Exportar variables globalmente
-window.auth = auth;
-window.db = db;
+window.addEventListener('offline', () => {
+    onlineStatus = false;
+    connectionStatusDiv.textContent = 'Modo sin conexión. Los datos se sincronizarán cuando se recupere la conexión.';
+    connectionStatusDiv.className = 'connection-status offline';
+    connectionStatusDiv.classList.remove('hidden');
+});
