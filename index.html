@@ -751,10 +751,37 @@
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
-
+<!-- Agregar esto antes de firebase-config.js -->
+<script>
+    // Verificar carga de Firebase
+    window.addEventListener('DOMContentLoaded', function() {
+        console.log('🔍 Verificando dependencias...');
+        
+        // Verificar si Firebase está disponible
+        const checkFirebase = setInterval(() => {
+            if (typeof firebase !== 'undefined') {
+                console.log('✅ Firebase cargado correctamente');
+                clearInterval(checkFirebase);
+            }
+        }, 100);
+        
+        // Timeout de seguridad
+        setTimeout(() => {
+            clearInterval(checkFirebase);
+            if (typeof firebase === 'undefined') {
+                console.error('❌ Firebase no se cargó en el tiempo esperado');
+                document.getElementById('loading-overlay').classList.add('hidden');
+                document.getElementById('login-screen').classList.remove('hidden');
+                document.getElementById('auth-status').textContent = 'Error cargando la aplicación. Recarga la página.';
+                document.getElementById('auth-status').className = 'status-message status-error';
+            }
+        }, 10000);
+    });
+</script>
     <script src="firebase-config.js"></script>
 
     <script src="js/database.js"></script>
     <script src="js/app.js"></script>
 </body>
 </html>
+
