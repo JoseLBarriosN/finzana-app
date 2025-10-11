@@ -2,17 +2,53 @@
 // CAPA DE SERVICIO DE FIREBASE (database.js) - CORREGIDO Y MEJORADO
 // =============================================
 
+// Verificar que Firebase esté disponible
+if (typeof db === 'undefined') {
+    console.error('❌ Firestore no está disponible en database.js');
+    
+    // Crear una versión mock para evitar errores
+    const mockDB = {
+        collection: () => ({
+            doc: () => ({
+                get: () => Promise.resolve({ exists: false, data: () => null }),
+                set: () => Promise.resolve(),
+                update: () => Promise.resolve(),
+                delete: () => Promise.resolve()
+            }),
+            where: () => ({
+                get: () => Promise.resolve({ docs: [] }),
+                limit: () => ({
+                    get: () => Promise.resolve({ empty: true, docs: [] })
+                })
+            }),
+            get: () => Promise.resolve({ docs: [] }),
+            add: () => Promise.resolve()
+        })
+    };
+    
+    // Usar mock si no hay conexión real
+    window.db = mockDB;
+}
+
 const database = {
     // --- MÉTODOS GENERALES ---
     getAll: async (collection) => {
         try {
-            const snapshot = await db.collection(collection).get();
+            // Verificar conexión
+            if (!window.db) {
+                console.warn('⚠️ Base de datos no disponible, retornando array vacío');
+                return [];
+            }
+            
+            const snapshot = await window.db.collection(collection).get();
             return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         } catch (error) {
             console.error(`Error obteniendo ${collection}:`, error);
             return [];
         }
     },
+    // ... el resto de los métodos permanece igual
+};
 
     // --- MÉTODOS DE USUARIOS ---
     obtenerUsuarios: async () => {
@@ -551,3 +587,4 @@ const database = {
         }
     }
 };
+
