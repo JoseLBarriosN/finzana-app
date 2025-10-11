@@ -170,7 +170,7 @@
                         </div>
                         <div class="form-group">
                             <label for="curp_filtro">CURP Cliente</label>
-                            <input type="text" id="curp_filtro" placeholder="Buscar por CURP..." maxlength="18">
+                            <input type="text" id="curp_filtro" placeholder="Buscar por CURP...">
                         </div>
                         <div class="form-group">
                             <label for="nombre_filtro">Nombre Cliente</label>
@@ -194,7 +194,7 @@
                         </div>
                         <div class="form-group">
                             <label for="curp_aval_filtro">CURP Aval</label>
-                            <input type="text" id="curp_aval_filtro" placeholder="Buscar por CURP de aval..." maxlength="18">
+                            <input type="text" id="curp_aval_filtro" placeholder="Buscar por CURP de aval...">
                         </div>
                         <div class="form-group">
                             <label for="grupo_filtro">Grupo o Población</label>
@@ -264,12 +264,8 @@
                     </div>
                 </div>
 
-                <div class="table-actions">
-                    <button id="btn-nuevo-usuario" class="btn btn-primary"><i class="fas fa-user-plus"></i> Nuevo Usuario</button>
-                </div>
-                
+                <button id="btn-nuevo-usuario" class="btn btn-primary"><i class="fas fa-user-plus"></i> Nuevo Usuario</button>
                 <div id="status_usuarios"></div>
-                
                 <div id="form-usuario-container" class="hidden">
                     <h3 id="form-usuario-titulo">Nuevo Usuario</h3>
                     <form id="form-usuario">
@@ -300,7 +296,6 @@
                         </div>
                     </form>
                 </div>
-                
                 <table class="user-table">
                     <thead>
                         <tr>
@@ -308,13 +303,12 @@
                             <th>Nombre</th>
                             <th>Rol</th>
                             <th>Sucursal</th>
-                            <th>Estado</th>
-                            <th>Acciones</th>
+                            <th>UID</th>
                         </tr>
                     </thead>
                     <tbody id="tabla-usuarios">
                         <tr>
-                            <td colspan="6">No hay usuarios en la base de datos de perfiles.</td>
+                            <td colspan="5">No hay usuarios en la base de datos de perfiles.</td>
                         </tr>
                     </tbody>
                 </table>
@@ -459,7 +453,7 @@
                 <div class="form-group">
                     <label for="curp_colocacion">CURP del Cliente <span class="required">*</span></label>
                     <div class="search-group">
-                        <input type="text" id="curp_colocacion" required maxlength="18">
+                        <input type="text" id="curp_colocacion" required>
                         <button id="btnBuscarCliente_colocacion" class="btn btn-primary"><i class="fas fa-search"></i> Buscar</button>
                     </div>
                 </div>
@@ -671,7 +665,7 @@
                         </div>
                         <div class="form-group">
                             <label for="curp_filtro_reporte">CURP Cliente</label>
-                            <input type="text" id="curp_filtro_reporte" placeholder="Filtrar por CURP..." maxlength="18">
+                            <input type="text" id="curp_filtro_reporte" placeholder="Filtrar por CURP...">
                         </div>
                         <div class="form-group">
                             <label for="id_credito_filtro_reporte">ID Crédito</label>
@@ -712,13 +706,6 @@
                     <button id="btn-exportar-pdf" class="btn btn-danger">
                         <i class="fas fa-file-pdf"></i> Exportar PDF
                     </button>
-                    <button id="btn-mostrar-graficos" class="btn btn-info">
-                        <i class="fas fa-chart-pie"></i> Mostrar Gráficos
-                    </button>
-                </div>
-
-                <div id="graficos-container" class="graficos-container hidden">
-                    <!-- Los gráficos se generarán aquí dinámicamente -->
                 </div>
 
                 <div id="status_reportes_avanzados"></div>
@@ -751,37 +738,10 @@
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
-<!-- Agregar esto antes de firebase-config.js -->
-<script>
-    // Verificar carga de Firebase
-    window.addEventListener('DOMContentLoaded', function() {
-        console.log('🔍 Verificando dependencias...');
-        
-        // Verificar si Firebase está disponible
-        const checkFirebase = setInterval(() => {
-            if (typeof firebase !== 'undefined') {
-                console.log('✅ Firebase cargado correctamente');
-                clearInterval(checkFirebase);
-            }
-        }, 100);
-        
-        // Timeout de seguridad
-        setTimeout(() => {
-            clearInterval(checkFirebase);
-            if (typeof firebase === 'undefined') {
-                console.error('❌ Firebase no se cargó en el tiempo esperado');
-                document.getElementById('loading-overlay').classList.add('hidden');
-                document.getElementById('login-screen').classList.remove('hidden');
-                document.getElementById('auth-status').textContent = 'Error cargando la aplicación. Recarga la página.';
-                document.getElementById('auth-status').className = 'status-message status-error';
-            }
-        }, 10000);
-    });
-</script>
+
     <script src="firebase-config.js"></script>
 
     <script src="js/database.js"></script>
     <script src="js/app.js"></script>
 </body>
 </html>
-
