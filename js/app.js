@@ -8,9 +8,10 @@ let currentImportTab = 'clientes';
 let reportData = null;
 let cargaEnProgreso = false;
 let currentSearchOperation = null;
-let editingClientId = null; // Para saber si estamos editando un cliente
-let editingUserId = null; // Para saber si estamos editando un usuario
-let isOnline = true; // Para saber el estado de la conexión
+let editingClientId = null;
+let editingUserId = null;
+let isOnline = true;
+let inactivityTimer; // Temporizador para el cierre de sesión por inactividad
 
 /**
  * Parsea de forma segura una fecha que puede ser un string (dd-mm-yyyy, yyyy-mm-dd, ISO)
@@ -20,43 +21,32 @@ let isOnline = true; // Para saber el estado de la conexión
  */
 function parsearFecha_DDMMYYYY(fechaInput) {
     if (!fechaInput) {
-        console.warn("Se intentó parsear una fecha nula o vacía.");
         return null;
     }
-
-    // 1. Si es un objeto Timestamp de Firestore
     if (typeof fechaInput === 'object' && fechaInput.toDate && typeof fechaInput.toDate === 'function') {
         return fechaInput.toDate();
     }
-
-    // 2. Si es un string
     if (typeof fechaInput === 'string') {
         const fechaStr = fechaInput;
-
-        // Formato ISO completo (generado por la app)
         if (fechaStr.includes('T') && fechaStr.includes('Z')) {
             const fecha = new Date(fechaStr);
             return isNaN(fecha.getTime()) ? null : fecha;
         }
-
         const separador = fechaStr.includes('-') ? '-' : (fechaStr.includes('/') ? '/' : null);
         if (!separador) {
             const fechaDirecta = new Date(fechaStr);
             return isNaN(fechaDirecta.getTime()) ? null : fechaDirecta;
         }
-
-        // Formatos dd-mm-yyyy o yyyy-mm-dd
         const partes = fechaStr.split(separador);
         if (partes.length === 3) {
             let anio, mes, dia;
-            if (partes[0].length === 4) { // yyyy-mm-dd
+            if (partes[0].length === 4) {
                 [anio, mes, dia] = partes;
-            } else if (partes[2].length === 4) { // dd-mm-yyyy
+            } else if (partes[2].length === 4) {
                 [dia, mes, anio] = partes;
             } else {
-                return null; // Formato ambiguo
+                return null;
             }
-
             if (dia?.length >= 1 && mes?.length >= 1 && anio?.length === 4) {
                 const fechaISO = `${anio}-${mes.padStart(2, '0')}-${dia.padStart(2, '0')}T12:00:00.000Z`;
                 const fecha = new Date(fechaISO);
@@ -64,13 +54,12 @@ function parsearFecha_DDMMYYYY(fechaInput) {
             }
         }
     }
-
     console.error("No se pudo parsear el formato de fecha:", fechaInput);
-    return null; // Si ningún formato coincide
+    return null;
 }
 
 /**
- * Actualiza la UI para mostrar el estado actual de la conexión a internet y gestionar el botón de logout.
+ * Actualiza la UI para mostrar el estado actual de la conexión y gestiona filtros.
  */
 function updateConnectionStatus() {
     const statusDiv = document.getElementById('connection-status');
@@ -78,47 +67,72 @@ function updateConnectionStatus() {
     if (!statusDiv || !logoutBtn) return;
 
     isOnline = navigator.onLine;
+    const filtrosComplejos = document.querySelectorAll('#sucursal_filtro, #fecha_registro_filtro, #fecha_credito_filtro, #tipo_colocacion_filtro, #plazo_filtro, #curp_aval_filtro, #grupo_filtro');
 
     if (isOnline) {
         statusDiv.textContent = 'Conexión restablecida. Sincronizando datos...';
         statusDiv.className = 'connection-status online';
         statusDiv.classList.remove('hidden');
-        
         logoutBtn.disabled = false;
         logoutBtn.title = 'Cerrar Sesión';
-
+        filtrosComplejos.forEach(el => { if(el) el.disabled = false; });
+        
         setTimeout(() => {
             statusDiv.textContent = 'Datos sincronizados correctamente.';
-            setTimeout(() => {
-                statusDiv.classList.add('hidden');
-            }, 2500);
+            setTimeout(() => statusDiv.classList.add('hidden'), 2500);
         }, 3000);
     } else {
-        statusDiv.textContent = 'Modo sin conexión. Tus cambios se guardarán y enviarán automáticamente.';
+        statusDiv.textContent = 'Modo sin conexión. Búsquedas por nombre y CURP habilitadas.';
         statusDiv.className = 'connection-status offline';
         statusDiv.classList.remove('hidden');
-
         logoutBtn.disabled = true;
         logoutBtn.title = 'No puedes cerrar sesión sin conexión';
+        filtrosComplejos.forEach(el => { if(el) el.disabled = true; });
     }
 }
 
+// =============================================
+// LÓGICA DE SEGURIDAD Y SESIÓN
+// =============================================
+
+function resetInactivityTimer() {
+    clearTimeout(inactivityTimer);
+    inactivityTimer = setTimeout(() => {
+        if (currentUser) {
+            alert("Sesión cerrada por inactividad.");
+            auth.signOut();
+        }
+    }, 600000); // 10 minutos
+}
+
+function setupSecurityListeners() {
+    window.onload = resetInactivityTimer;
+    document.onmousemove = resetInactivityTimer;
+    document.onkeypress = resetInactivityTimer;
+    document.onclick = resetInactivityTimer;
+    document.ontouchstart = resetInactivityTimer;
+
+    window.addEventListener('beforeunload', () => {
+        if (cargaEnProgreso) {
+             cancelarCarga();
+        }
+        if (currentUser) {
+            auth.signOut();
+        }
+    });
+}
+
+
 document.addEventListener('DOMContentLoaded', function () {
     console.log('DOM cargado, inicializando aplicación...');
-
-    // Inicializar dropdowns primero
     inicializarDropdowns();
-
-    // Configurar event listeners
     setupEventListeners();
+    setupSecurityListeners();
 
-    // El nuevo manejador de estado de autenticación de Firebase
     auth.onAuthStateChanged(user => {
         console.log('Estado de autenticación cambiado:', user);
         if (user) {
-            // Usuario ha iniciado sesión
             currentUser = user;
-            // Busca el perfil del usuario en Firestore para obtener nombre y rol
             db.collection('users').doc(user.uid).get().then(doc => {
                 if (doc.exists) {
                     const userData = doc.data();
@@ -134,10 +148,10 @@ document.addEventListener('DOMContentLoaded', function () {
             document.getElementById('login-screen').classList.add('hidden');
             document.getElementById('main-app').classList.remove('hidden');
             updateConnectionStatus();
-
+            resetInactivityTimer();
         } else {
-            // Usuario ha cerrado sesión o no está logueado
             currentUser = null;
+            clearTimeout(inactivityTimer);
             document.getElementById('loading-overlay').classList.add('hidden');
             document.getElementById('main-app').classList.add('hidden');
             document.getElementById('login-screen').classList.remove('hidden');
@@ -147,25 +161,16 @@ document.addEventListener('DOMContentLoaded', function () {
 
 function setupEventListeners() {
     console.log('Configurando event listeners...');
-
     window.addEventListener('online', updateConnectionStatus);
     window.addEventListener('offline', updateConnectionStatus);
 
-    // Sistema de Autenticación
     const loginForm = document.getElementById('login-form');
-    if (loginForm) {
-        loginForm.addEventListener('submit', handleLogin);
-    }
-
+    if (loginForm) loginForm.addEventListener('submit', handleLogin);
     const logoutBtn = document.getElementById('logout-btn');
-    if (logoutBtn) {
-        logoutBtn.addEventListener('click', () => auth.signOut());
-    }
+    if (logoutBtn) logoutBtn.addEventListener('click', () => auth.signOut());
 
-    // Navegación Principal
     document.querySelectorAll('[data-view]').forEach(button => {
         button.addEventListener('click', function () {
-            // Si el botón es el de cancelar cliente, primero reseteamos el form
             if (this.type === 'button' && this.closest('#form-cliente')) {
                 resetClientForm();
             }
@@ -173,58 +178,27 @@ function setupEventListeners() {
         });
     });
 
-    // Gestión de Clientes
     const btnAplicarFiltros = document.getElementById('btn-aplicar-filtros');
-    if (btnAplicarFiltros) {
-        btnAplicarFiltros.addEventListener('click', loadClientesTable);
-    }
-
+    if (btnAplicarFiltros) btnAplicarFiltros.addEventListener('click', loadClientesTable);
     const btnLimpiarFiltros = document.getElementById('btn-limpiar-filtros');
-    if (btnLimpiarFiltros) {
-        btnLimpiarFiltros.addEventListener('click', limpiarFiltrosClientes);
-    }
-
-    // Gestión de Usuarios
+    if (btnLimpiarFiltros) btnLimpiarFiltros.addEventListener('click', limpiarFiltrosClientes);
+    
     const btnAplicarFiltrosUsuarios = document.getElementById('btn-aplicar-filtros-usuarios');
-    if (btnAplicarFiltrosUsuarios) {
-        btnAplicarFiltrosUsuarios.addEventListener('click', loadUsersTable);
-    }
-
+    if (btnAplicarFiltrosUsuarios) btnAplicarFiltrosUsuarios.addEventListener('click', loadUsersTable);
     const btnLimpiarFiltrosUsuarios = document.getElementById('btn-limpiar-filtros-usuarios');
-    if (btnLimpiarFiltrosUsuarios) {
-        btnLimpiarFiltrosUsuarios.addEventListener('click', limpiarFiltrosUsuarios);
-    }
-
+    if (btnLimpiarFiltrosUsuarios) btnLimpiarFiltrosUsuarios.addEventListener('click', limpiarFiltrosUsuarios);
     const btnNuevoUsuario = document.getElementById('btn-nuevo-usuario');
-    if (btnNuevoUsuario) {
-        btnNuevoUsuario.addEventListener('click', () => mostrarFormularioUsuario());
-    }
-
+    if (btnNuevoUsuario) btnNuevoUsuario.addEventListener('click', () => mostrarFormularioUsuario());
     const btnCancelarUsuario = document.getElementById('btn-cancelar-usuario');
-    if (btnCancelarUsuario) {
-        btnCancelarUsuario.addEventListener('click', ocultarFormularioUsuario);
-    }
-
+    if (btnCancelarUsuario) btnCancelarUsuario.addEventListener('click', ocultarFormularioUsuario);
     const formUsuario = document.getElementById('form-usuario');
-    if (formUsuario) {
-        formUsuario.addEventListener('submit', handleUserForm);
-    }
-
-    // Importación de Datos
+    if (formUsuario) formUsuario.addEventListener('submit', handleUserForm);
+    
     const officeSelect = document.getElementById('office-select');
-    if (officeSelect) {
-        officeSelect.addEventListener('change', handleOfficeChange);
-    }
-
-    document.querySelectorAll('.import-tab').forEach(tab => {
-        tab.addEventListener('click', handleTabClick);
-    });
-
+    if (officeSelect) officeSelect.addEventListener('change', handleOfficeChange);
+    document.querySelectorAll('.import-tab').forEach(tab => tab.addEventListener('click', handleTabClick));
     const btnProcesarImportacion = document.getElementById('btn-procesar-importacion');
-    if (btnProcesarImportacion) {
-        btnProcesarImportacion.addEventListener('click', handleImport);
-    }
-
+    if (btnProcesarImportacion) btnProcesarImportacion.addEventListener('click', handleImport);
     const btnLimpiarDatos = document.getElementById('btn-limpiar-datos');
     if (btnLimpiarDatos) {
         btnLimpiarDatos.addEventListener('click', async () => {
@@ -234,114 +208,57 @@ function setupEventListeners() {
         });
     }
 
-    // Registrar/Editar Cliente
     const formCliente = document.getElementById('form-cliente');
-    if (formCliente) {
-        formCliente.addEventListener('submit', handleClientForm);
-    }
-
+    if (formCliente) formCliente.addEventListener('submit', handleClientForm);
     const curpCliente = document.getElementById('curp_cliente');
-    if (curpCliente) {
-        curpCliente.addEventListener('input', function () { validarCURP(this); });
-    }
-
+    if (curpCliente) curpCliente.addEventListener('input', () => validarCURP(curpCliente));
     const officeCliente = document.getElementById('office_cliente');
-    if (officeCliente) {
-        officeCliente.addEventListener('change', handleOfficeChangeForClientForm);
-    }
-
-    // Generar Crédito
+    if (officeCliente) officeCliente.addEventListener('change', handleOfficeChangeForClientForm);
+    
     const btnBuscarClienteColocacion = document.getElementById('btnBuscarCliente_colocacion');
-    if (btnBuscarClienteColocacion) {
-        btnBuscarClienteColocacion.addEventListener('click', handleSearchClientForCredit);
-    }
-
+    if (btnBuscarClienteColocacion) btnBuscarClienteColocacion.addEventListener('click', handleSearchClientForCredit);
     const formCreditoSubmit = document.getElementById('form-credito-submit');
-    if (formCreditoSubmit) {
-        formCreditoSubmit.addEventListener('submit', handleCreditForm);
-    }
-
+    if (formCreditoSubmit) formCreditoSubmit.addEventListener('submit', handleCreditForm);
     const curpAvalColocacion = document.getElementById('curpAval_colocacion');
-    if (curpAvalColocacion) {
-        curpAvalColocacion.addEventListener('input', function () { validarCURP(this); });
-    }
-
+    if (curpAvalColocacion) curpAvalColocacion.addEventListener('input', () => validarCURP(curpAvalColocacion));
     const montoColocacion = document.getElementById('monto_colocacion');
-    if (montoColocacion) {
-        montoColocacion.addEventListener('change', calcularMontoTotalColocacion);
-    }
-
+    if (montoColocacion) montoColocacion.addEventListener('change', calcularMontoTotalColocacion);
     const plazoColocacion = document.getElementById('plazo_colocacion');
-    if (plazoColocacion) {
-        plazoColocacion.addEventListener('change', calcularMontoTotalColocacion);
-    }
-
-    // Registrar Pago
+    if (plazoColocacion) plazoColocacion.addEventListener('change', calcularMontoTotalColocacion);
+    
     const btnBuscarCreditoCobranza = document.getElementById('btnBuscarCredito_cobranza');
-    if (btnBuscarCreditoCobranza) {
-        btnBuscarCreditoCobranza.addEventListener('click', handleSearchCreditForPayment);
-    }
-
+    if (btnBuscarCreditoCobranza) btnBuscarCreditoCobranza.addEventListener('click', handleSearchCreditForPayment);
     const formPagoSubmit = document.getElementById('form-pago-submit');
-    if (formPagoSubmit) {
-        formPagoSubmit.addEventListener('submit', handlePaymentForm);
-    }
-
+    if (formPagoSubmit) formPagoSubmit.addEventListener('submit', handlePaymentForm);
     const montoCobranza = document.getElementById('monto_cobranza');
-    if (montoCobranza) {
-        montoCobranza.addEventListener('input', handleMontoPagoChange);
-    }
-
-    // Reportes Básicos
+    if (montoCobranza) montoCobranza.addEventListener('input', handleMontoPagoChange);
+    
     const btnActualizarReportes = document.getElementById('btn-actualizar-reportes');
-    if (btnActualizarReportes) {
-        btnActualizarReportes.addEventListener('click', async () => {
-            await loadBasicReports();
-        });
-    }
-
-    // Reportes Avanzados
+    if (btnActualizarReportes) btnActualizarReportes.addEventListener('click', () => loadBasicReports());
     const btnAplicarFiltrosReportes = document.getElementById('btn-aplicar-filtros-reportes');
-    if (btnAplicarFiltrosReportes) {
-        btnAplicarFiltrosReportes.addEventListener('click', loadAdvancedReports);
-    }
-
+    if (btnAplicarFiltrosReportes) btnAplicarFiltrosReportes.addEventListener('click', loadAdvancedReports);
     const btnExportarCsv = document.getElementById('btn-exportar-csv');
-    if (btnExportarCsv) {
-        btnExportarCsv.addEventListener('click', exportToCSV);
-    }
-
+    if (btnExportarCsv) btnExportarCsv.addEventListener('click', exportToCSV);
     const btnExportarPdf = document.getElementById('btn-exportar-pdf');
-    if (btnExportarPdf) {
-        btnExportarPdf.addEventListener('click', exportToPDF);
-    }
-
+    if (btnExportarPdf) btnExportarPdf.addEventListener('click', exportToPDF);
     const btnLimpiarFiltrosReportes = document.getElementById('btn-limpiar-filtros-reportes');
-    if (btnLimpiarFiltrosReportes) {
-        btnLimpiarFiltrosReportes.addEventListener('click', limpiarFiltrosReportes);
-    }
-
-    console.log('Event listeners configurados correctamente');
+    if (btnLimpiarFiltrosReportes) btnLimpiarFiltrosReportes.addEventListener('click', limpiarFiltrosReportes);
 }
 
 // =============================================
 // MANEJADORES DE EVENTOS
 // =============================================
-
 async function handleLogin(e) {
     e.preventDefault();
     const email = document.getElementById('email').value;
     const password = document.getElementById('password').value;
     const statusElement = document.getElementById('auth-status');
-
     try {
         showButtonLoading('login-form button', true, 'Iniciando sesión...');
         statusElement.textContent = 'Iniciando sesión...';
         statusElement.className = 'status-message status-info';
         await auth.signInWithEmailAndPassword(email, password);
-        // onAuthStateChanged se encarga de mostrar la app
     } catch (error) {
-        console.error("Error de inicio de sesión:", error.code);
         statusElement.textContent = 'Error: correo o contraseña incorrectos.';
         statusElement.className = 'status-message status-error';
     } finally {
@@ -354,67 +271,52 @@ function handleOfficeChange() {
     const isGDL = office === 'GDL';
     const gdlSection = document.getElementById('import-gdl-section');
     const leonSection = document.getElementById('import-leon-section');
-
     if (gdlSection) gdlSection.classList.toggle('hidden', !isGDL);
     if (leonSection) leonSection.classList.toggle('hidden', isGDL);
-
     currentImportTab = 'clientes';
     const selector = isGDL ? '#import-gdl-section .import-tab[data-tab="clientes"]' : '#import-leon-section .import-tab[data-tab="clientes"]';
     const tabElement = document.querySelector(selector);
-    if (tabElement) {
-        handleTabClick.call(tabElement);
-    }
+    if (tabElement) handleTabClick.call(tabElement);
 }
 
 function handleTabClick() {
     const parentSection = this.closest('[id$="-section"]');
     if (!parentSection) return;
-
     parentSection.querySelectorAll('.import-tab').forEach(t => t.classList.remove('active'));
     this.classList.add('active');
     currentImportTab = this.getAttribute('data-tab');
     parentSection.querySelectorAll('.import-tab-content').forEach(c => c.classList.add('hidden'));
     const officePrefix = parentSection.id.includes('gdl') ? 'gdl' : 'leon';
     const targetTab = document.getElementById(`tab-${officePrefix}-${currentImportTab}`);
-    if (targetTab) {
-        targetTab.classList.remove('hidden');
-    }
+    if (targetTab) targetTab.classList.remove('hidden');
 }
 
 async function handleImport() {
     const office = document.getElementById('office-select').value;
     const textareaId = `datos-importar-${office.toLowerCase()}-${currentImportTab}`;
     const textarea = document.getElementById(textareaId);
-
     if (!textarea) {
         showStatus('estado-importacion', 'No se encontró el área de texto para importar.', 'error');
         return;
     }
-
     const csvData = textarea.value;
-
     if (!csvData.trim()) {
         showStatus('estado-importacion', 'No hay datos para importar.', 'error');
         const resultadoImportacion = document.getElementById('resultado-importacion');
         if (resultadoImportacion) resultadoImportacion.classList.remove('hidden');
         return;
     }
-
     showProcessingOverlay(true, 'Importando datos...');
     showButtonLoading('btn-procesar-importacion', true, 'Importando...');
-
     try {
         showFixedProgress(0, 'Iniciando importación...');
         const resultado = await database.importarDatosDesdeCSV(csvData, currentImportTab, office);
         showFixedProgress(100, 'Importación completada');
-
         let mensaje = `Importación (${office}) completada: ${resultado.importados} de ${resultado.total} registros.`;
         if (resultado.errores && resultado.errores.length > 0) {
             mensaje += `<br>Errores: ${resultado.errores.length}`;
             const detalleImportacion = document.getElementById('detalle-importacion');
-            if (detalleImportacion) {
-                detalleImportacion.innerHTML = `<strong>Detalle:</strong><ul>${resultado.errores.map(e => `<li>${e}</li>`).join('')}</ul>`;
-            }
+            if (detalleImportacion) detalleImportacion.innerHTML = `<strong>Detalle:</strong><ul>${resultado.errores.map(e => `<li>${e}</li>`).join('')}</ul>`;
         } else {
             const detalleImportacion = document.getElementById('detalle-importacion');
             if (detalleImportacion) detalleImportacion.innerHTML = '';
@@ -436,13 +338,10 @@ function resetClientForm() {
     editingClientId = null;
     const form = document.getElementById('form-cliente');
     if(form) form.reset();
-
     const titulo = document.querySelector('#view-cliente h2');
     if(titulo) titulo.textContent = 'Registrar Cliente';
-    
     const submitButton = document.querySelector('#form-cliente button[type="submit"]');
     if(submitButton) submitButton.innerHTML = '<i class="fas fa-save"></i> Guardar Cliente';
-
     document.getElementById('curp_cliente').readOnly = false;
     handleOfficeChangeForClientForm.call({ value: 'GDL' });
 }
@@ -454,10 +353,8 @@ async function handleClientForm(e) {
         showStatus('status_cliente', 'El CURP debe tener 18 caracteres.', 'error');
         return;
     }
-
     const submitButton = document.querySelector('#form-cliente button[type="submit"]');
     showButtonLoading(submitButton, true, 'Guardando...');
-    
     const clienteData = {
         office: document.getElementById('office_cliente').value,
         curp,
@@ -468,19 +365,16 @@ async function handleClientForm(e) {
         poblacion_grupo: document.getElementById('poblacion_grupo_cliente').value,
         ruta: document.getElementById('ruta_cliente').value
     };
-
     if (!clienteData.nombre || !clienteData.domicilio || !clienteData.poblacion_grupo || !clienteData.ruta) {
         showStatus('status_cliente', 'Los campos con * son obligatorios.', 'error');
         showButtonLoading(submitButton, false);
         return;
     }
-
     try {
         let resultado;
         if (editingClientId) {
             resultado = await database.actualizarCliente(editingClientId, clienteData);
         } else {
-             // En modo creación, verificar si el cliente ya existe
             const existe = await database.buscarClientePorCURP(clienteData.curp);
             if (existe) {
                 showStatus('status_cliente', 'Ya existe un cliente con esta CURP.', 'error');
@@ -489,13 +383,11 @@ async function handleClientForm(e) {
             }
             resultado = await database.agregarCliente(clienteData);
         }
-
         let successMessage = resultado.message;
         if (!isOnline && resultado.success) {
             successMessage = `Cliente ${editingClientId ? 'actualizado' : 'registrado'} en modo offline. Se sincronizará automáticamente.`;
         }
         showStatus('status_gestion_clientes', successMessage, resultado.success ? 'success' : 'error');
-        
         if (resultado.success) {
             resetClientForm();
             showView('view-gestion-clientes');
@@ -513,18 +405,14 @@ async function handleClientForm(e) {
 // =============================================
 // GESTIÓN DE USUARIOS
 // =============================================
-
 function mostrarFormularioUsuario(usuario = null) {
     const formContainer = document.getElementById('form-usuario-container');
     const formTitulo = document.getElementById('form-usuario-titulo');
     const form = document.getElementById('form-usuario');
     const passwordInput = document.getElementById('nuevo-password');
     const emailInput = document.getElementById('nuevo-email');
-
     if (!formContainer || !formTitulo || !form) return;
-
     form.reset();
-    
     if (usuario) {
         editingUserId = usuario.id;
         formTitulo.textContent = 'Editar Usuario';
@@ -541,7 +429,6 @@ function mostrarFormularioUsuario(usuario = null) {
         passwordInput.required = true;
         passwordInput.placeholder = "";
     }
-    
     formContainer.classList.remove('hidden');
 }
 
@@ -556,45 +443,36 @@ function ocultarFormularioUsuario() {
 async function handleUserForm(e) {
     e.preventDefault();
     const submitButton = document.querySelector('#form-usuario button[type="submit"]');
-
-    if (editingUserId) { // --- MODO EDICIÓN ---
+    if (editingUserId) {
         const userData = {
             name: document.getElementById('nuevo-nombre').value,
             role: document.getElementById('nuevo-rol').value,
         };
-
         if (!userData.name || !userData.role) {
             showStatus('status_usuarios', 'Nombre y Rol son obligatorios.', 'error');
             return;
         }
-
         showButtonLoading(submitButton, true, 'Actualizando...');
         const resultado = await database.actualizarUsuario(editingUserId, userData);
-        
         let message = resultado.message;
         if (!isOnline && resultado.success) {
              message = 'Usuario actualizado en modo offline. Se sincronizará automáticamente.';
         }
         showStatus('status_usuarios', message, resultado.success ? 'success' : 'error');
-        
         if (resultado.success) {
             ocultarFormularioUsuario();
             await loadUsersTable();
         }
-
         showButtonLoading(submitButton, false);
-
-    } else { // --- MODO CREACIÓN ---
+    } else {
         const email = document.getElementById('nuevo-email').value;
         const password = document.getElementById('nuevo-password').value;
         const nombre = document.getElementById('nuevo-nombre').value;
         const rol = document.getElementById('nuevo-rol').value;
-
         if (!email || !password || !nombre || !rol) {
             showStatus('status_usuarios', 'Todos los campos son obligatorios.', 'error');
             return;
         }
-
         showButtonLoading(submitButton, true, 'Creando...');
         try {
              if (!isOnline) {
@@ -603,10 +481,8 @@ async function handleUserForm(e) {
             const userCredential = await auth.createUserWithEmailAndPassword(email, password);
             const user = userCredential.user;
             await db.collection('users').doc(user.uid).set({ id: user.uid, email, name: nombre, role: rol, createdAt: new Date().toISOString(), status: 'active' });
-            
             let message = 'Usuario creado exitosamente.';
             showStatus('status_usuarios', message, 'success');
-
             ocultarFormularioUsuario();
             await loadUsersTable();
         } catch (error) {
@@ -626,22 +502,17 @@ async function loadUsersTable() {
         return;
     }
     cargaEnProgreso = true;
-
     const tbody = document.getElementById('tabla-usuarios');
     tbody.innerHTML = '<tr><td colspan="6">Buscando usuarios...</td></tr>';
     showButtonLoading('btn-aplicar-filtros-usuarios', true, 'Buscando...');
-    
     try {
         const resultado = await database.obtenerUsuarios();
         if (!resultado.success) throw new Error(resultado.message);
-
         let usuarios = resultado.data;
         const filtroEmail = (document.getElementById('filtro-email-usuario')?.value || '').toLowerCase();
         const filtroNombre = (document.getElementById('filtro-nombre-usuario')?.value || '').toLowerCase();
         const filtroRol = document.getElementById('filtro-rol-usuario')?.value || '';
-
         const hayFiltros = filtroEmail || filtroNombre || filtroRol;
-
         if (hayFiltros) {
             usuarios = usuarios.filter(usuario => {
                 const emailMatch = !filtroEmail || (usuario.email && usuario.email.toLowerCase().includes(filtroEmail));
@@ -650,13 +521,11 @@ async function loadUsersTable() {
                 return emailMatch && nombreMatch && rolMatch;
             });
         }
-
         tbody.innerHTML = '';
         if (usuarios.length === 0) {
             tbody.innerHTML = '<tr><td colspan="6">No se encontraron usuarios con los filtros aplicados.</td></tr>';
             return;
         }
-
         usuarios.sort((a,b) => (a.name || '').localeCompare(b.name || '')).forEach(usuario => {
             const tr = document.createElement('tr');
             if (usuario.status === 'disabled') {
@@ -665,7 +534,6 @@ async function loadUsersTable() {
             }
             const roleBadgeClass = `role-${usuario.role || 'default'}`;
             const usuarioJsonString = JSON.stringify(usuario).replace(/'/g, "&apos;");
-
             tr.innerHTML = `
                 <td>${usuario.email || 'N/A'}</td>
                 <td>${usuario.name || 'N/A'}</td>
@@ -690,9 +558,7 @@ async function loadUsersTable() {
 }
 
 function limpiarFiltrosUsuarios() {
-    if (cargaEnProgreso) {
-        cancelarCarga();
-    }
+    if (cargaEnProgreso) cancelarCarga();
     document.getElementById('filtro-email-usuario').value = '';
     document.getElementById('filtro-nombre-usuario').value = '';
     document.getElementById('filtro-rol-usuario').value = '';
@@ -720,20 +586,16 @@ async function disableUsuario(id, nombre) {
 async function handleSearchClientForCredit() {
     const curpInput = document.getElementById('curp_colocacion');
     if (!curpInput) return;
-
     const curp = curpInput.value.trim();
     if (!validarFormatoCURP(curp)) {
         showStatus('status_colocacion', 'El CURP debe tener 18 caracteres.', 'error');
         return;
     }
-
     showButtonLoading('btnBuscarCliente_colocacion', true, 'Buscando...');
     showFixedProgress(30, 'Buscando cliente...');
-
     try {
         const cliente = await database.buscarClientePorCURP(curp);
         showFixedProgress(70, 'Verificando elegibilidad...');
-
         if (cliente) {
             const esElegible = await verificarElegibilidadRenovacion(curp);
             if (!esElegible) {
@@ -742,15 +604,12 @@ async function handleSearchClientForCredit() {
                 if (formColocacion) formColocacion.classList.add('hidden');
                 return;
             }
-
             const creditoActivo = await database.buscarCreditoActivoPorCliente(curp);
             showFixedProgress(100, 'Cliente encontrado');
             showStatus('status_colocacion', creditoActivo ? 'Cliente encontrado y elegible para renovación.' : 'Cliente encontrado y elegible para crédito nuevo.', 'success');
-
             const nombreColocacion = document.getElementById('nombre_colocacion');
             const idCreditoColocacion = document.getElementById('idCredito_colocacion');
             const formColocacion = document.getElementById('form-colocacion');
-
             if (nombreColocacion) nombreColocacion.value = cliente.nombre;
             if (idCreditoColocacion) idCreditoColocacion.value = 'Se asignará automáticamente';
             if (formColocacion) formColocacion.classList.remove('hidden');
@@ -779,19 +638,15 @@ async function handleCreditForm(e) {
         curpAval,
         nombreAval: document.getElementById('nombreAval_colocacion').value
     };
-
     if (!credito.monto || !credito.plazo || !credito.tipo || !credito.nombreAval.trim() || !validarFormatoCURP(curpAval)) {
         showStatus('status_colocacion', 'Todos los campos son obligatorios y el CURP del aval debe ser válido.', 'error');
         return;
     }
-
     showButtonLoading('#form-credito-submit button[type="submit"]', true, 'Generando crédito...');
     showFixedProgress(50, 'Procesando crédito...');
-
     try {
         const resultado = await database.agregarCredito(credito);
         showFixedProgress(100, 'Crédito generado exitosamente');
-
         let successMessage = resultado.message;
          if (resultado.success) {
             successMessage = `${resultado.message}. ID de crédito: ${resultado.data.id}`;
@@ -800,7 +655,6 @@ async function handleCreditForm(e) {
             }
         }
         showStatus('status_colocacion', successMessage, resultado.success ? 'success' : 'error');
-
         if (resultado.success) {
             e.target.reset();
             const formColocacion = document.getElementById('form-colocacion');
@@ -819,48 +673,25 @@ async function handleCreditForm(e) {
 async function handleSearchCreditForPayment() {
     const idCreditoInput = document.getElementById('idCredito_cobranza');
     if (!idCreditoInput) return;
-
     const idCredito = idCreditoInput.value.trim();
-
     showButtonLoading('btnBuscarCredito_cobranza', true, 'Buscando...');
     showFixedProgress(30, 'Buscando crédito...');
-
     try {
         creditoActual = await database.buscarCreditoPorId(idCredito);
         showFixedProgress(60, 'Obteniendo información del cliente...');
-
         if (creditoActual) {
             const cliente = await database.buscarClientePorCURP(creditoActual.curpCliente);
             showFixedProgress(80, 'Calculando historial...');
-
             const historial = await obtenerHistorialCreditoCliente(creditoActual.curpCliente);
-
             if (historial) {
-                // Actualizar todos los campos del formulario de cobranza
-                const campos = [
-                    'nombre_cobranza', 'saldo_cobranza', 'estado_cobranza',
-                    'semanas_atraso_cobranza', 'pago_semanal_cobranza',
-                    'fecha_proximo_pago_cobranza', 'monto_cobranza'
-                ];
-
-                const valores = [
-                    cliente ? cliente.nombre : 'N/A',
-                    `$${historial.saldoRestante.toLocaleString()}`,
-                    historial.estado.toUpperCase(),
-                    historial.semanasAtraso || 0,
-                    `$${historial.pagoSemanal.toLocaleString()}`,
-                    historial.proximaFechaPago,
-                    historial.pagoSemanal.toFixed(2)
-                ];
-
+                const campos = ['nombre_cobranza', 'saldo_cobranza', 'estado_cobranza', 'semanas_atraso_cobranza', 'pago_semanal_cobranza', 'fecha_proximo_pago_cobranza', 'monto_cobranza'];
+                const valores = [cliente ? cliente.nombre : 'N/A', `$${historial.saldoRestante.toLocaleString()}`, historial.estado.toUpperCase(), historial.semanasAtraso || 0, `$${historial.pagoSemanal.toLocaleString()}`, historial.proximaFechaPago, historial.pagoSemanal.toFixed(2)];
                 campos.forEach((campo, index) => {
                     const element = document.getElementById(campo);
                     if (element) element.value = valores[index];
                 });
-
                 handleMontoPagoChange();
                 showFixedProgress(100, 'Crédito encontrado');
-
                 const formCobranza = document.getElementById('form-cobranza');
                 if (formCobranza) formCobranza.classList.remove('hidden');
                 showStatus('status_cobranza', 'Crédito encontrado.', 'success');
@@ -887,31 +718,25 @@ async function handlePaymentForm(e) {
         showStatus('status_cobranza', 'No hay un crédito seleccionado.', 'error');
         return;
     }
-
     const pago = {
         idCredito: creditoActual.id,
         monto: parseFloat(document.getElementById('monto_cobranza').value),
         tipoPago: document.getElementById('tipo_cobranza').value
     };
-
     if (!pago.monto || pago.monto <= 0) {
         showStatus('status_cobranza', 'El monto del pago debe ser mayor a cero.', 'error');
         return;
     }
-
     showButtonLoading('#form-pago-submit button[type="submit"]', true, 'Registrando pago...');
     showFixedProgress(50, 'Procesando pago...');
-
     try {
         const resultado = await database.agregarPago(pago);
         showFixedProgress(100, 'Pago registrado exitosamente');
-
         let successMessage = resultado.message;
         if (!isOnline && resultado.success) {
             successMessage = 'Pago registrado en modo offline. Se sincronizará automáticamente.';
         }
         showStatus('status_cobranza', successMessage, resultado.success ? 'success' : 'error');
-        
         if (resultado.success) {
             const formCobranza = document.getElementById('form-cobranza');
             const idCreditoCobranza = document.getElementById('idCredito_cobranza');
@@ -931,9 +756,7 @@ function handleMontoPagoChange() {
     if (!creditoActual) return;
     const montoInput = document.getElementById('monto_cobranza');
     const saldoDespuesInput = document.getElementById('saldoDespues_cobranza');
-
     if (!montoInput || !saldoDespuesInput) return;
-
     const monto = parseFloat(montoInput.value) || 0;
     const saldoActual = parseFloat(document.getElementById('saldo_cobranza').value.replace('$', '').replace(/,/g, '')) || 0;
     const saldoDespues = saldoActual - monto;
@@ -984,7 +807,6 @@ function showProcessingOverlay(show, message = 'Procesando...') {
 function showButtonLoading(selector, show, text = 'Procesando...') {
     const button = (typeof selector === 'string') ? document.querySelector(selector) : selector;
     if (!button) return;
-
     if (show) {
         button.setAttribute('data-original-text', button.innerHTML);
         button.innerHTML = '';
@@ -998,16 +820,14 @@ function showButtonLoading(selector, show, text = 'Procesando...') {
 }
 
 // =============================================
-// FUNCIONES DE BARRA DE PROGRESO Y UTILIDADES (RESTAURADAS)
+// FUNCIONES DE BARRA DE PROGRESO Y UTILIDADES
 // =============================================
 
 function showFixedProgress(percentage, message = '') {
     if (cargaEnProgreso === false && percentage > 0 && percentage < 100) {
         return;
     }
-
     let progressContainer = document.getElementById('progress-container-fixed');
-
     if (!progressContainer) {
         progressContainer = document.createElement('div');
         progressContainer.id = 'progress-container-fixed';
@@ -1025,21 +845,17 @@ function showFixedProgress(percentage, message = '') {
             btnCancelar.addEventListener('click', cancelarCarga);
         }
     }
-
     const progressBar = document.getElementById('progress-bar-fixed');
     const progressText = document.getElementById('progress-text-fixed');
-
     if (progressBar) {
         progressBar.style.width = percentage + '%';
         if (percentage < 30) progressBar.style.background = 'var(--danger)';
         else if (percentage < 70) progressBar.style.background = 'var(--warning)';
         else progressBar.style.background = 'var(--success)';
     }
-
     if (progressText && message) {
         progressText.textContent = message;
     }
-
     progressContainer.style.display = 'flex';
     document.body.classList.add('has-progress');
 }
@@ -1062,13 +878,10 @@ function cancelarCarga() {
     hideFixedProgress();
     showStatus('status_gestion_clientes', 'Carga cancelada por el usuario.', 'info');
     showStatus('status_usuarios', 'Carga cancelada por el usuario.', 'info');
-
     const tablaClientes = document.getElementById('tabla-clientes');
     if (tablaClientes) tablaClientes.innerHTML = '<tr><td colspan="6">Carga cancelada.</td></tr>';
-
     const tablaUsuarios = document.getElementById('tabla-usuarios');
     if (tablaUsuarios) tablaUsuarios.innerHTML = '<tr><td colspan="5">Carga cancelada.</td></tr>';
-
     showButtonLoading('btn-aplicar-filtros', false);
     showButtonLoading('btn-aplicar-filtros-usuarios', false);
 }
@@ -1076,9 +889,7 @@ function cancelarCarga() {
 function calcularMontoTotalColocacion() {
     const montoInput = document.getElementById('monto_colocacion');
     const montoTotalInput = document.getElementById('montoTotal_colocacion');
-
     if (!montoInput || !montoTotalInput) return;
-
     const monto = parseFloat(montoInput.value) || 0;
     montoTotalInput.value = monto > 0 ? `$${(monto * 1.3).toLocaleString()}` : '';
 }
@@ -1124,33 +935,22 @@ function inicializarDropdowns() {
     const estadosCredito = ['al corriente', 'atrasado', 'cobranza', 'juridico', 'liquidado'];
     const tiposPago = ['normal', 'extraordinario', 'actualizado'];
     const sucursales = ['GDL', 'LEON'];
-
     popularDropdown('poblacion_grupo_cliente', poblacionesGdl, 'Selecciona población/grupo');
     popularDropdown('ruta_cliente', rutas, 'Selecciona una ruta');
-
     popularDropdown('tipo_colocacion', tiposCredito.map(t => ({ value: t.toLowerCase(), text: t })), 'Selecciona tipo', true);
     popularDropdown('monto_colocacion', montos.map(m => ({ value: m, text: `$${m.toLocaleString()}` })), 'Selecciona monto', true);
     popularDropdown('plazo_colocacion', plazos.map(p => ({ value: p, text: `${p} semanas` })), 'Selecciona plazo', true);
-
     const todasLasPoblaciones = [...new Set([...poblacionesGdl, ...poblacionesLeon])].sort();
     popularDropdown('grupo_filtro', todasLasPoblaciones, 'Todos');
     popularDropdown('tipo_colocacion_filtro', tiposCredito.map(t => ({ value: t.toLowerCase(), text: t })), 'Todos', true);
     popularDropdown('plazo_filtro', plazos.map(p => ({ value: p, text: `${p} semanas` })), 'Todos', true);
-
-    popularDropdown('filtro-rol-usuario', [
-        { value: 'admin', text: 'Administrador' },
-        { value: 'supervisor', text: 'Supervisor' },
-        { value: 'cobrador', text: 'Cobrador' },
-        { value: 'consulta', text: 'Consulta' }
-    ], 'Todos los roles', true);
-
+    popularDropdown('filtro-rol-usuario', [{ value: 'admin', text: 'Administrador' }, { value: 'supervisor', text: 'Supervisor' }, { value: 'cobrador', text: 'Cobrador' }, { value: 'consulta', text: 'Consulta' }], 'Todos los roles', true);
     popularDropdown('sucursal_filtro_reporte', sucursales, 'Todas');
     popularDropdown('grupo_filtro_reporte', todasLasPoblaciones, 'Todos');
     popularDropdown('ruta_filtro_reporte', rutas, 'Todas');
     popularDropdown('tipo_credito_filtro_reporte', tiposCredito.map(t => ({ value: t.toLowerCase(), text: t })), 'Todos', true);
     popularDropdown('estado_credito_filtro_reporte', estadosCredito.map(e => ({ value: e, text: e.toUpperCase() })), 'Todos', true);
     popularDropdown('tipo_pago_filtro_reporte', tiposPago.map(t => ({ value: t, text: t.toUpperCase() })), 'Todos', true);
-
     console.log('Dropdowns inicializados correctamente');
 }
 
@@ -1172,7 +972,7 @@ function _calcularEstadoCredito(credito, pagos) {
     const fechaInicio = parsearFecha_DDMMYYYY(credito.fechaCreacion);
     if (!fechaInicio) {
         console.error(`Cálculo de estado fallido para crédito ID ${credito.id}: Fecha de creación inválida. Valor recibido:`, credito.fechaCreacion);
-        return null; // No se puede calcular si la fecha es inválida
+        return null;
     }
 
     const diasTranscurridos = (new Date() - fechaInicio) / (1000 * 60 * 60 * 24);
@@ -1794,8 +1594,7 @@ async function editCliente(id) {
     document.getElementById('office_cliente').value = cliente.office;
     handleOfficeChangeForClientForm.call({ value: cliente.office });
     
-    // Un pequeño delay para asegurar que el dropdown de poblaciones se llene antes de setear el valor
-    setTimeout(() => {
+    setTimeout(() => { // Delay para asegurar que el dropdown se llene
         document.getElementById('poblacion_grupo_cliente').value = cliente.poblacion_grupo;
     }, 100);
 
@@ -1847,7 +1646,6 @@ document.addEventListener('viewshown', function (e) {
             inicializarVistaGestionClientes();
             break;
         case 'view-cliente':
-            // Si no estamos editando, nos aseguramos que el form esté limpio
             if(!editingClientId) {
                 resetClientForm();
             }
