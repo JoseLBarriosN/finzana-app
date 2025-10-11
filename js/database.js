@@ -1,7 +1,42 @@
 // =============================================
-// CAPA DE SERVICIO DE FIREBASE (database.js) - CORREGIDO Y MEJORADO
+// MANEJO DE ERRORES MEJORADO
 // =============================================
 
+const handleFirestoreError = (error, operation) => {
+    console.error(`❌ Error en ${operation}:`, error);
+    
+    if (error.code === 'failed-precondition') {
+        return { 
+            success: false, 
+            message: 'Operación no disponible. Por favor, cierra otras pestañas de la aplicación.' 
+        };
+    } else if (error.code === 'unavailable') {
+        return { 
+            success: false, 
+            message: 'Servicio no disponible. Verifica tu conexión a internet.' 
+        };
+    } else if (error.code === 'permission-denied') {
+        return { 
+            success: false, 
+            message: 'Permiso denegado. No tienes acceso a esta operación.' 
+        };
+    } else {
+        return { 
+            success: false, 
+            message: `Error: ${error.message || 'Error desconocido'}` 
+        };
+    }
+};
+
+// Verificar conexión a Firestore
+const checkFirestoreConnection = async () => {
+    try {
+        await db.collection('config').doc('connection-test').get({ source: 'default' });
+        return { success: true, message: 'Conexión establecida' };
+    } catch (error) {
+        return handleFirestoreError(error, 'verificación de conexión');
+    }
+};
 const database = {
     // --- MÉTODOS GENERALES ---
     getAll: async (collection) => {
@@ -551,3 +586,4 @@ const database = {
         }
     }
 };
+
