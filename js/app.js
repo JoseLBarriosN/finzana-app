@@ -605,38 +605,131 @@ function setupSecurityListeners() {
 
 document.addEventListener('DOMContentLoaded', function () {
     console.log('DOM cargado, inicializando aplicación...');
+    
+    // Mostrar loading inicial
+    document.getElementById('loading-overlay').classList.remove('hidden');
+    
+    // Inicializar componentes básicos primero
     inicializarDropdowns();
     setupEventListeners();
     setupSecurityListeners();
     inicializarGraficos();
 
-    auth.onAuthStateChanged(user => {
-        console.log('Estado de autenticación cambiado:', user);
-        if (user) {
-            currentUser = user;
-            db.collection('users').doc(user.uid).get().then(doc => {
-                if (doc.exists) {
-                    const userData = doc.data();
-                    document.getElementById('user-name').textContent = userData.name || user.email;
-                    document.getElementById('user-role-display').textContent = userData.role || 'Usuario';
-                } else {
-                    document.getElementById('user-name').textContent = user.email;
-                    document.getElementById('user-role-display').textContent = "Rol no definido";
-                }
-            });
+    // Verificar si Firebase se inicializó correctamente
+    if (!window.auth) {
+        console.error('❌ Firebase no está disponible');
+        mostrarErrorConexion('Firebase no se pudo inicializar. Verifica la configuración.');
+        return;
+    }
 
+    // Timeout de seguridad para evitar que se quede atascado
+    const timeoutId = setTimeout(() => {
+        if (document.getElementById('loading-overlay').classList.contains('hidden') === false) {
+            console.warn('⚠️ Timeout de conexión alcanzado');
+            mostrarErrorConexion('Tiempo de conexión agotado. Verifica tu conexión a internet.');
+        }
+    }, 10000); // 10 segundos
+
+    // Listener de autenticación con manejo de errores
+    try {
+        window.auth.onAuthStateChanged(user => {
+            // Limpiar timeout
+            clearTimeout(timeoutId);
+            
+            console.log('Estado de autenticación cambiado:', user);
+            
+            // Ocultar loading
             document.getElementById('loading-overlay').classList.add('hidden');
-            document.getElementById('login-screen').classList.add('hidden');
-            document.getElementById('main-app').classList.remove('hidden');
-            updateConnectionStatus();
-            resetInactivityTimer();
-        } else {
-            currentUser = null;
-            clearTimeout(inactivityTimer);
+            
+            if (user) {
+                currentUser = user;
+                
+                // Cargar datos del usuario
+                if (window.db) {
+                    window.db.collection('users').doc(user.uid).get().then(doc => {
+                        if (doc.exists) {
+                            const userData = doc.data();
+                            document.getElementById('user-name').textContent = userData.name || user.email;
+                            document.getElementById('user-role-display').textContent = userData.role || 'Usuario';
+                        } else {
+                            document.getElementById('user-name').textContent = user.email;
+                            document.getElementById('user-role-display').textContent = "Rol no definido";
+                        }
+                    }).catch(error => {
+                        console.error('Error cargando datos de usuario:', error);
+                        document.getElementById('user-name').textContent = user.email;
+                        document.getElementById('user-role-display').textContent = "Usuario";
+                    });
+                }
+
+                document.getElementById('login-screen').classList.add('hidden');
+                document.getElementById('main-app').classList.remove('hidden');
+                updateConnectionStatus();
+                resetInactivityTimer();
+            } else {
+                currentUser = null;
+                clearTimeout(inactivityTimer);
+                document.getElementById('main-app').classList.add('hidden');
+                document.getElementById('login-screen').classList.remove('hidden');
+            }
+        }, error => {
+            // Manejar errores en el observer de autenticación
+            console.error('Error en observer de autenticación:', error);
+            clearTimeout(timeoutId);
             document.getElementById('loading-overlay').classList.add('hidden');
             document.getElementById('main-app').classList.add('hidden');
             document.getElementById('login-screen').classList.remove('hidden');
-        }
+            
+            // Mostrar error específico si es de red
+            if (error.code === 'auth/network-request-failed') {
+                mostrarErrorConexion('Error de red. Verifica tu conexión a internet.');
+            }
+        });
+    } catch (error) {
+        console.error('Error configurando observer de autenticación:', error);
+        clearTimeout(timeoutId);
+        document.getElementById('loading-overlay').classList.add('hidden');
+        mostrarErrorConexion('Error de configuración: ' + error.message);
+    }
+});
+
+// Función para mostrar errores de conexión
+function mostrarErrorConexion(mensaje) {
+    document.getElementById('loading-overlay').innerHTML = `
+        <div style="text-align: center; color: white;">
+            <div style="font-size: 48px; margin-bottom: 20px;">❌</div>
+            <h2>Error de Conexión</h2>
+            <p>${mensaje}</p>
+            <div style="margin-top: 20px;">
+                <button onclick="reintentarConexion()" class="btn btn-primary" style="margin: 5px;">
+                    <i class="fas fa-redo"></i> Reintentar
+                </button>
+                <button onclick="continuarSinConexion()" class="btn btn-secondary" style="margin: 5px;">
+                    <i class="fas fa-wifi-slash"></i> Continuar Sin Conexión
+                </button>
+            </div>
+        </div>
+    `;
+}
+
+// Función para reintentar conexión
+function reintentarConexion() {
+    document.getElementById('loading-overlay').innerHTML = `
+        <div class="spinner"></div>
+        <p>Conectando con el servidor...</p>
+    `;
+    setTimeout(() => {
+        window.location.reload();
+    }, 1000);
+}
+
+// Función para continuar sin conexión
+function continuarSinConexion() {
+    document.getElementById('loading-overlay').classList.add('hidden');
+    document.getElementById('login-screen').classList.remove('hidden');
+    // Mostrar mensaje de modo offline
+    alert('Modo offline activado. Algunas funciones pueden estar limitadas.');
+}
     });
 });
 
@@ -2087,3 +2180,4 @@ document.addEventListener('viewshown', function (e) {
 });
 
 console.log('app.js cargado correctamente');
+
