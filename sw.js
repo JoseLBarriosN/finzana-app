@@ -1,4 +1,4 @@
-const CACHE_NAME = 'finzana-cache-v5'; // Versión incrementada para forzar la actualización
+const CACHE_NAME = 'finzana-cache-v6'; // Versión incrementada para forzar la actualización
 const urlsToCache = [
     './',
     './index.html',
@@ -46,20 +46,12 @@ self.addEventListener('activate', event => {
 self.addEventListener('fetch', event => {
     const requestUrl = new URL(event.request.url);
 
-    // ===== INICIO DE LA MODIFICACIÓN (Ignorar peticiones de Firebase) =====
-    // Si la petición es para los servicios de Google o Firebase,
-    // se la pasamos directamente a la red, sin caché.
-    if (requestUrl.hostname.includes('googleapis.com') || requestUrl.hostname.includes('firebaseapp.com')) {
-        event.respondWith(fetch(event.request));
-        return;
-    }
-    // ===== FIN DE LA MODIFICACIÓN =====
-
-    if (event.request.method !== 'GET') {
-        event.respondWith(fetch(event.request));
+    // Ignorar peticiones de Firebase para que su propio SDK offline funcione
+    if (requestUrl.hostname.includes('googleapis.com')) {
         return;
     }
 
+    // Estrategia: Cache First, Network Fallback
     event.respondWith(
         caches.match(event.request)
             .then(cachedResponse => {
@@ -69,7 +61,7 @@ self.addEventListener('fetch', event => {
 
                 return fetch(event.request).then(networkResponse => {
                     // Cachear solo respuestas válidas
-                    if (networkResponse && networkResponse.status === 200) {
+                    if (networkResponse && networkResponse.status === 200 && event.request.method === 'GET') {
                         const responseToCache = networkResponse.clone();
                         caches.open(CACHE_NAME)
                             .then(cache => {
