@@ -1,4 +1,4 @@
-const CACHE_NAME = 'finzana-cache-v6'; // Versión incrementada para forzar la actualización
+const CACHE_NAME = 'finzana-cache-v7'; // Versión incrementada para forzar la actualización
 const urlsToCache = [
     './',
     './index.html',
@@ -23,8 +23,8 @@ self.addEventListener('install', event => {
                 console.log('Cache abierta y guardando archivos de la app');
                 return cache.addAll(urlsToCache);
             })
+            .then(() => self.skipWaiting()) // Forzar activación del nuevo SW
     );
-    self.skipWaiting();
 });
 
 self.addEventListener('activate', event => {
@@ -38,9 +38,8 @@ self.addEventListener('activate', event => {
                     }
                 })
             );
-        })
+        }).then(() => self.clients.claim()) // Tomar control inmediato
     );
-    self.clients.claim();
 });
 
 self.addEventListener('fetch', event => {
@@ -50,31 +49,30 @@ self.addEventListener('fetch', event => {
     if (requestUrl.hostname.includes('googleapis.com')) {
         return;
     }
+    
+    // Para peticiones de navegación (abrir la app), ir a la red primero.
+    // Si falla, usar el caché. Esto asegura que siempre tengas la última versión si hay internet.
+    if (event.request.mode === 'navigate') {
+        event.respondWith(
+            fetch(event.request).catch(() => caches.match(event.request.url))
+        );
+        return;
+    }
 
-    // Estrategia: Cache First, Network Fallback
+    // Para otros recursos (CSS, JS, imágenes), usar "Stale-While-Revalidate"
+    // Carga instantáneamente desde el caché, y actualiza en segundo plano.
     event.respondWith(
-        caches.match(event.request)
-            .then(cachedResponse => {
-                if (cachedResponse) {
-                    return cachedResponse;
-                }
-
-                return fetch(event.request).then(networkResponse => {
-                    // Cachear solo respuestas válidas
-                    if (networkResponse && networkResponse.status === 200 && event.request.method === 'GET') {
-                        const responseToCache = networkResponse.clone();
-                        caches.open(CACHE_NAME)
-                            .then(cache => {
-                                cache.put(event.request, responseToCache);
-                            });
+        caches.open(CACHE_NAME).then(cache => {
+            return cache.match(event.request).then(cachedResponse => {
+                const fetchPromise = fetch(event.request).then(networkResponse => {
+                    if (networkResponse.status === 200) {
+                        cache.put(event.request, networkResponse.clone());
                     }
                     return networkResponse;
-                }).catch(() => {
-                    // Fallback para navegación offline
-                    if (event.request.mode === 'navigate') {
-                        return caches.match('./offline.html');
-                    }
                 });
-            })
+
+                return cachedResponse || fetchPromise;
+            });
+        })
     );
 });
