@@ -49,7 +49,7 @@ self.addEventListener('fetch', event => {
     if (requestUrl.hostname.includes('googleapis.com')) {
         return;
     }
-    
+
     // Para peticiones de navegación (abrir la app), ir a la red primero.
     // Si falla, usar el caché. Esto asegura que siempre tengas la última versión si hay internet.
     if (event.request.mode === 'navigate') {
