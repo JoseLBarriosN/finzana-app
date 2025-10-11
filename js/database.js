@@ -30,7 +30,6 @@ const database = {
         }
     },
 
-    // ===== INICIO DE LA MODIFICACIÓN (Gestión de Usuarios) =====
     actualizarUsuario: async (uid, userData) => {
         try {
             await db.collection('users').doc(uid).update(userData);
@@ -50,10 +49,18 @@ const database = {
             return { success: false, message: `Error al deshabilitar: ${error.message}` };
         }
     },
-    // ===== FIN DE LA MODIFICACIÓN =====
+
+    eliminarUsuario: async (uid) => {
+        try {
+            await db.collection('users').doc(uid).delete();
+            return { success: true, message: 'Usuario eliminado correctamente.' };
+        } catch (error) {
+            console.error("Error eliminando usuario:", error);
+            return { success: false, message: `Error al eliminar: ${error.message}` };
+        }
+    },
 
     // --- MÉTODOS DE CLIENTES ---
-    // ===== INICIO DE LA MODIFICACIÓN (Gestión de Clientes) =====
     obtenerClientePorId: async (id) => {
         try {
             const doc = await db.collection('clientes').doc(id).get();
@@ -78,6 +85,17 @@ const database = {
 
     eliminarCliente: async (id) => {
         try {
+            // Verificar si el cliente tiene créditos activos
+            const creditos = await database.buscarCreditosPorClienteId(id);
+            const creditosActivos = creditos.filter(c => c.estado === 'activo' || c.estado === 'atrasado');
+            
+            if (creditosActivos.length > 0) {
+                return { 
+                    success: false, 
+                    message: 'No se puede eliminar el cliente porque tiene créditos activos.' 
+                };
+            }
+            
             await db.collection('clientes').doc(id).delete();
             return { success: true, message: 'Cliente eliminado exitosamente.' };
         } catch (error) {
@@ -85,7 +103,20 @@ const database = {
             return { success: false, message: `Error: ${error.message}` };
         }
     },
-    // ===== FIN DE LA MODIFICACIÓN =====
+
+    // NUEVO MÉTODO: Buscar créditos por ID de cliente
+    buscarCreditosPorClienteId: async (clienteId) => {
+        try {
+            // Primero obtener el cliente para saber su CURP
+            const cliente = await database.obtenerClientePorId(clienteId);
+            if (!cliente) return [];
+            
+            return await database.buscarCreditosPorCliente(cliente.curp);
+        } catch (error) {
+            console.error("Error buscando créditos por ID de cliente:", error);
+            return [];
+        }
+    },
 
     buscarClientePorCURP: async (curp) => {
         try {
@@ -159,7 +190,7 @@ const database = {
 
     buscarCreditoActivoPorCliente: async (curp) => {
         try {
-            const snapshot = await db.collection('creditos').where('curpCliente', '==', curp.toUpperCase()).where('estado', '==', 'activo').limit(1).get();
+            const snapshot = await db.collection('creditos').where('curpCliente', '==', curp.toUpperCase()).where('estado', 'in', ['activo', 'atrasado']).limit(1).get();
             if (snapshot.empty) return null;
             return { id: snapshot.docs[0].id, ...snapshot.docs[0].data() };
         } catch (error) {
@@ -211,6 +242,16 @@ const database = {
             return { success: true, message: 'Crédito generado exitosamente.', data: creditoData };
         } catch (error) {
             console.error("Error agregando crédito:", error);
+            return { success: false, message: `Error: ${error.message}` };
+        }
+    },
+
+    actualizarCredito: async (id, creditoData) => {
+        try {
+            await db.collection('creditos').doc(id).update(creditoData);
+            return { success: true, message: 'Crédito actualizado exitosamente.' };
+        } catch (error) {
+            console.error("Error actualizando crédito:", error);
             return { success: false, message: `Error: ${error.message}` };
         }
     },
@@ -469,4 +510,44 @@ const database = {
         fechaVencimiento.setDate(fechaVencimiento.getDate() + (credito.plazo * 7));
         return new Date() > fechaVencimiento;
     },
+
+    // NUEVO: Obtener estadísticas para gráficos
+    obtenerEstadisticasParaGraficos: async (filtros = {}) => {
+        try {
+            const reporte = await database.generarReporteAvanzado(filtros);
+            const estadisticas = {
+                porEstado: {},
+                porSucursal: {},
+                porTipoCredito: {},
+                porGrupo: {}
+            };
+
+            reporte.forEach(item => {
+                // Estadísticas por estado
+                if (item.estado) {
+                    estadisticas.porEstado[item.estado] = (estadisticas.porEstado[item.estado] || 0) + 1;
+                }
+
+                // Estadísticas por sucursal
+                if (item.office) {
+                    estadisticas.porSucursal[item.office] = (estadisticas.porSucursal[item.office] || 0) + 1;
+                }
+
+                // Estadísticas por tipo de crédito
+                if (item.tipo && item.tipo === 'credito') {
+                    estadisticas.porTipoCredito[item.tipo] = (estadisticas.porTipoCredito[item.tipo] || 0) + 1;
+                }
+
+                // Estadísticas por grupo
+                if (item.poblacion_grupo) {
+                    estadisticas.porGrupo[item.poblacion_grupo] = (estadisticas.porGrupo[item.poblacion_grupo] || 0) + 1;
+                }
+            });
+
+            return estadisticas;
+        } catch (error) {
+            console.error("Error obteniendo estadísticas para gráficos:", error);
+            return null;
+        }
+    }
 };
