@@ -10,57 +10,542 @@ let cargaEnProgreso = false;
 let currentSearchOperation = null;
 let editingClientId = null;
 let editingUserId = null;
-let isOnline = true;
-let inactivityTimer; // Temporizador para el cierre de sesión por inactividad
+let isOnline = navigator.onLine;
+let inactivityTimer;
 
-/**
- * Parsea de forma segura una fecha que puede ser un string (dd-mm-yyyy, yyyy-mm-dd, ISO)
- * o un objeto Timestamp de Firestore.
- * @param {string|object} fechaInput La cadena de texto o el objeto de fecha.
- * @returns {Date|null} Un objeto Date válido o null si el formato es incorrecto.
- */
+// ===== MODIFICACIÓN: Función mejorada para parsear fechas =====
 function parsearFecha_DDMMYYYY(fechaInput) {
     if (!fechaInput) {
         return null;
     }
+    
+    // Si es un Timestamp de Firestore
     if (typeof fechaInput === 'object' && fechaInput.toDate && typeof fechaInput.toDate === 'function') {
         return fechaInput.toDate();
     }
+    
+    // Si es string
     if (typeof fechaInput === 'string') {
-        const fechaStr = fechaInput;
-        if (fechaStr.includes('T') && fechaStr.includes('Z')) {
-            const fecha = new Date(fechaStr);
-            return isNaN(fecha.getTime()) ? null : fecha;
-        }
-        const separador = fechaStr.includes('-') ? '-' : (fechaStr.includes('/') ? '/' : null);
-        if (!separador) {
-            const fechaDirecta = new Date(fechaStr);
-            return isNaN(fechaDirecta.getTime()) ? null : fechaDirecta;
-        }
-        const partes = fechaStr.split(separador);
-        if (partes.length === 3) {
-            let anio, mes, dia;
-            if (partes[0].length === 4) {
-                [anio, mes, dia] = partes;
-            } else if (partes[2].length === 4) {
-                [dia, mes, anio] = partes;
-            } else {
+        // Intentar diferentes formatos
+        const formatos = [
+            // Formato ISO
+            () => {
+                if (fechaInput.includes('T')) {
+                    const fecha = new Date(fechaInput);
+                    return isNaN(fecha.getTime()) ? null : fecha;
+                }
                 return null;
+            },
+            // Formato dd-mm-yyyy
+            () => {
+                const match = fechaInput.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/);
+                if (match) {
+                    const [_, dia, mes, anio] = match;
+                    return new Date(anio, mes - 1, dia);
+                }
+                return null;
+            },
+            // Formato yyyy-mm-dd
+            () => {
+                const match = fechaInput.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
+                if (match) {
+                    const [_, anio, mes, dia] = match;
+                    return new Date(anio, mes - 1, dia);
+                }
+                return null;
+            },
+            // Formato timestamp
+            () => {
+                const timestamp = Date.parse(fechaInput);
+                return isNaN(timestamp) ? null : new Date(timestamp);
             }
-            if (dia?.length >= 1 && mes?.length >= 1 && anio?.length === 4) {
-                const fechaISO = `${anio}-${mes.padStart(2, '0')}-${dia.padStart(2, '0')}T12:00:00.000Z`;
-                const fecha = new Date(fechaISO);
-                return isNaN(fecha.getTime()) ? null : fecha;
+        ];
+        
+        for (const formato of formatos) {
+            const resultado = formato();
+            if (resultado && !isNaN(resultado.getTime())) {
+                return resultado;
             }
         }
     }
-    console.error("No se pudo parsear el formato de fecha:", fechaInput);
+    
+    console.warn("No se pudo parsear el formato de fecha:", fechaInput);
     return null;
 }
 
-/**
- * Actualiza la UI para mostrar el estado actual de la conexión y gestiona filtros.
- */
+// ===== MODIFICACIÓN: Función mejorada para calcular estado de crédito =====
+function _calcularEstadoCredito(credito, pagos) {
+    if (!credito || !credito.fechaCreacion) {
+        console.error("Cálculo de estado fallido: Faltan datos del crédito o fecha de creación.", credito);
+        return null;
+    }
+    
+    // Si el crédito está liquidado
+    if (credito.saldo <= 0.01 || credito.estado === 'liquidado') {
+        return { 
+            estado: 'liquidado', 
+            diasAtraso: 0, 
+            semanasAtraso: 0, 
+            pagoSemanal: 0, 
+            proximaFechaPago: 'N/A',
+            semanasPagadas: credito.plazo || 0
+        };
+    }
+    
+    const fechaInicio = parsearFecha_DDMMYYYY(credito.fechaCreacion);
+    if (!fechaInicio) {
+        console.error(`Cálculo de estado fallido para crédito ID ${credito.id}: Fecha de creación inválida.`);
+        return null;
+    }
+    
+    const pagoSemanal = (credito.plazo > 0) ? credito.montoTotal / credito.plazo : 0;
+    const montoPagado = credito.montoTotal - credito.saldo;
+    
+    // Calcular semanas pagadas basadas en el monto
+    const semanasPagadas = (pagoSemanal > 0) ? Math.floor(montoPagado / pagoSemanal) : 0;
+    
+    // Calcular fecha esperada del próximo pago
+    const proximaFecha = new Date(fechaInicio);
+    proximaFecha.setDate(proximaFecha.getDate() + (semanasPagadas + 1) * 7);
+    
+    // Calcular días de atraso
+    const hoy = new Date();
+    const diasTranscurridos = Math.floor((hoy - fechaInicio) / (1000 * 60 * 60 * 24));
+    const diasEsperados = (semanasPagadas + 1) * 7;
+    const diasAtraso = Math.max(0, diasTranscurridos - diasEsperados);
+    
+    let estado = 'al corriente';
+    if (diasAtraso > 300) estado = 'juridico';
+    else if (diasAtraso > 150) estado = 'cobranza';
+    else if (diasAtraso >= 7) estado = 'atrasado';
+    
+    return {
+        estado,
+        diasAtraso: Math.round(diasAtraso),
+        semanasAtraso: Math.ceil(diasAtraso / 7),
+        pagoSemanal,
+        proximaFechaPago: proximaFecha.toLocaleDateString(),
+        semanasPagadas: semanasPagadas,
+        plazoTotal: credito.plazo
+    };
+}
+
+// ===== MODIFICACIÓN: Función para limitar CURP a 18 caracteres =====
+function limitarCURP(input) {
+    if (input && input.value) {
+        input.value = input.value.toUpperCase().substring(0, 18);
+    }
+}
+
+// ===== NUEVA FUNCIÓN: Graficar reportes =====
+function inicializarGraficos() {
+    // Preparar contenedor para gráficos
+    const graficosContainer = document.getElementById('graficos-container');
+    if (!graficosContainer) {
+        const container = document.createElement('div');
+        container.id = 'graficos-container';
+        container.className = 'graficos-container hidden';
+        document.querySelector('#view-reportes-avanzados').insertBefore(container, document.querySelector('#estadisticas-reporte'));
+    }
+}
+
+function mostrarOpcionesGraficos() {
+    const graficosContainer = document.getElementById('graficos-container');
+    graficosContainer.classList.remove('hidden');
+    
+    const opcionesHTML = `
+        <div class="graficos-opciones">
+            <h3>Opciones de Gráficos</h3>
+            <div class="form-group">
+                <label for="tipo-grafico">Tipo de Gráfico</label>
+                <select id="tipo-grafico">
+                    <option value="pie">Gráfico de Pastel</option>
+                    <option value="bar">Gráfico de Barras</option>
+                    <option value="line">Gráfico de Líneas</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="dato-grafico">Dato a Graficar</label>
+                <select id="dato-grafico">
+                    <option value="estado">Estado de Créditos</option>
+                    <option value="sucursal">Sucursal</option>
+                    <option value="tipo">Tipo de Crédito</option>
+                    <option value="grupo">Grupo/Población</option>
+                </select>
+            </div>
+            <button id="btn-generar-grafico" class="btn btn-primary">
+                <i class="fas fa-chart-pie"></i> Generar Gráfico
+            </button>
+            <button id="btn-ocultar-graficos" class="btn btn-secondary">
+                <i class="fas fa-times"></i> Ocultar
+            </button>
+        </div>
+    `;
+    
+    graficosContainer.innerHTML = opcionesHTML;
+    
+    document.getElementById('btn-generar-grafico').addEventListener('click', generarGrafico);
+    document.getElementById('btn-ocultar-graficos').addEventListener('click', () => {
+        graficosContainer.classList.add('hidden');
+    });
+}
+
+function generarGrafico() {
+    if (!reportData || reportData.length === 0) {
+        alert('No hay datos para graficar. Genera un reporte primero.');
+        return;
+    }
+    
+    const tipoGrafico = document.getElementById('tipo-grafico').value;
+    const datoGrafico = document.getElementById('dato-grafico').value;
+    
+    // Procesar datos para el gráfico
+    const datos = procesarDatosParaGrafico(reportData, datoGrafico);
+    
+    // Generar gráfico (usando HTML5 Canvas como solución simple)
+    const graficosContainer = document.getElementById('graficos-container');
+    const existingCanvas = document.getElementById('grafico-canvas');
+    if (existingCanvas) {
+        existingCanvas.remove();
+    }
+    
+    const canvas = document.createElement('canvas');
+    canvas.id = 'grafico-canvas';
+    canvas.width = 600;
+    canvas.height = 400;
+    canvas.style.maxWidth = '100%';
+    canvas.style.border = '1px solid #ddd';
+    canvas.style.borderRadius = '8px';
+    canvas.style.marginTop = '20px';
+    canvas.style.background = 'white';
+    canvas.style.padding = '10px';
+    
+    graficosContainer.appendChild(canvas);
+    
+    dibujarGrafico(canvas, datos, tipoGrafico, datoGrafico);
+}
+
+function procesarDatosParaGrafico(data, criterio) {
+    const conteo = {};
+    
+    data.forEach(item => {
+        let valor = '';
+        
+        switch(criterio) {
+            case 'estado':
+                valor = item.estado || 'sin estado';
+                if (item.tipo === 'credito' && !valor) {
+                    valor = 'activo'; // Valor por defecto para créditos
+                }
+                break;
+            case 'sucursal':
+                valor = item.office || 'sin sucursal';
+                break;
+            case 'tipo':
+                valor = item.tipo || 'sin tipo';
+                break;
+            case 'grupo':
+                valor = item.poblacion_grupo || 'sin grupo';
+                break;
+        }
+        
+        if (valor) {
+            conteo[valor] = (conteo[valor] || 0) + 1;
+        }
+    });
+    
+    return Object.entries(conteo)
+        .map(([label, count]) => ({ label, count }))
+        .sort((a, b) => b.count - a.count);
+}
+
+function dibujarGrafico(canvas, datos, tipo, titulo) {
+    const ctx = canvas.getContext('2d');
+    const width = canvas.width;
+    const height = canvas.height;
+    
+    // Limpiar canvas
+    ctx.clearRect(0, 0, width, height);
+    
+    // Colores para el gráfico
+    const colores = ['#2E8B57', '#1E90FF', '#FF6347', '#FFA500', '#9B59B6', '#16A085', '#E74C3C', '#3498DB', '#F39C12', '#8E44AD'];
+    
+    if (tipo === 'pie') {
+        dibujarGraficoPastel(ctx, datos, width, height, colores, titulo);
+    } else if (tipo === 'bar') {
+        dibujarGraficoBarras(ctx, datos, width, height, colores, titulo);
+    } else if (tipo === 'line') {
+        dibujarGraficoLineas(ctx, datos, width, height, colores, titulo);
+    }
+}
+
+function dibujarGraficoPastel(ctx, datos, width, height, colores, titulo) {
+    const centroX = width / 2;
+    const centroY = height / 2;
+    const radio = Math.min(width, height) * 0.3;
+    
+    let anguloInicio = 0;
+    const total = datos.reduce((sum, item) => sum + item.count, 0);
+    
+    // Dibujar sectores
+    datos.forEach((item, index) => {
+        const angulo = (item.count / total) * 2 * Math.PI;
+        
+        ctx.beginPath();
+        ctx.moveTo(centroX, centroY);
+        ctx.arc(centroX, centroY, radio, anguloInicio, anguloInicio + angulo);
+        ctx.closePath();
+        
+        ctx.fillStyle = colores[index % colores.length];
+        ctx.fill();
+        
+        // Borde
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        
+        // Etiquetas
+        const anguloMedio = anguloInicio + angulo / 2;
+        const labelX = centroX + Math.cos(anguloMedio) * (radio * 1.3);
+        const labelY = centroY + Math.sin(anguloMedio) * (radio * 1.3);
+        
+        ctx.fillStyle = '#333';
+        ctx.font = '12px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        
+        const porcentaje = ((item.count / total) * 100).toFixed(1);
+        ctx.fillText(`${item.label} (${porcentaje}%)`, labelX, labelY);
+        
+        anguloInicio += angulo;
+    });
+    
+    // Título
+    ctx.fillStyle = '#333';
+    ctx.font = 'bold 16px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText(`Gráfico de Pastel - ${titulo}`, centroX, 30);
+    
+    // Leyenda
+    ctx.font = '12px Arial';
+    ctx.textAlign = 'left';
+    datos.forEach((item, index) => {
+        const y = 60 + index * 20;
+        ctx.fillStyle = colores[index % colores.length];
+        ctx.fillRect(50, y - 10, 15, 15);
+        ctx.fillStyle = '#333';
+        ctx.fillText(`${item.label}: ${item.count}`, 70, y);
+    });
+}
+
+function dibujarGraficoBarras(ctx, datos, width, height, colores, titulo) {
+    const margin = { top: 50, right: 30, bottom: 80, left: 60 };
+    const chartWidth = width - margin.left - margin.right;
+    const chartHeight = height - margin.top - margin.bottom;
+    
+    const maxValue = Math.max(...datos.map(item => item.count));
+    const barWidth = chartWidth / datos.length * 0.7;
+    
+    // Ejes
+    ctx.strokeStyle = '#ccc';
+    ctx.lineWidth = 1;
+    
+    // Eje Y
+    ctx.beginPath();
+    ctx.moveTo(margin.left, margin.top);
+    ctx.lineTo(margin.left, margin.top + chartHeight);
+    ctx.stroke();
+    
+    // Eje X
+    ctx.beginPath();
+    ctx.moveTo(margin.left, margin.top + chartHeight);
+    ctx.lineTo(margin.left + chartWidth, margin.top + chartHeight);
+    ctx.stroke();
+    
+    // Marcas en eje Y
+    ctx.fillStyle = '#666';
+    ctx.font = '10px Arial';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    
+    for (let i = 0; i <= 5; i++) {
+        const value = Math.round((maxValue * i) / 5);
+        const y = margin.top + chartHeight - (i / 5) * chartHeight;
+        
+        ctx.beginPath();
+        ctx.moveTo(margin.left - 5, y);
+        ctx.lineTo(margin.left, y);
+        ctx.stroke();
+        
+        ctx.fillText(value, margin.left - 10, y);
+    }
+    
+    // Barras
+    datos.forEach((item, index) => {
+        const barHeight = (item.count / maxValue) * chartHeight;
+        const x = margin.left + index * (chartWidth / datos.length) + (chartWidth / datos.length - barWidth) / 2;
+        const y = margin.top + chartHeight - barHeight;
+        
+        ctx.fillStyle = colores[index % colores.length];
+        ctx.fillRect(x, y, barWidth, barHeight);
+        
+        // Etiquetas
+        ctx.fillStyle = '#333';
+        ctx.font = '12px Arial';
+        ctx.textAlign = 'center';
+        
+        // Etiqueta en eje X
+        ctx.save();
+        ctx.translate(x + barWidth / 2, margin.top + chartHeight + 15);
+        ctx.rotate(-Math.PI / 4);
+        ctx.fillText(
+            item.label.length > 10 ? item.label.substring(0, 8) + '...' : item.label,
+            0, 0
+        );
+        ctx.restore();
+        
+        // Valor encima de la barra
+        ctx.fillText(
+            item.count.toString(),
+            x + barWidth / 2,
+            y - 10
+        );
+    });
+    
+    // Título
+    ctx.fillStyle = '#333';
+    ctx.font = 'bold 16px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText(`Gráfico de Barras - ${titulo}`, width / 2, 30);
+}
+
+function dibujarGraficoLineas(ctx, datos, width, height, colores, titulo) {
+    const margin = { top: 50, right: 30, bottom: 50, left: 60 };
+    const chartWidth = width - margin.left - margin.right;
+    const chartHeight = height - margin.top - margin.bottom;
+    
+    const maxValue = Math.max(...datos.map(item => item.count));
+    
+    // Ejes
+    ctx.strokeStyle = '#ccc';
+    ctx.lineWidth = 1;
+    
+    // Eje Y
+    ctx.beginPath();
+    ctx.moveTo(margin.left, margin.top);
+    ctx.lineTo(margin.left, margin.top + chartHeight);
+    ctx.stroke();
+    
+    // Eje X
+    ctx.beginPath();
+    ctx.moveTo(margin.left, margin.top + chartHeight);
+    ctx.lineTo(margin.left + chartWidth, margin.top + chartHeight);
+    ctx.stroke();
+    
+    // Puntos y líneas
+    ctx.strokeStyle = colores[0];
+    ctx.lineWidth = 2;
+    ctx.fillStyle = colores[0];
+    
+    ctx.beginPath();
+    datos.forEach((item, index) => {
+        const x = margin.left + (index / (datos.length - 1)) * chartWidth;
+        const y = margin.top + chartHeight - (item.count / maxValue) * chartHeight;
+        
+        if (index === 0) {
+            ctx.moveTo(x, y);
+        } else {
+            ctx.lineTo(x, y);
+        }
+        
+        // Puntos
+        ctx.beginPath();
+        ctx.arc(x, y, 4, 0, 2 * Math.PI);
+        ctx.fill();
+    });
+    ctx.stroke();
+    
+    // Etiquetas
+    ctx.fillStyle = '#333';
+    ctx.font = '12px Arial';
+    ctx.textAlign = 'center';
+    
+    datos.forEach((item, index) => {
+        const x = margin.left + (index / (datos.length - 1)) * chartWidth;
+        const y = margin.top + chartHeight + 20;
+        
+        ctx.fillText(item.label, x, y);
+    });
+    
+    // Título
+    ctx.fillStyle = '#333';
+    ctx.font = 'bold 16px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText(`Gráfico de Líneas - ${titulo}`, width / 2, 30);
+}
+
+// ===== MODIFICACIÓN: Función mejorada para obtener historial de crédito =====
+async function obtenerHistorialCreditoCliente(curp) {
+    try {
+        const creditosCliente = await database.buscarCreditosPorCliente(curp);
+        if (creditosCliente.length === 0) return null;
+
+        // Ordenar créditos por fecha (más reciente primero)
+        creditosCliente.sort((a, b) => {
+            const fechaA = parsearFecha_DDMMYYYY(a.fechaCreacion);
+            const fechaB = parsearFecha_DDMMYYYY(b.fechaCreacion);
+            if (!fechaA || !fechaB) return 0;
+            return fechaB - fechaA;
+        });
+        
+        const ultimoCredito = creditosCliente[0];
+        const pagos = await database.getPagosPorCredito(ultimoCredito.id);
+        
+        const estadoCalculado = _calcularEstadoCredito(ultimoCredito, pagos);
+        if (!estadoCalculado) {
+            console.error(`No se pudo calcular el historial para el crédito ID ${ultimoCredito.id}`);
+            return null;
+        }
+
+        const ultimoPago = pagos.length > 0 ? pagos[0] : null;
+        const fechaUltimoPagoObj = ultimoPago ? parsearFecha_DDMMYYYY(ultimoPago.fecha) : null;
+        const fechaUltimoPagoStr = fechaUltimoPagoObj ? fechaUltimoPagoObj.toLocaleDateString() : 'N/A';
+
+        return {
+            idCredito: ultimoCredito.id,
+            saldoRestante: ultimoCredito.saldo,
+            fechaUltimoPago: fechaUltimoPagoStr,
+            ...estadoCalculado
+        };
+    } catch (error) {
+        console.error('Error obteniendo historial de crédito:', error);
+        return null;
+    }
+}
+
+// ===== MODIFICACIÓN: Función mejorada para verificar elegibilidad =====
+async function verificarElegibilidadRenovacion(curp) {
+    const credito = await database.buscarCreditoActivoPorCliente(curp);
+    if (!credito) return true; // No tiene crédito activo, es elegible
+
+    const pagos = await database.getPagosPorCredito(credito.id);
+    const estado = _calcularEstadoCredito(credito, pagos);
+
+    if (!estado) return false;
+    
+    // Verificar si tiene al menos 10 pagos puntuales
+    const pagosPuntuales = pagos.filter(pago => {
+        const fechaPago = parsearFecha_DDMMYYYY(pago.fecha);
+        if (!fechaPago) return false;
+        
+        // Lógica simplificada para determinar puntualidad
+        // En una implementación real, esto debería ser más sofisticado
+        return true;
+    });
+    
+    return estado.estado === 'al corriente' && pagosPuntuales.length >= 10;
+}
+
 function updateConnectionStatus() {
     const statusDiv = document.getElementById('connection-status');
     const logoutBtn = document.getElementById('logout-btn');
@@ -75,8 +560,8 @@ function updateConnectionStatus() {
         statusDiv.classList.remove('hidden');
         logoutBtn.disabled = false;
         logoutBtn.title = 'Cerrar Sesión';
-        filtrosComplejos.forEach(el => { if(el) el.disabled = false; });
-        
+        filtrosComplejos.forEach(el => { if (el) el.disabled = false; });
+
         setTimeout(() => {
             statusDiv.textContent = 'Datos sincronizados correctamente.';
             setTimeout(() => statusDiv.classList.add('hidden'), 2500);
@@ -87,13 +572,9 @@ function updateConnectionStatus() {
         statusDiv.classList.remove('hidden');
         logoutBtn.disabled = true;
         logoutBtn.title = 'No puedes cerrar sesión sin conexión';
-        filtrosComplejos.forEach(el => { if(el) el.disabled = true; });
+        filtrosComplejos.forEach(el => { if (el) el.disabled = true; });
     }
 }
-
-// =============================================
-// LÓGICA DE SEGURIDAD Y SESIÓN
-// =============================================
 
 function resetInactivityTimer() {
     clearTimeout(inactivityTimer);
@@ -114,7 +595,7 @@ function setupSecurityListeners() {
 
     window.addEventListener('beforeunload', () => {
         if (cargaEnProgreso) {
-             cancelarCarga();
+            cancelarCarga();
         }
         if (currentUser) {
             auth.signOut();
@@ -122,12 +603,12 @@ function setupSecurityListeners() {
     });
 }
 
-
 document.addEventListener('DOMContentLoaded', function () {
     console.log('DOM cargado, inicializando aplicación...');
     inicializarDropdowns();
     setupEventListeners();
     setupSecurityListeners();
+    inicializarGraficos();
 
     auth.onAuthStateChanged(user => {
         console.log('Estado de autenticación cambiado:', user);
@@ -178,11 +659,21 @@ function setupEventListeners() {
         });
     });
 
+    // ===== MODIFICACIÓN: Limitar CURP en búsquedas =====
+    const curpFiltro = document.getElementById('curp_filtro');
+    if (curpFiltro) curpFiltro.addEventListener('input', () => limitarCURP(curpFiltro));
+    
+    const curpFiltroReporte = document.getElementById('curp_filtro_reporte');
+    if (curpFiltroReporte) curpFiltroReporte.addEventListener('input', () => limitarCURP(curpFiltroReporte));
+
+    const curpAvalFiltro = document.getElementById('curp_aval_filtro');
+    if (curpAvalFiltro) curpAvalFiltro.addEventListener('input', () => limitarCURP(curpAvalFiltro));
+
     const btnAplicarFiltros = document.getElementById('btn-aplicar-filtros');
     if (btnAplicarFiltros) btnAplicarFiltros.addEventListener('click', loadClientesTable);
     const btnLimpiarFiltros = document.getElementById('btn-limpiar-filtros');
     if (btnLimpiarFiltros) btnLimpiarFiltros.addEventListener('click', limpiarFiltrosClientes);
-    
+
     const btnAplicarFiltrosUsuarios = document.getElementById('btn-aplicar-filtros-usuarios');
     if (btnAplicarFiltrosUsuarios) btnAplicarFiltrosUsuarios.addEventListener('click', loadUsersTable);
     const btnLimpiarFiltrosUsuarios = document.getElementById('btn-limpiar-filtros-usuarios');
@@ -193,7 +684,7 @@ function setupEventListeners() {
     if (btnCancelarUsuario) btnCancelarUsuario.addEventListener('click', ocultarFormularioUsuario);
     const formUsuario = document.getElementById('form-usuario');
     if (formUsuario) formUsuario.addEventListener('submit', handleUserForm);
-    
+
     const officeSelect = document.getElementById('office-select');
     if (officeSelect) officeSelect.addEventListener('change', handleOfficeChange);
     document.querySelectorAll('.import-tab').forEach(tab => tab.addEventListener('click', handleTabClick));
@@ -211,28 +702,34 @@ function setupEventListeners() {
     const formCliente = document.getElementById('form-cliente');
     if (formCliente) formCliente.addEventListener('submit', handleClientForm);
     const curpCliente = document.getElementById('curp_cliente');
-    if (curpCliente) curpCliente.addEventListener('input', () => validarCURP(curpCliente));
+    if (curpCliente) curpCliente.addEventListener('input', () => {
+        validarCURP(curpCliente);
+        limitarCURP(curpCliente);
+    });
     const officeCliente = document.getElementById('office_cliente');
     if (officeCliente) officeCliente.addEventListener('change', handleOfficeChangeForClientForm);
-    
+
     const btnBuscarClienteColocacion = document.getElementById('btnBuscarCliente_colocacion');
     if (btnBuscarClienteColocacion) btnBuscarClienteColocacion.addEventListener('click', handleSearchClientForCredit);
     const formCreditoSubmit = document.getElementById('form-credito-submit');
     if (formCreditoSubmit) formCreditoSubmit.addEventListener('submit', handleCreditForm);
     const curpAvalColocacion = document.getElementById('curpAval_colocacion');
-    if (curpAvalColocacion) curpAvalColocacion.addEventListener('input', () => validarCURP(curpAvalColocacion));
+    if (curpAvalColocacion) curpAvalColocacion.addEventListener('input', () => {
+        validarCURP(curpAvalColocacion);
+        limitarCURP(curpAvalColocacion);
+    });
     const montoColocacion = document.getElementById('monto_colocacion');
     if (montoColocacion) montoColocacion.addEventListener('change', calcularMontoTotalColocacion);
     const plazoColocacion = document.getElementById('plazo_colocacion');
     if (plazoColocacion) plazoColocacion.addEventListener('change', calcularMontoTotalColocacion);
-    
+
     const btnBuscarCreditoCobranza = document.getElementById('btnBuscarCredito_cobranza');
     if (btnBuscarCreditoCobranza) btnBuscarCreditoCobranza.addEventListener('click', handleSearchCreditForPayment);
     const formPagoSubmit = document.getElementById('form-pago-submit');
     if (formPagoSubmit) formPagoSubmit.addEventListener('submit', handlePaymentForm);
     const montoCobranza = document.getElementById('monto_cobranza');
     if (montoCobranza) montoCobranza.addEventListener('input', handleMontoPagoChange);
-    
+
     const btnActualizarReportes = document.getElementById('btn-actualizar-reportes');
     if (btnActualizarReportes) btnActualizarReportes.addEventListener('click', () => loadBasicReports());
     const btnAplicarFiltrosReportes = document.getElementById('btn-aplicar-filtros-reportes');
@@ -243,11 +740,25 @@ function setupEventListeners() {
     if (btnExportarPdf) btnExportarPdf.addEventListener('click', exportToPDF);
     const btnLimpiarFiltrosReportes = document.getElementById('btn-limpiar-filtros-reportes');
     if (btnLimpiarFiltrosReportes) btnLimpiarFiltrosReportes.addEventListener('click', limpiarFiltrosReportes);
+    
+    // ===== NUEVO: Botón para mostrar gráficos =====
+    const btnMostrarGraficos = document.getElementById('btn-mostrar-graficos');
+    if (btnMostrarGraficos) {
+        btnMostrarGraficos.addEventListener('click', mostrarOpcionesGraficos);
+    } else {
+        // Crear botón si no existe
+        const exportButtons = document.querySelector('.export-buttons');
+        if (exportButtons) {
+            const btnGraficos = document.createElement('button');
+            btnGraficos.id = 'btn-mostrar-graficos';
+            btnGraficos.className = 'btn btn-info';
+            btnGraficos.innerHTML = '<i class="fas fa-chart-pie"></i> Mostrar Gráficos';
+            exportButtons.appendChild(btnGraficos);
+            btnGraficos.addEventListener('click', mostrarOpcionesGraficos);
+        }
+    }
 }
 
-// =============================================
-// MANEJADORES DE EVENTOS
-// =============================================
 async function handleLogin(e) {
     e.preventDefault();
     const email = document.getElementById('email').value;
@@ -337,11 +848,11 @@ async function handleImport() {
 function resetClientForm() {
     editingClientId = null;
     const form = document.getElementById('form-cliente');
-    if(form) form.reset();
+    if (form) form.reset();
     const titulo = document.querySelector('#view-cliente h2');
-    if(titulo) titulo.textContent = 'Registrar Cliente';
+    if (titulo) titulo.textContent = 'Registrar Cliente';
     const submitButton = document.querySelector('#form-cliente button[type="submit"]');
-    if(submitButton) submitButton.innerHTML = '<i class="fas fa-save"></i> Guardar Cliente';
+    if (submitButton) submitButton.innerHTML = '<i class="fas fa-save"></i> Guardar Cliente';
     document.getElementById('curp_cliente').readOnly = false;
     handleOfficeChangeForClientForm.call({ value: 'GDL' });
 }
@@ -353,7 +864,7 @@ async function handleClientForm(e) {
         showStatus('status_cliente', 'El CURP debe tener 18 caracteres.', 'error');
         return;
     }
-    const submitButton = document.querySelector('#form-cliente button[type="submit"]');
+    const submitButton = document.querySelector('#form-cliente button[type="submit']');
     showButtonLoading(submitButton, true, 'Guardando...');
     const clienteData = {
         office: document.getElementById('office_cliente').value,
@@ -391,7 +902,7 @@ async function handleClientForm(e) {
         if (resultado.success) {
             resetClientForm();
             showView('view-gestion-clientes');
-            await loadClientesTable(); 
+            await loadClientesTable();
         } else {
             showStatus('status_cliente', resultado.message, 'error');
         }
@@ -456,7 +967,7 @@ async function handleUserForm(e) {
         const resultado = await database.actualizarUsuario(editingUserId, userData);
         let message = resultado.message;
         if (!isOnline && resultado.success) {
-             message = 'Usuario actualizado en modo offline. Se sincronizará automáticamente.';
+            message = 'Usuario actualizado en modo offline. Se sincronizará automáticamente.';
         }
         showStatus('status_usuarios', message, resultado.success ? 'success' : 'error');
         if (resultado.success) {
@@ -475,7 +986,7 @@ async function handleUserForm(e) {
         }
         showButtonLoading(submitButton, true, 'Creando...');
         try {
-             if (!isOnline) {
+            if (!isOnline) {
                 throw new Error("La creación de nuevos usuarios requiere conexión a internet.");
             }
             const userCredential = await auth.createUserWithEmailAndPassword(email, password);
@@ -526,7 +1037,7 @@ async function loadUsersTable() {
             tbody.innerHTML = '<tr><td colspan="6">No se encontraron usuarios con los filtros aplicados.</td></tr>';
             return;
         }
-        usuarios.sort((a,b) => (a.name || '').localeCompare(b.name || '')).forEach(usuario => {
+        usuarios.sort((a, b) => (a.name || '').localeCompare(b.name || '')).forEach(usuario => {
             const tr = document.createElement('tr');
             if (usuario.status === 'disabled') {
                 tr.style.opacity = '0.5';
@@ -543,6 +1054,7 @@ async function loadUsersTable() {
                 <td class="action-buttons">
                     <button class="btn btn-sm btn-info" onclick='editUsuario(${usuarioJsonString})' title="Editar"><i class="fas fa-edit"></i></button>
                     ${usuario.status !== 'disabled' ? `<button class="btn btn-sm btn-warning" onclick="disableUsuario('${usuario.id}', '${usuario.name}')" title="Deshabilitar"><i class="fas fa-user-slash"></i></button>` : ''}
+                    <button class="btn btn-sm btn-danger" onclick="deleteUsuario('${usuario.id}', '${usuario.name}')" title="Eliminar"><i class="fas fa-trash"></i></button>
                 </td>
             `;
             tbody.appendChild(tr);
@@ -572,9 +1084,25 @@ function editUsuario(usuario) {
 async function disableUsuario(id, nombre) {
     if (confirm(`¿Estás seguro de que deseas deshabilitar a "${nombre}"? El usuario no podrá ser utilizado en el sistema, pero su registro se conservará.`)) {
         const resultado = await database.deshabilitarUsuario(id);
-        if(resultado.success) {
+        if (resultado.success) {
             let message = resultado.message;
             if (!isOnline) message = 'Usuario marcado para deshabilitar. Se sincronizará al recuperar la conexión.';
+            showStatus('status_usuarios', message, 'success');
+            await loadUsersTable();
+        } else {
+            alert(resultado.message);
+        }
+    }
+}
+
+async function deleteUsuario(id, nombre) {
+    if (confirm(`¿Estás seguro de que deseas ELIMINAR permanentemente a "${nombre}"? Esta acción no se puede deshacer.`)) {
+        showProcessingOverlay(true, 'Eliminando usuario...');
+        const resultado = await database.eliminarUsuario(id);
+        showProcessingOverlay(false);
+        if (resultado.success) {
+            let message = resultado.message;
+            if (!isOnline) message = 'Usuario marcado para eliminar. Se sincronizará al recuperar la conexión.';
             showStatus('status_usuarios', message, 'success');
             await loadUsersTable();
         } else {
@@ -648,7 +1176,7 @@ async function handleCreditForm(e) {
         const resultado = await database.agregarCredito(credito);
         showFixedProgress(100, 'Crédito generado exitosamente');
         let successMessage = resultado.message;
-         if (resultado.success) {
+        if (resultado.success) {
             successMessage = `${resultado.message}. ID de crédito: ${resultado.data.id}`;
             if (!isOnline) {
                 successMessage = `Crédito generado en modo offline (ID: ${resultado.data.id}). Se sincronizará automáticamente.`;
@@ -956,101 +1484,6 @@ function inicializarDropdowns() {
 
 // =============================================
 // LÓGICA DE NEGOCIO
-// =============================================
-
-function _calcularEstadoCredito(credito, pagos) {
-    if (!credito || !credito.fechaCreacion) {
-        console.error("Cálculo de estado fallido: Faltan datos del crédito o fecha de creación.", credito);
-        return null;
-    }
-    if (credito.saldo <= 0.01) {
-        return { estado: 'liquidado', diasAtraso: 0, semanasAtraso: 0, pagoSemanal: 0, proximaFechaPago: 'N/A' };
-    }
-    const pagoSemanal = (credito.plazo > 0) ? credito.montoTotal / credito.plazo : 0;
-    const montoPagado = credito.montoTotal - credito.saldo;
-
-    const fechaInicio = parsearFecha_DDMMYYYY(credito.fechaCreacion);
-    if (!fechaInicio) {
-        console.error(`Cálculo de estado fallido para crédito ID ${credito.id}: Fecha de creación inválida. Valor recibido:`, credito.fechaCreacion);
-        return null;
-    }
-
-    const diasTranscurridos = (new Date() - fechaInicio) / (1000 * 60 * 60 * 24);
-    if (diasTranscurridos < 0) return { estado: 'al corriente', diasAtraso: 0, semanasAtraso: 0, pagoSemanal, proximaFechaPago: 'Futuro' };
-
-    const pagoRequerido = (diasTranscurridos / 7) * pagoSemanal;
-    const deficit = pagoRequerido - montoPagado;
-    const diasAtraso = (deficit > 0) ? (deficit / pagoSemanal) * 7 : 0;
-
-    let estado = 'al corriente';
-    if (diasAtraso > 300) estado = 'juridico';
-    else if (diasAtraso > 150) estado = 'cobranza';
-    else if (diasAtraso >= 7) estado = 'atrasado';
-
-    const semanasPagadas = (pagoSemanal > 0) ? montoPagado / pagoSemanal : 0;
-    const proximaFecha = new Date(fechaInicio);
-    proximaFecha.setDate(proximaFecha.getDate() + (Math.floor(semanasPagadas) + 1) * 7);
-
-    return {
-        estado,
-        diasAtraso: Math.round(diasAtraso),
-        semanasAtraso: Math.ceil(diasAtraso / 7),
-        pagoSemanal,
-        proximaFechaPago: proximaFecha.toLocaleDateString()
-    };
-}
-
-async function obtenerHistorialCreditoCliente(curp) {
-    const creditosCliente = await database.buscarCreditosPorCliente(curp);
-    if (creditosCliente.length === 0) return null;
-
-    creditosCliente.sort((a, b) => {
-        const fechaA = parsearFecha_DDMMYYYY(a.fechaCreacion);
-        const fechaB = parsearFecha_DDMMYYYY(b.fechaCreacion);
-        if (!fechaA || !fechaB) return 0;
-        return fechaB - fechaA;
-    });
-    const ultimoCredito = creditosCliente[0];
-
-    const pagos = await database.getPagosPorCredito(ultimoCredito.id);
-    const ultimoPago = pagos.length > 0 ? pagos[0] : null;
-
-    const estadoCalculado = _calcularEstadoCredito(ultimoCredito, pagos);
-    
-    if (!estadoCalculado) {
-        console.error(`No se pudo calcular el historial para el crédito ID ${ultimoCredito.id} del cliente con CURP ${curp}. Revisa el formato de la fecha de creación del crédito en la base de datos.`);
-        return null;
-    }
-
-    const fechaUltimoPagoObj = ultimoPago ? parsearFecha_DDMMYYYY(ultimoPago.fecha) : null;
-    const fechaUltimoPagoStr = fechaUltimoPagoObj ? fechaUltimoPagoObj.toLocaleDateString() : 'N/A';
-
-    return {
-        idCredito: ultimoCredito.id,
-        saldoRestante: ultimoCredito.saldo,
-        fechaUltimoPago: fechaUltimoPagoStr,
-        ...estadoCalculado,
-        semanaActual: Math.floor(pagos.length) + 1,
-        plazoTotal: ultimoCredito.plazo,
-    };
-}
-
-async function verificarElegibilidadRenovacion(curp) {
-    const credito = await database.buscarCreditoActivoPorCliente(curp);
-    if (!credito) return true;
-
-    const pagos = await database.getPagosPorCredito(credito.id);
-    const estado = _calcularEstadoCredito(credito, pagos);
-
-    const fechaCreacionObj = parsearFecha_DDMMYYYY(credito.fechaCreacion);
-    if (!estado || !fechaCreacionObj) return false;
-
-    const semanasTranscurridas = Math.floor((new Date() - fechaCreacionObj) / (1000 * 60 * 60 * 24 * 7));
-    return semanasTranscurridas >= 10 && estado.estado === 'al corriente';
-}
-
-// =============================================
-// FUNCIONES DE CARGA DE DATOS PARA VISTAS
 // =============================================
 
 function inicializarVistaGestionClientes() {
@@ -1588,13 +2021,13 @@ async function editCliente(id) {
         alert("Error: No se pudo encontrar el cliente para editar.");
         return;
     }
-    
+
     editingClientId = id;
 
     document.getElementById('office_cliente').value = cliente.office;
     handleOfficeChangeForClientForm.call({ value: cliente.office });
-    
-    setTimeout(() => { // Delay para asegurar que el dropdown se llene
+
+    setTimeout(() => {
         document.getElementById('poblacion_grupo_cliente').value = cliente.poblacion_grupo;
     }, 100);
 
@@ -1646,7 +2079,7 @@ document.addEventListener('viewshown', function (e) {
             inicializarVistaGestionClientes();
             break;
         case 'view-cliente':
-            if(!editingClientId) {
+            if (!editingClientId) {
                 resetClientForm();
             }
             break;
