@@ -605,39 +605,106 @@ function setupSecurityListeners() {
 
 document.addEventListener('DOMContentLoaded', function () {
     console.log('DOM cargado, inicializando aplicación...');
-    inicializarDropdowns();
-    setupEventListeners();
-    setupSecurityListeners();
-    inicializarGraficos();
+    
+    // Ocultar loading overlay inicialmente
+    const loadingOverlay = document.getElementById('loading-overlay');
+    
+    // Configurar timeout de seguridad para el loading
+    const loadingTimeout = setTimeout(() => {
+        console.warn('⚠️ Timeout de carga alcanzado, forzando continuar...');
+        loadingOverlay.classList.add('hidden');
+        document.getElementById('login-screen').classList.remove('hidden');
+    }, 10000); // 10 segundos timeout
 
-    auth.onAuthStateChanged(user => {
-        console.log('Estado de autenticación cambiado:', user);
-        if (user) {
-            currentUser = user;
-            db.collection('users').doc(user.uid).get().then(doc => {
-                if (doc.exists) {
-                    const userData = doc.data();
-                    document.getElementById('user-name').textContent = userData.name || user.email;
-                    document.getElementById('user-role-display').textContent = userData.role || 'Usuario';
+    const initializeApp = async () => {
+        try {
+            console.log('🔄 Inicializando aplicación...');
+            
+            // Inicializar componentes
+            inicializarDropdowns();
+            setupEventListeners();
+            setupSecurityListeners();
+            inicializarGraficos();
+
+            // Verificar si Firebase está disponible
+            if (typeof firebase === 'undefined') {
+                throw new Error('Firebase no está cargado');
+            }
+
+            console.log('✅ Componentes inicializados, configurando auth listener...');
+
+            // Configurar el observer de autenticación
+            auth.onAuthStateChanged(user => {
+                console.log('🔐 Estado de autenticación cambiado:', user ? 'Usuario autenticado' : 'No autenticado');
+                
+                // Limpiar timeout de seguridad
+                clearTimeout(loadingTimeout);
+                
+                // Ocultar loading overlay
+                loadingOverlay.classList.add('hidden');
+
+                if (user) {
+                    currentUser = user;
+                    console.log('👤 Usuario autenticado:', user.email);
+                    
+                    // Obtener datos del usuario
+                    db.collection('users').doc(user.uid).get().then(doc => {
+                        if (doc.exists) {
+                            const userData = doc.data();
+                            document.getElementById('user-name').textContent = userData.name || user.email;
+                            document.getElementById('user-role-display').textContent = userData.role || 'Usuario';
+                        } else {
+                            document.getElementById('user-name').textContent = user.email;
+                            document.getElementById('user-role-display').textContent = "Rol no definido";
+                        }
+                    }).catch(error => {
+                        console.error('Error obteniendo datos de usuario:', error);
+                        document.getElementById('user-name').textContent = user.email;
+                        document.getElementById('user-role-display').textContent = "Error cargando datos";
+                    });
+
+                    // Mostrar aplicación principal
+                    document.getElementById('login-screen').classList.add('hidden');
+                    document.getElementById('main-app').classList.remove('hidden');
+                    
+                    updateConnectionStatus();
+                    resetInactivityTimer();
+                    
+                    console.log('✅ Aplicación principal cargada');
+                    
                 } else {
-                    document.getElementById('user-name').textContent = user.email;
-                    document.getElementById('user-role-display').textContent = "Rol no definido";
+                    currentUser = null;
+                    clearTimeout(inactivityTimer);
+                    
+                    // Mostrar pantalla de login
+                    document.getElementById('main-app').classList.add('hidden');
+                    document.getElementById('login-screen').classList.remove('hidden');
+                    
+                    console.log('✅ Pantalla de login mostrada');
                 }
+            }, error => {
+                console.error('❌ Error en observer de autenticación:', error);
+                loadingOverlay.classList.add('hidden');
+                document.getElementById('login-screen').classList.remove('hidden');
+                
+                // Mostrar error al usuario
+                showStatus('auth-status', 'Error de conexión. Intenta recargar la página.', 'error');
             });
 
-            document.getElementById('loading-overlay').classList.add('hidden');
-            document.getElementById('login-screen').classList.add('hidden');
-            document.getElementById('main-app').classList.remove('hidden');
-            updateConnectionStatus();
-            resetInactivityTimer();
-        } else {
-            currentUser = null;
-            clearTimeout(inactivityTimer);
-            document.getElementById('loading-overlay').classList.add('hidden');
-            document.getElementById('main-app').classList.add('hidden');
+        } catch (error) {
+            console.error('❌ Error crítico en inicialización:', error);
+            
+            // Limpiar timeout y mostrar interfaz de error
+            clearTimeout(loadingTimeout);
+            loadingOverlay.classList.add('hidden');
             document.getElementById('login-screen').classList.remove('hidden');
+            
+            showStatus('auth-status', `Error de inicialización: ${error.message}`, 'error');
         }
-    });
+    };
+
+    // Iniciar la aplicación
+    initializeApp();
 });
 
 function setupEventListeners() {
@@ -2087,3 +2154,4 @@ document.addEventListener('viewshown', function (e) {
 });
 
 console.log('app.js cargado correctamente');
+
