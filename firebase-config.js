@@ -23,9 +23,13 @@ try {
 const auth = firebase.auth();
 const db = firebase.firestore();
 
-// ===== INICIO DE LA MODIFICACIÓN (Manejo de errores de persistencia mejorado) =====
-// Configurar persistencia offline
-db.enablePersistence()
+// ===== INICIO DE LA MODIFICACIÓN (Persistencia de SESIÓN) =====
+auth.setPersistence(firebase.auth.Auth.Persistence.SESSION)
+    .then(() => {
+        console.log("✅ Persistencia de sesión establecida. La sesión se cerrará al cerrar la pestaña.");
+        // Habilitar la persistencia de datos de Firestore DESPUÉS de configurar la de Auth.
+        return db.enablePersistence();
+    })
     .then(() => {
         console.log('✅ Persistencia offline de Firestore activada');
     })
@@ -34,12 +38,12 @@ db.enablePersistence()
         if (err.code === 'failed-precondition') {
             message = 'Error Crítico de Persistencia: La aplicación solo puede estar abierta en una pestaña a la vez para que el modo offline funcione. Por favor, cierra las otras pestañas.';
             console.error(message);
-            alert(message); // Alerta visible para el usuario
+            alert(message);
         } else if (err.code === 'unimplemented') {
             message = '⚠️ Persistencia offline no disponible en este navegador.';
             console.warn(message);
         } else {
-            message = `❌ Error en persistencia offline: ${err.message}`;
+            message = `❌ Error en persistencia: ${err.message}`;
             console.error(message);
         }
     });
