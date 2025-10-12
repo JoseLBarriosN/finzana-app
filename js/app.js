@@ -14,49 +14,41 @@ let isOnline = true;
 let inactivityTimer; // Temporizador para el cierre de sesión por inactividad
 
 /**
- * Parsea de forma segura una fecha que puede ser un string (dd-mm-yyyy, yyyy-mm-dd, ISO)
- * o un objeto Timestamp de Firestore.
- * @param {string|object} fechaInput La cadena de texto o el objeto de fecha.
+ * Parsea de forma segura una fecha que puede ser un string, un objeto Timestamp de Firestore o un objeto Date.
+ * @param {string|object|Date} fechaInput La entrada de fecha.
  * @returns {Date|null} Un objeto Date válido o null si el formato es incorrecto.
  */
-function parsearFecha_DDMMYYYY(fechaInput) {
-    if (!fechaInput) {
-        return null;
-    }
-    if (typeof fechaInput === 'object' && fechaInput.toDate && typeof fechaInput.toDate === 'function') {
+function parsearFecha(fechaInput) {
+    if (!fechaInput) return null;
+    if (fechaInput instanceof Date) return fechaInput;
+    if (typeof fechaInput === 'object' && typeof fechaInput.toDate === 'function') {
         return fechaInput.toDate();
     }
     if (typeof fechaInput === 'string') {
-        const fechaStr = fechaInput;
-        if (fechaStr.includes('T') && fechaStr.includes('Z')) {
-            const fecha = new Date(fechaStr);
-            return isNaN(fecha.getTime()) ? null : fecha;
-        }
-        const separador = fechaStr.includes('-') ? '-' : (fechaStr.includes('/') ? '/' : null);
-        if (!separador) {
-            const fechaDirecta = new Date(fechaStr);
-            return isNaN(fechaDirecta.getTime()) ? null : fechaDirecta;
-        }
-        const partes = fechaStr.split(separador);
-        if (partes.length === 3) {
-            let anio, mes, dia;
-            if (partes[0].length === 4) {
-                [anio, mes, dia] = partes;
-            } else if (partes[2].length === 4) {
-                [dia, mes, anio] = partes;
-            } else {
-                return null;
-            }
-            if (dia?.length >= 1 && mes?.length >= 1 && anio?.length === 4) {
-                const fechaISO = `${anio}-${mes.padStart(2, '0')}-${dia.padStart(2, '0')}T12:00:00.000Z`;
-                const fecha = new Date(fechaISO);
-                return isNaN(fecha.getTime()) ? null : fecha;
+        let fecha = new Date(fechaInput);
+        if (!isNaN(fecha.getTime())) return fecha;
+
+        const separador = fechaInput.includes('-') ? '-' : (fechaInput.includes('/') ? '/' : null);
+        if (separador) {
+            const partes = fechaInput.split('T')[0].split(separador);
+            if (partes.length === 3) {
+                let anio, mes, dia;
+                if (partes[0].length === 4) { // Formato YYYY-MM-DD
+                    [anio, mes, dia] = partes;
+                } else if (partes[2].length === 4) { // Formato DD-MM-YYYY
+                    [dia, mes, anio] = partes;
+                }
+                if (anio && mes && dia) {
+                    fecha = new Date(Date.UTC(parseInt(anio), parseInt(mes) - 1, parseInt(dia)));
+                    if (!isNaN(fecha.getTime())) return fecha;
+                }
             }
         }
     }
     console.error("No se pudo parsear el formato de fecha:", fechaInput);
     return null;
 }
+
 
 /**
  * Actualiza la UI para mostrar el estado actual de la conexión y gestiona filtros.
@@ -969,44 +961,52 @@ function _calcularEstadoCredito(credito, pagos) {
     const pagoSemanal = (credito.plazo > 0) ? credito.montoTotal / credito.plazo : 0;
     const montoPagado = credito.montoTotal - credito.saldo;
 
-    const fechaInicio = parsearFecha_DDMMYYYY(credito.fechaCreacion);
+    const fechaInicio = parsearFecha(credito.fechaCreacion);
     if (!fechaInicio) {
         console.error(`Cálculo de estado fallido para crédito ID ${credito.id}: Fecha de creación inválida. Valor recibido:`, credito.fechaCreacion);
-        return null;
+        return { estado: 'desconocido', diasAtraso: '?', semanasAtraso: '?', pagoSemanal, proximaFechaPago: '?' };
     }
 
-    const diasTranscurridos = (new Date() - fechaInicio) / (1000 * 60 * 60 * 24);
-    if (diasTranscurridos < 0) return { estado: 'al corriente', diasAtraso: 0, semanasAtraso: 0, pagoSemanal, proximaFechaPago: 'Futuro' };
+    const hoy = new Date();
+    const hoySinHora = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
+    const inicioSinHora = new Date(fechaInicio.getFullYear(), fechaInicio.getMonth(), fechaInicio.getDate());
+    const diasTranscurridos = (hoySinHora - inicioSinHora) / (1000 * 60 * 60 * 24);
+
+    if (diasTranscurridos < 0) {
+        return { estado: 'al corriente', diasAtraso: 0, semanasAtraso: 0, pagoSemanal, proximaFechaPago: fechaInicio.toLocaleDateString('es-MX') };
+    }
 
     const pagoRequerido = (diasTranscurridos / 7) * pagoSemanal;
-    const deficit = pagoRequerido - montoPagado;
-    const diasAtraso = (deficit > 0) ? (deficit / pagoSemanal) * 7 : 0;
+    const deficit = Math.max(0, pagoRequerido - montoPagado);
+    const diasAtraso = (pagoSemanal > 0) ? (deficit / pagoSemanal) * 7 : 0;
 
     let estado = 'al corriente';
     if (diasAtraso > 300) estado = 'juridico';
     else if (diasAtraso > 150) estado = 'cobranza';
     else if (diasAtraso >= 7) estado = 'atrasado';
 
-    const semanasPagadas = (pagoSemanal > 0) ? montoPagado / pagoSemanal : 0;
-    const proximaFecha = new Date(fechaInicio);
-    proximaFecha.setDate(proximaFecha.getDate() + (Math.floor(semanasPagadas) + 1) * 7);
+    const semanasPagadasTeoricas = (pagoSemanal > 0) ? montoPagado / pagoSemanal : 0;
+    const proximaSemanaDePago = Math.floor(semanasPagadasTeoricas) + 1;
+    const proximaFecha = new Date(inicioSinHora);
+    proximaFecha.setDate(proximaFecha.getDate() + proximaSemanaDePago * 7);
 
     return {
         estado,
         diasAtraso: Math.round(diasAtraso),
         semanasAtraso: Math.ceil(diasAtraso / 7),
         pagoSemanal,
-        proximaFechaPago: proximaFecha.toLocaleDateString()
+        proximaFechaPago: proximaFecha.toLocaleDateString('es-MX')
     };
 }
+
 
 async function obtenerHistorialCreditoCliente(curp) {
     const creditosCliente = await database.buscarCreditosPorCliente(curp);
     if (creditosCliente.length === 0) return null;
 
     creditosCliente.sort((a, b) => {
-        const fechaA = parsearFecha_DDMMYYYY(a.fechaCreacion);
-        const fechaB = parsearFecha_DDMMYYYY(b.fechaCreacion);
+        const fechaA = parsearFecha(a.fechaCreacion);
+        const fechaB = parsearFecha(b.fechaCreacion);
         if (!fechaA || !fechaB) return 0;
         return fechaB - fechaA;
     });
@@ -1022,18 +1022,27 @@ async function obtenerHistorialCreditoCliente(curp) {
         return null;
     }
 
-    const fechaUltimoPagoObj = ultimoPago ? parsearFecha_DDMMYYYY(ultimoPago.fecha) : null;
-    const fechaUltimoPagoStr = fechaUltimoPagoObj ? fechaUltimoPagoObj.toLocaleDateString() : 'N/A';
+    const fechaInicio = parsearFecha(ultimoCredito.fechaCreacion);
+    let semanaActual = 0;
+    if (fechaInicio) {
+        const diasTranscurridos = (new Date() - fechaInicio) / (1000 * 60 * 60 * 24);
+        semanaActual = diasTranscurridos > 0 ? Math.floor(diasTranscurridos / 7) + 1 : 1;
+        if (semanaActual > ultimoCredito.plazo) semanaActual = ultimoCredito.plazo;
+    }
+
+    const fechaUltimoPagoObj = ultimoPago ? parsearFecha(ultimoPago.fecha) : null;
+    const fechaUltimoPagoStr = fechaUltimoPagoObj ? fechaUltimoPagoObj.toLocaleDateString('es-MX') : 'N/A';
 
     return {
         idCredito: ultimoCredito.id,
         saldoRestante: ultimoCredito.saldo,
         fechaUltimoPago: fechaUltimoPagoStr,
         ...estadoCalculado,
-        semanaActual: Math.floor(pagos.length) + 1,
+        semanaActual: semanaActual,
         plazoTotal: ultimoCredito.plazo,
     };
 }
+
 
 async function verificarElegibilidadRenovacion(curp) {
     const credito = await database.buscarCreditoActivoPorCliente(curp);
@@ -1042,7 +1051,7 @@ async function verificarElegibilidadRenovacion(curp) {
     const pagos = await database.getPagosPorCredito(credito.id);
     const estado = _calcularEstadoCredito(credito, pagos);
 
-    const fechaCreacionObj = parsearFecha_DDMMYYYY(credito.fechaCreacion);
+    const fechaCreacionObj = parsearFecha(credito.fechaCreacion);
     if (!estado || !fechaCreacionObj) return false;
 
     const semanasTranscurridas = Math.floor((new Date() - fechaCreacionObj) / (1000 * 60 * 60 * 24 * 7));
@@ -1162,7 +1171,7 @@ async function loadClientesTable() {
             clientesMostrados++;
             const tr = document.createElement('tr');
             const historial = await obtenerHistorialCreditoCliente(cliente.curp);
-            let infoCreditoHTML = '<em>Sin historial</em>';
+            let infoCreditoHTML = '<em>Sin historial crediticio</em>';
 
             if (historial) {
                 let estadoHTML = '', detallesHTML = '', estadoClase = '';
@@ -1172,13 +1181,34 @@ async function loadClientesTable() {
                     case 'cobranza': estadoClase = 'status-cobranza'; break;
                     case 'juridico': estadoClase = 'status-juridico'; break;
                     case 'liquidado': estadoClase = 'status-al-corriente'; break;
+                    default: estadoClase = ''; break;
                 }
                 estadoHTML = `<span class="info-value ${estadoClase}">${historial.estado.toUpperCase()}</span>`;
-                if (historial.estado !== 'liquidado') detallesHTML += `<div class="info-item"><span class="info-label">Saldo:</span><span class="info-value">$${historial.saldoRestante.toLocaleString()}</span></div>`;
-                if (historial.semanasAtraso > 0) detallesHTML += `<div class="info-item"><span class="info-label">Semanas Atraso:</span><span class="info-value">${historial.semanasAtraso}</span></div>`;
+
+                if (historial.estado !== 'liquidado' && historial.estado !== 'desconocido') {
+                    detallesHTML += `<div class="info-item"><span class="info-label">Saldo:</span><span class="info-value">$${historial.saldoRestante.toLocaleString('es-MX', {minimumFractionDigits: 2})}</span></div>`;
+                }
+                if (historial.semanasAtraso > 0) {
+                    detallesHTML += `<div class="info-item"><span class="info-label">Semanas Atraso:</span><span class="info-value">${historial.semanasAtraso}</span></div>`;
+                }
+                detallesHTML += `<div class="info-item"><span class="info-label">Semana Crédito:</span><span class="info-value">${historial.semanaActual} de ${historial.plazoTotal}</span></div>`;
                 detallesHTML += `<div class="info-item"><span class="info-label">Último Pago:</span><span class="info-value">${historial.fechaUltimoPago}</span></div>`;
-                infoCreditoHTML = `<div class="credito-info"><div class="info-grid"><div class="info-item"><span class="info-label">Último ID:</span><span class="info-value">${historial.idCredito}</span></div><div class="info-item"><span class="info-label">Estado:</span>${estadoHTML}</div>${detallesHTML}</div></div>`;
+                
+                infoCreditoHTML = `<div class="credito-info">
+                    <div class="info-grid">
+                        <div class="info-item">
+                            <span class="info-label">Último ID:</span>
+                            <span class="info-value">${historial.idCredito}</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">Estado:</span>
+                            ${estadoHTML}
+                        </div>
+                        ${detallesHTML}
+                    </div>
+                </div>`;
             }
+
 
             tr.innerHTML = `
                 <td>${cliente.office || 'N/A'}</td>
@@ -1366,9 +1396,9 @@ function mostrarReporteAvanzado(data) {
     data.forEach(item => {
         const tr = document.createElement('tr');
 
-        const fechaRegistro = parsearFecha_DDMMYYYY(item.fechaRegistro)?.toLocaleDateString() || '';
-        const fechaCreacion = parsearFecha_DDMMYYYY(item.fechaCreacion)?.toLocaleDateString() || '';
-        const fechaPago = parsearFecha_DDMMYYYY(item.fecha)?.toLocaleDateString() || '';
+        const fechaRegistro = parsearFecha(item.fechaRegistro)?.toLocaleDateString() || '';
+        const fechaCreacion = parsearFecha(item.fechaCreacion)?.toLocaleDateString() || '';
+        const fechaPago = parsearFecha(item.fecha)?.toLocaleDateString() || '';
 
         let rowContent = '';
         if (item.tipo === 'cliente') {
@@ -1463,7 +1493,7 @@ function exportToCSV() {
                     item.poblacion_grupo || '',
                     item.ruta || '',
                     item.office || '',
-                    item.fechaRegistro ? (parsearFecha_DDMMYYYY(item.fechaRegistro)?.toLocaleDateString() || '') : '',
+                    item.fechaRegistro ? (parsearFecha(item.fechaRegistro)?.toLocaleDateString() || '') : '',
                     '',
                     '',
                     ''
@@ -1476,7 +1506,7 @@ function exportToCSV() {
                     item.poblacion_grupo || '',
                     item.ruta || '',
                     item.office || '',
-                    item.fechaCreacion ? (parsearFecha_DDMMYYYY(item.fechaCreacion)?.toLocaleDateString() || '') : '',
+                    item.fechaCreacion ? (parsearFecha(item.fechaCreacion)?.toLocaleDateString() || '') : '',
                     item.tipo || '',
                     item.monto || 0,
                     item.saldo || 0
@@ -1489,7 +1519,7 @@ function exportToCSV() {
                     item.poblacion_grupo || '',
                     item.ruta || '',
                     item.office || '',
-                    item.fecha ? (parsearFecha_DDMMYYYY(item.fecha)?.toLocaleDateString() || '') : '',
+                    item.fecha ? (parsearFecha(item.fecha)?.toLocaleDateString() || '') : '',
                     item.tipoPago || '',
                     item.monto || 0,
                     item.saldoDespues || 0
