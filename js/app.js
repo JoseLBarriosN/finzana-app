@@ -653,14 +653,12 @@ async function handleCreditForm(e) {
     const submitButton = document.querySelector('#form-credito-submit button[type="submit"]');
     showButtonLoading(submitButton, true, 'Verificando y generando...');
 
-    // ===== INICIO DE NUEVA VALIDACIÓN =====
     const elegibilidadAval = await database.verificarElegibilidadAval(credito.curpAval);
     if (!elegibilidadAval.elegible) {
         showStatus('status_colocacion', elegibilidadAval.message, 'error');
         showButtonLoading(submitButton, false);
         return;
     }
-    // ===== FIN DE NUEVA VALIDACIÓN =====
 
     showFixedProgress(50, 'Procesando crédito...');
     try {
@@ -974,13 +972,26 @@ function inicializarDropdowns() {
 }
 
 // =============================================
-// LÓGICA DE NEGOCIO
+// LÓGICA DE NEGOCIO (RESTAURADA Y COMPLETADA)
 // =============================================
 
 function _calcularEstadoCredito(credito, pagos) {
-    if (!credito || !credito.montoTotal || !credito.plazo || credito.plazo <= 0) {
-        console.error('Cálculo de estado fallido: Faltan datos esenciales (montoTotal, plazo) en el crédito ID:', credito?.id);
+    if (!credito) {
+        console.error("Cálculo de estado fallido: El objeto de crédito es nulo.");
         return null;
+    }
+    
+    if (!credito.montoTotal || !credito.plazo || credito.plazo <= 0) {
+        console.warn(`Cálculo de estado parcial para crédito ID ${credito.id}: 'plazo' o 'montoTotal' son inválidos.`);
+        const montoPagadoSimple = pagos.reduce((sum, pago) => sum + (pago.monto || 0), 0);
+        if (!credito.montoTotal) return { estado: 'indeterminado', diasAtraso: 0, semanasAtraso: 0, pagoSemanal: 0, proximaFechaPago: 'N/A' };
+        
+        const saldoRealSimple = credito.montoTotal - montoPagadoSimple;
+        if (saldoRealSimple <= 0.01) {
+            return { estado: 'liquidado', diasAtraso: 0, semanasAtraso: 0, pagoSemanal: 0, proximaFechaPago: 'N/A' };
+        } else {
+            return { estado: 'activo', diasAtraso: 0, semanasAtraso: 0, pagoSemanal: 0, proximaFechaPago: 'N/A' };
+        }
     }
 
     const montoPagado = pagos.reduce((sum, pago) => sum + (pago.monto || 0), 0);
@@ -1036,30 +1047,30 @@ async function obtenerHistorialCreditoCliente(curp) {
     creditosCliente.sort((a, b) => {
         const fechaA = parsearFecha_DDMMYYYY(a.fechaCreacion);
         const fechaB = parsearFecha_DDMMYYYY(b.fechaCreacion);
-        if (!fechaA || !fechaB) return 0;
+        if (fechaA && !fechaB) return -1;
+        if (!fechaA && fechaB) return 1;
+        if (!fechaA && !fechaB) return 0;
         return fechaB - fechaA;
     });
     const ultimoCredito = creditosCliente[0];
 
     const pagos = await database.getPagosPorCredito(ultimoCredito.id);
     
-    // ===== INICIO DE CORRECCIÓN: Ordenamiento de pagos robusto en el lado del cliente =====
     pagos.sort((a, b) => {
         const fechaA = parsearFecha_DDMMYYYY(a.fecha);
         const fechaB = parsearFecha_DDMMYYYY(b.fecha);
-        if (fechaA && !fechaB) return -1; // A (válido) va antes que B (inválido)
-        if (!fechaA && fechaB) return 1;  // B (válido) va antes que A (inválido)
-        if (!fechaA && !fechaB) return 0; // Ambos inválidos, son iguales
-        return fechaB - fechaA;           // Ambos válidos, ordena descendente
+        if (fechaA && !fechaB) return -1;
+        if (!fechaA && fechaB) return 1;
+        if (!fechaA && !fechaB) return 0;
+        return fechaB - fechaA;
     });
-    // ===== FIN DE CORRECCIÓN =====
     
     const ultimoPago = pagos.length > 0 ? pagos[0] : null;
 
     const estadoCalculado = _calcularEstadoCredito(ultimoCredito, pagos);
 
     if (!estadoCalculado) {
-        console.error(`No se pudo calcular el historial para el crédito ID ${ultimoCredito.id}. Verifica que tenga montoTotal y plazo válidos.`);
+        console.error(`No se pudo calcular el historial para el crédito ID ${ultimoCredito.id}.`);
         return null;
     }
 
@@ -1069,10 +1080,15 @@ async function obtenerHistorialCreditoCliente(curp) {
     const montoPagadoTotal = pagos.reduce((sum, pago) => sum + (pago.monto || 0), 0);
     const saldoRestante = Math.max(0, (ultimoCredito.montoTotal || 0) - montoPagadoTotal);
     
-    // Cálculo del ciclo de crédito
     let cicloCredito = 1;
+    let pagosEnCicloActual = pagos.length;
     if (ultimoCredito.plazo > 0) {
         cicloCredito = Math.floor(pagos.length / ultimoCredito.plazo) + 1;
+        pagosEnCicloActual = pagos.length % ultimoCredito.plazo;
+        if (pagosEnCicloActual === 0 && pagos.length > 0) {
+            pagosEnCicloActual = ultimoCredito.plazo;
+            cicloCredito = Math.max(1, cicloCredito - 1); // Si es un múltiplo exacto, pertenece al ciclo anterior.
+        }
     }
 
     return {
@@ -1083,7 +1099,8 @@ async function obtenerHistorialCreditoCliente(curp) {
         plazoTotal: ultimoCredito.plazo,
         nombreAval: ultimoCredito.nombreAval || 'N/A',
         curpAval: ultimoCredito.curpAval || 'N/A',
-        cicloCredito: cicloCredito, // Dato para el nuevo indicador
+        cicloCredito: cicloCredito,
+        pagosEnCicloActual: pagosEnCicloActual,
         ...estadoCalculado,
     };
 }
@@ -1103,7 +1120,7 @@ async function verificarElegibilidadRenovacion(curp) {
 }
 
 // =============================================
-// FUNCIONES DE CARGA DE DATOS PARA VISTAS
+// SECCIÓN RESTAURADA Y COMPLETADA
 // =============================================
 
 function inicializarVistaGestionClientes() {
@@ -1225,11 +1242,12 @@ async function loadClientesTable() {
                     case 'cobranza': estadoClase = 'status-cobranza'; break;
                     case 'juridico': estadoClase = 'status-juridico'; break;
                     case 'liquidado': estadoClase = 'status-al-corriente'; break;
+                    default: estadoClase = '';
                 }
                 estadoHTML = `<span class="info-value ${estadoClase}">${historial.estado.toUpperCase()}</span>`;
                 
-                // === INICIO DE MEJORA DE UI: Mostrar todos los datos ===
-                const cicloSuffix = historial.cicloCredito === 1 ? 'er' : 'do';
+                const cicloSuffixes = { 1: 'er', 2: 'do', 3: 'er', 4: 'to' };
+                const cicloSuffix = cicloSuffixes[historial.cicloCredito] || 'º';
                 detallesHTML += `<div class="info-item"><span class="info-label">Ciclo de Crédito:</span><span class="info-value">${historial.cicloCredito}${cicloSuffix} Crédito</span></div>`;
 
                 if (historial.estado !== 'liquidado') {
@@ -1239,13 +1257,12 @@ async function loadClientesTable() {
                     detallesHTML += `<div class="info-item"><span class="info-label">Semanas Atraso:</span><span class="info-value">${historial.semanasAtraso}</span></div>`;
                 }
                 
-                detallesHTML += `<div class="info-item"><span class="info-label">Pagos:</span><span class="info-value">${historial.totalPagos} de ${historial.plazoTotal}</span></div>`;
+                detallesHTML += `<div class="info-item"><span class="info-label">Pagos:</span><span class="info-value">${historial.pagosEnCicloActual} de ${historial.plazoTotal}</span></div>`;
                 detallesHTML += `<div class="info-item"><span class="info-label">Último Pago:</span><span class="info-value">${historial.fechaUltimoPago}</span></div>`;
                 detallesHTML += `<div class="info-item"><span class="info-label">Nombre Aval:</span><span class="info-value">${historial.nombreAval}</span></div>`;
                 detallesHTML += `<div class="info-item"><span class="info-label">CURP Aval:</span><span class="info-value">${historial.curpAval}</span></div>`;
                 
                 infoCreditoHTML = `<div class="credito-info"><div class="info-grid"><div class="info-item"><span class="info-label">Crédito ID:</span><span class="info-value">${historial.idCredito}</span></div><div class="info-item"><span class="info-label">Estado:</span>${estadoHTML}</div>${detallesHTML}</div></div>`;
-                // === FIN DE MEJORA DE UI ===
             }
 
             tr.innerHTML = `
@@ -1280,10 +1297,6 @@ async function loadClientesTable() {
         cargaEnProgreso = false;
     }
 }
-
-// =============================================
-// FUNCIONES DE REPORTES
-// =============================================
 
 async function loadBasicReports() {
     showProcessingOverlay(true, 'Generando reportes...');
@@ -1695,7 +1708,6 @@ async function deleteCliente(id, nombre) {
     }
 }
 
-// Eventos de Vistas
 document.addEventListener('viewshown', function (e) {
     const viewId = e.detail.viewId;
     console.log('Vista mostrada:', viewId);
