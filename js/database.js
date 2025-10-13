@@ -10,7 +10,6 @@
 function _parsearFechaImportacion(fechaStr) {
     if (!fechaStr || typeof fechaStr !== 'string') return null;
 
-    // Intenta parsear como ISO 8601 directamente (formato YYYY-MM-DDTHH:mm:ss.sssZ)
     if (fechaStr.includes('T') && fechaStr.includes('Z')) {
         const fecha = new Date(fechaStr);
         if (!isNaN(fecha.getTime())) {
@@ -18,11 +17,8 @@ function _parsearFechaImportacion(fechaStr) {
         }
     }
 
-    // Detecta el separador y divide la fecha en partes
     const separador = fechaStr.includes('-') ? '-' : (fechaStr.includes('/') ? '/' : null);
     if (!separador) {
-        // Si no hay separador, podría ser un formato como 'YYYYMMDD' o un timestamp, pero es ambiguo.
-        // Por ahora, intentamos un parseo directo.
         const fechaDirecta = new Date(fechaStr);
         if (!isNaN(fechaDirecta.getTime())) {
             return fechaDirecta.toISOString();
@@ -30,25 +26,19 @@ function _parsearFechaImportacion(fechaStr) {
         return null;
     }
 
-    const partes = fechaStr.split('T')[0].split(separador); // Ignora la parte de la hora si existe
+    const partes = fechaStr.split('T')[0].split(separador);
     if (partes.length !== 3) return null;
 
     let anio, mes, dia;
 
-    // Formato YYYY-MM-DD
     if (partes[0].length === 4) {
         [anio, mes, dia] = partes;
-    }
-    // Formato DD-MM-YYYY
-    else if (partes[2].length === 4) {
+    } else if (partes[2].length === 4) {
         [dia, mes, anio] = partes;
-    }
-    // Formato ambiguo (ej. MM-DD-YY), no soportado para evitar errores.
-    else {
+    } else {
         return null;
     }
     
-    // Valida que las partes sean números válidos
     const diaNum = parseInt(dia, 10);
     const mesNum = parseInt(mes, 10);
     const anioNum = parseInt(anio, 10);
@@ -57,10 +47,8 @@ function _parsearFechaImportacion(fechaStr) {
         return null;
     }
 
-    // Construye un objeto Date en UTC para evitar problemas de zona horaria
     const fecha = new Date(Date.UTC(anioNum, mesNum - 1, diaNum));
     
-    // Comprobación final de validez
     if (isNaN(fecha.getTime())) return null;
 
     return fecha.toISOString();
@@ -239,6 +227,46 @@ const database = {
         }
     },
 
+    // ===== INICIO DE NUEVA FUNCIONALIDAD =====
+    /**
+     * Verifica si un aval es elegible para respaldar un nuevo crédito.
+     * @param {string} curpAval El CURP del aval a verificar.
+     * @returns {object} Un objeto con { elegible: boolean, message: string }
+     */
+    verificarElegibilidadAval: async (curpAval) => {
+        if (!curpAval) return { elegible: true }; // Si no hay aval, es elegible.
+
+        try {
+            const snapshot = await db.collection('creditos')
+                .where('curpAval', '==', curpAval.toUpperCase())
+                .where('estado', '==', 'activo')
+                .get();
+
+            if (snapshot.empty) {
+                return { elegible: true }; // No tiene créditos activos como aval.
+            }
+
+            for (const doc of snapshot.docs) {
+                const credito = doc.data();
+                if (credito.montoTotal > 0) {
+                    const porcentajeAdeudo = (credito.saldo / credito.montoTotal) * 100;
+                    if (porcentajeAdeudo > 20) {
+                        return { 
+                            elegible: false, 
+                            message: `El aval ya respalda el crédito ${credito.id} con un ${porcentajeAdeudo.toFixed(0)}% de adeudo.` 
+                        };
+                    }
+                }
+            }
+
+            return { elegible: true }; // Ningún crédito activo supera el 20% de adeudo.
+        } catch (error) {
+            console.error("Error verificando elegibilidad del aval:", error);
+            return { elegible: false, message: "Error al consultar la base de datos para el aval." };
+        }
+    },
+    // ===== FIN DE NUEVA FUNCIONALIDAD =====
+
     agregarCredito: async (creditoData) => {
         try {
             const counterRef = db.collection('config').doc('credito-counter');
@@ -278,11 +306,9 @@ const database = {
     // --- MÉTODOS DE PAGOS ---
     getPagosPorCredito: async (creditoId) => {
         try {
-            // === INICIO DE CORRECCIÓN ===
             // Se elimina el .orderBy('fecha', 'desc') para evitar errores de Firestore con formatos de fecha mixtos.
             // El ordenamiento ahora se hará en el lado del cliente (en app.js) para mayor robustez.
             const snapshot = await db.collection('pagos').where('idCredito', '==', creditoId).get();
-            // === FIN DE CORRECCIÓN ===
             return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         } catch (error) {
             console.error("Error obteniendo pagos:", error);
