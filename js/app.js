@@ -977,19 +977,22 @@ function inicializarDropdowns() {
 // =============================================
 
 function _calcularEstadoCredito(credito, pagos) {
-    if (!credito) {
-        console.error("Cálculo de estado fallido: El objeto de crédito es nulo.");
+    // === INICIO DE LA CORRECCIÓN CLAVE ===
+    // 1. Añadir una guarda para créditos con datos incompletos.
+    if (!credito || !credito.montoTotal || !credito.plazo || credito.plazo <= 0) {
+        console.error('Cálculo de estado fallido: Faltan datos esenciales (montoTotal, plazo) en el crédito ID:', credito?.id);
         return null;
     }
 
-    // 1. Calcular siempre el monto pagado real sumando los pagos.
+    // 2. Calcular siempre el monto pagado real sumando los pagos.
     const montoPagado = pagos.reduce((sum, pago) => sum + (pago.monto || 0), 0);
-    const saldoReal = (credito.montoTotal || 0) - montoPagado;
+    const saldoReal = credito.montoTotal - montoPagado;
 
-    // 2. La única condición para ser 'liquidado' es que el saldo real sea cero o menos.
+    // 3. La única condición para ser 'liquidado' es que el saldo real sea cero o menos.
     if (saldoReal <= 0.01) {
         return { estado: 'liquidado', diasAtraso: 0, semanasAtraso: 0, pagoSemanal: 0, proximaFechaPago: 'N/A' };
     }
+    // === FIN DE LA CORRECCIÓN CLAVE ===
 
     const fechaInicio = parsearFecha_DDMMYYYY(credito.fechaCreacion);
     if (!fechaInicio) {
@@ -997,10 +1000,7 @@ function _calcularEstadoCredito(credito, pagos) {
         return null;
     }
 
-    const pagoSemanal = (credito.plazo > 0) ? (credito.montoTotal / credito.plazo) : 0;
-    if (pagoSemanal <= 0) {
-         return { estado: 'al corriente', diasAtraso: 0, semanasAtraso: 0, pagoSemanal: 0, proximaFechaPago: 'N/A' };
-    }
+    const pagoSemanal = credito.montoTotal / credito.plazo;
     
     const hoy = new Date();
     if (fechaInicio > hoy) {
@@ -1047,13 +1047,11 @@ async function obtenerHistorialCreditoCliente(curp) {
 
     const pagos = await database.getPagosPorCredito(ultimoCredito.id);
     
-    // CORRECCIÓN: Ordenar pagos por fecha ASCENDENTE para encontrar el último pago correctamente.
-    // La consulta de Firestore ya los trae descendente, pero una doble verificación no daña.
     pagos.sort((a, b) => {
         const fechaA = parsearFecha_DDMMYYYY(a.fecha);
         const fechaB = parsearFecha_DDMMYYYY(b.fecha);
         if (!fechaA || !fechaB) return 0;
-        return fechaB - fechaA; // El más reciente primero
+        return fechaB - fechaA;
     });
     
     const ultimoPago = pagos.length > 0 ? pagos[0] : null;
@@ -1061,7 +1059,7 @@ async function obtenerHistorialCreditoCliente(curp) {
     const estadoCalculado = _calcularEstadoCredito(ultimoCredito, pagos);
 
     if (!estadoCalculado) {
-        console.error(`No se pudo calcular el historial para el crédito ID ${ultimoCredito.id} del cliente con CURP ${curp}. Revisa el formato de la fecha de creación del crédito en la base de datos.`);
+        console.error(`No se pudo calcular el historial para el crédito ID ${ultimoCredito.id}. Verifica que tenga montoTotal y plazo válidos.`);
         return null;
     }
 
@@ -1071,14 +1069,18 @@ async function obtenerHistorialCreditoCliente(curp) {
     const montoPagadoTotal = pagos.reduce((sum, pago) => sum + (pago.monto || 0), 0);
     const saldoRestante = Math.max(0, (ultimoCredito.montoTotal || 0) - montoPagadoTotal);
 
+    // === INICIO DE MEJORA: AÑADIR DATOS DEL AVAL ===
     return {
         idCredito: ultimoCredito.id,
         saldoRestante: saldoRestante,
         fechaUltimoPago: fechaUltimoPagoStr,
-        totalPagos: pagos.length, // <-- DATO RESTAURADO
+        totalPagos: pagos.length,
         plazoTotal: ultimoCredito.plazo,
+        nombreAval: ultimoCredito.nombreAval || 'N/A',
+        curpAval: ultimoCredito.curpAval || 'N/A',
         ...estadoCalculado,
     };
+    // === FIN DE MEJORA ===
 }
 
 async function verificarElegibilidadRenovacion(curp) {
@@ -1165,7 +1167,7 @@ async function loadClientesTable() {
         tbody.innerHTML = '';
         if (clientesFiltrados.length === 0) {
             showFixedProgress(100, 'No se encontraron clientes');
-            tbody.innerHTML = '<tr><td colspan="6">No se encontraron clientes con los filtros iniciales.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="6">No se encontraron clientes con los filtros aplicados.</td></tr>';
             return;
         }
 
@@ -1221,19 +1223,21 @@ async function loadClientesTable() {
                 }
                 estadoHTML = `<span class="info-value ${estadoClase}">${historial.estado.toUpperCase()}</span>`;
                 
-                // === INICIO DE LA CORRECCIÓN DE UI ===
+                // === INICIO DE LA MEJORA DE UI ===
                 if (historial.estado !== 'liquidado') {
                     detallesHTML += `<div class="info-item"><span class="info-label">Saldo:</span><span class="info-value">$${historial.saldoRestante.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>`;
                 }
                 if (historial.semanasAtraso > 0) {
                     detallesHTML += `<div class="info-item"><span class="info-label">Semanas Atraso:</span><span class="info-value">${historial.semanasAtraso}</span></div>`;
                 }
-                // Se restaura la visualización del conteo de pagos y la fecha de último pago.
+                
                 detallesHTML += `<div class="info-item"><span class="info-label">Pagos:</span><span class="info-value">${historial.totalPagos} de ${historial.plazoTotal}</span></div>`;
                 detallesHTML += `<div class="info-item"><span class="info-label">Último Pago:</span><span class="info-value">${historial.fechaUltimoPago}</span></div>`;
+                detallesHTML += `<div class="info-item"><span class="info-label">Nombre Aval:</span><span class="info-value">${historial.nombreAval}</span></div>`;
+                detallesHTML += `<div class="info-item"><span class="info-label">CURP Aval:</span><span class="info-value">${historial.curpAval}</span></div>`;
                 
                 infoCreditoHTML = `<div class="credito-info"><div class="info-grid"><div class="info-item"><span class="info-label">Crédito ID:</span><span class="info-value">${historial.idCredito}</span></div><div class="info-item"><span class="info-label">Estado:</span>${estadoHTML}</div>${detallesHTML}</div></div>`;
-                // === FIN DE LA CORRECCIÓN DE UI ===
+                // === FIN DE LA MEJORA DE UI ===
             }
 
             tr.innerHTML = `
