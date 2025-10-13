@@ -2,6 +2,71 @@
 // CAPA DE SERVICIO DE FIREBASE (database.js) - CORREGIDO Y MEJORADO
 // =============================================
 
+/**
+ * Parsea de forma segura una fecha desde un string de importación (dd-mm-yyyy, yyyy-mm-dd, ISO).
+ * @param {string} fechaStr La cadena de texto de la fecha.
+ * @returns {string|null} Un string en formato ISO 8601 válido o null si el formato es incorrecto.
+ */
+function _parsearFechaImportacion(fechaStr) {
+    if (!fechaStr || typeof fechaStr !== 'string') return null;
+
+    // Intenta parsear como ISO 8601 directamente (formato YYYY-MM-DDTHH:mm:ss.sssZ)
+    if (fechaStr.includes('T') && fechaStr.includes('Z')) {
+        const fecha = new Date(fechaStr);
+        if (!isNaN(fecha.getTime())) {
+            return fecha.toISOString();
+        }
+    }
+
+    // Detecta el separador y divide la fecha en partes
+    const separador = fechaStr.includes('-') ? '-' : (fechaStr.includes('/') ? '/' : null);
+    if (!separador) {
+        // Si no hay separador, podría ser un formato como 'YYYYMMDD' o un timestamp, pero es ambiguo.
+        // Por ahora, intentamos un parseo directo.
+        const fechaDirecta = new Date(fechaStr);
+        if (!isNaN(fechaDirecta.getTime())) {
+            return fechaDirecta.toISOString();
+        }
+        return null;
+    }
+
+    const partes = fechaStr.split('T')[0].split(separador); // Ignora la parte de la hora si existe
+    if (partes.length !== 3) return null;
+
+    let anio, mes, dia;
+
+    // Formato YYYY-MM-DD
+    if (partes[0].length === 4) {
+        [anio, mes, dia] = partes;
+    }
+    // Formato DD-MM-YYYY
+    else if (partes[2].length === 4) {
+        [dia, mes, anio] = partes;
+    }
+    // Formato ambiguo (ej. MM-DD-YY), no soportado para evitar errores.
+    else {
+        return null;
+    }
+    
+    // Valida que las partes sean números válidos
+    const diaNum = parseInt(dia, 10);
+    const mesNum = parseInt(mes, 10);
+    const anioNum = parseInt(anio, 10);
+
+    if (isNaN(diaNum) || isNaN(mesNum) || isNaN(anioNum) || mesNum < 1 || mesNum > 12 || diaNum < 1 || diaNum > 31) {
+        return null;
+    }
+
+    // Construye un objeto Date en UTC para evitar problemas de zona horaria
+    const fecha = new Date(Date.UTC(anioNum, mesNum - 1, diaNum));
+    
+    // Comprobación final de validez
+    if (isNaN(fecha.getTime())) return null;
+
+    return fecha.toISOString();
+}
+
+
 const database = {
     // --- MÉTODOS GENERALES ---
     getAll: async (collection) => {
@@ -30,7 +95,6 @@ const database = {
         }
     },
 
-    // ===== INICIO DE LA MODIFICACIÓN (Gestión de Usuarios) =====
     actualizarUsuario: async (uid, userData) => {
         try {
             await db.collection('users').doc(uid).update(userData);
@@ -50,10 +114,8 @@ const database = {
             return { success: false, message: `Error al deshabilitar: ${error.message}` };
         }
     },
-    // ===== FIN DE LA MODIFICACIÓN =====
 
     // --- MÉTODOS DE CLIENTES ---
-    // ===== INICIO DE LA MODIFICACIÓN (Gestión de Clientes) =====
     obtenerClientePorId: async (id) => {
         try {
             const doc = await db.collection('clientes').doc(id).get();
@@ -85,7 +147,6 @@ const database = {
             return { success: false, message: `Error: ${error.message}` };
         }
     },
-    // ===== FIN DE LA MODIFICACIÓN =====
 
     buscarClientePorCURP: async (curp) => {
         try {
@@ -101,7 +162,6 @@ const database = {
 
     agregarCliente: async (clienteData) => {
         try {
-            // No validar CURP existente si se está actualizando
             if (!clienteData.id) {
                 const existe = await database.buscarClientePorCURP(clienteData.curp);
                 if (existe) {
@@ -218,7 +278,11 @@ const database = {
     // --- MÉTODOS DE PAGOS ---
     getPagosPorCredito: async (creditoId) => {
         try {
-            const snapshot = await db.collection('pagos').where('idCredito', '==', creditoId).orderBy('fecha', 'desc').get();
+            // === INICIO DE CORRECCIÓN ===
+            // Se elimina el .orderBy('fecha', 'desc') para evitar errores de Firestore con formatos de fecha mixtos.
+            // El ordenamiento ahora se hará en el lado del cliente (en app.js) para mayor robustez.
+            const snapshot = await db.collection('pagos').where('idCredito', '==', creditoId).get();
+            // === FIN DE CORRECCIÓN ===
             return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         } catch (error) {
             console.error("Error obteniendo pagos:", error);
@@ -260,17 +324,22 @@ const database = {
     importarDatosDesdeCSV: async (csvData, tipo, office) => {
         const lineas = csvData.split('\n').filter(linea => linea.trim());
         if (lineas.length === 0) return { success: true, total: 0, importados: 0, errores: [] };
+        
         let errores = [];
         let importados = 0;
+        let batch = db.batch();
+        let batchCounter = 0;
+
         try {
-            if (tipo === 'clientes') {
-                const batch = db.batch();
-                for (const [i, linea] of lineas.entries()) {
-                    const campos = linea.split(',').map(c => c.trim());
+            for (const [i, linea] of lineas.entries()) {
+                const campos = linea.split(',').map(c => c.trim());
+
+                if (tipo === 'clientes') {
                     if (campos.length < 7) {
                         errores.push(`Línea ${i + 1}: Faltan columnas (se esperaban 7, se encontraron ${campos.length})`);
                         continue;
                     }
+                    const fechaRegistro = _parsearFechaImportacion(campos[5]) || new Date().toISOString();
                     const docRef = db.collection('clientes').doc();
                     batch.set(docRef, {
                         curp: campos[0].toUpperCase(),
@@ -278,33 +347,34 @@ const database = {
                         domicilio: campos[2],
                         cp: campos[3],
                         telefono: campos[4],
-                        fechaRegistro: campos[5] || new Date().toISOString(),
+                        fechaRegistro: fechaRegistro,
                         poblacion_grupo: campos[6],
                         office: office,
                         ruta: campos[7] || ''
                     });
                     importados++;
-                }
-                await batch.commit();
-            } else if (tipo === 'colocacion') {
-                const batch = db.batch();
-                for (const [i, linea] of lineas.entries()) {
-                    const campos = linea.split(',').map(c => c.trim());
+                } else if (tipo === 'colocacion') {
                     if (campos.length < 13) {
-                        errores.push(`Línea ${i + 1}: Formato incorrecto para colocación (se esperaban 13 columnas, se encontraron ${campos.length})`);
+                        errores.push(`Línea ${i + 1}: Formato incorrecto para colocación (se esperaban 13, se encontraron ${campos.length})`);
                         continue;
                     }
                     const creditoId = campos[2].trim();
                     if (!creditoId) {
-                        errores.push(`Línea ${i + 1}: El ID del crédito está vacío`);
+                        errores.push(`Línea ${i + 1}: El ID del crédito está vacío.`);
                         continue;
                     }
+                    const fechaCreacion = _parsearFechaImportacion(campos[3]);
+                    if (!fechaCreacion) {
+                        errores.push(`Línea ${i + 1}: Fecha de creación inválida o vacía ('${campos[3]}').`);
+                        continue;
+                    }
+                    const saldo = parseFloat(campos[12] || 0);
                     const credito = {
                         id: creditoId,
                         office: office,
                         curpCliente: campos[0].toUpperCase(),
                         nombreCliente: campos[1],
-                        fechaCreacion: campos[3] || new Date().toISOString(),
+                        fechaCreacion: fechaCreacion,
                         tipo: campos[4],
                         monto: parseFloat(campos[5] || 0),
                         plazo: parseInt(campos[6] || 0),
@@ -313,47 +383,71 @@ const database = {
                         nombreAval: campos[9],
                         poblacion_grupo: campos[10],
                         ruta: campos[11],
-                        saldo: parseFloat(campos[12] || 0),
-                        estado: parseFloat(campos[12] || 0) > 0.01 ? 'activo' : 'liquidado'
+                        saldo: saldo,
+                        estado: saldo > 0.01 ? 'activo' : 'liquidado'
                     };
                     const docRef = db.collection('creditos').doc(credito.id);
                     batch.set(docRef, credito);
                     importados++;
-                }
-                await batch.commit();
-            } else if (tipo === 'cobranza') {
-                for (const [i, linea] of lineas.entries()) {
-                    try {
-                        const campos = linea.split(',').map(c => c.trim());
-                        if (campos.length < 11) {
-                            errores.push(`Línea ${i + 1}: Formato incorrecto para cobranza (se esperaban 11 columnas, se encontraron ${campos.length})`);
-                            continue;
-                        }
-                        const pago = {
-                            office: office,
-                            idCredito: campos[1],
-                            monto: parseFloat(campos[3] || 0),
-                            tipoPago: 'normal'
-                        };
-                        if (pago.idCredito && pago.monto) {
-                            const pagoResult = await database.agregarPago(pago);
-                            if (pagoResult.success) {
-                                importados++;
-                            } else {
-                                errores.push(`Línea ${i + 1}: ${pagoResult.message}`);
-                            }
-                        } else {
-                            errores.push(`Línea ${i + 1}: ID de crédito o monto inválido`);
-                        }
-                    } catch (error) {
-                        errores.push(`Línea ${i + 1}: ${error.message}`);
+                } else if (tipo === 'cobranza') {
+                     if (campos.length < 11) {
+                        errores.push(`Línea ${i + 1}: Formato incorrecto para cobranza (se esperaban 11, se encontraron ${campos.length})`);
+                        continue;
                     }
+                    const idCredito = campos[1];
+                    const fechaPago = _parsearFechaImportacion(campos[2]);
+                    const montoPago = parseFloat(campos[3] || 0);
+
+                    if (!idCredito) {
+                        errores.push(`Línea ${i + 1}: ID de crédito vacío.`);
+                        continue;
+                    }
+                    if (!fechaPago) {
+                        errores.push(`Línea ${i + 1}: Fecha de pago inválida o vacía ('${campos[2]}').`);
+                        continue;
+                    }
+                     if (isNaN(montoPago) || montoPago <= 0) {
+                        errores.push(`Línea ${i + 1}: Monto de pago inválido ('${campos[3]}').`);
+                        continue;
+                    }
+                    
+                    const pago = {
+                        office: office,
+                        nombreCliente: campos[0],
+                        idCredito: idCredito,
+                        fecha: fechaPago,
+                        monto: montoPago,
+                        cobroSemana: campos[4] || '',
+                        comision: parseFloat(campos[5] || 0),
+                        tipoPago: (campos[6] || 'normal').toLowerCase(),
+                        grupo: campos[7] || '',
+                        ruta: campos[8] || '',
+                        semanaCredito: campos[9] || '',
+                        saldoDespues: parseFloat(campos[10] || 0)
+                    };
+
+                    const docRef = db.collection('pagos').doc();
+                    batch.set(docRef, pago);
+                    importados++;
+                }
+
+                batchCounter++;
+                if (batchCounter >= 490) {
+                    await batch.commit();
+                    batch = db.batch();
+                    batchCounter = 0;
                 }
             }
+
+            if (batchCounter > 0) {
+                await batch.commit();
+            }
+
             return { success: true, total: lineas.length, importados: importados, errores: errores };
         } catch (error) {
             console.error("Error en importación masiva: ", error);
-            return { success: false, message: `Error crítico: ${error.message}`, total: lineas.length, importados: importados, errores: [error.message] };
+            errores.push(`Error crítico en el proceso: ${error.message}`);
+            return { success: false, message: `Error crítico: ${error.message}`, total: lineas.length, importados: importados, errores: errores };
         }
     },
 
