@@ -227,14 +227,8 @@ const database = {
         }
     },
 
-    // ===== INICIO DE NUEVA FUNCIONALIDAD =====
-    /**
-     * Verifica si un aval es elegible para respaldar un nuevo crédito.
-     * @param {string} curpAval El CURP del aval a verificar.
-     * @returns {object} Un objeto con { elegible: boolean, message: string }
-     */
     verificarElegibilidadAval: async (curpAval) => {
-        if (!curpAval) return { elegible: true }; // Si no hay aval, es elegible.
+        if (!curpAval) return { elegible: true };
 
         try {
             const snapshot = await db.collection('creditos')
@@ -243,7 +237,7 @@ const database = {
                 .get();
 
             if (snapshot.empty) {
-                return { elegible: true }; // No tiene créditos activos como aval.
+                return { elegible: true };
             }
 
             for (const doc of snapshot.docs) {
@@ -259,13 +253,12 @@ const database = {
                 }
             }
 
-            return { elegible: true }; // Ningún crédito activo supera el 20% de adeudo.
+            return { elegible: true };
         } catch (error) {
             console.error("Error verificando elegibilidad del aval:", error);
             return { elegible: false, message: "Error al consultar la base de datos para el aval." };
         }
     },
-    // ===== FIN DE NUEVA FUNCIONALIDAD =====
 
     agregarCredito: async (creditoData) => {
         try {
@@ -306,8 +299,6 @@ const database = {
     // --- MÉTODOS DE PAGOS ---
     getPagosPorCredito: async (creditoId) => {
         try {
-            // Se elimina el .orderBy('fecha', 'desc') para evitar errores de Firestore con formatos de fecha mixtos.
-            // El ordenamiento ahora se hará en el lado del cliente (en app.js) para mayor robustez.
             const snapshot = await db.collection('pagos').where('idCredito', '==', creditoId).get();
             return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         } catch (error) {
@@ -420,7 +411,9 @@ const database = {
                         errores.push(`Línea ${i + 1}: Formato incorrecto para cobranza (se esperaban 11, se encontraron ${campos.length})`);
                         continue;
                     }
-                    const idCredito = campos[1];
+                    // ===== INICIO DE CORRECCIÓN CRÍTICA =====
+                    const idCredito = campos[1].trim(); // Limpiar espacios en blanco
+                    // ===== FIN DE CORRECCIÓN CRÍTICA =====
                     const fechaPago = _parsearFechaImportacion(campos[2]);
                     const montoPago = parseFloat(campos[3] || 0);
 
