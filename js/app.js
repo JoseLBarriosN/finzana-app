@@ -15,15 +15,12 @@ let inactivityTimer; // Temporizador para el cierre de sesión por inactividad
 
 /**
  * Parsea de forma segura una fecha que puede ser un string (dd-mm-yyyy, yyyy-mm-dd, ISO)
- * o un objeto Timestamp de Firestore.
+ * o un objeto Timestamp de Firestore. Es más robusto para manejar formatos variados.
  * @param {string|object} fechaInput La cadena de texto o el objeto de fecha.
  * @returns {Date|null} Un objeto Date válido o null si el formato es incorrecto.
  */
 function parsearFecha_DDMMYYYY(fechaInput) {
-    if (!fechaInput) {
-        console.warn("parsearFecha_DDMMYYYY recibió una entrada nula o indefinida.");
-        return null;
-    }
+    if (!fechaInput) return null;
 
     // Si es un objeto Timestamp de Firestore
     if (typeof fechaInput === 'object' && fechaInput.toDate && typeof fechaInput.toDate === 'function') {
@@ -38,34 +35,32 @@ function parsearFecha_DDMMYYYY(fechaInput) {
     if (typeof fechaInput === 'string') {
         const fechaStr = fechaInput.trim();
         
-        // Intenta parsear como ISO 8601 (formato YYYY-MM-DDTHH:mm:ss.sssZ)
-        // Esta es la forma más fiable y debería ser el estándar
+        // Intenta parsear como ISO 8601 (formato YYYY-MM-DDTHH:mm:ss.sssZ) - El más fiable
         let fecha = new Date(fechaStr);
         if (!isNaN(fecha.getTime())) {
             return fecha;
         }
 
-        // Si falla, intenta con formatos comunes como dd-mm-yyyy o yyyy-mm-dd
-        const separador = fechaStr.includes('-') ? '-' : (fechaStr.includes('/') ? '/' : null);
-        if (separador) {
-            const partes = fechaStr.split('T')[0].split(separador);
-            if (partes.length === 3) {
-                let anio, mes, dia;
-                // Formato YYYY-MM-DD
-                if (partes[0].length === 4) {
-                    [anio, mes, dia] = partes.map(p => parseInt(p, 10));
-                }
-                // Formato DD-MM-YYYY
-                else if (partes[2].length === 4) {
-                    [dia, mes, anio] = partes.map(p => parseInt(p, 10));
-                }
+        // Si falla, intenta con formatos comunes usando una expresión regular
+        // Captura formatos como DD/MM/YYYY, D/M/YY, DD-MM-YYYY, etc.
+        const regex = /^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/;
+        const match = fechaStr.match(regex);
+        
+        if (match) {
+            let dia = parseInt(match[1], 10);
+            let mes = parseInt(match[2], 10);
+            let anio = parseInt(match[3], 10);
 
-                if (!isNaN(dia) && !isNaN(mes) && !isNaN(anio) && anio > 1900 && mes >= 1 && mes <= 12 && dia >= 1 && dia <= 31) {
-                    // Crea la fecha en UTC para evitar problemas de zona horaria
-                    fecha = new Date(Date.UTC(anio, mes - 1, dia));
-                    if (!isNaN(fecha.getTime())) {
-                        return fecha;
-                    }
+            // Corrige año de 2 dígitos (ej. 24 -> 2024)
+            if (anio < 100) {
+                anio += 2000;
+            }
+
+            if (!isNaN(dia) && !isNaN(mes) && !isNaN(anio) && anio > 1900 && mes >= 1 && mes <= 12 && dia >= 1 && dia <= 31) {
+                // Crea la fecha en UTC para evitar problemas de zona horaria con la interpretación del navegador
+                fecha = new Date(Date.UTC(anio, mes - 1, dia));
+                if (!isNaN(fecha.getTime())) {
+                    return fecha;
                 }
             }
         }
@@ -942,7 +937,7 @@ const popularDropdown = (elementId, options, placeholder, isObject = false) => {
 function handleOfficeChangeForClientForm() {
     const office = this.value;
     const poblacionesGdl = ['LA CALERA', 'ATEQUIZA', 'SAN JACINTO', 'PONCITLAN', 'OCOTLAN', 'ARENAL', 'AMATITAN', 'ACATLAN DE JUAREZ', 'BELLAVISTA', 'SAN ISIDRO MAZATEPEC', 'TALA', 'CUISILLOS', 'HUAXTLA', 'NEXTIPAC', 'SANTA LUCIA', 'JAMAY', 'LA BARCA', 'SAN JUAN DE OCOTAN', 'TALA 2', 'EL HUMEDO', 'NEXTIPAC 2', 'ZZ PUEBLO'];
-    const poblacionesLeon = ["ARANDAS", "ARANDAS [E]", "BAJIO DE BONILLAS", "BAJIO DE BONILLAS [E]", "CAPULIN", "CARDENAS", "CARDENAS [E]", "CERRITO DE AGUA CALIENTE", "CERRITO DE AGUA CALIENTE [E]", "CORRALEJO", "CORRALEJO [E]", "CUERAMARO", "CUERAMARO [E]", "DOLORES HIDALGO", "EL ALACRAN", "EL EDEN", "EL FUERTE", "EL MEZQUITILLO", "EL MEZQUITILLO [E]", "EL PALENQUE", "EL PALENQUE [E]", "EL PAXTLE", "EL TULE", "EL TULE [E]", "ESTACION ABASOLO", "ESTACION ABASOLO [E]", "ESTACION CORRALEJO", "ESTACION CORRALEJO [E]", "ESTACION JOAQUIN", "ESTACION JOAQUIN [E]", "EX ESTACION CHIRIMOYA", "EX ESTacion CHIRIMOYA [E]", "GAVIA DE RIONDA", "GODOY", "GODOY [E]", "IBARRA", "IBARRA [E]", "LA ALDEA", "LA CARROZA", "LA CARROZA [E]", "LA ESCONDIDA", "LA SANDIA", "LA SANDIA [E]", "LAGUNA DE GUADALUPE", "LAS CRUCES", "LAS CRUCES [E]", "LAS MASAS", "LAS MASAS [E]", "LAS PALOMAS", "LAS TIRITAS", "LOMA DE LA ESPERANZA", "LOMA DE LA ESPERANZA [E]", "LOS DOLORES", "LOS GALVANES", "LOS GALVANES [E]", "MAGUEY BLANCO", "MEDRANOS", "MEXICANOS", "MEXICANOS [E]", "MINERAL DE LA LUZ", "MISION DE ABAJO", "MISION DE ABAJO [E]", "MISION DE ARRIBA", "MISION DE ARRIBA [E]", "NORIA DE ALDAY", "OCAMPO", "PURISIMA DEL RINCON", "PURISIMA DEL RINCON [E]", "RANCHO NUEVO DE LA CRUZ", "RANCHO NUEVO DE LA CRUZ [E]", "RANCHO VIEJO", "RIO LAJA", "RIO LAJA [E]", "SAN ANDRES DE JALPA", "SAN ANDRES DE JALPA [E]", "SAN BERNARDO", "SAN BERNARDO [E]", "SAN CRISTOBAL", "SAN CRISTOBAL [E]", "SAN GREGORIO", "SAN GREGORIO [E]", "SAN ISIDRO DE CRESPO", "SAN ISIDRO DE CRESPO [E]", "SAN JOSE DE BADILLO", "SAN JOSE DE BADILLO [E]", "SAN JOSE DEL RODEO", "SAN JOSE DEL RODEO [E]", "SAN JUAN DE LA PUERTA", "SAN JUAN DE LA PUERTA [E]", "SANTA ANA DEL CONDE", "SANTA ROSA", "SANTA ROSA [E]", "SANTA ROSA PLAN DE AYALA", "SANTA ROSA PLAN DE AYALA [E]", "SANTO DOMINGO", "SERRANO", "TENERIA DEL SANTUARIO", "TENERIA DEL SANTUARIO [E]", "TIERRAS BLANCAS", "TIERRAS BLANCAS [E]", "TREJO", "TREJO [E]", "TUPATARO", "TUPATARO [E]", "VALTIERRILLA", "VALTIERRILLA 2", "VALTIERRILLA [E]", "VAQUERIAS", "VILLA DE ARRIAGA", "VILLA DE ARRIAGA [E]"].sort();
+    const poblacionesLeon = ["ARANDAS", "ARANDAS [E]", "BAJIO DE BONILLAS", "BAJIO DE BONILLAS [E]", "CAPULIN", "CARDENAS", "CARDENAS [E]", "CERRITO DE AGUA CALIENTE", "CERRITO DE AGUA CALIENTE [E]", "CORRALEJO", "CORRALEJO [E]", "CUERAMARO", "CUERAMARO [E]", "DOLORES HIDALGO", "EL ALACRAN", "EL EDEN", "EL FUERTE", "EL MEZQUITILLO", "EL MEZQUITILLO [E]", "EL PALENQUE", "EL PALENQUE [E]", "EL PAXTLE", "EL TULE", "EL TULE [E]", "ESTACION ABASOLO", "ESTACION ABASOLO [E]", "ESTACION CORRALEJO", "ESTACION CORRALEJO [E]", "ESTACION JOAQUIN", "ESTACION JOAQUIN [E]", "EX ESTACION CHIRIMOYA", "EX ESTACION CHIRIMOYA [E]", "GAVIA DE RIONDA", "GODOY", "GODOY [E]", "IBARRA", "IBARRA [E]", "LA ALDEA", "LA CARROZA", "LA CARROZA [E]", "LA ESCONDIDA", "LA SANDIA", "LA SANDIA [E]", "LAGUNA DE GUADALUPE", "LAS CRUCES", "LAS CRUCES [E]", "LAS MASAS", "LAS MASAS [E]", "LAS PALOMAS", "LAS TIRITAS", "LOMA DE LA ESPERANZA", "LOMA DE LA ESPERANZA [E]", "LOS DOLORES", "LOS GALVANES", "LOS GALVANES [E]", "MAGUEY BLANCO", "MEDRANOS", "MEXICANOS", "MEXICANOS [E]", "MINERAL DE LA LUZ", "MISION DE ABAJO", "MISION DE ABAJO [E]", "MISION DE ARRIBA", "MISION DE ARRIBA [E]", "NORIA DE ALDAY", "OCAMPO", "PURISIMA DEL RINCON", "PURISIMA DEL RINCON [E]", "RANCHO NUEVO DE LA CRUZ", "RANCHO NUEVO DE LA CRUZ [E]", "RANCHO VIEJO", "RIO LAJA", "RIO LAJA [E]", "SAN ANDRES DE JALPA", "SAN ANDRES DE JALPA [E]", "SAN BERNARDO", "SAN BERNARDO [E]", "SAN CRISTOBAL", "SAN CRISTOBAL [E]", "SAN GREGORIO", "SAN GREGORIO [E]", "SAN ISIDRO DE CRESPO", "SAN ISIDRO DE CRESPO [E]", "SAN JOSE DE BADILLO", "SAN JOSE DE BADILLO [E]", "SAN JOSE DEL RODEO", "SAN JOSE DEL RODEO [E]", "SAN JUAN DE LA PUERTA", "SAN JUAN DE LA PUERTA [E]", "SANTA ANA DEL CONDE", "SANTA ROSA", "SANTA ROSA [E]", "SANTA ROSA PLAN DE AYALA", "SANTA ROSA PLAN DE AYALA [E]", "SANTO DOMINGO", "SERRANO", "TENERIA DEL SANTUARIO", "TENERIA DEL SANTUARIO [E]", "TIERRAS BLANCAS", "TIERRAS BLANCAS [E]", "TREJO", "TREJO [E]", "TUPATARO", "TUPATARO [E]", "VALTIERRILLA", "VALTIERRILLA 2", "VALTIERRILLA [E]", "VAQUERIAS", "VILLA DE ARRIAGA", "VILLA DE ARRIAGA [E]"].sort();
     const poblaciones = office === 'LEON' ? poblacionesLeon : poblacionesGdl;
     popularDropdown('poblacion_grupo_cliente', poblaciones, 'Selecciona población/grupo');
 }
@@ -987,34 +982,27 @@ function _calcularEstadoCredito(credito, pagos) {
         return null;
     }
 
-    // === INICIO DE LA CORRECCIÓN CLAVE ===
-    
     // 1. Calcular siempre el monto pagado real sumando los pagos.
     const montoPagado = pagos.reduce((sum, pago) => sum + (pago.monto || 0), 0);
     const saldoReal = (credito.montoTotal || 0) - montoPagado;
 
     // 2. La única condición para ser 'liquidado' es que el saldo real sea cero o menos.
-    // Se ignora el campo 'estado' o 'saldo' del objeto 'credito'.
     if (saldoReal <= 0.01) {
         return { estado: 'liquidado', diasAtraso: 0, semanasAtraso: 0, pagoSemanal: 0, proximaFechaPago: 'N/A' };
     }
 
-    // === FIN DE LA CORRECCIÓN CLAVE ===
-
     const fechaInicio = parsearFecha_DDMMYYYY(credito.fechaCreacion);
     if (!fechaInicio) {
         console.error(`Cálculo de estado fallido para crédito ID ${credito.id}: Fecha de creación inválida. Valor recibido:`, credito.fechaCreacion);
-        return null; // Si la fecha no es válida, no podemos continuar.
+        return null;
     }
 
     const pagoSemanal = (credito.plazo > 0) ? (credito.montoTotal / credito.plazo) : 0;
     if (pagoSemanal <= 0) {
-         // Si no hay pago semanal, se asume que está al corriente mientras no esté liquidado.
          return { estado: 'al corriente', diasAtraso: 0, semanasAtraso: 0, pagoSemanal: 0, proximaFechaPago: 'N/A' };
     }
     
     const hoy = new Date();
-    // Si la fecha de inicio es en el futuro, está al corriente.
     if (fechaInicio > hoy) {
         return { estado: 'al corriente', diasAtraso: 0, semanasAtraso: 0, pagoSemanal, proximaFechaPago: fechaInicio.toLocaleDateString() };
     }
@@ -1034,7 +1022,6 @@ function _calcularEstadoCredito(credito, pagos) {
 
     const semanasPagadas = montoPagado / pagoSemanal;
     const proximaFecha = new Date(fechaInicio);
-    // El próximo pago es 7 días después de la última semana cubierta por los pagos
     proximaFecha.setUTCDate(proximaFecha.getUTCDate() + (Math.floor(semanasPagadas) + 1) * 7);
 
     return {
@@ -1059,6 +1046,16 @@ async function obtenerHistorialCreditoCliente(curp) {
     const ultimoCredito = creditosCliente[0];
 
     const pagos = await database.getPagosPorCredito(ultimoCredito.id);
+    
+    // CORRECCIÓN: Ordenar pagos por fecha ASCENDENTE para encontrar el último pago correctamente.
+    // La consulta de Firestore ya los trae descendente, pero una doble verificación no daña.
+    pagos.sort((a, b) => {
+        const fechaA = parsearFecha_DDMMYYYY(a.fecha);
+        const fechaB = parsearFecha_DDMMYYYY(b.fecha);
+        if (!fechaA || !fechaB) return 0;
+        return fechaB - fechaA; // El más reciente primero
+    });
+    
     const ultimoPago = pagos.length > 0 ? pagos[0] : null;
 
     const estadoCalculado = _calcularEstadoCredito(ultimoCredito, pagos);
@@ -1071,7 +1068,6 @@ async function obtenerHistorialCreditoCliente(curp) {
     const fechaUltimoPagoObj = ultimoPago ? parsearFecha_DDMMYYYY(ultimoPago.fecha) : null;
     const fechaUltimoPagoStr = fechaUltimoPagoObj ? fechaUltimoPagoObj.toLocaleDateString() : 'N/A';
     
-    // El saldo restante es el total menos lo que se ha pagado realmente
     const montoPagadoTotal = pagos.reduce((sum, pago) => sum + (pago.monto || 0), 0);
     const saldoRestante = Math.max(0, (ultimoCredito.montoTotal || 0) - montoPagadoTotal);
 
@@ -1079,25 +1075,23 @@ async function obtenerHistorialCreditoCliente(curp) {
         idCredito: ultimoCredito.id,
         saldoRestante: saldoRestante,
         fechaUltimoPago: fechaUltimoPagoStr,
-        ...estadoCalculado,
-        semanaActual: Math.floor(pagos.length) + 1,
+        totalPagos: pagos.length, // <-- DATO RESTAURADO
         plazoTotal: ultimoCredito.plazo,
+        ...estadoCalculado,
     };
 }
 
 async function verificarElegibilidadRenovacion(curp) {
     const credito = await database.buscarCreditoActivoPorCliente(curp);
-    if (!credito) return true; // Si no hay crédito activo, es elegible.
+    if (!credito) return true;
 
     const pagos = await database.getPagosPorCredito(credito.id);
     const estado = _calcularEstadoCredito(credito, pagos);
 
     const fechaCreacionObj = parsearFecha_DDMMYYYY(credito.fechaCreacion);
-    if (!estado || !fechaCreacionObj) return false; // Si no se puede calcular el estado, no es elegible.
+    if (!estado || !fechaCreacionObj) return false;
 
     const semanasTranscurridas = Math.floor((new Date() - fechaCreacionObj) / (1000 * 60 * 60 * 24 * 7));
-    
-    // Es elegible si han pasado 10 semanas Y está al corriente.
     return semanasTranscurridas >= 10 && estado.estado === 'al corriente';
 }
 
@@ -1226,10 +1220,20 @@ async function loadClientesTable() {
                     case 'liquidado': estadoClase = 'status-al-corriente'; break;
                 }
                 estadoHTML = `<span class="info-value ${estadoClase}">${historial.estado.toUpperCase()}</span>`;
-                if (historial.estado !== 'liquidado') detallesHTML += `<div class="info-item"><span class="info-label">Saldo:</span><span class="info-value">$${historial.saldoRestante.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>`;
-                if (historial.semanasAtraso > 0) detallesHTML += `<div class="info-item"><span class="info-label">Semanas Atraso:</span><span class="info-value">${historial.semanasAtraso}</span></div>`;
+                
+                // === INICIO DE LA CORRECCIÓN DE UI ===
+                if (historial.estado !== 'liquidado') {
+                    detallesHTML += `<div class="info-item"><span class="info-label">Saldo:</span><span class="info-value">$${historial.saldoRestante.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>`;
+                }
+                if (historial.semanasAtraso > 0) {
+                    detallesHTML += `<div class="info-item"><span class="info-label">Semanas Atraso:</span><span class="info-value">${historial.semanasAtraso}</span></div>`;
+                }
+                // Se restaura la visualización del conteo de pagos y la fecha de último pago.
+                detallesHTML += `<div class="info-item"><span class="info-label">Pagos:</span><span class="info-value">${historial.totalPagos} de ${historial.plazoTotal}</span></div>`;
                 detallesHTML += `<div class="info-item"><span class="info-label">Último Pago:</span><span class="info-value">${historial.fechaUltimoPago}</span></div>`;
-                infoCreditoHTML = `<div class="credito-info"><div class="info-grid"><div class="info-item"><span class="info-label">Último ID:</span><span class="info-value">${historial.idCredito}</span></div><div class="info-item"><span class="info-label">Estado:</span>${estadoHTML}</div>${detallesHTML}</div></div>`;
+                
+                infoCreditoHTML = `<div class="credito-info"><div class="info-grid"><div class="info-item"><span class="info-label">Crédito ID:</span><span class="info-value">${historial.idCredito}</span></div><div class="info-item"><span class="info-label">Estado:</span>${estadoHTML}</div>${detallesHTML}</div></div>`;
+                // === FIN DE LA CORRECCIÓN DE UI ===
             }
 
             tr.innerHTML = `
