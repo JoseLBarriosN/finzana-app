@@ -22,12 +22,10 @@ let inactivityTimer; // Temporizador para el cierre de sesión por inactividad
 function parsearFecha_DDMMYYYY(fechaInput) {
     if (!fechaInput) return null;
 
-    // Si es un objeto Timestamp de Firestore
     if (typeof fechaInput === 'object' && fechaInput.toDate && typeof fechaInput.toDate === 'function') {
         return fechaInput.toDate();
     }
     
-    // Si ya es un objeto Date
     if (fechaInput instanceof Date) {
         return fechaInput;
     }
@@ -35,14 +33,11 @@ function parsearFecha_DDMMYYYY(fechaInput) {
     if (typeof fechaInput === 'string') {
         const fechaStr = fechaInput.trim();
         
-        // Intenta parsear como ISO 8601 (formato YYYY-MM-DDTHH:mm:ss.sssZ) - El más fiable
         let fecha = new Date(fechaStr);
         if (!isNaN(fecha.getTime())) {
             return fecha;
         }
 
-        // Si falla, intenta con formatos comunes usando una expresión regular
-        // Captura formatos como DD/MM/YYYY, D/M/YY, DD-MM-YYYY, etc.
         const regex = /^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/;
         const match = fechaStr.match(regex);
         
@@ -51,13 +46,11 @@ function parsearFecha_DDMMYYYY(fechaInput) {
             let mes = parseInt(match[2], 10);
             let anio = parseInt(match[3], 10);
 
-            // Corrige año de 2 dígitos (ej. 24 -> 2024)
             if (anio < 100) {
                 anio += 2000;
             }
 
             if (!isNaN(dia) && !isNaN(mes) && !isNaN(anio) && anio > 1900 && mes >= 1 && mes <= 12 && dia >= 1 && dia <= 31) {
-                // Crea la fecha en UTC para evitar problemas de zona horaria con la interpretación del navegador
                 fecha = new Date(Date.UTC(anio, mes - 1, dia));
                 if (!isNaN(fecha.getTime())) {
                     return fecha;
@@ -127,10 +120,6 @@ function setupSecurityListeners() {
     window.addEventListener('beforeunload', () => {
         if (cargaEnProgreso) {
             cancelarCarga();
-        }
-        if (currentUser) {
-            // No cerrar sesión aquí, para permitir la persistencia entre recargas.
-            // La sesión se gestiona con onAuthStateChanged
         }
     });
 }
@@ -660,7 +649,19 @@ async function handleCreditForm(e) {
         showStatus('status_colocacion', 'Todos los campos son obligatorios y el CURP del aval debe ser válido.', 'error');
         return;
     }
-    showButtonLoading('#form-credito-submit button[type="submit"]', true, 'Generando crédito...');
+    
+    const submitButton = document.querySelector('#form-credito-submit button[type="submit"]');
+    showButtonLoading(submitButton, true, 'Verificando y generando...');
+
+    // ===== INICIO DE NUEVA VALIDACIÓN =====
+    const elegibilidadAval = await database.verificarElegibilidadAval(credito.curpAval);
+    if (!elegibilidadAval.elegible) {
+        showStatus('status_colocacion', elegibilidadAval.message, 'error');
+        showButtonLoading(submitButton, false);
+        return;
+    }
+    // ===== FIN DE NUEVA VALIDACIÓN =====
+
     showFixedProgress(50, 'Procesando crédito...');
     try {
         const resultado = await database.agregarCredito(credito);
@@ -683,7 +684,7 @@ async function handleCreditForm(e) {
     } catch (error) {
         showStatus('status_colocacion', 'Error al generar crédito: ' + error.message, 'error');
     } finally {
-        showButtonLoading('#form-credito-submit button[type="submit"]', false);
+        showButtonLoading(submitButton, false);
         setTimeout(hideFixedProgress, 1000);
     }
 }
@@ -1042,15 +1043,16 @@ async function obtenerHistorialCreditoCliente(curp) {
 
     const pagos = await database.getPagosPorCredito(ultimoCredito.id);
     
-    // === INICIO DE CORRECCIÓN: Ordenamiento de pagos en el lado del cliente ===
-    // Esto garantiza que el último pago sea correcto sin importar el formato de fecha en la BD.
+    // ===== INICIO DE CORRECCIÓN: Ordenamiento de pagos robusto en el lado del cliente =====
     pagos.sort((a, b) => {
         const fechaA = parsearFecha_DDMMYYYY(a.fecha);
         const fechaB = parsearFecha_DDMMYYYY(b.fecha);
-        if (!fechaA || !fechaB) return 0;
-        return fechaB - fechaA; // El más reciente primero
+        if (fechaA && !fechaB) return -1; // A (válido) va antes que B (inválido)
+        if (!fechaA && fechaB) return 1;  // B (válido) va antes que A (inválido)
+        if (!fechaA && !fechaB) return 0; // Ambos inválidos, son iguales
+        return fechaB - fechaA;           // Ambos válidos, ordena descendente
     });
-    // === FIN DE CORRECCIÓN ===
+    // ===== FIN DE CORRECCIÓN =====
     
     const ultimoPago = pagos.length > 0 ? pagos[0] : null;
 
@@ -1066,6 +1068,12 @@ async function obtenerHistorialCreditoCliente(curp) {
     
     const montoPagadoTotal = pagos.reduce((sum, pago) => sum + (pago.monto || 0), 0);
     const saldoRestante = Math.max(0, (ultimoCredito.montoTotal || 0) - montoPagadoTotal);
+    
+    // Cálculo del ciclo de crédito
+    let cicloCredito = 1;
+    if (ultimoCredito.plazo > 0) {
+        cicloCredito = Math.floor(pagos.length / ultimoCredito.plazo) + 1;
+    }
 
     return {
         idCredito: ultimoCredito.id,
@@ -1075,6 +1083,7 @@ async function obtenerHistorialCreditoCliente(curp) {
         plazoTotal: ultimoCredito.plazo,
         nombreAval: ultimoCredito.nombreAval || 'N/A',
         curpAval: ultimoCredito.curpAval || 'N/A',
+        cicloCredito: cicloCredito, // Dato para el nuevo indicador
         ...estadoCalculado,
     };
 }
@@ -1219,7 +1228,10 @@ async function loadClientesTable() {
                 }
                 estadoHTML = `<span class="info-value ${estadoClase}">${historial.estado.toUpperCase()}</span>`;
                 
-                // === INICIO DE LA MEJORA DE UI: Mostrar todos los datos ===
+                // === INICIO DE MEJORA DE UI: Mostrar todos los datos ===
+                const cicloSuffix = historial.cicloCredito === 1 ? 'er' : 'do';
+                detallesHTML += `<div class="info-item"><span class="info-label">Ciclo de Crédito:</span><span class="info-value">${historial.cicloCredito}${cicloSuffix} Crédito</span></div>`;
+
                 if (historial.estado !== 'liquidado') {
                     detallesHTML += `<div class="info-item"><span class="info-label">Saldo:</span><span class="info-value">$${historial.saldoRestante.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>`;
                 }
@@ -1233,7 +1245,7 @@ async function loadClientesTable() {
                 detallesHTML += `<div class="info-item"><span class="info-label">CURP Aval:</span><span class="info-value">${historial.curpAval}</span></div>`;
                 
                 infoCreditoHTML = `<div class="credito-info"><div class="info-grid"><div class="info-item"><span class="info-label">Crédito ID:</span><span class="info-value">${historial.idCredito}</span></div><div class="info-item"><span class="info-label">Estado:</span>${estadoHTML}</div>${detallesHTML}</div></div>`;
-                // === FIN DE LA MEJORA DE UI ===
+                // === FIN DE MEJORA DE UI ===
             }
 
             tr.innerHTML = `
