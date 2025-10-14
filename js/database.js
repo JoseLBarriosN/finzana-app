@@ -155,6 +155,35 @@ const database = {
         }
     },
 
+     buscarClientesPorCURPs: async (curps) => {
+        if (!curps || curps.length === 0) {
+            return [];
+        }
+        try {
+            // Firestore 'in' query supports up to 10 elements. We need to batch if more.
+            const chunks = [];
+            for (let i = 0; i < curps.length; i += 10) {
+                chunks.push(curps.slice(i, i + 10));
+            }
+
+            const promises = chunks.map(chunk =>
+                db.collection('clientes').where('curp', 'in', chunk).get()
+            );
+
+            const snapshots = await Promise.all(promises);
+            const clientes = [];
+            snapshots.forEach(snapshot => {
+                snapshot.forEach(doc => {
+                    clientes.push({ id: doc.id, ...doc.data() });
+                });
+            });
+            return clientes;
+        } catch (error) {
+            console.error("Error buscando clientes por CURPs:", error);
+            return [];
+        }
+    },
+
     agregarCliente: async (clienteData) => {
         try {
             if (!clienteData.id) {
@@ -208,6 +237,33 @@ const database = {
             return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         } catch (error) {
             console.error("Error buscando créditos por cliente:", error);
+            return [];
+        }
+    },
+
+    buscarCreditos: async (filtros) => { // NUEVA FUNCIÓN
+        try {
+            let query = db.collection('creditos');
+            if (filtros.idCredito) {
+                // Si se busca por ID, las demás condiciones no aplican
+                const doc = await db.collection('creditos').doc(filtros.idCredito).get();
+                return doc.exists ? [{ id: doc.id, ...doc.data() }] : [];
+            }
+            if (filtros.estado) {
+                query = query.where('estado', '==', filtros.estado);
+            }
+            if (filtros.curpAval) {
+                query = query.where('curpAval', '==', filtros.curpAval.toUpperCase());
+            }
+             if (filtros.plazo) {
+                query = query.where('plazo', '==', parseInt(filtros.plazo, 10));
+            }
+            // Agrega más filtros de la colección de créditos aquí si es necesario
+
+            const snapshot = await query.get();
+            return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        } catch (error) {
+            console.error("Error buscando créditos:", error);
             return [];
         }
     },
