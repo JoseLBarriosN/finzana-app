@@ -17,47 +17,6 @@
 
     <link rel="manifest" href="manifest.json">
 
-    <style>
-        .required {
-            color: var(--danger);
-            font-weight: bold;
-        }
-
-        .field-note {
-            font-size: 12px;
-            color: var(--gray);
-            margin-top: 5px;
-        }
-
-        .search-group {
-            display: flex;
-            gap: 10px;
-        }
-
-            .search-group input {
-                flex: 1;
-            }
-
-        .status-al-corriente {
-            color: var(--success);
-            font-weight: bold;
-        }
-
-        .status-atrasado {
-            color: var(--warning);
-            font-weight: bold;
-        }
-
-        .status-cobranza {
-            color: var(--danger);
-            font-weight: bold;
-        }
-
-        .status-juridico {
-            color: #B71C1C;
-            font-weight: bold;
-        }
-    </style>
 </head>
 <body>
     <div id="loading-overlay" class="loading-overlay">
@@ -177,6 +136,12 @@
                             <input type="text" id="nombre_filtro" placeholder="Buscar por nombre...">
                         </div>
                         <div class="form-group">
+                            <label for="id_credito_filtro">ID de Crédito</label> <input type="text" id="id_credito_filtro" placeholder="Buscar por ID de crédito...">
+                        </div>
+                        <div class="form-group">
+                            <label for="estado_credito_filtro">Estado del Crédito</label> <select id="estado_credito_filtro"></select>
+                        </div>
+                        <div class="form-group">
                             <label for="fecha_registro_filtro">Fecha de Registro</label>
                             <input type="date" id="fecha_registro_filtro">
                         </div>
@@ -210,7 +175,7 @@
                 <table class="client-table">
                     <thead>
                         <tr>
-                            <th>Sucursal</th>
+                            <th>Sucursal / Registro</th>
                             <th>CURP</th>
                             <th>Nombre</th>
                             <th>Grupo</th>
@@ -245,13 +210,7 @@
                         </div>
                         <div class="form-group">
                             <label for="filtro-rol-usuario">Rol</label>
-                            <select id="filtro-rol-usuario">
-                                <option value="">Todos los roles</option>
-                                <option value="admin">Administrador</option>
-                                <option value="supervisor">Supervisor</option>
-                                <option value="cobrador">Cobrador</option>
-                                <option value="consulta">Consulta</option>
-                            </select>
+                            <select id="filtro-rol-usuario"></select>
                         </div>
                     </div>
                     <div class="filtros-usuarios-actions">
@@ -283,12 +242,7 @@
                         </div>
                         <div class="form-group">
                             <label for="nuevo-rol">Rol <span class="required">*</span></label>
-                            <select id="nuevo-rol" required>
-                                <option value="admin">Administrador</option>
-                                <option value="supervisor">Supervisor</option>
-                                <option value="cobrador">Cobrador</option>
-                                <option value="consulta">Consulta</option>
-                            </select>
+                            <select id="nuevo-rol" required></select>
                         </div>
                         <div class="form-group">
                             <button type="submit" class="btn btn-success"><i class="fas fa-save"></i> Guardar</button>
@@ -303,12 +257,13 @@
                             <th>Nombre</th>
                             <th>Rol</th>
                             <th>Sucursal</th>
-                            <th>UID</th>
+                            <th>Estado</th>
+                            <th>Acciones</th>
                         </tr>
                     </thead>
                     <tbody id="tabla-usuarios">
                         <tr>
-                            <td colspan="5">No hay usuarios en la base de datos de perfiles.</td>
+                            <td colspan="6">Cargando usuarios...</td>
                         </tr>
                     </tbody>
                 </table>
@@ -336,21 +291,21 @@
                     <div id="tab-gdl-clientes" class="import-tab-content">
                         <div class="import-section">
                             <h4>Formato Guadalajara - Clientes (7 columnas)</h4>
-                            <p>CURP, NOMBRE, DOMICILIO, CP, TELEFONO, FECHA REGISTRO, GRUPO</p>
+                            <p>CURP, NOMBRE, DOMICILIO, CP, TELEFONO, FECHA REGISTRO (dd-mm-yyyy), GRUPO</p>
                         </div>
                         <textarea id="datos-importar-gdl-clientes" rows="8" placeholder="Pega aquí los datos CSV..."></textarea>
                     </div>
                     <div id="tab-gdl-colocacion" class="import-tab-content hidden">
                         <div class="import-section">
                             <h4>Formato Guadalajara - Colocación (13 columnas)</h4>
-                            <p>CURP, NOMBRE, ID, FECHA, TIPO, MONTO, PLAZO, MONTO A PAGAR, CURP AVAL, NOMBRE AVAL, GRUPO, RUTA, SALDO</p>
+                            <p>CURP, NOMBRE, ID, FECHA (dd-mm-yyyy), TIPO, MONTO, PLAZO, MONTO A PAGAR, CURP AVAL, NOMBRE AVAL, GRUPO, RUTA, SALDO</p>
                         </div>
                         <textarea id="datos-importar-gdl-colocacion" rows="8" placeholder="Pega aquí los datos CSV..."></textarea>
                     </div>
                     <div id="tab-gdl-cobranza" class="import-tab-content hidden">
                         <div class="import-section">
                             <h4>Formato Guadalajara - Cobranza (11 columnas)</h4>
-                            <p>NOMBRE, ID CREDITO, FECHA, MONTO PAGO, COBRO SEMANA, COMISION, TIPO PAGO, GRUPO, RUTA, SEMANA CREDITO, SALDO</p>
+                            <p>NOMBRE, ID CREDITO, FECHA (dd-mm-yyyy), MONTO PAGO, COBRO SEMANA, COMISION, TIPO PAGO, GRUPO, RUTA, SEMANA CREDITO, SALDO</p>
                         </div>
                         <textarea id="datos-importar-gdl-cobranza" rows="8" placeholder="Pega aquí los datos CSV..."></textarea>
                     </div>
@@ -365,21 +320,21 @@
                     <div id="tab-leon-clientes" class="import-tab-content">
                         <div class="import-section">
                             <h4>Formato León - Clientas (7 columnas)</h4>
-                            <p>CURP, NOMBRE, DOMICILIO, CP, TELEFONO, FECHA REGISTRO, GRUPO</p>
+                            <p>CURP, NOMBRE, DOMICILIO, CP, TELEFONO, FECHA REGISTRO (dd-mm-yyyy), GRUPO</p>
                         </div>
                         <textarea id="datos-importar-leon-clientes" rows="8" placeholder="Pega aquí los datos CSV..."></textarea>
                     </div>
                     <div id="tab-leon-colocacion" class="import-tab-content hidden">
                         <div class="import-section">
                             <h4>Formato León - Colocación (20 columnas)</h4>
-                            <p>CURP, NOMBRE, ID, FECHA, TIPO, MONTO, PLAZO, MONTO A PAGAR, CURP AVAL, NOMBRE AVAL, GRUPO, RUTA, INTERES, SALDO, ULTIMO PAGO, SALDO VENCIDO, STATUS, SALDO CAPITAL, SALDO INTERES, STJ150</p>
+                            <p>CURP, NOMBRE, ID, FECHA (dd-mm-yyyy), TIPO, MONTO, PLAZO, MONTO A PAGAR, CURP AVAL, NOMBRE AVAL, GRUPO, RUTA, INTERES, SALDO, ULTIMO PAGO, SALDO VENCIDO, STATUS, SALDO CAPITAL, SALDO INTERES, STJ150</p>
                         </div>
                         <textarea id="datos-importar-leon-colocacion" rows="8" placeholder="Pega aquí los datos CSV..."></textarea>
                     </div>
                     <div id="tab-leon-cobranza" class="import-tab-content hidden">
                         <div class="import-section">
                             <h4>Formato León - Cobranza (11 columnas)</h4>
-                            <p>NOMBRE, ID CREDITO, FECHA, MONTO PAGO, COMISION, TIPO PAGO, GRUPO, RUTA, INTERES COBRADO, SALDO, COBRADO POR</p>
+                            <p>NOMBRE, ID CREDITO, FECHA (dd-mm-yyyy), MONTO PAGO, COMISION, TIPO PAGO, GRUPO, RUTA, INTERES COBRADO, SALDO, COBRADO POR</p>
                         </div>
                         <textarea id="datos-importar-leon-cobranza" rows="8" placeholder="Pega aquí los datos CSV..."></textarea>
                     </div>
@@ -411,7 +366,7 @@
                     <div class="form-group">
                         <label for="curp_cliente">CURP <span class="required">*</span></label>
                         <input type="text" id="curp_cliente" placeholder="18 caracteres" required maxlength="18">
-                        <div class="field-note">18 caracteres</div>
+                        <div class="field-note">18 caracteres. Solo Admins/Supervisores pueden editar una CURP existente.</div>
                     </div>
                     <div class="form-group">
                         <label for="nombre_cliente">Nombre Completo <span class="required">*</span></label>
