@@ -815,6 +815,191 @@ function handleMontoPagoChange() {
 }
 
 // =============================================
+// FUNCIONES DE VISTA Y AUXILIARES
+// =============================================
+
+function showView(viewId) {
+    console.log('Mostrando vista:', viewId);
+    document.querySelectorAll('.view').forEach(view => view.classList.add('hidden'));
+    const targetView = document.getElementById(viewId);
+    if (targetView) {
+        targetView.classList.remove('hidden');
+        const event = new CustomEvent('viewshown', { detail: { viewId } });
+        targetView.dispatchEvent(event);
+    }
+}
+
+function showStatus(elementId, message, type) {
+    const element = document.getElementById(elementId);
+    if (element) {
+        element.innerHTML = message;
+        element.className = 'status-message ' + (type === 'success' ? 'status-success' : type === 'error' ? 'status-error' : 'status-info');
+    }
+}
+
+function showProcessingOverlay(show, message = 'Procesando...') {
+    let overlay = document.getElementById('processing-overlay');
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'processing-overlay';
+        overlay.className = 'processing-overlay hidden';
+        overlay.innerHTML = `<div class="processing-spinner"></div><div id="processing-message" class="processing-message"></div>`;
+        document.body.appendChild(overlay);
+    }
+    const messageElement = document.getElementById('processing-message');
+    if (show) {
+        if (messageElement) messageElement.textContent = message;
+        overlay.classList.remove('hidden');
+    } else {
+        overlay.classList.add('hidden');
+    }
+}
+
+function showButtonLoading(selector, show, text = 'Procesando...') {
+    const button = (typeof selector === 'string') ? document.querySelector(selector) : selector;
+    if (!button) return;
+    if (show) {
+        button.setAttribute('data-original-text', button.innerHTML);
+        button.innerHTML = '';
+        button.classList.add('btn-loading');
+        button.disabled = true;
+    } else {
+        button.innerHTML = button.getAttribute('data-original-text') || button.textContent;
+        button.classList.remove('btn-loading');
+        button.disabled = false;
+    }
+}
+
+// =============================================
+// FUNCIONES DE BARRA DE PROGRESO Y UTILIDADES
+// =============================================
+
+function showFixedProgress(percentage, message = '') {
+    // Ya no se usa la bandera global `cargaEnProgreso` para mostrar/ocultar
+    let progressContainer = document.getElementById('progress-container-fixed');
+    if (!progressContainer) {
+        progressContainer = document.createElement('div');
+        progressContainer.id = 'progress-container-fixed';
+        progressContainer.className = 'progress-container-fixed';
+        progressContainer.innerHTML = `
+            <div id="progress-bar-fixed" class="progress-bar-fixed"></div>
+            <div id="progress-text-fixed" class="progress-text-fixed"></div>
+            <button id="btn-cancelar-carga-fixed" class="btn-cancelar-carga-fixed" title="Cancelar carga">
+                <i class="fas fa-times"></i>
+            </button>
+        `;
+        document.body.insertBefore(progressContainer, document.body.firstChild);
+        document.getElementById('btn-cancelar-carga-fixed').addEventListener('click', cancelarCarga);
+    }
+    document.getElementById('progress-bar-fixed').style.width = percentage + '%';
+    document.getElementById('progress-text-fixed').textContent = message;
+    progressContainer.style.display = 'flex';
+    document.body.classList.add('has-progress');
+}
+
+function hideFixedProgress() {
+    const progressContainer = document.getElementById('progress-container-fixed');
+    if (progressContainer) {
+        progressContainer.style.display = 'none';
+        document.body.classList.remove('has-progress');
+    }
+    // No modificar `cargaEnProgreso` aquí, se maneja en cada función
+}
+
+function cancelarCarga() {
+    currentSearchOperation = null; // Anula la operación actual
+    cargaEnProgreso = false; // Forzar la detención de cualquier bucle
+    hideFixedProgress();
+    showStatus('status_gestion_clientes', 'Búsqueda cancelada por el usuario.', 'info');
+    const tabla = document.getElementById('tabla-clientes');
+    if (tabla) tabla.innerHTML = '<tr><td colspan="6">Búsqueda cancelada. Utiliza los filtros para buscar de nuevo.</td></tr>';
+    showButtonLoading('btn-aplicar-filtros', false); // Asegurarse de reactivar el botón
+}
+
+
+function calcularMontoTotalColocacion() {
+    const montoInput = document.getElementById('monto_colocacion');
+    const montoTotalInput = document.getElementById('montoTotal_colocacion');
+    if (!montoInput || !montoTotalInput) return;
+    const monto = parseFloat(montoInput.value) || 0;
+    montoTotalInput.value = monto > 0 ? `$${(monto * 1.3).toLocaleString()}` : '';
+}
+
+function validarCURP(input) {
+    input.value = input.value.toUpperCase().substring(0, 18);
+    input.style.borderColor = input.value.length === 18 ? 'var(--success)' : (input.value.length > 0 ? 'var(--danger)' : '');
+}
+
+function validarFormatoCURP(curp) {
+    return curp && curp.length === 18;
+}
+
+const popularDropdown = (elementId, options, placeholder, isObject = false) => {
+    const select = document.getElementById(elementId);
+    if (select) {
+        select.innerHTML = `<option value="">${placeholder}</option>`;
+        options.forEach(option => {
+            const el = document.createElement('option');
+            el.value = isObject ? option.value : option;
+            el.textContent = isObject ? option.text : option;
+            select.appendChild(el);
+        });
+    }
+};
+
+function handleOfficeChangeForClientForm() {
+    const office = this.value;
+    const poblacionesGdl = ['LA CALERA', 'ATEQUIZA', 'SAN JACINTO', 'PONCITLAN', 'OCOTLAN', 'ARENAL', 'AMATITAN', 'ACATLAN DE JUAREZ', 'BELLAVISTA', 'SAN ISIDRO MAZATEPEC', 'TALA', 'CUISILLOS', 'HUAXTLA', 'NEXTIPAC', 'SANTA LUCIA', 'JAMAY', 'LA BARCA', 'SAN JUAN DE OCOTAN', 'TALA 2', 'EL HUMEDO', 'NEXTIPAC 2', 'ZZ PUEBLO'];
+    const poblacionesLeon = ["ARANDAS", "ARANDAS [E]", "BAJIO DE BONILLAS", "BAJIO DE BONILLAS [E]", "CAPULIN", "CARDENAS", "CARDENAS [E]", "CERRITO DE AGUA CALIENTE", "CERRITO DE AGUA CALIENTE [E]", "CORRALEJO", "CORRALEJO [E]", "CUERAMARO", "CUERAMARO [E]", "DOLORES HIDALGO", "EL ALACRAN", "EL EDEN", "EL FUERTE", "EL MEZQUITILLO", "EL MEZQUITILLO [E]", "EL PALENQUE", "EL PALENQUE [E]", "EL PAXTLE", "EL TULE", "EL TULE [E]", "ESTACION ABASOLO", "ESTACION ABASOLO [E]", "ESTACION CORRALEJO", "ESTACION CORRALEJO [E]", "ESTACION JOAQUIN", "ESTACION JOAQUIN [E]", "EX ESTACION CHIRIMOYA", "EX ESTacion CHIRIMOYA [E]", "GAVIA DE RIONDA", "GODOY", "GODOY [E]", "IBARRA", "IBARRA [E]", "LA ALDEA", "LA CARROZA", "LA CARROZA [E]", "LA ESCONDIDA", "LA SANDIA", "LA SANDIA [E]", "LAGUNA DE GUADALUPE", "LAS CRUCES", "LAS CRUCES [E]", "LAS MASAS", "LAS MASAS [E]", "LAS PALOMAS", "LAS TIRITAS", "LOMA DE LA ESPERANZA", "LOMA DE LA ESPERANZA [E]", "LOS DOLORES", "LOS GALVANES", "LOS GALVANES [E]", "MAGUEY BLANCO", "MEDRANOS", "MEXICANOS", "MEXICANOS [E]", "MINERAL DE LA LUZ", "MISION DE ABAJO", "MISION DE ABAJO [E]", "MISION DE ARRIBA", "MISION DE ARRIBA [E]", "NORIA DE ALDAY", "OCAMPO", "PURISIMA DEL RINCON", "PURISIMA DEL RINCON [E]", "RANCHO NUEVO DE LA CRUZ", "RANCHO NUEVO DE LA CRUZ [E]", "RANCHO VIEJO", "RIO LAJA", "RIO LAJA [E]", "SAN ANDRES DE JALPA", "SAN ANDRES DE JALPA [E]", "SAN BERNARDO", "SAN BERNARDO [E]", "SAN CRISTOBAL", "SAN CRISTOBAL [E]", "SAN GREGORIO", "SAN GREGORIO [E]", "SAN ISIDRO DE CRESPO", "SAN ISIDRO DE CRESPO [E]", "SAN JOSE DE BADILLO", "SAN JOSE DE BADILLO [E]", "SAN JOSE DEL RODEO", "SAN JOSE DEL RODEO [E]", "SAN JUAN DE LA PUERTA", "SAN JUAN DE LA PUERTA [E]", "SANTA ANA DEL CONDE", "SANTA ROSA", "SANTA ROSA [E]", "SANTA ROSA PLAN DE AYALA", "SANTA ROSA PLAN DE AYALA [E]", "SANTO DOMINGO", "SERRANO", "TENERIA DEL SANTUARIO", "TENERIA DEL SANTUARIO [E]", "TIERRAS BLANCAS", "TIERRAS BLANCAS [E]", "TREJO", "TREJO [E]", "TUPATARO", "TUPATARO [E]", "VALTIERRILLA", "VALTIERRILLA 2", "VALTIERRILLA [E]", "VAQUERIAS", "VILLA DE ARRIAGA", "VILLA DE ARRIAGA [E]"].sort();
+    
+    // Si se está editando, mostrar todas las poblaciones para permitir cambios de sucursal
+    const poblaciones = editingClientId ? [...new Set([...poblacionesGdl, ...poblacionesLeon])].sort() : (office === 'LEON' ? poblacionesLeon : poblacionesGdl);
+    
+    popularDropdown('poblacion_grupo_cliente', poblaciones, 'Selecciona población/grupo');
+}
+
+function inicializarDropdowns() {
+    console.log('Inicializando dropdowns...');
+    const poblacionesGdl = ['LA CALERA', 'ATEQUIZA', 'SAN JACINTO', 'PONCITLAN', 'OCOTLAN', 'ARENAL', 'AMATITAN', 'ACATLAN DE JUAREZ', 'BELLAVISTA', 'SAN ISIDRO MAZATEPEC', 'TALA', 'CUISILLOS', 'HUAXTLA', 'NEXTIPAC', 'SANTA LUCIA', 'JAMAY', 'LA BARCA', 'SAN JUAN DE OCOTAN', 'TALA 2', 'EL HUMEDO', 'NEXTIPAC 2', 'ZZ PUEBLO'];
+    const poblacionesLeon = ["ARANDAS", "ARANDAS [E]", "BAJIO DE BONILLAS", "BAJIO DE BONILLAS [E]", "CAPULIN", "CARDENAS", "CARDENAS [E]", "CERRITO DE AGUA CALIENTE", "CERRITO DE AGUA CALIENTE [E]", "CORRALEJO", "CORRALEJO [E]", "CUERAMARO", "CUERAMARO [E]", "DOLORES HIDALGO", "EL ALACRAN", "EL EDEN", "EL FUERTE", "EL MEZQUITILLO", "EL MEZQUITILLO [E]", "EL PALENQUE", "EL PALENQUE [E]", "EL PAXTLE", "EL TULE", "EL TULE [E]", "ESTACION ABASOLO", "ESTACION ABASOLO [E]", "ESTACION CORRALEJO", "ESTACION CORRALEJO [E]", "ESTACION JOAQUIN", "ESTACION JOAQUIN [E]", "EX ESTACION CHIRIMOYA", "EX ESTacion CHIRIMOYA [E]", "GAVIA DE RIONDA", "GODOY", "GODOY [E]", "IBARRA", "IBARRA [E]", "LA ALDEA", "LA CARROZA", "LA CARROZA [E]", "LA ESCONDIDA", "LA SANDIA", "LA SANDIA [E]", "LAGUNA DE GUADALUPE", "LAS CRUCES", "LAS CRUCES [E]", "LAS MASAS", "LAS MASAS [E]", "LAS PALOMAS", "LAS TIRITAS", "LOMA DE LA ESPERANZA", "LOMA DE LA ESPERANZA [E]", "LOS DOLORES", "LOS GALVANES", "LOS GALVANES [E]", "MAGUEY BLANCO", "MEDRANOS", "MEXICANOS", "MEXICANOS [E]", "MINERAL DE LA LUZ", "MISION DE ABAJO", "MISION DE ABAJO [E]", "MISION DE ARRIBA", "MISION DE ARRIBA [E]", "NORIA DE ALDAY", "OCAMPO", "PURISIMA DEL RINCON", "PURISIMA DEL RINCON [E]", "RANCHO NUEVO DE LA CRUZ", "RANCHO NUEVO DE LA CRUZ [E]", "RANCHO VIEJO", "RIO LAJA", "RIO LAJA [E]", "SAN ANDRES DE JALPA", "SAN ANDRES DE JALPA [E]", "SAN BERNARDO", "SAN BERNARDO [E]", "SAN CRISTOBAL", "SAN CRISTOBAL [E]", "SAN GREGORIO", "SAN GREGORIO [E]", "SAN ISIDRO DE CRESPO", "SAN ISIDRO DE CRESPO [E]", "SAN JOSE DE BADILLO", "SAN JOSE DE BADILLO [E]", "SAN JOSE DEL RODEO", "SAN JOSE DEL RODEO [E]", "SAN JUAN DE LA PUERTA", "SAN JUAN DE LA PUERTA [E]", "SANTA ANA DEL CONDE", "SANTA ROSA", "SANTA ROSA [E]", "SANTA ROSA PLAN DE AYALA", "SANTA ROSA PLAN DE AYALA [E]", "SANTO DOMINGO", "SERRANO", "TENERIA DEL SANTUARIO", "TENERIA DEL SANTUARIO [E]", "TIERRAS BLANCAS", "TIERRAS BLANCAS [E]", "TREJO", "TREJO [E]", "TUPATARO", "TUPATARO [E]", "VALTIERRILLA", "VALTIERRILLA 2", "VALTIERRILLA [E]", "VAQUERIAS", "VILLA DE ARRIAGA", "VILLA DE ARRIAGA [E]"].sort();
+    const rutas = ['AUDITORIA', 'SUPERVISION', 'ADMINISTRACION', 'DIRECCION', 'COMERCIAL', 'COBRANZA', 'R1', 'R2', 'R3', 'JC1', 'RX'];
+    const tiposCredito = ['NUEVO', 'RENOVACION', 'REINGRESO'];
+    const montos = [3000, 3500, 4000, 4500, 5000, 6000, 7000, 8000, 9000, 10000];
+    const plazos = [13, 14];
+    const estadosCredito = ['al corriente', 'atrasado', 'cobranza', 'juridico', 'liquidado'];
+    const tiposPago = ['normal', 'extraordinario', 'actualizado'];
+    const sucursales = ['GDL', 'LEON'];
+    const roles = [
+        { value: 'admin', text: 'Administrador' },
+        { value: 'supervisor', text: 'Supervisor' },
+        { value: 'cobrador', text: 'Cobrador' },
+        { value: 'consulta', text: 'Consulta' },
+        { value: 'comisionista', text: 'Comisionista' }
+    ];
+    
+    popularDropdown('poblacion_grupo_cliente', poblacionesGdl, 'Selecciona población/grupo');
+    popularDropdown('ruta_cliente', rutas, 'Selecciona una ruta');
+    popularDropdown('tipo_colocacion', tiposCredito.map(t => ({ value: t.toLowerCase(), text: t })), 'Selecciona tipo', true);
+    popularDropdown('monto_colocacion', montos.map(m => ({ value: m, text: `$${m.toLocaleString()}` })), 'Selecciona monto', true);
+    // Plazos se llenan dinámicamente según el cliente
+    const todasLasPoblaciones = [...new Set([...poblacionesGdl, ...poblacionesLeon])].sort();
+    popularDropdown('grupo_filtro', todasLasPoblaciones, 'Todos');
+    popularDropdown('tipo_colocacion_filtro', tiposCredito.map(t => ({ value: t.toLowerCase(), text: t })), 'Todos', true);
+    popularDropdown('plazo_filtro', [...plazos, 10].sort((a, b) => a - b).map(p => ({ value: p, text: `${p} semanas` })), 'Todos', true);
+    popularDropdown('estado_credito_filtro', estadosCredito.map(e => ({ value: e, text: e.charAt(0).toUpperCase() + e.slice(1) })), 'Todos', true);
+    popularDropdown('filtro-rol-usuario', roles, 'Todos los roles', true);
+    document.getElementById('nuevo-rol').innerHTML = `<option value="">Seleccione un rol</option>` + roles.map(r => `<option value="${r.value}">${r.text}</option>`).join('');
+
+    popularDropdown('sucursal_filtro_reporte', sucursales, 'Todas');
+    popularDropdown('grupo_filtro_reporte', todasLasPoblaciones, 'Todos');
+    popularDropdown('ruta_filtro_reporte', rutas, 'Todas');
+    popularDropdown('tipo_credito_filtro_reporte', tiposCredito.map(t => ({ value: t.toLowerCase(), text: t })), 'Todos', true);
+    popularDropdown('estado_credito_filtro_reporte', estadosCredito.map(e => ({ value: e, text: e.toUpperCase() })), 'Todos', true);
+    popularDropdown('tipo_pago_filtro_reporte', tiposPago.map(t => ({ value: t, text: t.toUpperCase() })), 'Todos', true);
+    console.log('Dropdowns inicializados correctamente');
+}
+
+// =============================================
 // LÓGICA DE NEGOCIO (RESTAURADA Y COMPLETADA)
 // =============================================
 
@@ -940,7 +1125,7 @@ async function obtenerHistorialCreditoCliente(curp, idCreditoEspecifico = null) 
 
 
 // =============================================
-// SECCIÓN RESTAURADA Y COMPLETADA
+// SECCIÓN DE BÚSQUEDA DE CLIENTES
 // =============================================
 
 function inicializarVistaGestionClientes() {
@@ -1036,8 +1221,10 @@ async function loadClientesTable() {
             if (!cliente) return false; // Ignorar si la operación fue cancelada durante el map
             const h = cliente.historial;
             if (filtros.estado && (!h || h.estado !== filtros.estado)) return false;
-            if (filtros.curpAval && (!h || !h.curpAval || !h.curpAval.includes(filtros.curpAval.toUpperCase()))) return false;
+            if (filtros.curpAval && (!h || !h.curpAval || !h.curpAval.toUpperCase().includes(filtros.curpAval.toUpperCase()))) return false;
             if (filtros.plazo && (!h || h.plazoTotal != filtros.plazo)) return false;
+            // Si la búsqueda fue por ID, asegúrate de que el historial coincida (aunque ya debería por la búsqueda inicial)
+            if (filtros.idCredito && (!h || h.idCredito !== filtros.idCredito)) return false;
             return true;
         });
 
