@@ -3,53 +3,49 @@
 // =============================================
 
 /**
- * Parsea de forma segura una fecha desde un string de importación (dd-mm-yyyy, yyyy-mm-dd, ISO).
+ * Parsea de forma robusta una fecha desde un string de importación (dd-mm-yyyy, yyyy-mm-dd, ISO).
+ * Prioriza la exactitud y siempre devuelve un string en formato ISO 8601 (UTC) o null.
  * @param {string} fechaStr La cadena de texto de la fecha.
  * @returns {string|null} Un string en formato ISO 8601 válido o null si el formato es incorrecto.
  */
 function _parsearFechaImportacion(fechaStr) {
     if (!fechaStr || typeof fechaStr !== 'string') return null;
 
-    if (fechaStr.includes('T') && fechaStr.includes('Z')) {
-        const fecha = new Date(fechaStr);
-        if (!isNaN(fecha.getTime())) {
-            return fecha.toISOString();
-        }
+    // Intenta parsear directamente si es un formato reconocido como ISO
+    const fechaDirecta = new Date(fechaStr);
+    if (!isNaN(fechaDirecta.getTime())) {
+        return fechaDirecta.toISOString();
     }
 
-    const separador = fechaStr.includes('-') ? '-' : (fechaStr.includes('/') ? '/' : null);
-    if (!separador) {
-        const fechaDirecta = new Date(fechaStr);
-        if (!isNaN(fechaDirecta.getTime())) {
-            return fechaDirecta.toISOString();
-        }
+    // Maneja formatos dd/mm/yyyy, dd-mm-yyyy, yyyy-mm-dd, etc.
+    const regex = /^(?:(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2}))|(?:(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4}))$/;
+    const match = fechaStr.trim().match(regex);
+
+    if (!match) {
+        console.warn("Formato de fecha no reconocido:", fechaStr);
         return null;
     }
-
-    const partes = fechaStr.split('T')[0].split(separador);
-    if (partes.length !== 3) return null;
 
     let anio, mes, dia;
 
-    if (partes[0].length === 4) {
-        [anio, mes, dia] = partes;
-    } else if (partes[2].length === 4) {
-        [dia, mes, anio] = partes;
-    } else {
-        return null;
+    if (match[1] !== undefined) { // Formato YYYY-MM-DD
+        [anio, mes, dia] = [parseInt(match[1], 10), parseInt(match[2], 10), parseInt(match[3], 10)];
+    } else { // Formato DD-MM-YYYY
+        [dia, anio] = [parseInt(match[4], 10), parseInt(match[6], 10)];
+        mes = parseInt(match[5], 10);
     }
     
-    const diaNum = parseInt(dia, 10);
-    const mesNum = parseInt(mes, 10);
-    const anioNum = parseInt(anio, 10);
-
-    if (isNaN(diaNum) || isNaN(mesNum) || isNaN(anioNum) || mesNum < 1 || mesNum > 12 || diaNum < 1 || diaNum > 31) {
+    if (isNaN(dia) || isNaN(mes) || isNaN(anio) || mes < 1 || mes > 12 || dia < 1 || dia > 31) {
         return null;
     }
 
-    const fecha = new Date(Date.UTC(anioNum, mesNum - 1, diaNum));
-    
-    if (isNaN(fecha.getTime())) return null;
+    // Crea la fecha en UTC para evitar problemas de zona horaria
+    const fecha = new Date(Date.UTC(anio, mes - 1, dia));
+
+    if (isNaN(fecha.getTime()) || fecha.getUTCDate() !== dia) {
+        console.warn("Fecha inválida (ej. 31 de Febrero):", fechaStr);
+        return null; // Fecha inválida como 31 de Febrero
+    }
 
     return fecha.toISOString();
 }
@@ -83,6 +79,17 @@ const database = {
         }
     },
 
+    obtenerUsuarioPorId: async (uid) => {
+        try {
+            const doc = await db.collection('users').doc(uid).get();
+            if (!doc.exists) return null;
+            return { id: doc.id, ...doc.data() };
+        } catch (error) {
+            console.error("Error obteniendo usuario por ID:", error);
+            return null;
+        }
+    },
+    
     actualizarUsuario: async (uid, userData) => {
         try {
             await db.collection('users').doc(uid).update(userData);
@@ -207,9 +214,11 @@ const database = {
 
     buscarCreditoActivoPorCliente: async (curp) => {
         try {
-            const snapshot = await db.collection('creditos').where('curpCliente', '==', curp.toUpperCase()).where('estado', '==', 'activo').limit(1).get();
-            if (snapshot.empty) return null;
-            return { id: snapshot.docs[0].id, ...snapshot.docs[0].data() };
+            const creditos = await database.buscarCreditosPorCliente(curp);
+            const creditosActivos = creditos.filter(c => c.estado === 'activo');
+            if (creditosActivos.length === 0) return null;
+            // Devuelve el más reciente en caso de que haya más de uno activo por error
+            return creditosActivos.sort((a, b) => new Date(b.fechaCreacion) - new Date(a.fechaCreacion))[0];
         } catch (error) {
             console.error("Error buscando crédito activo:", error);
             return null;
@@ -227,8 +236,30 @@ const database = {
         }
     },
 
+    verificarElegibilidadCliente: async (curp) => {
+        const creditoActivo = await database.buscarCreditoActivoPorCliente(curp);
+        if (!creditoActivo) {
+            return { elegible: true }; // No tiene créditos activos, es elegible.
+        }
+
+        if (!creditoActivo.montoTotal || creditoActivo.montoTotal === 0) {
+            // Si no tiene monto, se considera no elegible para evitar problemas
+            return { elegible: false, message: 'El crédito activo actual tiene datos inconsistentes y no se puede verificar.' };
+        }
+
+        const porcentajePagado = ((creditoActivo.montoTotal - creditoActivo.saldo) / creditoActivo.montoTotal) * 100;
+        if (porcentajePagado >= 80) {
+            return { elegible: true };
+        } else {
+            return {
+                elegible: false,
+                message: `El cliente ya tiene un crédito activo (ID: ${creditoActivo.id}) con solo un ${porcentajePagado.toFixed(0)}% pagado. Se requiere al menos el 80%.`
+            };
+        }
+    },
+
     verificarElegibilidadAval: async (curpAval) => {
-        if (!curpAval) return { elegible: true };
+        if (!curpAval) return { elegible: true }; // Si no se proporciona aval, es elegible
 
         try {
             const snapshot = await db.collection('creditos')
@@ -237,49 +268,59 @@ const database = {
                 .get();
 
             if (snapshot.empty) {
-                return { elegible: true };
+                return { elegible: true }; // No está avalando créditos activos
             }
 
+            // El aval está respaldando al menos un crédito activo. Verificamos si alguno incumple la regla.
             for (const doc of snapshot.docs) {
                 const credito = doc.data();
                 if (credito.montoTotal > 0) {
-                    const porcentajeAdeudo = (credito.saldo / credito.montoTotal) * 100;
-                    if (porcentajeAdeudo > 20) {
-                        return { 
-                            elegible: false, 
-                            message: `El aval ya respalda el crédito ${credito.id} con un ${porcentajeAdeudo.toFixed(0)}% de adeudo.` 
+                    const porcentajePagado = ((credito.montoTotal - credito.saldo) / credito.montoTotal) * 100;
+                    if (porcentajePagado < 80) {
+                         return {
+                            elegible: false,
+                            message: `Este aval ya respalda el crédito ${credito.id}, el cual solo tiene un ${porcentajePagado.toFixed(0)}% de avance. Se requiere el 80% para poder avalar otro.`
                         };
                     }
                 }
             }
 
-            return { elegible: true };
+            return { elegible: true }; // Todos los créditos que avala cumplen la regla del 80%
         } catch (error) {
             console.error("Error verificando elegibilidad del aval:", error);
             return { elegible: false, message: "Error al consultar la base de datos para el aval." };
         }
     },
-
+    
     agregarCredito: async (creditoData) => {
         try {
-            const counterRef = db.collection('config').doc('credito-counter');
-            const counterDoc = await counterRef.get();
-            if (!counterDoc.exists) {
-                await counterRef.set({ value: 20000000 });
-            }
-            let newId;
-            try {
-                newId = await db.runTransaction(async (transaction) => {
-                    const doc = await transaction.get(counterRef);
-                    const newValue = (doc.data().value || 20000000) + 1;
-                    transaction.update(counterRef, { value: newValue });
-                    return newValue.toString();
-                });
-            } catch (e) {
-                console.error("Error en transacción de contador:", e);
-                return { success: false, message: "No se pudo generar el ID de crédito." };
+            // 1. Liquidar crédito anterior si existe y es elegible para renovación
+            const creditoActivoAnterior = await database.buscarCreditoActivoPorCliente(creditoData.curpCliente);
+            if (creditoActivoAnterior) {
+                const elegibilidad = await database.verificarElegibilidadCliente(creditoData.curpCliente);
+                if (elegibilidad.elegible) {
+                    await db.collection('creditos').doc(creditoActivoAnterior.id).update({ estado: 'liquidado' });
+                } else {
+                    return { success: false, message: elegibilidad.message };
+                }
             }
 
+            // 2. Generar ID para el nuevo crédito
+            const counterRef = db.collection('config').doc('credito-counter');
+            let newId;
+            await db.runTransaction(async (transaction) => {
+                const doc = await transaction.get(counterRef);
+                const currentValue = doc.exists ? doc.data().value : 20000000;
+                const newValue = currentValue + 1;
+                transaction.set(counterRef, { value: newValue }, { merge: true });
+                newId = newValue.toString();
+            });
+
+            if (!newId) {
+                 return { success: false, message: "No se pudo generar el ID de crédito." };
+            }
+
+            // 3. Preparar y guardar el nuevo crédito
             creditoData.id = newId;
             creditoData.fechaCreacion = new Date().toISOString();
             creditoData.estado = 'activo';
@@ -295,6 +336,7 @@ const database = {
             return { success: false, message: `Error: ${error.message}` };
         }
     },
+
 
     // --- MÉTODOS DE PAGOS ---
     getPagosPorCredito: async (creditoId) => {
@@ -341,7 +383,7 @@ const database = {
     importarDatosDesdeCSV: async (csvData, tipo, office) => {
         const lineas = csvData.split('\n').filter(linea => linea.trim());
         if (lineas.length === 0) return { success: true, total: 0, importados: 0, errores: [] };
-        
+
         let errores = [];
         let importados = 0;
         let batch = db.batch();
@@ -356,7 +398,11 @@ const database = {
                         errores.push(`Línea ${i + 1}: Faltan columnas (se esperaban 7, se encontraron ${campos.length})`);
                         continue;
                     }
-                    const fechaRegistro = _parsearFechaImportacion(campos[5]) || new Date().toISOString();
+                    const fechaRegistro = _parsearFechaImportacion(campos[5]);
+                    if (!fechaRegistro) {
+                        errores.push(`Línea ${i + 1}: Fecha de registro inválida ('${campos[5]}'). Se omitirá el registro.`);
+                        continue;
+                    }
                     const docRef = db.collection('clientes').doc();
                     batch.set(docRef, {
                         curp: campos[0].toUpperCase(),
@@ -371,8 +417,9 @@ const database = {
                     });
                     importados++;
                 } else if (tipo === 'colocacion') {
-                    if (campos.length < 13) {
-                        errores.push(`Línea ${i + 1}: Formato incorrecto para colocación (se esperaban 13, se encontraron ${campos.length})`);
+                    const columnasEsperadas = office === 'LEON' ? 20 : 13;
+                    if (campos.length < columnasEsperadas) {
+                        errores.push(`Línea ${i + 1}: Formato incorrecto para colocación (se esperaban ${columnasEsperadas}, se encontraron ${campos.length})`);
                         continue;
                     }
                     const creditoId = campos[2].trim();
@@ -385,7 +432,10 @@ const database = {
                         errores.push(`Línea ${i + 1}: Fecha de creación inválida o vacía ('${campos[3]}').`);
                         continue;
                     }
-                    const saldo = parseFloat(campos[12] || 0);
+                    
+                    const saldoIndex = office === 'LEON' ? 13 : 12;
+                    const saldo = parseFloat(campos[saldoIndex] || 0);
+
                     const credito = {
                         id: creditoId,
                         office: office,
@@ -404,16 +454,14 @@ const database = {
                         estado: saldo > 0.01 ? 'activo' : 'liquidado'
                     };
                     const docRef = db.collection('creditos').doc(credito.id);
-                    batch.set(docRef, credito);
+                    batch.set(docRef, credito, { merge: true }); // Usar merge para no sobrescribir datos si ya existe
                     importados++;
                 } else if (tipo === 'cobranza') {
                      if (campos.length < 11) {
                         errores.push(`Línea ${i + 1}: Formato incorrecto para cobranza (se esperaban 11, se encontraron ${campos.length})`);
                         continue;
                     }
-                    // ===== INICIO DE CORRECCIÓN CRÍTICA =====
-                    const idCredito = campos[1].trim(); // Limpiar espacios en blanco
-                    // ===== FIN DE CORRECCIÓN CRÍTICA =====
+                    const idCredito = campos[1].trim();
                     const fechaPago = _parsearFechaImportacion(campos[2]);
                     const montoPago = parseFloat(campos[3] || 0);
 
@@ -425,11 +473,11 @@ const database = {
                         errores.push(`Línea ${i + 1}: Fecha de pago inválida o vacía ('${campos[2]}').`);
                         continue;
                     }
-                     if (isNaN(montoPago) || montoPago <= 0) {
+                    if (isNaN(montoPago) || montoPago <= 0) {
                         errores.push(`Línea ${i + 1}: Monto de pago inválido ('${campos[3]}').`);
                         continue;
                     }
-                    
+
                     const pago = {
                         office: office,
                         nombreCliente: campos[0],
@@ -562,14 +610,16 @@ const database = {
 
     _cumpleFiltroFecha: (fecha, fechaInicio, fechaFin) => {
         if (!fechaInicio && !fechaFin) return true;
+        if (!fecha) return false; // Si el registro no tiene fecha, no puede cumplir el filtro
         const fechaObj = new Date(fecha);
         if (fechaInicio) {
             const inicio = new Date(fechaInicio);
+            inicio.setUTCHours(0, 0, 0, 0); // Compara desde el inicio del día
             if (fechaObj < inicio) return false;
         }
         if (fechaFin) {
             const fin = new Date(fechaFin);
-            fin.setHours(23, 59, 59, 999);
+            fin.setUTCHours(23, 59, 59, 999); // Compara hasta el final del día
             if (fechaObj > fin) return false;
         }
         return true;
