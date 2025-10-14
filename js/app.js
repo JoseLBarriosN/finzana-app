@@ -54,9 +54,9 @@ function formatDateForDisplay(dateObj) {
     if (!(dateObj instanceof Date) || isNaN(dateObj.getTime())) {
         return 'N/A';
     }
-    const dia = String(dateObj.getDate()).padStart(2, '0');
-    const mes = String(dateObj.getMonth() + 1).padStart(2, '0');
-    const anio = dateObj.getFullYear();
+    const dia = String(dateObj.getUTCDate()).padStart(2, '0');
+    const mes = String(dateObj.getUTCMonth() + 1).padStart(2, '0');
+    const anio = dateObj.getUTCFullYear();
     return `${dia}/${mes}/${anio}`;
 }
 
@@ -347,23 +347,40 @@ function resetClientForm() {
     if (titulo) titulo.textContent = 'Registrar Cliente';
     const submitButton = document.querySelector('#form-cliente button[type="submit"]');
     if (submitButton) submitButton.innerHTML = '<i class="fas fa-save"></i> Guardar Cliente';
-    document.getElementById('curp_cliente').readOnly = true; // Por defecto bloqueado
-    // Verifica el rol al resetear por si un admin quiere crear un nuevo cliente
+    
+    const curpInput = document.getElementById('curp_cliente');
+    curpInput.readOnly = true; // Por defecto bloqueado
      if (currentUserData && (currentUserData.role === 'admin' || currentUserData.role === 'supervisor')) {
-        document.getElementById('curp_cliente').readOnly = false;
+        curpInput.readOnly = false;
     }
     handleOfficeChangeForClientForm.call({ value: 'GDL' });
 }
 
 async function handleClientForm(e) {
     e.preventDefault();
-    const curp = document.getElementById('curp_cliente').value;
+    const curpInput = document.getElementById('curp_cliente');
+    const curp = curpInput.value.toUpperCase();
+
     if (!validarFormatoCURP(curp)) {
         showStatus('status_cliente', 'El CURP debe tener 18 caracteres.', 'error');
         return;
     }
     const submitButton = document.querySelector('#form-cliente button[type="submit"]');
     showButtonLoading(submitButton, true, 'Guardando...');
+
+    // Si se está editando, verificar que la nueva CURP no exista ya en otro cliente
+    if (editingClientId && !curpInput.readOnly) {
+        const clienteOriginal = await database.obtenerClientePorId(editingClientId);
+        if (clienteOriginal.curp !== curp) {
+            const existe = await database.buscarClientePorCURP(curp);
+            if (existe) {
+                showStatus('status_cliente', 'La nueva CURP ya pertenece a otro cliente.', 'error');
+                showButtonLoading(submitButton, false);
+                return;
+            }
+        }
+    }
+
     const clienteData = {
         office: document.getElementById('office_cliente').value,
         curp,
@@ -372,8 +389,10 @@ async function handleClientForm(e) {
         cp: document.getElementById('cp_cliente').value,
         telefono: document.getElementById('telefono_cliente').value,
         poblacion_grupo: document.getElementById('poblacion_grupo_cliente').value,
-        ruta: document.getElementById('ruta_cliente').value
+        ruta: document.getElementById('ruta_cliente').value,
+        isComisionista: document.getElementById('comisionista_cliente').checked
     };
+    
     if (!clienteData.nombre || !clienteData.domicilio || !clienteData.poblacion_grupo || !clienteData.ruta) {
         showStatus('status_cliente', 'Los campos con * son obligatorios.', 'error');
         showButtonLoading(submitButton, false);
@@ -400,7 +419,7 @@ async function handleClientForm(e) {
         if (resultado.success) {
             resetClientForm();
             showView('view-gestion-clientes');
-            await loadClientesTable();
+            loadClientesTable(); // Forzar recarga de la tabla
         } else {
             showStatus('status_cliente', resultado.message, 'error');
         }
@@ -613,6 +632,9 @@ async function handleSearchClientForCredit() {
                 return;
             }
 
+            // Actualizar plazos según si el cliente es comisionista
+            actualizarPlazosSegunCliente(cliente.isComisionista || false);
+
             showFixedProgress(100, 'Cliente encontrado');
             const creditoActivo = await database.buscarCreditoActivoPorCliente(curp);
             const mensaje = creditoActivo ? 'Cliente encontrado y elegible para renovación.' : 'Cliente encontrado y elegible para crédito nuevo.';
@@ -713,9 +735,8 @@ async function handleSearchCreditForPayment() {
             showFixedProgress(80, 'Calculando historial...');
             const historial = await obtenerHistorialCreditoCliente(creditoActual.curpCliente, idCredito); // Pasamos el ID para asegurar que sea este crédito
             if (historial) {
-                const proximaFechaPago = formatDateForDisplay(parsearFecha(historial.proximaFechaPago));
                 const campos = ['nombre_cobranza', 'saldo_cobranza', 'estado_cobranza', 'semanas_atraso_cobranza', 'pago_semanal_cobranza', 'fecha_proximo_pago_cobranza', 'monto_cobranza'];
-                const valores = [cliente ? cliente.nombre : 'N/A', `$${historial.saldoRestante.toLocaleString()}`, historial.estado.toUpperCase(), historial.semanasAtraso || 0, `$${historial.pagoSemanal.toLocaleString()}`, proximaFechaPago, historial.pagoSemanal.toFixed(2)];
+                const valores = [cliente ? cliente.nombre : 'N/A', `$${historial.saldoRestante.toLocaleString()}`, historial.estado.toUpperCase(), historial.semanasAtraso || 0, `$${historial.pagoSemanal.toLocaleString()}`, historial.proximaFechaPago, historial.pagoSemanal.toFixed(2)];
                 campos.forEach((campo, index) => {
                     const element = document.getElementById(campo);
                     if (element) element.value = valores[index];
@@ -854,9 +875,7 @@ function showButtonLoading(selector, show, text = 'Procesando...') {
 // =============================================
 
 function showFixedProgress(percentage, message = '') {
-    if (cargaEnProgreso === false && percentage > 0 && percentage < 100) {
-        return;
-    }
+    // Ya no se usa la bandera global `cargaEnProgreso` para mostrar/ocultar
     let progressContainer = document.getElementById('progress-container-fixed');
     if (!progressContainer) {
         progressContainer = document.createElement('div');
@@ -870,22 +889,10 @@ function showFixedProgress(percentage, message = '') {
             </button>
         `;
         document.body.insertBefore(progressContainer, document.body.firstChild);
-        const btnCancelar = document.getElementById('btn-cancelar-carga-fixed');
-        if (btnCancelar) {
-            btnCancelar.addEventListener('click', cancelarCarga);
-        }
+        document.getElementById('btn-cancelar-carga-fixed').addEventListener('click', cancelarCarga);
     }
-    const progressBar = document.getElementById('progress-bar-fixed');
-    const progressText = document.getElementById('progress-text-fixed');
-    if (progressBar) {
-        progressBar.style.width = percentage + '%';
-        if (percentage < 30) progressBar.style.background = 'var(--danger)';
-        else if (percentage < 70) progressBar.style.background = 'var(--warning)';
-        else progressBar.style.background = 'var(--success)';
-    }
-    if (progressText && message) {
-        progressText.textContent = message;
-    }
+    document.getElementById('progress-bar-fixed').style.width = percentage + '%';
+    document.getElementById('progress-text-fixed').textContent = message;
     progressContainer.style.display = 'flex';
     document.body.classList.add('has-progress');
 }
@@ -895,26 +902,19 @@ function hideFixedProgress() {
     if (progressContainer) {
         progressContainer.style.display = 'none';
         document.body.classList.remove('has-progress');
-        const progressBar = document.getElementById('progress-bar-fixed');
-        if (progressBar) {
-            progressBar.style.width = '0%';
-        }
     }
-    cargaEnProgreso = false;
+    // No modificar `cargaEnProgreso` aquí, se maneja en cada función
 }
 
 function cancelarCarga() {
-    cargaEnProgreso = false;
+    cargaEnProgreso = false; // Forzar la detención de cualquier bucle
     hideFixedProgress();
-    showStatus('status_gestion_clientes', 'Carga cancelada por el usuario.', 'info');
-    showStatus('status_usuarios', 'Carga cancelada por el usuario.', 'info');
-    const tablaClientes = document.getElementById('tabla-clientes');
-    if (tablaClientes) tablaClientes.innerHTML = '<tr><td colspan="6">Carga cancelada.</td></tr>';
-    const tablaUsuarios = document.getElementById('tabla-usuarios');
-    if (tablaUsuarios) tablaUsuarios.innerHTML = '<tr><td colspan="5">Carga cancelada.</td></tr>';
-    showButtonLoading('btn-aplicar-filtros', false);
-    showButtonLoading('btn-aplicar-filtros-usuarios', false);
+    showStatus('status_gestion_clientes', 'Búsqueda cancelada por el usuario.', 'info');
+    const tabla = document.getElementById('tabla-clientes');
+    if (tabla) tabla.innerHTML = '<tr><td colspan="6">Búsqueda cancelada. Utiliza los filtros para buscar de nuevo.</td></tr>';
+    showButtonLoading('btn-aplicar-filtros', false); // Asegurarse de reactivar el botón
 }
+
 
 function calcularMontoTotalColocacion() {
     const montoInput = document.getElementById('monto_colocacion');
@@ -980,7 +980,7 @@ function inicializarDropdowns() {
     popularDropdown('ruta_cliente', rutas, 'Selecciona una ruta');
     popularDropdown('tipo_colocacion', tiposCredito.map(t => ({ value: t.toLowerCase(), text: t })), 'Selecciona tipo', true);
     popularDropdown('monto_colocacion', montos.map(m => ({ value: m, text: `$${m.toLocaleString()}` })), 'Selecciona monto', true);
-    // Plazos se llenan dinámicamente según el rol
+    // Plazos se llenan dinámicamente según el cliente
     const todasLasPoblaciones = [...new Set([...poblacionesGdl, ...poblacionesLeon])].sort();
     popularDropdown('grupo_filtro', todasLasPoblaciones, 'Todos');
     popularDropdown('tipo_colocacion_filtro', tiposCredito.map(t => ({ value: t.toLowerCase(), text: t })), 'Todos', true);
@@ -1011,21 +1011,19 @@ function _calcularEstadoCredito(credito, pagos) {
     const montoPagado = pagos.reduce((sum, pago) => sum + (pago.monto || 0), 0);
     const saldoReal = (credito.montoTotal || 0) - montoPagado;
     
-    // Si no tiene plazo o monto total, no se puede calcular un estado detallado
     if (!credito.montoTotal || !credito.plazo || credito.plazo <= 0) {
         const estadoSimple = saldoReal <= 0.01 ? 'liquidado' : 'activo';
-        return { estado: estadoSimple, diasAtraso: 0, semanasAtraso: 0, pagoSemanal: 0, proximaFechaPago: 'N/A' };
+        return { estado: estadoSimple, diasAtraso: 0, semanasAtraso: 0, pagoSemanal: 0, proximaFechaPago: null };
     }
 
     if (saldoReal <= 0.01) {
-        return { estado: 'liquidado', diasAtraso: 0, semanasAtraso: 0, pagoSemanal: 0, proximaFechaPago: 'N/A' };
+        return { estado: 'liquidado', diasAtraso: 0, semanasAtraso: 0, pagoSemanal: 0, proximaFechaPago: null };
     }
     
-    // El resto de la lógica requiere una fecha de inicio válida
     const fechaInicio = parsearFecha(credito.fechaCreacion);
     if (!fechaInicio) {
-        console.error(`Cálculo de estado fallido para crédito ID ${credito.id}: Fecha de creación inválida. Valor recibido:`, credito.fechaCreacion);
-        return { estado: 'indeterminado', diasAtraso: 0, semanasAtraso: 0, pagoSemanal: 0, proximaFechaPago: 'N/A' };
+        console.error(`Cálculo de estado fallido para crédito ID ${credito.id}: Fecha de creación inválida.`, credito.fechaCreacion);
+        return { estado: 'indeterminado', diasAtraso: 0, semanasAtraso: 0, pagoSemanal: 0, proximaFechaPago: null };
     }
     
     const pagoSemanal = credito.montoTotal / credito.plazo;
@@ -1066,12 +1064,12 @@ async function obtenerHistorialCreditoCliente(curp, idCreditoEspecifico = null) 
     const creditosCliente = await database.buscarCreditosPorCliente(curp);
     if (creditosCliente.length === 0) return null;
 
-    // Ordenar para encontrar el más reciente y contar los ciclos
-    creditosCliente.sort((a, b) => {
-        const fechaA = parsearFecha(a.fechaCreacion) || 0;
-        const fechaB = parsearFecha(b.fechaCreacion) || 0;
-        return fechaB - fechaA;
-    });
+    creditosCliente.sort((a, b) => (parsearFecha(a.fechaCreacion) || 0) - (parsearFecha(b.fechaCreacion) || 0));
+    
+    const primerCredito = creditosCliente[0];
+    const fechaRegistro = parsearFecha(primerCredito.fechaCreacion);
+
+    creditosCliente.sort((a, b) => (parsearFecha(b.fechaCreacion) || 0) - (parsearFecha(a.fechaCreacion) || 0));
     
     const creditosLiquidados = creditosCliente.filter(c => c.estado === 'liquidado');
     
@@ -1084,22 +1082,15 @@ async function obtenerHistorialCreditoCliente(curp, idCreditoEspecifico = null) 
     
     if (!creditoActual) return null;
 
-    const cicloCredito = creditosLiquidados.length + (creditoActual.estado !== 'liquidado' ? 1 : 0);
+    const cicloCredito = creditosLiquidados.filter(c => parsearFecha(c.fechaCreacion) < parsearFecha(creditoActual.fechaCreacion)).length + 1;
     const pagos = await database.getPagosPorCredito(creditoActual.id);
 
-    pagos.sort((a, b) => {
-        const fechaA = parsearFecha(a.fecha) || 0;
-        const fechaB = parsearFecha(b.fecha) || 0;
-        return fechaB - fechaA;
-    });
+    pagos.sort((a, b) => (parsearFecha(b.fecha) || 0) - (parsearFecha(a.fecha) || 0));
 
     const ultimoPago = pagos.length > 0 ? pagos[0] : null;
     const estadoCalculado = _calcularEstadoCredito(creditoActual, pagos);
 
-    if (!estadoCalculado) {
-        console.error(`No se pudo calcular el historial para el crédito ID ${creditoActual.id}.`);
-        return null;
-    }
+    if (!estadoCalculado) return null;
 
     const fechaUltimoPagoObj = ultimoPago ? parsearFecha(ultimoPago.fecha) : null;
     
@@ -1111,7 +1102,7 @@ async function obtenerHistorialCreditoCliente(curp, idCreditoEspecifico = null) 
         semanasPagadas = Math.floor(montoPagadoTotal / estadoCalculado.pagoSemanal);
     }
 
-    if(estadoCalculado.estado === 'liquidado') {
+    if(estadoCalculado.estado === 'liquidado' && creditoActual.plazo) {
         semanasPagadas = creditoActual.plazo;
     }
     
@@ -1119,6 +1110,7 @@ async function obtenerHistorialCreditoCliente(curp, idCreditoEspecifico = null) 
         idCredito: creditoActual.id,
         saldoRestante: saldoRestante,
         fechaUltimoPago: formatDateForDisplay(fechaUltimoPagoObj),
+        fechaRegistro: formatDateForDisplay(fechaRegistro),
         totalPagos: pagos.length,
         plazoTotal: creditoActual.plazo,
         nombreAval: creditoActual.nombreAval || 'N/A',
@@ -1162,11 +1154,13 @@ async function loadClientesTable() {
         return;
     }
     cargaEnProgreso = true;
+    currentSearchOperation = Date.now();
+    const operationId = currentSearchOperation;
 
     const tbody = document.getElementById('tabla-clientes');
     tbody.innerHTML = '<tr><td colspan="6">Buscando...</td></tr>';
     showButtonLoading('btn-aplicar-filtros', true, 'Buscando...');
-    showFixedProgress(10, 'Aplicando filtros...');
+    showFixedProgress(10, 'Iniciando búsqueda...');
 
     try {
         const filtros = {
@@ -1175,68 +1169,65 @@ async function loadClientesTable() {
             nombre: document.getElementById('nombre_filtro')?.value?.trim() || '',
             idCredito: document.getElementById('id_credito_filtro')?.value?.trim() || '',
             estado: document.getElementById('estado_credito_filtro')?.value || '',
-            fechaRegistro: document.getElementById('fecha_registro_filtro')?.value || '',
-            fechaCredito: document.getElementById('fecha_credito_filtro')?.value || '',
-            tipo: document.getElementById('tipo_colocacion_filtro')?.value || '',
-            plazo: document.getElementById('plazo_filtro')?.value || '',
             curpAval: document.getElementById('curp_aval_filtro')?.value?.trim() || '',
+            plazo: document.getElementById('plazo_filtro')?.value || '',
             grupo: document.getElementById('grupo_filtro')?.value || ''
         };
 
         const hayFiltros = Object.values(filtros).some(val => val && val.trim() !== '');
         if (!hayFiltros) {
             tbody.innerHTML = '<tr><td colspan="6">Por favor, especifica al menos un criterio de búsqueda.</td></tr>';
-            showButtonLoading('btn-aplicar-filtros', false);
-            hideFixedProgress();
-            cargaEnProgreso = false;
-            return;
+            return; // Salir aquí
         }
 
-        let clientesFiltrados = [];
-        const filtrosCredito = filtros.idCredito || filtros.estado || filtros.curpAval || filtros.plazo;
+        let clientesIniciales = [];
+        const filtrosDeCredito = filtros.idCredito || filtros.estado || filtros.curpAval || filtros.plazo;
 
-        if (filtrosCredito) {
-            showFixedProgress(20, 'Buscando créditos...');
-            const creditos = await database.buscarCreditos(filtros);
-            if (creditos.length > 0) {
-                const curpsUnicos = [...new Set(creditos.map(c => c.curpCliente))];
-                showFixedProgress(40, `Buscando ${curpsUnicos.length} clientes...`);
-                clientesFiltrados = await database.buscarClientesPorCURPs(curpsUnicos);
-                // Si hay filtros de cliente, aplicarlos sobre este resultado
-                 if (filtros.sucursal) clientesFiltrados = clientesFiltrados.filter(c => c.office === filtros.sucursal);
-                 if (filtros.grupo) clientesFiltrados = clientesFiltrados.filter(c => c.poblacion_grupo === filtros.grupo);
-                 if (filtros.curp) clientesFiltrados = clientesFiltrados.filter(c => c.curp === filtros.curp.toUpperCase());
-                 if (filtros.nombre) clientesFiltrados = clientesFiltrados.filter(c => c.nombre.toLowerCase().includes(filtros.nombre.toLowerCase()));
+        if (filtrosDeCredito) {
+            showFixedProgress(25, 'Filtrando por créditos...');
+            const creditosEncontrados = await database.buscarCreditos(filtros);
+            if (creditosEncontrados.length > 0) {
+                const curps = [...new Set(creditosEncontrados.map(c => c.curpCliente))];
+                clientesIniciales = await database.buscarClientesPorCURPs(curps);
             }
         } else {
-            showFixedProgress(30, 'Buscando clientes...');
-            clientesFiltrados = await database.buscarClientes(filtros);
+            showFixedProgress(25, 'Filtrando por clientes...');
+            clientesIniciales = await database.buscarClientes(filtros);
+        }
+        
+        if (operationId !== currentSearchOperation) return;
+        
+        let clientesFinales = clientesIniciales;
+        // Aplicar filtros de cliente sobre los resultados de la búsqueda de crédito
+        if(filtrosDeCredito) {
+             if (filtros.sucursal) clientesFinales = clientesFinales.filter(c => c.office === filtros.sucursal);
+             if (filtros.grupo) clientesFinales = clientesFinales.filter(c => c.poblacion_grupo === filtros.grupo);
+             if (filtros.curp) clientesFinales = clientesFinales.filter(c => c.curp === filtros.curp.toUpperCase());
+             if (filtros.nombre) clientesFinales = clientesFinales.filter(c => c.nombre.toLowerCase().includes(filtros.nombre.toLowerCase()));
         }
 
-        if (!cargaEnProgreso) return;
 
-        tbody.innerHTML = '';
-        if (clientesFiltrados.length === 0) {
-            showFixedProgress(100, 'No se encontraron clientes');
+        if (clientesFinales.length === 0) {
             tbody.innerHTML = '<tr><td colspan="6">No se encontraron clientes con los filtros aplicados.</td></tr>';
             return;
         }
 
-        showFixedProgress(50, `Procesando ${clientesFiltrados.length} clientes...`);
-        
+        showFixedProgress(50, `Procesando ${clientesFinales.length} clientes...`);
         let clientesHtml = '';
-        for (let i = 0; i < clientesFiltrados.length; i++) {
-             if (!cargaEnProgreso) break;
-             const cliente = clientesFiltrados[i];
-             showFixedProgress(50 + Math.round((i / clientesFiltrados.length) * 40), `Procesando cliente ${i + 1}`);
-
+        
+        for (let i = 0; i < clientesFinales.length; i++) {
+            if (operationId !== currentSearchOperation) {
+                 throw new Error("Búsqueda cancelada");
+            }
+            const cliente = clientesFinales[i];
             const historial = await obtenerHistorialCreditoCliente(cliente.curp, filtros.idCredito || null);
             
-            // Si se filtra por estado y el historial no coincide, saltar
-            if(filtros.estado && (!historial || historial.estado !== filtros.estado)) continue;
-            
-            let infoCreditoHTML = '<em>Sin historial de crédito</em>';
+            // Filtro de estado secundario
+            if (filtros.estado && (!historial || historial.estado !== filtros.estado)) {
+                continue;
+            }
 
+            let infoCreditoHTML = '<em>Sin historial de crédito</em>';
             if (historial) {
                 let estadoClase = '';
                 switch (historial.estado) {
@@ -1247,8 +1238,7 @@ async function loadClientesTable() {
                     case 'juridico': estadoClase = 'status-juridico'; break;
                 }
                 const estadoHTML = `<span class="info-value ${estadoClase}">${historial.estado.toUpperCase()}</span>`;
-                const cicloSuffixes = { 1: 'er', 2: 'do', 3: 'er' };
-                const cicloSuffix = cicloSuffixes[historial.cicloCredito] || 'º';
+                const cicloSuffix = { 1: 'er', 2: 'do', 3: 'er' }[historial.cicloCredito] || 'º';
                 
                 infoCreditoHTML = `
                 <div class="credito-info">
@@ -1261,14 +1251,14 @@ async function loadClientesTable() {
                         ${historial.semanasAtraso > 0 ? `<div class="info-item"><span class="info-label">Semanas Atraso:</span><span class="info-value">${historial.semanasAtraso}</span></div>` : ''}
                         <div class="info-item"><span class="info-label">Último Pago:</span><span class="info-value">${historial.fechaUltimoPago}</span></div>
                         <div class="info-item"><span class="info-label">Nombre Aval:</span><span class="info-value">${historial.nombreAval}</span></div>
+                        <div class="info-item"><span class="info-label">CURP Aval:</span><span class="info-value">${historial.curpAval}</span></div>
                     </div>
                 </div>`;
             }
 
-            const fechaRegistroMostrada = formatDateForDisplay(parsearFecha(cliente.fechaRegistro));
             clientesHtml += `
             <tr>
-                <td><b>${cliente.office || 'N/A'}</b><br><small>Registro: ${fechaRegistroMostrada}</small></td>
+                <td><b>${cliente.office || 'N/A'}</b><br><small>Registro: ${historial ? historial.fechaRegistro : 'N/A'}</small></td>
                 <td>${cliente.curp}</td>
                 <td>${cliente.nombre}</td>
                 <td>${cliente.poblacion_grupo}</td>
@@ -1280,22 +1270,20 @@ async function loadClientesTable() {
             </tr>`;
         }
         
-        tbody.innerHTML = clientesHtml;
-        if (!tbody.innerHTML.trim()){
-            tbody.innerHTML = '<tr><td colspan="6">No se encontraron clientes que coincidan con todos los filtros aplicados.</td></tr>';
-        }
-
-        showFixedProgress(100, `Procesamiento completado`);
-        showStatus('status_gestion_clientes', `Búsqueda completada.`, 'success');
-
+        tbody.innerHTML = clientesHtml || '<tr><td colspan="6">No se encontraron clientes que coincidan con todos los filtros aplicados.</td></tr>';
+        showFixedProgress(100, 'Búsqueda completada');
+        
     } catch (error) {
-        console.error('Error cargando clientes:', error);
-        tbody.innerHTML = '<tr><td colspan="6">Error al cargar los clientes.</td></tr>';
-        showStatus('status_gestion_clientes', 'Error al cargar los clientes: ' + error.message, 'error');
+        if (error.message !== "Búsqueda cancelada") {
+            console.error('Error cargando clientes:', error);
+            tbody.innerHTML = '<tr><td colspan="6">Error al cargar los clientes.</td></tr>';
+        }
     } finally {
-        showButtonLoading('btn-aplicar-filtros', false);
-        setTimeout(hideFixedProgress, 1000);
-        cargaEnProgreso = false;
+        if(operationId === currentSearchOperation) {
+            cargaEnProgreso = false;
+            showButtonLoading('btn-aplicar-filtros', false);
+            setTimeout(hideFixedProgress, 1500);
+        }
     }
 }
 
@@ -1645,9 +1633,10 @@ async function editCliente(id) {
     editingClientId = id;
 
     document.getElementById('office_cliente').value = cliente.office;
+    // Llama a la función que ahora puede manejar el modo de edición
     handleOfficeChangeForClientForm.call({ value: cliente.office });
 
-    setTimeout(() => { // Delay para asegurar que el dropdown se llene
+    setTimeout(() => { // Delay para asegurar que el dropdown se llene con todas las opciones
         document.getElementById('poblacion_grupo_cliente').value = cliente.poblacion_grupo;
     }, 100);
 
@@ -1666,11 +1655,13 @@ async function editCliente(id) {
     document.getElementById('cp_cliente').value = cliente.cp;
     document.getElementById('telefono_cliente').value = cliente.telefono;
     document.getElementById('ruta_cliente').value = cliente.ruta;
+    document.getElementById('comisionista_cliente').checked = cliente.isComisionista || false;
 
     document.querySelector('#view-cliente h2').textContent = 'Editar Cliente';
     document.querySelector('#form-cliente button[type="submit"]').innerHTML = '<i class="fas fa-save"></i> Actualizar Cliente';
     showView('view-cliente');
 }
+
 
 async function deleteCliente(id, nombre) {
     if (confirm(`¿Estás seguro de que deseas eliminar a "${nombre}"? Esta acción no se puede deshacer y podría afectar créditos asociados.`)) {
@@ -1682,14 +1673,13 @@ async function deleteCliente(id, nombre) {
         }
         showStatus('status_gestion_clientes', message, resultado.success ? 'success' : 'error');
         if (resultado.success) {
-            await loadClientesTable();
+            loadClientesTable(); // Forzar recarga de la tabla
         }
         showProcessingOverlay(false);
     }
 }
 
-function actualizarPlazosSegunRol() {
-    const esComisionista = currentUserData && currentUserData.role === 'comisionista';
+function actualizarPlazosSegunCliente(esComisionista) {
     const plazos = esComisionista ? [10] : [13, 14];
     popularDropdown('plazo_colocacion', plazos.map(p => ({ value: p, text: `${p} semanas` })), 'Selecciona plazo', true);
 }
@@ -1710,7 +1700,7 @@ document.addEventListener('viewshown', function (e) {
             loadUsersTable();
             break;
         case 'view-gestion-clientes':
-            inicializarVistaGestionClientes();
+            // No hacer nada aquí, la carga se dispara con el botón de filtrar
             break;
         case 'view-cliente':
             if (!editingClientId) { // Si es un cliente nuevo
@@ -1718,7 +1708,10 @@ document.addEventListener('viewshown', function (e) {
             }
             break;
         case 'view-colocacion':
-            actualizarPlazosSegunRol();
+            // Limpiar el formulario al mostrar
+             document.getElementById('curp_colocacion').value = '';
+             document.getElementById('form-colocacion').classList.add('hidden');
+             showStatus('status_colocacion', '', 'info');
             break;
     }
 });
