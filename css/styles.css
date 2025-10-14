@@ -6,6 +6,7 @@
     --danger: #FF6347;
     --warning: #FFA500;
     --info: #17a2b8;
+    --info-blue: #007bff; /* NUEVO: Color azul para 'Al Corriente' */
     --light: #f8f9fa;
     --dark: #212529;
     --gray: #6c757d;
@@ -461,24 +462,23 @@ input, select, textarea {
     text-align: right;
 }
 
-.status-al-corriente {
+/* ===== INICIO DE MODIFICACIÓN DE COLORES DE ESTATUS ===== */
+.status-liquidado {
     color: var(--success);
 }
-
+.status-al-corriente {
+    color: var(--info-blue); /* Se cambia a azul */
+}
 .status-atrasado {
-    color: var(--danger);
-    font-weight: bold;
+    color: var(--warning); /* Se mantiene en amarillo/naranja */
 }
-
 .status-cobranza {
-    color: var(--warning);
-    font-weight: bold;
+    color: var(--danger); /* Se mantiene en rojo */
 }
-
 .status-juridico {
-    color: #B71C1C;
-    font-weight: bold;
+    color: #B71C1C; /* Rojo oscuro */
 }
+/* ===== FIN DE MODIFICACIÓN DE COLORES DE ESTATUS ===== */
 
 .filtros-container {
     background-color: #f8f9fa;
@@ -827,6 +827,11 @@ input, select, textarea {
 
 .role-consulta {
     background: #6f42c1;
+    color: white;
+}
+
+.role-comisionista { /* NUEVO */
+    background: #6610f2;
     color: white;
 }
 
