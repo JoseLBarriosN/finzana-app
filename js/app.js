@@ -20,7 +20,7 @@ let inactivityTimer; // Temporizador para el cierre de sesión por inactividad
  * @param {string|object} fechaInput La cadena de texto o el objeto de fecha.
  * @returns {Date|null} Un objeto Date válido o null si el formato es incorrecto.
  */
-function parsearFecha_DDMMYYYY(fechaInput) {
+function parsearFecha(fechaInput) {
     if (!fechaInput) return null;
 
     // Si es un objeto Timestamp de Firestore
@@ -41,8 +41,23 @@ function parsearFecha_DDMMYYYY(fechaInput) {
         }
     }
 
-    console.error("No se pudo parsear el formato de fecha:", fechaInput);
+    console.warn("No se pudo parsear el formato de fecha:", fechaInput);
     return null;
+}
+
+/**
+ * Formatea un objeto Date a un string DD/MM/YYYY para una visualización consistente.
+ * @param {Date} dateObj El objeto Date a formatear.
+ * @returns {string} La fecha formateada o 'N/A' si la entrada es inválida.
+ */
+function formatDateForDisplay(dateObj) {
+    if (!(dateObj instanceof Date) || isNaN(dateObj.getTime())) {
+        return 'N/A';
+    }
+    const dia = String(dateObj.getDate()).padStart(2, '0');
+    const mes = String(dateObj.getMonth() + 1).padStart(2, '0');
+    const anio = dateObj.getFullYear();
+    return `${dia}/${mes}/${anio}`;
 }
 
 
@@ -332,7 +347,11 @@ function resetClientForm() {
     if (titulo) titulo.textContent = 'Registrar Cliente';
     const submitButton = document.querySelector('#form-cliente button[type="submit"]');
     if (submitButton) submitButton.innerHTML = '<i class="fas fa-save"></i> Guardar Cliente';
-    document.getElementById('curp_cliente').readOnly = false;
+    document.getElementById('curp_cliente').readOnly = true; // Por defecto bloqueado
+    // Verifica el rol al resetear por si un admin quiere crear un nuevo cliente
+     if (currentUserData && (currentUserData.role === 'admin' || currentUserData.role === 'supervisor')) {
+        document.getElementById('curp_cliente').readOnly = false;
+    }
     handleOfficeChangeForClientForm.call({ value: 'GDL' });
 }
 
@@ -694,8 +713,9 @@ async function handleSearchCreditForPayment() {
             showFixedProgress(80, 'Calculando historial...');
             const historial = await obtenerHistorialCreditoCliente(creditoActual.curpCliente, idCredito); // Pasamos el ID para asegurar que sea este crédito
             if (historial) {
+                const proximaFechaPago = formatDateForDisplay(parsearFecha(historial.proximaFechaPago));
                 const campos = ['nombre_cobranza', 'saldo_cobranza', 'estado_cobranza', 'semanas_atraso_cobranza', 'pago_semanal_cobranza', 'fecha_proximo_pago_cobranza', 'monto_cobranza'];
-                const valores = [cliente ? cliente.nombre : 'N/A', `$${historial.saldoRestante.toLocaleString()}`, historial.estado.toUpperCase(), historial.semanasAtraso || 0, `$${historial.pagoSemanal.toLocaleString()}`, historial.proximaFechaPago, historial.pagoSemanal.toFixed(2)];
+                const valores = [cliente ? cliente.nombre : 'N/A', `$${historial.saldoRestante.toLocaleString()}`, historial.estado.toUpperCase(), historial.semanasAtraso || 0, `$${historial.pagoSemanal.toLocaleString()}`, proximaFechaPago, historial.pagoSemanal.toFixed(2)];
                 campos.forEach((campo, index) => {
                     const element = document.getElementById(campo);
                     if (element) element.value = valores[index];
@@ -930,7 +950,10 @@ function handleOfficeChangeForClientForm() {
     const office = this.value;
     const poblacionesGdl = ['LA CALERA', 'ATEQUIZA', 'SAN JACINTO', 'PONCITLAN', 'OCOTLAN', 'ARENAL', 'AMATITAN', 'ACATLAN DE JUAREZ', 'BELLAVISTA', 'SAN ISIDRO MAZATEPEC', 'TALA', 'CUISILLOS', 'HUAXTLA', 'NEXTIPAC', 'SANTA LUCIA', 'JAMAY', 'LA BARCA', 'SAN JUAN DE OCOTAN', 'TALA 2', 'EL HUMEDO', 'NEXTIPAC 2', 'ZZ PUEBLO'];
     const poblacionesLeon = ["ARANDAS", "ARANDAS [E]", "BAJIO DE BONILLAS", "BAJIO DE BONILLAS [E]", "CAPULIN", "CARDENAS", "CARDENAS [E]", "CERRITO DE AGUA CALIENTE", "CERRITO DE AGUA CALIENTE [E]", "CORRALEJO", "CORRALEJO [E]", "CUERAMARO", "CUERAMARO [E]", "DOLORES HIDALGO", "EL ALACRAN", "EL EDEN", "EL FUERTE", "EL MEZQUITILLO", "EL MEZQUITILLO [E]", "EL PALENQUE", "EL PALENQUE [E]", "EL PAXTLE", "EL TULE", "EL TULE [E]", "ESTACION ABASOLO", "ESTACION ABASOLO [E]", "ESTACION CORRALEJO", "ESTACION CORRALEJO [E]", "ESTACION JOAQUIN", "ESTACION JOAQUIN [E]", "EX ESTACION CHIRIMOYA", "EX ESTacion CHIRIMOYA [E]", "GAVIA DE RIONDA", "GODOY", "GODOY [E]", "IBARRA", "IBARRA [E]", "LA ALDEA", "LA CARROZA", "LA CARROZA [E]", "LA ESCONDIDA", "LA SANDIA", "LA SANDIA [E]", "LAGUNA DE GUADALUPE", "LAS CRUCES", "LAS CRUCES [E]", "LAS MASAS", "LAS MASAS [E]", "LAS PALOMAS", "LAS TIRITAS", "LOMA DE LA ESPERANZA", "LOMA DE LA ESPERANZA [E]", "LOS DOLORES", "LOS GALVANES", "LOS GALVANES [E]", "MAGUEY BLANCO", "MEDRANOS", "MEXICANOS", "MEXICANOS [E]", "MINERAL DE LA LUZ", "MISION DE ABAJO", "MISION DE ABAJO [E]", "MISION DE ARRIBA", "MISION DE ARRIBA [E]", "NORIA DE ALDAY", "OCAMPO", "PURISIMA DEL RINCON", "PURISIMA DEL RINCON [E]", "RANCHO NUEVO DE LA CRUZ", "RANCHO NUEVO DE LA CRUZ [E]", "RANCHO VIEJO", "RIO LAJA", "RIO LAJA [E]", "SAN ANDRES DE JALPA", "SAN ANDRES DE JALPA [E]", "SAN BERNARDO", "SAN BERNARDO [E]", "SAN CRISTOBAL", "SAN CRISTOBAL [E]", "SAN GREGORIO", "SAN GREGORIO [E]", "SAN ISIDRO DE CRESPO", "SAN ISIDRO DE CRESPO [E]", "SAN JOSE DE BADILLO", "SAN JOSE DE BADILLO [E]", "SAN JOSE DEL RODEO", "SAN JOSE DEL RODEO [E]", "SAN JUAN DE LA PUERTA", "SAN JUAN DE LA PUERTA [E]", "SANTA ANA DEL CONDE", "SANTA ROSA", "SANTA ROSA [E]", "SANTA ROSA PLAN DE AYALA", "SANTA ROSA PLAN DE AYALA [E]", "SANTO DOMINGO", "SERRANO", "TENERIA DEL SANTUARIO", "TENERIA DEL SANTUARIO [E]", "TIERRAS BLANCAS", "TIERRAS BLANCAS [E]", "TREJO", "TREJO [E]", "TUPATARO", "TUPATARO [E]", "VALTIERRILLA", "VALTIERRILLA 2", "VALTIERRILLA [E]", "VAQUERIAS", "VILLA DE ARRIAGA", "VILLA DE ARRIAGA [E]"].sort();
-    const poblaciones = office === 'LEON' ? poblacionesLeon : poblacionesGdl;
+    
+    // Si se está editando, mostrar todas las poblaciones para permitir cambios de sucursal
+    const poblaciones = editingClientId ? [...new Set([...poblacionesGdl, ...poblacionesLeon])].sort() : (office === 'LEON' ? poblacionesLeon : poblacionesGdl);
+    
     popularDropdown('poblacion_grupo_cliente', poblaciones, 'Selecciona población/grupo');
 }
 
@@ -957,13 +980,14 @@ function inicializarDropdowns() {
     popularDropdown('ruta_cliente', rutas, 'Selecciona una ruta');
     popularDropdown('tipo_colocacion', tiposCredito.map(t => ({ value: t.toLowerCase(), text: t })), 'Selecciona tipo', true);
     popularDropdown('monto_colocacion', montos.map(m => ({ value: m, text: `$${m.toLocaleString()}` })), 'Selecciona monto', true);
-    popularDropdown('plazo_colocacion', plazos.map(p => ({ value: p, text: `${p} semanas` })), 'Selecciona plazo', true);
+    // Plazos se llenan dinámicamente según el rol
     const todasLasPoblaciones = [...new Set([...poblacionesGdl, ...poblacionesLeon])].sort();
     popularDropdown('grupo_filtro', todasLasPoblaciones, 'Todos');
     popularDropdown('tipo_colocacion_filtro', tiposCredito.map(t => ({ value: t.toLowerCase(), text: t })), 'Todos', true);
     popularDropdown('plazo_filtro', [...plazos, 10].sort((a, b) => a - b).map(p => ({ value: p, text: `${p} semanas` })), 'Todos', true);
+    popularDropdown('estado_credito_filtro', estadosCredito.map(e => ({ value: e, text: e.charAt(0).toUpperCase() + e.slice(1) })), 'Todos', true);
     popularDropdown('filtro-rol-usuario', roles, 'Todos los roles', true);
-     document.getElementById('nuevo-rol').innerHTML = roles.map(r => `<option value="${r.value}">${r.text}</option>`).join('');
+    document.getElementById('nuevo-rol').innerHTML = `<option value="">Seleccione un rol</option>` + roles.map(r => `<option value="${r.value}">${r.text}</option>`).join('');
 
     popularDropdown('sucursal_filtro_reporte', sucursales, 'Todas');
     popularDropdown('grupo_filtro_reporte', todasLasPoblaciones, 'Todos');
@@ -998,7 +1022,7 @@ function _calcularEstadoCredito(credito, pagos) {
     }
     
     // El resto de la lógica requiere una fecha de inicio válida
-    const fechaInicio = parsearFecha_DDMMYYYY(credito.fechaCreacion);
+    const fechaInicio = parsearFecha(credito.fechaCreacion);
     if (!fechaInicio) {
         console.error(`Cálculo de estado fallido para crédito ID ${credito.id}: Fecha de creación inválida. Valor recibido:`, credito.fechaCreacion);
         return { estado: 'indeterminado', diasAtraso: 0, semanasAtraso: 0, pagoSemanal: 0, proximaFechaPago: 'N/A' };
@@ -1006,16 +1030,14 @@ function _calcularEstadoCredito(credito, pagos) {
     
     const pagoSemanal = credito.montoTotal / credito.plazo;
     const hoy = new Date();
-    hoy.setUTCHours(0, 0, 0, 0); // Normalizar a UTC para comparar
-    fechaInicio.setUTCHours(0, 0, 0, 0);
     
     if (fechaInicio > hoy) {
-        return { estado: 'al corriente', diasAtraso: 0, semanasAtraso: 0, pagoSemanal, proximaFechaPago: fechaInicio.toLocaleDateString() };
+        return { estado: 'al corriente', diasAtraso: 0, semanasAtraso: 0, pagoSemanal, proximaFechaPago: fechaInicio };
     }
 
     const milisegundosPorDia = 1000 * 60 * 60 * 24;
     const diasTranscurridos = Math.floor((hoy - fechaInicio) / milisegundosPorDia);
-    const semanasTranscurridas = diasTranscurridos / 7;
+    const semanasTranscurridas = Math.max(0, diasTranscurridos / 7);
 
     const pagoRequerido = Math.min(semanasTranscurridas * pagoSemanal, credito.montoTotal);
     const deficit = pagoRequerido - montoPagado;
@@ -1028,14 +1050,14 @@ function _calcularEstadoCredito(credito, pagos) {
 
     const semanasPagadas = montoPagado / pagoSemanal;
     const proximaFecha = new Date(fechaInicio);
-    proximaFecha.setUTCDate(proximaFecha.getUTCDate() + (Math.floor(semanasPagadas) + 1) * 7);
+    proximaFecha.setDate(proximaFecha.getDate() + (Math.floor(semanasPagadas) + 1) * 7);
 
     return {
         estado,
         diasAtraso: Math.round(diasAtraso),
         semanasAtraso: Math.ceil(diasAtraso / 7),
         pagoSemanal,
-        proximaFechaPago: proximaFecha.toLocaleDateString()
+        proximaFechaPago: proximaFecha
     };
 }
 
@@ -1046,8 +1068,8 @@ async function obtenerHistorialCreditoCliente(curp, idCreditoEspecifico = null) 
 
     // Ordenar para encontrar el más reciente y contar los ciclos
     creditosCliente.sort((a, b) => {
-        const fechaA = parsearFecha_DDMMYYYY(a.fechaCreacion) || 0;
-        const fechaB = parsearFecha_DDMMYYYY(b.fechaCreacion) || 0;
+        const fechaA = parsearFecha(a.fechaCreacion) || 0;
+        const fechaB = parsearFecha(b.fechaCreacion) || 0;
         return fechaB - fechaA;
     });
     
@@ -1060,14 +1082,14 @@ async function obtenerHistorialCreditoCliente(curp, idCreditoEspecifico = null) 
         creditoActual = creditosCliente.find(c => c.estado !== 'liquidado') || creditosCliente[0];
     }
     
-    if (!creditoActual) return null; // No debería pasar si hay créditos, pero por seguridad.
+    if (!creditoActual) return null;
 
-    const cicloCredito = creditosLiquidados.length + 1;
+    const cicloCredito = creditosLiquidados.length + (creditoActual.estado !== 'liquidado' ? 1 : 0);
     const pagos = await database.getPagosPorCredito(creditoActual.id);
 
     pagos.sort((a, b) => {
-        const fechaA = parsearFecha_DDMMYYYY(a.fecha) || 0;
-        const fechaB = parsearFecha_DDMMYYYY(b.fecha) || 0;
+        const fechaA = parsearFecha(a.fecha) || 0;
+        const fechaB = parsearFecha(b.fecha) || 0;
         return fechaB - fechaA;
     });
 
@@ -1079,9 +1101,8 @@ async function obtenerHistorialCreditoCliente(curp, idCreditoEspecifico = null) 
         return null;
     }
 
-    const fechaUltimoPagoObj = ultimoPago ? parsearFecha_DDMMYYYY(ultimoPago.fecha) : null;
-    const fechaUltimoPagoStr = fechaUltimoPagoObj ? fechaUltimoPagoObj.toLocaleDateString() : 'N/A';
-
+    const fechaUltimoPagoObj = ultimoPago ? parsearFecha(ultimoPago.fecha) : null;
+    
     const montoPagadoTotal = pagos.reduce((sum, pago) => sum + (pago.monto || 0), 0);
     const saldoRestante = Math.max(0, (creditoActual.montoTotal || 0) - montoPagadoTotal);
     
@@ -1089,18 +1110,23 @@ async function obtenerHistorialCreditoCliente(curp, idCreditoEspecifico = null) 
     if (estadoCalculado.pagoSemanal > 0) {
         semanasPagadas = Math.floor(montoPagadoTotal / estadoCalculado.pagoSemanal);
     }
+
+    if(estadoCalculado.estado === 'liquidado') {
+        semanasPagadas = creditoActual.plazo;
+    }
     
     return {
         idCredito: creditoActual.id,
         saldoRestante: saldoRestante,
-        fechaUltimoPago: fechaUltimoPagoStr,
+        fechaUltimoPago: formatDateForDisplay(fechaUltimoPagoObj),
         totalPagos: pagos.length,
         plazoTotal: creditoActual.plazo,
         nombreAval: creditoActual.nombreAval || 'N/A',
         curpAval: creditoActual.curpAval || 'N/A',
         cicloCredito: cicloCredito,
-        semanasPagadas: semanasPagadas, // Cálculo correcto de semanas pagadas
+        semanasPagadas: semanasPagadas,
         ...estadoCalculado,
+        proximaFechaPago: formatDateForDisplay(estadoCalculado.proximaFechaPago)
     };
 }
 
@@ -1147,6 +1173,8 @@ async function loadClientesTable() {
             sucursal: document.getElementById('sucursal_filtro')?.value || '',
             curp: document.getElementById('curp_filtro')?.value?.trim() || '',
             nombre: document.getElementById('nombre_filtro')?.value?.trim() || '',
+            idCredito: document.getElementById('id_credito_filtro')?.value?.trim() || '',
+            estado: document.getElementById('estado_credito_filtro')?.value || '',
             fechaRegistro: document.getElementById('fecha_registro_filtro')?.value || '',
             fechaCredito: document.getElementById('fecha_credito_filtro')?.value || '',
             tipo: document.getElementById('tipo_colocacion_filtro')?.value || '',
@@ -1164,13 +1192,28 @@ async function loadClientesTable() {
             return;
         }
 
-        showFixedProgress(30, 'Buscando clientes...');
-        const clientesFiltrados = await database.buscarClientes(filtros);
+        let clientesFiltrados = [];
+        const filtrosCredito = filtros.idCredito || filtros.estado || filtros.curpAval || filtros.plazo;
 
-        if (!cargaEnProgreso) {
-            tbody.innerHTML = '<tr><td colspan="6">Búsqueda cancelada.</td></tr>';
-            return;
+        if (filtrosCredito) {
+            showFixedProgress(20, 'Buscando créditos...');
+            const creditos = await database.buscarCreditos(filtros);
+            if (creditos.length > 0) {
+                const curpsUnicos = [...new Set(creditos.map(c => c.curpCliente))];
+                showFixedProgress(40, `Buscando ${curpsUnicos.length} clientes...`);
+                clientesFiltrados = await database.buscarClientesPorCURPs(curpsUnicos);
+                // Si hay filtros de cliente, aplicarlos sobre este resultado
+                 if (filtros.sucursal) clientesFiltrados = clientesFiltrados.filter(c => c.office === filtros.sucursal);
+                 if (filtros.grupo) clientesFiltrados = clientesFiltrados.filter(c => c.poblacion_grupo === filtros.grupo);
+                 if (filtros.curp) clientesFiltrados = clientesFiltrados.filter(c => c.curp === filtros.curp.toUpperCase());
+                 if (filtros.nombre) clientesFiltrados = clientesFiltrados.filter(c => c.nombre.toLowerCase().includes(filtros.nombre.toLowerCase()));
+            }
+        } else {
+            showFixedProgress(30, 'Buscando clientes...');
+            clientesFiltrados = await database.buscarClientes(filtros);
         }
+
+        if (!cargaEnProgreso) return;
 
         tbody.innerHTML = '';
         if (clientesFiltrados.length === 0) {
@@ -1180,82 +1223,52 @@ async function loadClientesTable() {
         }
 
         showFixedProgress(50, `Procesando ${clientesFiltrados.length} clientes...`);
-
-        let clientesMostrados = 0;
+        
+        let clientesHtml = '';
         for (let i = 0; i < clientesFiltrados.length; i++) {
-            if (!cargaEnProgreso) {
-                tbody.innerHTML = '<tr><td colspan="6">Procesamiento cancelado.</td></tr>';
-                break;
-            }
+             if (!cargaEnProgreso) break;
+             const cliente = clientesFiltrados[i];
+             showFixedProgress(50 + Math.round((i / clientesFiltrados.length) * 40), `Procesando cliente ${i + 1}`);
 
-            const cliente = clientesFiltrados[i];
-
-            showFixedProgress(50 + Math.round((i / clientesFiltrados.length) * 40), `Procesando cliente ${i + 1} de ${clientesFiltrados.length}`);
-
-            const fechaRegistroObj = parsearFecha_DDMMYYYY(cliente.fechaRegistro);
-            const fechaRegistroMatch = !filtros.fechaRegistro || (fechaRegistroObj && cliente.fechaRegistro.startsWith(filtros.fechaRegistro));
-            if (!fechaRegistroMatch) {
-                continue;
-            }
-
-            const necesitaFiltroCredito = filtros.fechaCredito || filtros.tipo || filtros.plazo || filtros.curpAval;
-            if (necesitaFiltroCredito) {
-                const creditos = await database.buscarCreditosPorCliente(cliente.curp);
-                if (creditos.length === 0) {
-                    continue;
-                }
-                const algunCreditoCoincide = creditos.some(credito => {
-                    const fechaCreditoObj = parsearFecha_DDMMYYYY(credito.fechaCreacion);
-                    const fechaCreditoMatch = !filtros.fechaCredito || (fechaCreditoObj && credito.fechaCreacion.startsWith(filtros.fechaCredito));
-                    const tipoMatch = !filtros.tipo || credito.tipo === filtros.tipo;
-                    const plazoMatch = !filtros.plazo || credito.plazo == filtros.plazo;
-                    const curpAvalMatch = !filtros.curpAval || (credito.curpAval && credito.curpAval.toLowerCase().includes(filtros.curpAval.toLowerCase()));
-                    return fechaCreditoMatch && tipoMatch && plazoMatch && curpAvalMatch;
-                });
-                if (!algunCreditoCoincide) {
-                    continue;
-                }
-            }
-
-            clientesMostrados++;
-            const tr = document.createElement('tr');
-            const historial = await obtenerHistorialCreditoCliente(cliente.curp);
+            const historial = await obtenerHistorialCreditoCliente(cliente.curp, filtros.idCredito || null);
+            
+            // Si se filtra por estado y el historial no coincide, saltar
+            if(filtros.estado && (!historial || historial.estado !== filtros.estado)) continue;
+            
             let infoCreditoHTML = '<em>Sin historial de crédito</em>';
 
             if (historial) {
-                let estadoHTML = '', detallesHTML = '', estadoClase = '';
+                let estadoClase = '';
                 switch (historial.estado) {
+                    case 'liquidado': estadoClase = 'status-liquidado'; break;
                     case 'al corriente': estadoClase = 'status-al-corriente'; break;
                     case 'atrasado': estadoClase = 'status-atrasado'; break;
                     case 'cobranza': estadoClase = 'status-cobranza'; break;
                     case 'juridico': estadoClase = 'status-juridico'; break;
-                    case 'liquidado': estadoClase = 'status-al-corriente'; break;
-                    default: estadoClase = '';
                 }
-                estadoHTML = `<span class="info-value ${estadoClase}">${historial.estado.toUpperCase()}</span>`;
-
+                const estadoHTML = `<span class="info-value ${estadoClase}">${historial.estado.toUpperCase()}</span>`;
                 const cicloSuffixes = { 1: 'er', 2: 'do', 3: 'er' };
                 const cicloSuffix = cicloSuffixes[historial.cicloCredito] || 'º';
-                detallesHTML += `<div class="info-item"><span class="info-label">Ciclo de Crédito:</span><span class="info-value">${historial.cicloCredito}${cicloSuffix} Crédito</span></div>`;
-
-                if (historial.estado !== 'liquidado') {
-                    detallesHTML += `<div class="info-item"><span class="info-label">Saldo:</span><span class="info-value">$${historial.saldoRestante.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>`;
-                }
-                if (historial.semanasAtraso > 0) {
-                    detallesHTML += `<div class="info-item"><span class="info-label">Semanas Atraso:</span><span class="info-value">${historial.semanasAtraso}</span></div>`;
-                }
-
-                detallesHTML += `<div class="info-item"><span class="info-label">Semanas Pagadas:</span><span class="info-value">${historial.semanasPagadas} de ${historial.plazoTotal}</span></div>`;
-                detallesHTML += `<div class="info-item"><span class="info-label">Último Pago:</span><span class="info-value">${historial.fechaUltimoPago}</span></div>`;
-                detallesHTML += `<div class="info-item"><span class="info-label">Nombre Aval:</span><span class="info-value">${historial.nombreAval}</span></div>`;
-                detallesHTML += `<div class="info-item"><span class="info-label">CURP Aval:</span><span class="info-value">${historial.curpAval}</span></div>`;
-
-                infoCreditoHTML = `<div class="credito-info"><div class="info-grid"><div class="info-item"><span class="info-label">Crédito ID:</span><span class="info-value">${historial.idCredito}</span></div><div class="info-item"><span class="info-label">Estado:</span>${estadoHTML}</div>${detallesHTML}</div></div>`;
+                
+                infoCreditoHTML = `
+                <div class="credito-info">
+                    <div class="info-grid">
+                        <div class="info-item"><span class="info-label">Crédito ID:</span><span class="info-value">${historial.idCredito}</span></div>
+                        <div class="info-item"><span class="info-label">Estado:</span>${estadoHTML}</div>
+                        <div class="info-item"><span class="info-label">Ciclo:</span><span class="info-value">${historial.cicloCredito}${cicloSuffix} Crédito</span></div>
+                        <div class="info-item"><span class="info-label">Saldo:</span><span class="info-value">$${historial.saldoRestante.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
+                        <div class="info-item"><span class="info-label">Semanas Pagadas:</span><span class="info-value">${historial.semanasPagadas} de ${historial.plazoTotal}</span></div>
+                        ${historial.semanasAtraso > 0 ? `<div class="info-item"><span class="info-label">Semanas Atraso:</span><span class="info-value">${historial.semanasAtraso}</span></div>` : ''}
+                        <div class="info-item"><span class="info-label">Último Pago:</span><span class="info-value">${historial.fechaUltimoPago}</span></div>
+                        <div class="info-item"><span class="info-label">Nombre Aval:</span><span class="info-value">${historial.nombreAval}</span></div>
+                    </div>
+                </div>`;
             }
 
-            const fechaRegistroMostrada = fechaRegistroObj ? fechaRegistroObj.toLocaleDateString() : 'N/A';
-            tr.innerHTML = `
-                <td>${cliente.office || 'N/A'}<br><small>Registro: ${fechaRegistroMostrada}</small></td>
+            const fechaRegistroMostrada = formatDateForDisplay(parsearFecha(cliente.fechaRegistro));
+            clientesHtml += `
+            <tr>
+                <td><b>${cliente.office || 'N/A'}</b><br><small>Registro: ${fechaRegistroMostrada}</small></td>
                 <td>${cliente.curp}</td>
                 <td>${cliente.nombre}</td>
                 <td>${cliente.poblacion_grupo}</td>
@@ -1263,18 +1276,17 @@ async function loadClientesTable() {
                 <td class="action-buttons">
                     <button class="btn btn-sm btn-info" onclick="editCliente('${cliente.id}')" title="Editar"><i class="fas fa-edit"></i></button>
                     <button class="btn btn-sm btn-danger" onclick="deleteCliente('${cliente.id}', '${cliente.nombre}')" title="Eliminar"><i class="fas fa-trash"></i></button>
-                </td>`;
-            tbody.appendChild(tr);
+                </td>
+            </tr>`;
+        }
+        
+        tbody.innerHTML = clientesHtml;
+        if (!tbody.innerHTML.trim()){
+            tbody.innerHTML = '<tr><td colspan="6">No se encontraron clientes que coincidan con todos los filtros aplicados.</td></tr>';
         }
 
-        if (clientesMostrados === 0 && cargaEnProgreso) {
-            tbody.innerHTML = '<tr><td colspan="6">No se encontraron clientes con los filtros aplicados.</td></tr>';
-        }
-
-        if (cargaEnProgreso) {
-            showFixedProgress(100, `Procesamiento completado: ${clientesMostrados} clientes`);
-            showStatus('status_gestion_clientes', `Se encontraron ${clientesMostrados} clientes con los filtros aplicados.`, 'success');
-        }
+        showFixedProgress(100, `Procesamiento completado`);
+        showStatus('status_gestion_clientes', `Búsqueda completada.`, 'success');
 
     } catch (error) {
         console.error('Error cargando clientes:', error);
@@ -1437,9 +1449,9 @@ function mostrarReporteAvanzado(data) {
     data.forEach(item => {
         const tr = document.createElement('tr');
 
-        const fechaRegistro = parsearFecha_DDMMYYYY(item.fechaRegistro)?.toLocaleDateString() || '';
-        const fechaCreacion = parsearFecha_DDMMYYYY(item.fechaCreacion)?.toLocaleDateString() || '';
-        const fechaPago = parsearFecha_DDMMYYYY(item.fecha)?.toLocaleDateString() || '';
+        const fechaRegistro = formatDateForDisplay(parsearFecha(item.fechaRegistro));
+        const fechaCreacion = formatDateForDisplay(parsearFecha(item.fechaCreacion));
+        const fechaPago = formatDateForDisplay(parsearFecha(item.fecha));
 
         let rowContent = '';
         if (item.tipo === 'cliente') {
@@ -1525,46 +1537,16 @@ function exportToCSV() {
         showFixedProgress(70, 'Generando CSV...');
         reportData.forEach(item => {
             let row = [];
+            const fechaRegistro = formatDateForDisplay(parsearFecha(item.fechaRegistro));
+            const fechaCreacion = formatDateForDisplay(parsearFecha(item.fechaCreacion));
+            const fechaPago = formatDateForDisplay(parsearFecha(item.fecha));
 
             if (item.tipo === 'cliente') {
-                row = [
-                    'CLIENTE',
-                    item.curp || '',
-                    `"${item.nombre || ''}"`,
-                    item.poblacion_grupo || '',
-                    item.ruta || '',
-                    item.office || '',
-                    item.fechaRegistro ? (parsearFecha_DDMMYYYY(item.fechaRegistro)?.toLocaleDateString() || '') : '',
-                    '',
-                    '',
-                    ''
-                ];
+                row = [ 'CLIENTE', item.curp || '', `"${item.nombre || ''}"`, item.poblacion_grupo || '', item.ruta || '', item.office || '', fechaRegistro, '', '', '' ];
             } else if (item.tipo === 'credito') {
-                row = [
-                    'CRÉDITO',
-                    item.curpCliente || '',
-                    `"${item.nombreCliente || ''}"`,
-                    item.poblacion_grupo || '',
-                    item.ruta || '',
-                    item.office || '',
-                    item.fechaCreacion ? (parsearFecha_DDMMYYYY(item.fechaCreacion)?.toLocaleDateString() || '') : '',
-                    item.tipo || '',
-                    item.monto || 0,
-                    item.saldo || 0
-                ];
+                row = [ 'CRÉDITO', item.curpCliente || '', `"${item.nombreCliente || ''}"`, item.poblacion_grupo || '', item.ruta || '', item.office || '', fechaCreacion, item.tipo || '', item.monto || 0, item.saldo || 0 ];
             } else if (item.tipo === 'pago') {
-                row = [
-                    'PAGO',
-                    item.curpCliente || '',
-                    `"${item.nombreCliente || ''}"`,
-                    item.poblacion_grupo || '',
-                    item.ruta || '',
-                    item.office || '',
-                    item.fecha ? (parsearFecha_DDMMYYYY(item.fecha)?.toLocaleDateString() || '') : '',
-                    item.tipoPago || '',
-                    item.monto || 0,
-                    item.saldoDespues || 0
-                ];
+                row = [ 'PAGO', item.curpCliente || '', `"${item.nombreCliente || ''}"`, item.poblacion_grupo || '', item.ruta || '', item.office || '', fechaPago, item.tipoPago || '', item.monto || 0, item.saldoDespues || 0 ];
             }
 
             csvContent += row.join(',') + '\n';
@@ -1669,8 +1651,16 @@ async function editCliente(id) {
         document.getElementById('poblacion_grupo_cliente').value = cliente.poblacion_grupo;
     }, 100);
 
-    document.getElementById('curp_cliente').value = cliente.curp;
-    document.getElementById('curp_cliente').readOnly = true;
+    const curpInput = document.getElementById('curp_cliente');
+    curpInput.value = cliente.curp;
+    
+    // Habilitar edición de CURP solo para admin o supervisor
+    if (currentUserData && (currentUserData.role === 'admin' || currentUserData.role === 'supervisor')) {
+        curpInput.readOnly = false;
+    } else {
+        curpInput.readOnly = true;
+    }
+
     document.getElementById('nombre_cliente').value = cliente.nombre;
     document.getElementById('domicilio_cliente').value = cliente.domicilio;
     document.getElementById('cp_cliente').value = cliente.cp;
@@ -1723,12 +1713,11 @@ document.addEventListener('viewshown', function (e) {
             inicializarVistaGestionClientes();
             break;
         case 'view-cliente':
-            if (!editingClientId) {
+            if (!editingClientId) { // Si es un cliente nuevo
                 resetClientForm();
             }
             break;
         case 'view-colocacion':
-            // Actualizar plazos según el rol del usuario cada vez que se muestra la vista
             actualizarPlazosSegunRol();
             break;
     }
