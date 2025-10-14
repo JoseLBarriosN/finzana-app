@@ -815,195 +815,128 @@ function handleMontoPagoChange() {
 }
 
 // =============================================
-// FUNCIONES DE VISTA Y AUXILIARES
-// =============================================
-
-function showView(viewId) {
-    console.log('Mostrando vista:', viewId);
-    document.querySelectorAll('.view').forEach(view => view.classList.add('hidden'));
-    const targetView = document.getElementById(viewId);
-    if (targetView) {
-        targetView.classList.remove('hidden');
-        const event = new CustomEvent('viewshown', { detail: { viewId } });
-        targetView.dispatchEvent(event);
-    }
-}
-
-function showStatus(elementId, message, type) {
-    const element = document.getElementById(elementId);
-    if (element) {
-        element.innerHTML = message;
-        element.className = 'status-message ' + (type === 'success' ? 'status-success' : type === 'error' ? 'status-error' : 'status-info');
-    }
-}
-
-function showProcessingOverlay(show, message = 'Procesando...') {
-    let overlay = document.getElementById('processing-overlay');
-    if (!overlay) {
-        overlay = document.createElement('div');
-        overlay.id = 'processing-overlay';
-        overlay.className = 'processing-overlay hidden';
-        overlay.innerHTML = `<div class="processing-spinner"></div><div id="processing-message" class="processing-message"></div>`;
-        document.body.appendChild(overlay);
-    }
-    const messageElement = document.getElementById('processing-message');
-    if (show) {
-        if (messageElement) messageElement.textContent = message;
-        overlay.classList.remove('hidden');
-    } else {
-        overlay.classList.add('hidden');
-    }
-}
-
-function showButtonLoading(selector, show, text = 'Procesando...') {
-    const button = (typeof selector === 'string') ? document.querySelector(selector) : selector;
-    if (!button) return;
-    if (show) {
-        button.setAttribute('data-original-text', button.innerHTML);
-        button.innerHTML = '';
-        button.classList.add('btn-loading');
-        button.disabled = true;
-    } else {
-        button.innerHTML = button.getAttribute('data-original-text') || button.textContent;
-        button.classList.remove('btn-loading');
-        button.disabled = false;
-    }
-}
-
-// =============================================
-// FUNCIONES DE BARRA DE PROGRESO Y UTILIDADES
-// =============================================
-
-function showFixedProgress(percentage, message = '') {
-    // Ya no se usa la bandera global `cargaEnProgreso` para mostrar/ocultar
-    let progressContainer = document.getElementById('progress-container-fixed');
-    if (!progressContainer) {
-        progressContainer = document.createElement('div');
-        progressContainer.id = 'progress-container-fixed';
-        progressContainer.className = 'progress-container-fixed';
-        progressContainer.innerHTML = `
-            <div id="progress-bar-fixed" class="progress-bar-fixed"></div>
-            <div id="progress-text-fixed" class="progress-text-fixed"></div>
-            <button id="btn-cancelar-carga-fixed" class="btn-cancelar-carga-fixed" title="Cancelar carga">
-                <i class="fas fa-times"></i>
-            </button>
-        `;
-        document.body.insertBefore(progressContainer, document.body.firstChild);
-        document.getElementById('btn-cancelar-carga-fixed').addEventListener('click', cancelarCarga);
-    }
-    document.getElementById('progress-bar-fixed').style.width = percentage + '%';
-    document.getElementById('progress-text-fixed').textContent = message;
-    progressContainer.style.display = 'flex';
-    document.body.classList.add('has-progress');
-}
-
-function hideFixedProgress() {
-    const progressContainer = document.getElementById('progress-container-fixed');
-    if (progressContainer) {
-        progressContainer.style.display = 'none';
-        document.body.classList.remove('has-progress');
-    }
-    // No modificar `cargaEnProgreso` aquí, se maneja en cada función
-}
-
-function cancelarCarga() {
-    currentSearchOperation = null; // Anula la operación actual
-    cargaEnProgreso = false; // Forzar la detención de cualquier bucle
-    hideFixedProgress();
-    showStatus('status_gestion_clientes', 'Búsqueda cancelada por el usuario.', 'info');
-    const tabla = document.getElementById('tabla-clientes');
-    if (tabla) tabla.innerHTML = '<tr><td colspan="6">Búsqueda cancelada. Utiliza los filtros para buscar de nuevo.</td></tr>';
-    showButtonLoading('btn-aplicar-filtros', false); // Asegurarse de reactivar el botón
-}
-
-
-function calcularMontoTotalColocacion() {
-    const montoInput = document.getElementById('monto_colocacion');
-    const montoTotalInput = document.getElementById('montoTotal_colocacion');
-    if (!montoInput || !montoTotalInput) return;
-    const monto = parseFloat(montoInput.value) || 0;
-    montoTotalInput.value = monto > 0 ? `$${(monto * 1.3).toLocaleString()}` : '';
-}
-
-function validarCURP(input) {
-    input.value = input.value.toUpperCase().substring(0, 18);
-    input.style.borderColor = input.value.length === 18 ? 'var(--success)' : (input.value.length > 0 ? 'var(--danger)' : '');
-}
-
-function validarFormatoCURP(curp) {
-    return curp && curp.length === 18;
-}
-
-const popularDropdown = (elementId, options, placeholder, isObject = false) => {
-    const select = document.getElementById(elementId);
-    if (select) {
-        select.innerHTML = `<option value="">${placeholder}</option>`;
-        options.forEach(option => {
-            const el = document.createElement('option');
-            el.value = isObject ? option.value : option;
-            el.textContent = isObject ? option.text : option;
-            select.appendChild(el);
-        });
-    }
-};
-
-function handleOfficeChangeForClientForm() {
-    const office = this.value;
-    const poblacionesGdl = ['LA CALERA', 'ATEQUIZA', 'SAN JACINTO', 'PONCITLAN', 'OCOTLAN', 'ARENAL', 'AMATITAN', 'ACATLAN DE JUAREZ', 'BELLAVISTA', 'SAN ISIDRO MAZATEPEC', 'TALA', 'CUISILLOS', 'HUAXTLA', 'NEXTIPAC', 'SANTA LUCIA', 'JAMAY', 'LA BARCA', 'SAN JUAN DE OCOTAN', 'TALA 2', 'EL HUMEDO', 'NEXTIPAC 2', 'ZZ PUEBLO'];
-    const poblacionesLeon = ["ARANDAS", "ARANDAS [E]", "BAJIO DE BONILLAS", "BAJIO DE BONILLAS [E]", "CAPULIN", "CARDENAS", "CARDENAS [E]", "CERRITO DE AGUA CALIENTE", "CERRITO DE AGUA CALIENTE [E]", "CORRALEJO", "CORRALEJO [E]", "CUERAMARO", "CUERAMARO [E]", "DOLORES HIDALGO", "EL ALACRAN", "EL EDEN", "EL FUERTE", "EL MEZQUITILLO", "EL MEZQUITILLO [E]", "EL PALENQUE", "EL PALENQUE [E]", "EL PAXTLE", "EL TULE", "EL TULE [E]", "ESTACION ABASOLO", "ESTACION ABASOLO [E]", "ESTACION CORRALEJO", "ESTACION CORRALEJO [E]", "ESTACION JOAQUIN", "ESTACION JOAQUIN [E]", "EX ESTACION CHIRIMOYA", "EX ESTacion CHIRIMOYA [E]", "GAVIA DE RIONDA", "GODOY", "GODOY [E]", "IBARRA", "IBARRA [E]", "LA ALDEA", "LA CARROZA", "LA CARROZA [E]", "LA ESCONDIDA", "LA SANDIA", "LA SANDIA [E]", "LAGUNA DE GUADALUPE", "LAS CRUCES", "LAS CRUCES [E]", "LAS MASAS", "LAS MASAS [E]", "LAS PALOMAS", "LAS TIRITAS", "LOMA DE LA ESPERANZA", "LOMA DE LA ESPERANZA [E]", "LOS DOLORES", "LOS GALVANES", "LOS GALVANES [E]", "MAGUEY BLANCO", "MEDRANOS", "MEXICANOS", "MEXICANOS [E]", "MINERAL DE LA LUZ", "MISION DE ABAJO", "MISION DE ABAJO [E]", "MISION DE ARRIBA", "MISION DE ARRIBA [E]", "NORIA DE ALDAY", "OCAMPO", "PURISIMA DEL RINCON", "PURISIMA DEL RINCON [E]", "RANCHO NUEVO DE LA CRUZ", "RANCHO NUEVO DE LA CRUZ [E]", "RANCHO VIEJO", "RIO LAJA", "RIO LAJA [E]", "SAN ANDRES DE JALPA", "SAN ANDRES DE JALPA [E]", "SAN BERNARDO", "SAN BERNARDO [E]", "SAN CRISTOBAL", "SAN CRISTOBAL [E]", "SAN GREGORIO", "SAN GREGORIO [E]", "SAN ISIDRO DE CRESPO", "SAN ISIDRO DE CRESPO [E]", "SAN JOSE DE BADILLO", "SAN JOSE DE BADILLO [E]", "SAN JOSE DEL RODEO", "SAN JOSE DEL RODEO [E]", "SAN JUAN DE LA PUERTA", "SAN JUAN DE LA PUERTA [E]", "SANTA ANA DEL CONDE", "SANTA ROSA", "SANTA ROSA [E]", "SANTA ROSA PLAN DE AYALA", "SANTA ROSA PLAN DE AYALA [E]", "SANTO DOMINGO", "SERRANO", "TENERIA DEL SANTUARIO", "TENERIA DEL SANTUARIO [E]", "TIERRAS BLANCAS", "TIERRAS BLANCAS [E]", "TREJO", "TREJO [E]", "TUPATARO", "TUPATARO [E]", "VALTIERRILLA", "VALTIERRILLA 2", "VALTIERRILLA [E]", "VAQUERIAS", "VILLA DE ARRIAGA", "VILLA DE ARRIAGA [E]"].sort();
-    
-    // Si se está editando, mostrar todas las poblaciones para permitir cambios de sucursal
-    const poblaciones = editingClientId ? [...new Set([...poblacionesGdl, ...poblacionesLeon])].sort() : (office === 'LEON' ? poblacionesLeon : poblacionesGdl);
-    
-    popularDropdown('poblacion_grupo_cliente', poblaciones, 'Selecciona población/grupo');
-}
-
-function inicializarDropdowns() {
-    console.log('Inicializando dropdowns...');
-    const poblacionesGdl = ['LA CALERA', 'ATEQUIZA', 'SAN JACINTO', 'PONCITLAN', 'OCOTLAN', 'ARENAL', 'AMATITAN', 'ACATLAN DE JUAREZ', 'BELLAVISTA', 'SAN ISIDRO MAZATEPEC', 'TALA', 'CUISILLOS', 'HUAXTLA', 'NEXTIPAC', 'SANTA LUCIA', 'JAMAY', 'LA BARCA', 'SAN JUAN DE OCOTAN', 'TALA 2', 'EL HUMEDO', 'NEXTIPAC 2', 'ZZ PUEBLO'];
-    const poblacionesLeon = ["ARANDAS", "ARANDAS [E]", "BAJIO DE BONILLAS", "BAJIO DE BONILLAS [E]", "CAPULIN", "CARDENAS", "CARDENAS [E]", "CERRITO DE AGUA CALIENTE", "CERRITO DE AGUA CALIENTE [E]", "CORRALEJO", "CORRALEJO [E]", "CUERAMARO", "CUERAMARO [E]", "DOLORES HIDALGO", "EL ALACRAN", "EL EDEN", "EL FUERTE", "EL MEZQUITILLO", "EL MEZQUITILLO [E]", "EL PALENQUE", "EL PALENQUE [E]", "EL PAXTLE", "EL TULE", "EL TULE [E]", "ESTACION ABASOLO", "ESTACION ABASOLO [E]", "ESTACION CORRALEJO", "ESTACION CORRALEJO [E]", "ESTACION JOAQUIN", "ESTACION JOAQUIN [E]", "EX ESTACION CHIRIMOYA", "EX ESTacion CHIRIMOYA [E]", "GAVIA DE RIONDA", "GODOY", "GODOY [E]", "IBARRA", "IBARRA [E]", "LA ALDEA", "LA CARROZA", "LA CARROZA [E]", "LA ESCONDIDA", "LA SANDIA", "LA SANDIA [E]", "LAGUNA DE GUADALUPE", "LAS CRUCES", "LAS CRUCES [E]", "LAS MASAS", "LAS MASAS [E]", "LAS PALOMAS", "LAS TIRITAS", "LOMA DE LA ESPERANZA", "LOMA DE LA ESPERANZA [E]", "LOS DOLORES", "LOS GALVANES", "LOS GALVANES [E]", "MAGUEY BLANCO", "MEDRANOS", "MEXICANOS", "MEXICANOS [E]", "MINERAL DE LA LUZ", "MISION DE ABAJO", "MISION DE ABAJO [E]", "MISION DE ARRIBA", "MISION DE ARRIBA [E]", "NORIA DE ALDAY", "OCAMPO", "PURISIMA DEL RINCON", "PURISIMA DEL RINCON [E]", "RANCHO NUEVO DE LA CRUZ", "RANCHO NUEVO DE LA CRUZ [E]", "RANCHO VIEJO", "RIO LAJA", "RIO LAJA [E]", "SAN ANDRES DE JALPA", "SAN ANDRES DE JALPA [E]", "SAN BERNARDO", "SAN BERNARDO [E]", "SAN CRISTOBAL", "SAN CRISTOBAL [E]", "SAN GREGORIO", "SAN GREGORIO [E]", "SAN ISIDRO DE CRESPO", "SAN ISIDRO DE CRESPO [E]", "SAN JOSE DE BADILLO", "SAN JOSE DE BADILLO [E]", "SAN JOSE DEL RODEO", "SAN JOSE DEL RODEO [E]", "SAN JUAN DE LA PUERTA", "SAN JUAN DE LA PUERTA [E]", "SANTA ANA DEL CONDE", "SANTA ROSA", "SANTA ROSA [E]", "SANTA ROSA PLAN DE AYALA", "SANTA ROSA PLAN DE AYALA [E]", "SANTO DOMINGO", "SERRANO", "TENERIA DEL SANTUARIO", "TENERIA DEL SANTUARIO [E]", "TIERRAS BLANCAS", "TIERRAS BLANCAS [E]", "TREJO", "TREJO [E]", "TUPATARO", "TUPATARO [E]", "VALTIERRILLA", "VALTIERRILLA 2", "VALTIERRILLA [E]", "VAQUERIAS", "VILLA DE ARRIAGA", "VILLA DE ARRIAGA [E]"].sort();
-    const rutas = ['AUDITORIA', 'SUPERVISION', 'ADMINISTRACION', 'DIRECCION', 'COMERCIAL', 'COBRANZA', 'R1', 'R2', 'R3', 'JC1', 'RX'];
-    const tiposCredito = ['NUEVO', 'RENOVACION', 'REINGRESO'];
-    const montos = [3000, 3500, 4000, 4500, 5000, 6000, 7000, 8000, 9000, 10000];
-    const plazos = [13, 14];
-    const estadosCredito = ['al corriente', 'atrasado', 'cobranza', 'juridico', 'liquidado'];
-    const tiposPago = ['normal', 'extraordinario', 'actualizado'];
-    const sucursales = ['GDL', 'LEON'];
-    const roles = [
-        { value: 'admin', text: 'Administrador' },
-        { value: 'supervisor', text: 'Supervisor' },
-        { value: 'cobrador', text: 'Cobrador' },
-        { value: 'consulta', text: 'Consulta' },
-        { value: 'comisionista', text: 'Comisionista' }
-    ];
-    
-    popularDropdown('poblacion_grupo_cliente', poblacionesGdl, 'Selecciona población/grupo');
-    popularDropdown('ruta_cliente', rutas, 'Selecciona una ruta');
-    popularDropdown('tipo_colocacion', tiposCredito.map(t => ({ value: t.toLowerCase(), text: t })), 'Selecciona tipo', true);
-    popularDropdown('monto_colocacion', montos.map(m => ({ value: m, text: `$${m.toLocaleString()}` })), 'Selecciona monto', true);
-    // Plazos se llenan dinámicamente según el cliente
-    const todasLasPoblaciones = [...new Set([...poblacionesGdl, ...poblacionesLeon])].sort();
-    popularDropdown('grupo_filtro', todasLasPoblaciones, 'Todos');
-    popularDropdown('tipo_colocacion_filtro', tiposCredito.map(t => ({ value: t.toLowerCase(), text: t })), 'Todos', true);
-    popularDropdown('plazo_filtro', [...plazos, 10].sort((a, b) => a - b).map(p => ({ value: p, text: `${p} semanas` })), 'Todos', true);
-    popularDropdown('estado_credito_filtro', estadosCredito.map(e => ({ value: e, text: e.charAt(0).toUpperCase() + e.slice(1) })), 'Todos', true);
-    popularDropdown('filtro-rol-usuario', roles, 'Todos los roles', true);
-    document.getElementById('nuevo-rol').innerHTML = `<option value="">Seleccione un rol</option>` + roles.map(r => `<option value="${r.value}">${r.text}</option>`).join('');
-
-    popularDropdown('sucursal_filtro_reporte', sucursales, 'Todas');
-    popularDropdown('grupo_filtro_reporte', todasLasPoblaciones, 'Todos');
-    popularDropdown('ruta_filtro_reporte', rutas, 'Todas');
-    popularDropdown('tipo_credito_filtro_reporte', tiposCredito.map(t => ({ value: t.toLowerCase(), text: t })), 'Todos', true);
-    popularDropdown('estado_credito_filtro_reporte', estadosCredito.map(e => ({ value: e, text: e.toUpperCase() })), 'Todos', true);
-    popularDropdown('tipo_pago_filtro_reporte', tiposPago.map(t => ({ value: t, text: t.toUpperCase() })), 'Todos', true);
-    console.log('Dropdowns inicializados correctamente');
-}
-
-// =============================================
 // LÓGICA DE NEGOCIO (RESTAURADA Y COMPLETADA)
 // =============================================
 
-// (Esta sección contiene las funciones _calcularEstadoCredito y obtenerHistorialCreditoCliente, que ya han sido actualizadas previamente y no necesitan más cambios para esta corrección)
+function _calcularEstadoCredito(credito, pagos) {
+    if (!credito) {
+        console.error("Cálculo de estado fallido: El objeto de crédito es nulo.");
+        return null;
+    }
+
+    const montoPagado = pagos.reduce((sum, pago) => sum + (pago.monto || 0), 0);
+    const saldoReal = (credito.montoTotal || 0) - montoPagado;
+    
+    if (!credito.montoTotal || !credito.plazo || credito.plazo <= 0) {
+        const estadoSimple = saldoReal <= 0.01 ? 'liquidado' : 'activo';
+        return { estado: estadoSimple, diasAtraso: 0, semanasAtraso: 0, pagoSemanal: 0, proximaFechaPago: null };
+    }
+
+    if (saldoReal <= 0.01) {
+        return { estado: 'liquidado', diasAtraso: 0, semanasAtraso: 0, pagoSemanal: 0, proximaFechaPago: null };
+    }
+    
+    const fechaInicio = parsearFecha(credito.fechaCreacion);
+    if (!fechaInicio) {
+        console.error(`Cálculo de estado fallido para crédito ID ${credito.id}: Fecha de creación inválida.`, credito.fechaCreacion);
+        return { estado: 'indeterminado', diasAtraso: 0, semanasAtraso: 0, pagoSemanal: 0, proximaFechaPago: null };
+    }
+    
+    const pagoSemanal = credito.montoTotal / credito.plazo;
+    const hoy = new Date();
+    
+    if (fechaInicio > hoy) {
+        return { estado: 'al corriente', diasAtraso: 0, semanasAtraso: 0, pagoSemanal, proximaFechaPago: fechaInicio };
+    }
+
+    const milisegundosPorDia = 1000 * 60 * 60 * 24;
+    const diasTranscurridos = Math.floor((hoy - fechaInicio) / milisegundosPorDia);
+    const semanasTranscurridas = Math.max(0, diasTranscurridos / 7);
+
+    const pagoRequerido = Math.min(semanasTranscurridas * pagoSemanal, credito.montoTotal);
+    const deficit = pagoRequerido - montoPagado;
+    const diasAtraso = (deficit > 0) ? (deficit / pagoSemanal) * 7 : 0;
+    
+    let estado = 'al corriente';
+    if (diasAtraso > 300) estado = 'juridico';
+    else if (diasAtraso > 150) estado = 'cobranza';
+    else if (diasAtraso >= 7) estado = 'atrasado';
+
+    const semanasPagadas = montoPagado / pagoSemanal;
+    const proximaFecha = new Date(fechaInicio);
+    proximaFecha.setDate(proximaFecha.getDate() + (Math.floor(semanasPagadas) + 1) * 7);
+
+    return {
+        estado,
+        diasAtraso: Math.round(diasAtraso),
+        semanasAtraso: Math.ceil(diasAtraso / 7),
+        pagoSemanal,
+        proximaFechaPago: proximaFecha
+    };
+}
+
+
+async function obtenerHistorialCreditoCliente(curp, idCreditoEspecifico = null) {
+    const creditosCliente = await database.buscarCreditosPorCliente(curp);
+    if (creditosCliente.length === 0) return null;
+
+    creditosCliente.sort((a, b) => (parsearFecha(a.fechaCreacion) || 0) - (parsearFecha(b.fechaCreacion) || 0));
+    
+    const primerCredito = creditosCliente[0];
+    const fechaRegistro = parsearFecha(primerCredito.fechaCreacion);
+
+    creditosCliente.sort((a, b) => (parsearFecha(b.fechaCreacion) || 0) - (parsearFecha(a.fechaCreacion) || 0));
+    
+    const creditosLiquidados = creditosCliente.filter(c => c.estado === 'liquidado');
+    
+    let creditoActual;
+    if (idCreditoEspecifico) {
+        creditoActual = creditosCliente.find(c => c.id === idCreditoEspecifico);
+    } else {
+        creditoActual = creditosCliente.find(c => c.estado !== 'liquidado') || creditosCliente[0];
+    }
+    
+    if (!creditoActual) return null;
+
+    const cicloCredito = creditosLiquidados.filter(c => parsearFecha(c.fechaCreacion) < parsearFecha(creditoActual.fechaCreacion)).length + 1;
+    const pagos = await database.getPagosPorCredito(creditoActual.id);
+
+    pagos.sort((a, b) => (parsearFecha(b.fecha) || 0) - (parsearFecha(a.fecha) || 0));
+
+    const ultimoPago = pagos.length > 0 ? pagos[0] : null;
+    const estadoCalculado = _calcularEstadoCredito(creditoActual, pagos);
+
+    if (!estadoCalculado) return null;
+
+    const fechaUltimoPagoObj = ultimoPago ? parsearFecha(ultimoPago.fecha) : null;
+    
+    const montoPagadoTotal = pagos.reduce((sum, pago) => sum + (pago.monto || 0), 0);
+    const saldoRestante = Math.max(0, (creditoActual.montoTotal || 0) - montoPagadoTotal);
+    
+    let semanasPagadas = 0;
+    if (estadoCalculado.pagoSemanal > 0) {
+        semanasPagadas = Math.floor(montoPagadoTotal / estadoCalculado.pagoSemanal);
+    }
+
+    if(estadoCalculado.estado === 'liquidado' && creditoActual.plazo) {
+        semanasPagadas = creditoActual.plazo;
+    }
+    
+    return {
+        idCredito: creditoActual.id,
+        saldoRestante: saldoRestante,
+        fechaUltimoPago: formatDateForDisplay(fechaUltimoPagoObj),
+        fechaRegistro: formatDateForDisplay(fechaRegistro),
+        totalPagos: pagos.length,
+        plazoTotal: creditoActual.plazo,
+        nombreAval: creditoActual.nombreAval || 'N/A',
+        curpAval: creditoActual.curpAval || 'N/A',
+        cicloCredito: cicloCredito,
+        semanasPagadas: semanasPagadas,
+        ...estadoCalculado,
+        proximaFechaPago: formatDateForDisplay(estadoCalculado.proximaFechaPago)
+    };
+}
 
 
 // =============================================
@@ -1080,7 +1013,7 @@ async function loadClientesTable() {
             showFixedProgress(25, 'Buscando clientes en la base de datos...');
             clientesParaProcesar = await database.buscarClientes(filtrosClienteDB);
         }
-
+        
         if (operationId !== currentSearchOperation) throw new Error("Búsqueda cancelada");
         if (clientesParaProcesar.length === 0) {
             tbody.innerHTML = '<tr><td colspan="6">No se encontraron clientes con los filtros iniciales.</td></tr>';
@@ -1091,6 +1024,7 @@ async function loadClientesTable() {
         
         // Enriquecer todos los clientes con su historial
         const clientesEnriquecidos = await Promise.all(clientesParaProcesar.map(async (cliente) => {
+            if (operationId !== currentSearchOperation) return null; // Salir si hay una nueva búsqueda
             const historial = await obtenerHistorialCreditoCliente(cliente.curp);
             return { ...cliente, historial };
         }));
@@ -1099,12 +1033,11 @@ async function loadClientesTable() {
 
         // Aplicar filtros secundarios en memoria (los que no se usaron en la BD)
         const clientesFiltrados = clientesEnriquecidos.filter(cliente => {
+            if (!cliente) return false; // Ignorar si la operación fue cancelada durante el map
             const h = cliente.historial;
             if (filtros.estado && (!h || h.estado !== filtros.estado)) return false;
             if (filtros.curpAval && (!h || !h.curpAval || !h.curpAval.includes(filtros.curpAval.toUpperCase()))) return false;
             if (filtros.plazo && (!h || h.plazoTotal != filtros.plazo)) return false;
-            // Si la búsqueda fue por ID, asegúrate de que el historial coincida
-            if (filtros.idCredito && (!h || h.idCredito !== filtros.idCredito)) return false;
             return true;
         });
 
