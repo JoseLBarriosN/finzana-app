@@ -1117,6 +1117,7 @@ function handleOfficeChangeForClientForm() {
     
     popularDropdown('poblacion_grupo_cliente', poblaciones, 'Selecciona población/grupo');
 }
+
 // =============================================
 // BLOQUE DE CÓDIGO RESTAURADO
 // =============================================
