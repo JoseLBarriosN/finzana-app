@@ -1881,6 +1881,13 @@ document.addEventListener('viewshown', function (e) {
             showStatus('status_pago_grupo', '', 'info');
             grupoDePagoActual = null;
             break;
+        case 'view-reportes-graficos':
+            // Inicializar fechas al mostrar la vista de gráficos
+            const hoy = new Date();
+            const haceUnAnio = new Date(hoy.getFullYear() - 1, hoy.getMonth(), hoy.getDate());
+            document.getElementById('grafico_fecha_inicio').value = haceUnAnio.toISOString().split('T')[0];
+            document.getElementById('grafico_fecha_fin').value = hoy.toISOString().split('T')[0];
+            break;
     }
 });
 
