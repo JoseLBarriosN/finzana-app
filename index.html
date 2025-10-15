@@ -7,9 +7,9 @@
     <link rel="icon" type="image/x-icon" href="/favicon.ico">
     <link rel="stylesheet" href="css/styles.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
-
-    <meta name="theme-color" content="#2E8B57">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script> <meta name="theme-color" content="#2E8B57">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="Finzana">
@@ -102,7 +102,13 @@
                         <p>Reportes detallados con filtros</p>
                         <button class="btn btn-primary" data-view="view-reportes-avanzados"><i class="fas fa-arrow-right"></i> Acceder</button>
                     </div>
-                     <div class="menu-card" data-view="view-usuarios">
+                     <div class="menu-card" data-view="view-reportes-graficos">
+                        <div class="menu-icon icon-reportes"><i class="fas fa-chart-pie"></i></div>
+                        <h3>Reportes con Gráficos</h3>
+                        <p>Visualiza el comportamiento del negocio</p>
+                        <button class="btn btn-primary" data-view="view-reportes-graficos"><i class="fas fa-arrow-right"></i> Acceder</button>
+                    </div>
+                    <div class="menu-card" data-view="view-usuarios">
                         <div class="menu-icon icon-usuarios"><i class="fas fa-user-cog"></i></div>
                         <h3>Gestión de Usuarios</h3>
                         <p>Administra usuarios del sistema</p>
@@ -567,6 +573,7 @@
                 </div>
                 <div id="status_pago_grupo"></div>
             </div>
+            
             <div id="view-reportes" class="view hidden">
                 <div class="view-header">
                     <h2>Reportes del Sistema</h2>
@@ -727,14 +734,80 @@
                             <th>Saldo</th>
                         </tr>
                     </thead>
-                    <tbody id="tabla-reportes-avanzados">
+                    <tbody id="tabla-reportes_avanzados">
                         <tr>
                             <td colspan="10">Aplica los filtros para generar el reporte.</td>
                         </tr>
                     </tbody>
                 </table>
             </div>
-        </main>
+
+             <div id="view-reportes-graficos" class="view hidden">
+                <div class="view-header">
+                    <h2>Reportes con Gráficos</h2>
+                    <button class="btn btn-secondary" data-view="view-main-menu"><i class="fas fa-arrow-left"></i> Volver al Menú</button>
+                </div>
+
+                <div class="advanced-filters">
+                    <h3>Filtros del Reporte</h3>
+                    <div class="filtros-grid">
+                         <div class="form-group">
+                            <label for="grafico_tipo_reporte">Tipo de Reporte</label>
+                            <select id="grafico_tipo_reporte"></select>
+                        </div>
+                        <div class="form-group">
+                            <label for="grafico_tipo_grafico">Tipo de Gráfico</label>
+                            <select id="grafico_tipo_grafico">
+                                <option value="bar">Barras</option>
+                                <option value="pie">Pastel (Pie)</option>
+                                <option value="doughnut">Dona (Doughnut)</option>
+                                <option value="line">Líneas</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="grafico_agrupar_por">Agrupar Por</label>
+                            <select id="grafico_agrupar_por">
+                                <option value="semana">Semana</option>
+                                <option value="mes">Mes</option>
+                                <option value="anio">Año</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="grafico_sucursal">Sucursal</label>
+                            <select id="grafico_sucursal">
+                                <option value="">Ambas</option>
+                                <option value="GDL">Guadalajara</option>
+                                <option value="LEON">León</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="filter-section">
+                        <div class="filter-section-title">Rango de Fechas del Reporte</div>
+                        <div class="date-range">
+                            <div class="form-group">
+                                <label for="grafico_fecha_inicio">Fecha Inicio</label>
+                                <input type="date" id="grafico_fecha_inicio">
+                            </div>
+                            <div class="form-group">
+                                <label for="grafico_fecha_fin">Fecha Fin</label>
+                                <input type="date" id="grafico_fecha_fin">
+                            </div>
+                        </div>
+                    </div>
+                     <div class="filtros-actions">
+                        <button id="btn-generar-grafico" class="btn btn-primary">
+                            <i class="fas fa-chart-area"></i> Generar Gráfico
+                        </button>
+                    </div>
+                </div>
+
+                <div id="status_reportes_graficos"></div>
+
+                <div style="padding: 20px; background: white; border-radius: var(--border-radius); margin-top: 20px; box-shadow: var(--box-shadow);">
+                    <canvas id="miGrafico"></canvas>
+                </div>
+            </div>
+            </main>
     </div>
 
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
@@ -742,7 +815,6 @@
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
 
     <script src="firebase-config.js"></script>
-
     <script src="js/database.js"></script>
     <script src="js/app.js"></script>
 </body>
