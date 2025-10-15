@@ -16,8 +16,7 @@ function _parsearFechaImportacion(fechaStr) {
     // Intenta parsear directamente si es un formato estándar (ISO, YYYY-MM-DD)
     let fecha = new Date(fechaTrimmed);
     if (!isNaN(fecha.getTime())) {
-        // Valida que el año sea razonable para evitar errores de parseo de formatos ambiguos
-        if (fecha.getFullYear() > 1970) {
+        if (fecha.getFullYear() > 1970 && fechaTrimmed.includes('-')) {
             return fecha.toISOString();
         }
     }
@@ -29,23 +28,22 @@ function _parsearFechaImportacion(fechaStr) {
     const [p1, p2, p3] = partes.map(p => parseInt(p, 10));
     if (isNaN(p1) || isNaN(p2) || isNaN(p3)) return null;
 
-    // Intenta adivinar el formato basado en la longitud o valor de las partes
     let anio, mes, dia;
 
-    // Formato DD-MM-YYYY o MM-DD-YYYY
-    if (p3 > 1000) {
+    if (p3 > 1000) { // Formato con año al final (DD-MM-YYYY o MM-DD-YYYY)
         anio = p3;
-        // Si p1 > 12, es probable que sea el día (DD-MM-YYYY)
-        if (p1 > 12) {
+        if (p1 > 12) { // DD-MM-YYYY
             dia = p1;
             mes = p2;
-        } else { // Puede ser DD-MM-YYYY o MM-DD-YYYY, asumimos MM-DD por ser común en sistemas
-            mes = p1;
+        } else if (p2 > 12) { // MM-DD-YYYY (improbable pero posible)
             dia = p2;
+            mes = p1;
+        } else { // Ambiguo (ej. 01-02-2023), asumimos DD-MM por ser el formato solicitado
+            dia = p1;
+            mes = p2;
         }
     } 
-    // Formato YYYY-MM-DD
-    else if (p1 > 1000) {
+    else if (p1 > 1000) { // Formato con año al principio (YYYY-MM-DD)
         anio = p1;
         mes = p2;
         dia = p3;
@@ -53,12 +51,10 @@ function _parsearFechaImportacion(fechaStr) {
         return null; // Formato no reconocido
     }
 
-    // Validación final de la fecha
     if (mes < 1 || mes > 12 || dia < 1 || dia > 31) return null;
 
     fecha = new Date(Date.UTC(anio, mes - 1, dia));
 
-    // Si `new Date` ajustó el día (e.g., 31 de Febrero -> 3 de Marzo), la fecha original era inválida.
     if (isNaN(fecha.getTime()) || fecha.getUTCDate() !== dia) {
         return null;
     }
@@ -583,6 +579,51 @@ const database = {
     },
 
     // --- FUNCIONES DE REPORTES ---
+    obtenerDatosParaReportes: async (fechaInicio, fechaFin, sucursal) => {
+        try {
+            const promesas = [];
+
+            let creditosQuery = db.collection('creditos');
+            if (sucursal) {
+                creditosQuery = creditosQuery.where('office', '==', sucursal);
+            }
+            promesas.push(creditosQuery.get());
+
+            let pagosQuery = db.collection('pagos');
+            if (sucursal) {
+                pagosQuery = pagosQuery.where('office', '==', sucursal);
+            }
+            promesas.push(pagosQuery.get());
+            
+            const [creditosSnap, pagosSnap] = await Promise.all(promesas);
+
+            const parseFecha = (fechaStr) => fechaStr ? new Date(fechaStr) : null;
+            const inicio = fechaInicio ? new Date(fechaInicio) : null;
+            const fin = fechaFin ? new Date(fechaFin) : null;
+            if (fin) fin.setHours(23, 59, 59, 999);
+
+            const enRango = (fecha) => {
+                if (!fecha) return false;
+                if (inicio && fecha < inicio) return false;
+                if (fin && fecha > fin) return false;
+                return true;
+            };
+
+            const creditos = creditosSnap.docs
+                .map(doc => ({ ...doc.data(), id: doc.id }))
+                .filter(c => enRango(parseFecha(c.fechaCreacion)));
+
+            const pagos = pagosSnap.docs
+                .map(doc => doc.data())
+                .filter(p => enRango(parseFecha(p.fecha)));
+
+            return { creditos, pagos };
+        } catch (error) {
+            console.error("Error obteniendo datos para reportes:", error);
+            return { creditos: [], pagos: [] };
+        }
+    },
+
     generarReportes: async () => {
         try {
             const [clientesSnap, creditosSnap, pagosSnap] = await Promise.all([
