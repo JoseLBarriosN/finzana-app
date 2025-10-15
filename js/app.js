@@ -13,6 +13,7 @@ let editingClientId = null;
 let editingUserId = null;
 let isOnline = true;
 let inactivityTimer; // Temporizador para el cierre de sesión por inactividad
+let grupoDePagoActual = null; // Para la nueva función de pago grupal
 
 /**
  * Parsea de forma robusta una fecha que puede ser un string (ISO 8601, yyyy-mm-dd, etc.)
@@ -52,7 +53,7 @@ function parsearFecha(fechaInput) {
                 
                 if (anio && mes && dia && mes > 0 && mes <= 12 && dia > 0 && dia <= 31) {
                     const fecha = new Date(Date.UTC(anio, mes - 1, dia));
-                    if (!isNaN(fecha.getTime())) return fecha;
+                    if (!isNaN(fecha.getTime()) && fecha.getUTCDate() === dia) return fecha;
                 }
             }
         }
@@ -261,6 +262,12 @@ function setupEventListeners() {
     if (btnExportarPdf) btnExportarPdf.addEventListener('click', exportToPDF);
     const btnLimpiarFiltrosReportes = document.getElementById('btn-limpiar-filtros-reportes');
     if (btnLimpiarFiltrosReportes) btnLimpiarFiltrosReportes.addEventListener('click', limpiarFiltrosReportes);
+
+    // Event Listeners para PAGO GRUPAL
+    const btnBuscarGrupoPago = document.getElementById('btn-buscar-grupo-pago');
+    if (btnBuscarGrupoPago) btnBuscarGrupoPago.addEventListener('click', handleBuscarGrupoParaPago);
+    const btnRegistrarPagoGrupal = document.getElementById('btn-registrar-pago-grupal');
+    if (btnRegistrarPagoGrupal) btnRegistrarPagoGrupal.addEventListener('click', handleRegistroPagoGrupal);
 }
 
 // =============================================
@@ -833,6 +840,136 @@ function handleMontoPagoChange() {
 }
 
 // =============================================
+// SECCIÓN DE PAGO GRUPAL
+// =============================================
+async function handleBuscarGrupoParaPago() {
+    const grupo = document.getElementById('grupo_pago_grupal').value;
+    if (!grupo) {
+        showStatus('status_pago_grupo', 'Por favor, selecciona un grupo.', 'error');
+        return;
+    }
+
+    showButtonLoading('btn-buscar-grupo-pago', true, 'Calculando...');
+    showProcessingOverlay(true, 'Buscando créditos del grupo...');
+    
+    try {
+        const clientesDelGrupo = await database.buscarClientes({ grupo });
+        if (clientesDelGrupo.length === 0) {
+            showStatus('status_pago_grupo', 'No se encontraron clientes en el grupo seleccionado.', 'info');
+            return;
+        }
+
+        let totalClientesActivos = 0;
+        let totalACobrarSemanal = 0;
+        let creditosParaPagar = [];
+
+        for (const cliente of clientesDelGrupo) {
+            const historial = await obtenerHistorialCreditoCliente(cliente.curp);
+            if (historial && (historial.estado === 'al corriente' || historial.estado === 'atrasado' || historial.estado === 'cobranza')) {
+                totalClientesActivos++;
+                totalACobrarSemanal += historial.pagoSemanal;
+                creditosParaPagar.push({
+                    idCredito: historial.idCredito,
+                    pagoSemanal: historial.pagoSemanal
+                });
+            }
+        }
+
+        grupoDePagoActual = {
+            creditos: creditosParaPagar,
+            totalCalculado: totalACobrarSemanal
+        };
+
+        document.getElementById('total-clientes-grupo').textContent = totalClientesActivos;
+        document.getElementById('total-a-cobrar-grupo').textContent = `$${totalACobrarSemanal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        document.getElementById('monto-recibido-grupo').value = totalACobrarSemanal.toFixed(2);
+        
+        document.getElementById('grupo-pago-details').classList.remove('hidden');
+        showStatus('status_pago_grupo', `Se encontraron ${totalClientesActivos} créditos activos para cobrar.`, 'success');
+
+    } catch (error) {
+        console.error("Error al buscar grupo para pago:", error);
+        showStatus('status_pago_grupo', 'Error al calcular la cobranza del grupo.', 'error');
+    } finally {
+        showButtonLoading('btn-buscar-grupo-pago', false);
+        showProcessingOverlay(false);
+    }
+}
+
+async function handleRegistroPagoGrupal() {
+    if (!grupoDePagoActual || grupoDePagoActual.creditos.length === 0) {
+        showStatus('status_pago_grupo', 'No hay un grupo calculado para registrar el pago.', 'error');
+        return;
+    }
+
+    const montoRecibido = parseFloat(document.getElementById('monto-recibido-grupo').value);
+    const { creditos, totalCalculado } = grupoDePagoActual;
+
+    if (isNaN(montoRecibido) || montoRecibido <= 0) {
+        showStatus('status_pago_grupo', 'El monto recibido debe ser un número mayor a cero.', 'error');
+        return;
+    }
+
+    if (montoRecibido < totalCalculado) {
+        showStatus('status_pago_grupo', 'El monto recibido es menor al total calculado. Por favor, ingresa el faltante de manera individual.', 'warning');
+        return;
+    }
+
+    showButtonLoading('btn-registrar-pago-grupal', true, 'Registrando...');
+    showProcessingOverlay(true, `Registrando ${creditos.length} pagos...`);
+
+    try {
+        // En Firestore, es mejor usar Batched Writes para operaciones atómicas
+        const batch = db.batch();
+
+        for (const credito of creditos) {
+            const pagoData = {
+                idCredito: credito.idCredito,
+                monto: credito.pagoSemanal,
+                tipoPago: 'grupal' // Usar un tipo de pago específico
+            };
+            const creditoRef = db.collection('creditos').doc(pagoData.idCredito);
+            const pagoRef = db.collection('pagos').doc(); // Generar ID para el nuevo pago
+            
+            // Leemos el crédito para calcular el nuevo saldo
+            const creditoDoc = await creditoRef.get();
+            if (creditoDoc.exists) {
+                const creditoData = creditoDoc.data();
+                const nuevoSaldo = creditoData.saldo - pagoData.monto;
+
+                // 1. Actualizar el crédito en el batch
+                batch.update(creditoRef, {
+                    saldo: nuevoSaldo,
+                    estado: (nuevoSaldo <= 0.01) ? 'liquidado' : 'activo'
+                });
+
+                // 2. Crear el nuevo pago en el batch
+                batch.set(pagoRef, {
+                    ...pagoData,
+                    fecha: new Date().toISOString(),
+                    saldoDespues: nuevoSaldo
+                });
+            }
+        }
+        
+        await batch.commit();
+
+        showStatus('status_pago_grupo', `¡Éxito! Se registraron ${creditos.length} pagos grupales.`, 'success');
+        document.getElementById('grupo-pago-details').classList.add('hidden');
+        document.getElementById('grupo_pago_grupal').value = '';
+        grupoDePagoActual = null;
+
+    } catch (error) {
+        console.error("Error al registrar pago grupal:", error);
+        showStatus('status_pago_grupo', `Error crítico al registrar los pagos: ${error.message}`, 'error');
+    } finally {
+        showButtonLoading('btn-registrar-pago-grupal', false);
+        showProcessingOverlay(false);
+    }
+}
+
+
+// =============================================
 // FUNCIONES DE VISTA Y AUXILIARES
 // =============================================
 
@@ -999,9 +1136,11 @@ function inicializarDropdowns() {
     popularDropdown('ruta_cliente', rutas, 'Selecciona una ruta');
     popularDropdown('tipo_colocacion', tiposCredito.map(t => ({ value: t.toLowerCase(), text: t })), 'Selecciona tipo', true);
     popularDropdown('monto_colocacion', montos.map(m => ({ value: m, text: `$${m.toLocaleString()}` })), 'Selecciona monto', true);
-    // Plazos se llenan dinámicamente según el cliente
+    
     const todasLasPoblaciones = [...new Set([...poblacionesGdl, ...poblacionesLeon])].sort();
     popularDropdown('grupo_filtro', todasLasPoblaciones, 'Todos');
+    popularDropdown('grupo_pago_grupal', todasLasPoblaciones, 'Selecciona un Grupo'); // Para pago grupal
+    
     popularDropdown('tipo_colocacion_filtro', tiposCredito.map(t => ({ value: t.toLowerCase(), text: t })), 'Todos', true);
     popularDropdown('plazo_filtro', [...plazos, 10].sort((a, b) => a - b).map(p => ({ value: p, text: `${p} semanas` })), 'Todos', true);
     popularDropdown('estado_credito_filtro', estadosCredito.map(e => ({ value: e, text: e.charAt(0).toUpperCase() + e.slice(1) })), 'Todos', true);
@@ -1018,9 +1157,8 @@ function inicializarDropdowns() {
 }
 
 // =============================================
-// LÓGICA DE NEGOCIO (RESTAURADA Y COMPLETADA)
+// LÓGICA DE NEGOCIO
 // =============================================
-
 function _calcularEstadoCredito(credito, pagos) {
     if (!credito) {
         console.error("Cálculo de estado fallido: El objeto de crédito es nulo.");
@@ -1143,9 +1281,8 @@ async function obtenerHistorialCreditoCliente(curp, idCreditoEspecifico = null) 
 
 
 // =============================================
-// SECCIÓN DE BÚSQUEDA DE CLIENTES (LÓGICA REESCRITA)
+// SECCIÓN DE BÚSQUEDA DE CLIENTES
 // =============================================
-
 function inicializarVistaGestionClientes() {
     const tbody = document.getElementById('tabla-clientes');
     if (tbody) {
@@ -1204,7 +1341,7 @@ async function loadClientesTable() {
 
         showFixedProgress(25, 'Buscando clientes en la base de datos...');
         clientesIniciales = await database.buscarClientes(filtrosClienteDB);
-
+        
         if (operationId !== currentSearchOperation) throw new Error("Búsqueda cancelada");
         if (clientesIniciales.length === 0) {
             tbody.innerHTML = '<tr><td colspan="6">No se encontraron clientes con los filtros de búsqueda principales.</td></tr>';
@@ -1214,10 +1351,15 @@ async function loadClientesTable() {
         showFixedProgress(40, `Procesando ${clientesIniciales.length} clientes...`);
         tbody.innerHTML = ''; // Limpiar la tabla para mostrar resultados progresivamente
         let resultadosEncontrados = 0;
+        let clientesProcesados = 0;
 
         for (const cliente of clientesIniciales) {
             if (operationId !== currentSearchOperation) throw new Error("Búsqueda cancelada");
             
+            clientesProcesados++;
+            const progress = 40 + Math.round((clientesProcesados / clientesIniciales.length) * 50);
+            showFixedProgress(progress, `Procesando ${clientesProcesados} de ${clientesIniciales.length}...`);
+
             const historial = await obtenerHistorialCreditoCliente(cliente.curp);
             
             // Aplicar filtros de crédito en memoria
@@ -1717,6 +1859,13 @@ document.addEventListener('viewshown', function (e) {
              document.getElementById('curp_colocacion').value = '';
              document.getElementById('form-colocacion').classList.add('hidden');
              showStatus('status_colocacion', '', 'info');
+            break;
+        case 'view-pago-grupo':
+            // Limpiar formulario de pago grupal al mostrar
+            document.getElementById('grupo_pago_grupal').value = '';
+            document.getElementById('grupo-pago-details').classList.add('hidden');
+            showStatus('status_pago_grupo', '', 'info');
+            grupoDePagoActual = null;
             break;
     }
 });
