@@ -14,6 +14,7 @@ let editingUserId = null;
 let isOnline = true;
 let inactivityTimer; // Temporizador para el cierre de sesión por inactividad
 let grupoDePagoActual = null; // Para la nueva función de pago grupal
+let currentChart = null; // Para la nueva función de gráficos
 
 /**
  * Parsea de forma robusta una fecha que puede ser un string (ISO 8601, yyyy-mm-dd, etc.)
@@ -268,6 +269,10 @@ function setupEventListeners() {
     if (btnBuscarGrupoPago) btnBuscarGrupoPago.addEventListener('click', handleBuscarGrupoParaPago);
     const btnRegistrarPagoGrupal = document.getElementById('btn-registrar-pago-grupal');
     if (btnRegistrarPagoGrupal) btnRegistrarPagoGrupal.addEventListener('click', handleRegistroPagoGrupal);
+
+    // Event Listener para REPORTES GRÁFICOS
+    const btnGenerarGrafico = document.getElementById('btn-generar-grafico');
+    if (btnGenerarGrafico) btnGenerarGrafico.addEventListener('click', handleGenerarGrafico);
 }
 
 // =============================================
@@ -1153,6 +1158,15 @@ function inicializarDropdowns() {
     popularDropdown('tipo_credito_filtro_reporte', tiposCredito.map(t => ({ value: t.toLowerCase(), text: t })), 'Todos', true);
     popularDropdown('estado_credito_filtro_reporte', estadosCredito.map(e => ({ value: e, text: e.toUpperCase() })), 'Todos', true);
     popularDropdown('tipo_pago_filtro_reporte', tiposPago.map(t => ({ value: t, text: t.toUpperCase() })), 'Todos', true);
+    
+    // Dropdown para reportes gráficos
+    const tiposDeReporteGrafico = [
+        { value: 'colocacion', text: 'Colocación (Monto)' },
+        { value: 'recuperacion', text: 'Recuperación (Pagos)' },
+        { value: 'comportamiento', text: 'Comportamiento de Pago' },
+    ];
+    popularDropdown('grafico_tipo_reporte', tiposDeReporteGrafico, 'Selecciona un reporte', true);
+
     console.log('Dropdowns inicializados correctamente');
 }
 
