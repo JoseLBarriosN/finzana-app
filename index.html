@@ -7,12 +7,12 @@
     <link rel="icon" type="image/x-icon" href="/favicon.ico">
     <link rel="stylesheet" href="css/styles.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    
+    
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <meta name="theme-color" content="#2E8B57">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="Finzana">
     <link rel="apple-touch-icon" href="assets/logo.png">
@@ -68,7 +68,7 @@
                         <p>Consulta y administra clientes</p>
                         <button class="btn btn-primary" data-view="view-gestion-clientes"><i class="fas fa-arrow-right"></i> Acceder</button>
                     </div>
-                     <div class="menu-card" data-view="view-cliente">
+                    <div class="menu-card" data-view="view-cliente">
                         <div class="menu-icon icon-registrar"><i class="fas fa-user-plus"></i></div>
                         <h3>Registrar Cliente</h3>
                         <p>Agrega nuevos clientes</p>
@@ -104,7 +104,7 @@
                         <p>Reportes detallados con filtros</p>
                         <button class="btn btn-primary" data-view="view-reportes-avanzados"><i class="fas fa-arrow-right"></i> Acceder</button>
                     </div>
-                     <div class="menu-card" data-view="view-reportes-graficos">
+                    <div class="menu-card" data-view="view-reportes-graficos">
                         <div class="menu-icon icon-reportes"><i class="fas fa-chart-pie"></i></div>
                         <h3>Reportes con Gráficos</h3>
                         <p>Visualiza el comportamiento del negocio</p>
@@ -560,7 +560,7 @@
                             <span class="info-label">Clientes con Crédito Activo:</span>
                             <span class="info-value" id="total-clientes-grupo">0</span>
                         </div>
-                         <div class="info-item">
+                        <div class="info-item">
                             <span class="info-label">Total a Cobrar Esta Semana:</span>
                             <span class="info-value" id="total-a-cobrar-grupo">$0.00</span>
                         </div>
@@ -575,7 +575,7 @@
                 </div>
                 <div id="status_pago_grupo"></div>
             </div>
-            
+            
             <div id="view-reportes" class="view hidden">
                 <div class="view-header">
                     <h2>Reportes del Sistema</h2>
@@ -672,79 +672,14 @@
                             <label for="tipo_pago_filtro_reporte">Tipo de Pago</label>
                             <select id="tipo_pago_filtro_reporte">
                                 <option value="">Todos</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label for="curp_filtro_reporte">CURP Cliente</label>
-                            <input type="text" id="curp_filtro_reporte" placeholder="Filtrar por CURP...">
-                        </div>
-                        <div class="form-group">
-                            <label for="id_credito_filtro_reporte">ID Crédito</label>
-                            <input type="text" id="id_credito_filtro_reporte" placeholder="Filtrar por ID crédito...">
-                        </div>
-                    </div>
-
-                    <div class="filter-section">
-                        <div class="filter-section-title">Rango de Fechas</div>
-                        <div class="date-range">
-                            <div class="form-group">
-                                <label for="fecha_inicio_reporte">Fecha Inicio</label>
-                                <input type="date" id="fecha_inicio_reporte">
-                            </div>
-                            <div class="form-group">
-                                <label for="fecha_fin_reporte">Fecha Fin</label>
-                                <input type="date" id="fecha_fin_reporte">
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="filtros-actions">
-                        <button id="btn-aplicar-filtros-reportes" class="btn btn-primary">
-                            <i class="fas fa-search"></i> Generar Reporte
-                        </button>
-                        <button id="btn-limpiar-filtros-reportes" class="btn btn-secondary">
-                            <i class="fas fa-times"></i> Limpiar Filtros
-                        </button>
-                    </div>
-                </div>
-
-                <div id="estadisticas-reporte"></div>
-
-                <div class="export-buttons">
-                    <button id="btn-exportar-csv" class="btn btn-success">
-                        <i class="fas fa-file-csv"></i> Exportar CSV
-                    </button>
-                    <button id="btn-exportar-pdf" class="btn btn-danger">
-                        <i class="fas fa-file-pdf"></i> Exportar PDF
-                    </button>
-                </div>
-
-                <div id="status_reportes_avanzados"></div>
-
-                <table class="report-table">
-                    <thead>
-                        <tr>
-                            <th>Tipo</th>
-                            <th>CURP</th>
-                            <th>Nombre</th>
-                            <th>Grupo/Población</th>
-                            <th>Ruta</th>
-                            <th>Sucursal</th>
-                            <th>Fecha</th>
-                            <th>Tipo Operación</th>
-                            <th>Monto</th>
-                            <th>Saldo</th>
-                        </tr>
-                    </thead>
-                    <tbody id="tabla-reportes_avanzados">
-                        <tr>
+              _avanzados">
                             <td colspan="10">Aplica los filtros para generar el reporte.</td>
                         </tr>
                     </tbody>
                 </table>
             </div>
 
-             <div id="view-reportes-graficos" class="view hidden">
+            <div id="view-reportes-graficos" class="view hidden">
                 <div class="view-header">
                     <h2>Reportes con Gráficos</h2>
                     <button class="btn btn-secondary" data-view="view-main-menu"><i class="fas fa-arrow-left"></i> Volver al Menú</button>
