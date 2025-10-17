@@ -180,55 +180,6 @@ const database = {
         }
     },
 
-    buscarClientesPorCURPs: async (curps) => {
-        if (!curps || curps.length === 0) {
-            return [];
-        }
-        try {
-            // Firestore 'in' query supports up to 30 elements in recent versions.
-            const chunks = [];
-            for (let i = 0; i < curps.length; i += 30) {
-                chunks.push(curps.slice(i, i + 30));
-            }
-
-            const promises = chunks.map(chunk =>
-                db.collection('clientes').where('curp', 'in', chunk).get()
-            );
-
-            const snapshots = await Promise.all(promises);
-            const clientes = [];
-            snapshots.forEach(snapshot => {
-                snapshot.forEach(doc => {
-                    clientes.push({ id: doc.id, ...doc.data() });
-                });
-            });
-            return clientes;
-        } catch (error) {
-            console.error("Error buscando clientes por CURPs:", error);
-            return [];
-        }
-    },
-
-    agregarCliente: async (clienteData) => {
-        try {
-            if (!clienteData.id) {
-                const existe = await database.buscarClientePorCURP(clienteData.curp);
-                if (existe) {
-                    return { success: false, message: 'Ya existe un cliente con esta CURP.' };
-                }
-            }
-            if (!clienteData.fechaRegistro) {
-                clienteData.fechaRegistro = new Date().toISOString();
-            }
-            clienteData.curp = clienteData.curp.toUpperCase();
-            await db.collection('clientes').add(clienteData);
-            return { success: true, message: 'Cliente registrado exitosamente.' };
-        } catch (error) {
-            console.error("Error agregando cliente:", error);
-            return { success: false, message: `Error: ${error.message}` };
-        }
-    },
-
     buscarClientes: async (filtros) => {
         try {
             let query = db.collection('clientes');
@@ -265,32 +216,38 @@ const database = {
             return [];
         }
     },
-
-    buscarCreditos: async (filtros) => {
+    
+    /**
+     * NUEVA FUNCIÓN OPTIMIZADA
+     * Busca todos los créditos para una lista de CURPs usando consultas por lotes.
+     * @param {string[]} curps - Un array de CURPs de clientes.
+     * @returns {Promise<object[]>} Una lista de todos los créditos encontrados.
+     */
+    buscarCreditosPorCURPs: async (curps) => {
+        if (!curps || curps.length === 0) return [];
+        const creditos = [];
+        const chunks = [];
+        // Firestore limita las consultas 'in' a 30 elementos
+        for (let i = 0; i < curps.length; i += 30) {
+            chunks.push(curps.slice(i, i + 30));
+        }
         try {
-            let query = db.collection('creditos');
-            if (filtros.idCredito) {
-                const doc = await db.collection('creditos').doc(filtros.idCredito).get();
-                return doc.exists ? [{ id: doc.id, ...doc.data() }] : [];
-            }
-            if (filtros.estado) {
-                query = query.where('estado', '==', filtros.estado);
-            }
-            if (filtros.curpAval) {
-                query = query.where('curpAval', '==', filtros.curpAval.toUpperCase());
-            }
-            if (filtros.plazo) {
-                query = query.where('plazo', '==', parseInt(filtros.plazo, 10));
-            }
-
-            const snapshot = await query.get();
-            return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            const promises = chunks.map(chunk =>
+                db.collection('creditos').where('curpCliente', 'in', chunk).get()
+            );
+            const snapshots = await Promise.all(promises);
+            snapshots.forEach(snapshot => {
+                snapshot.forEach(doc => {
+                    creditos.push({ id: doc.id, ...doc.data() });
+                });
+            });
+            return creditos;
         } catch (error) {
-            console.error("Error buscando créditos:", error);
+            console.error("Error buscando créditos por CURPs:", error);
             return [];
         }
     },
-
+    
     buscarCreditoActivoPorCliente: async (curp) => {
         try {
             const creditos = await database.buscarCreditosPorCliente(curp);
@@ -418,6 +375,37 @@ const database = {
             return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         } catch (error) {
             console.error("Error obteniendo pagos:", error);
+            return [];
+        }
+    },
+    
+    /**
+     * NUEVA FUNCIÓN OPTIMIZADA
+     * Busca todos los pagos para una lista de IDs de crédito usando consultas por lotes.
+     * @param {string[]} creditoIds - Un array de IDs de crédito.
+     * @returns {Promise<object[]>} Una lista de todos los pagos encontrados.
+     */
+    getPagosPorCreditoIds: async (creditoIds) => {
+        if (!creditoIds || creditoIds.length === 0) return [];
+        const pagos = [];
+        const chunks = [];
+        // Firestore limita las consultas 'in' a 30 elementos
+        for (let i = 0; i < creditoIds.length; i += 30) {
+            chunks.push(creditoIds.slice(i, i + 30));
+        }
+        try {
+            const promises = chunks.map(chunk =>
+                db.collection('pagos').where('idCredito', 'in', chunk).get()
+            );
+            const snapshots = await Promise.all(promises);
+            snapshots.forEach(snapshot => {
+                snapshot.forEach(doc => {
+                    pagos.push({ id: doc.id, ...doc.data() });
+                });
+            });
+            return pagos;
+        } catch (error) {
+            console.error("Error buscando pagos por IDs de crédito:", error);
             return [];
         }
     },
@@ -592,51 +580,6 @@ const database = {
     },
 
     // --- FUNCIONES DE REPORTES ---
-    obtenerDatosParaReportes: async (fechaInicio, fechaFin, sucursal) => {
-        try {
-            const promesas = [];
-
-            let creditosQuery = db.collection('creditos');
-            if (sucursal) {
-                creditosQuery = creditosQuery.where('office', '==', sucursal);
-            }
-            promesas.push(creditosQuery.get());
-
-            let pagosQuery = db.collection('pagos');
-            if (sucursal) {
-                pagosQuery = pagosQuery.where('office', '==', sucursal);
-            }
-            promesas.push(pagosQuery.get());
-
-            const [creditosSnap, pagosSnap] = await Promise.all(promesas);
-
-            const parseFecha = (fechaStr) => fechaStr ? new Date(fechaStr) : null;
-            const inicio = fechaInicio ? new Date(fechaInicio) : null;
-            const fin = fechaFin ? new Date(fechaFin) : null;
-            if (fin) fin.setHours(23, 59, 59, 999);
-
-            const enRango = (fecha) => {
-                if (!fecha) return false;
-                if (inicio && fecha < inicio) return false;
-                if (fin && fecha > fin) return false;
-                return true;
-            };
-
-            const creditos = creditosSnap.docs
-                .map(doc => ({ ...doc.data(), id: doc.id }))
-                .filter(c => enRango(parseFecha(c.fechaCreacion)));
-
-            const pagos = pagosSnap.docs
-                .map(doc => doc.data())
-                .filter(p => enRango(parseFecha(p.fecha)));
-
-            return { creditos, pagos };
-        } catch (error) {
-            console.error("Error obteniendo datos para reportes:", error);
-            return { creditos: [], pagos: [] };
-        }
-    },
-
     generarReportes: async () => {
         try {
             const [clientesSnap, creditosSnap, pagosSnap] = await Promise.all([
