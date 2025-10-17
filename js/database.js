@@ -227,9 +227,9 @@ const database = {
         if (!curps || curps.length === 0) return [];
         const creditos = [];
         const chunks = [];
-        // Firestore limita las consultas 'in' a 30 elementos
-        for (let i = 0; i < curps.length; i += 30) {
-            chunks.push(curps.slice(i, i + 30));
+        // *** CORRECCIÓN CLAVE: El límite es 10, no 30 ***
+        for (let i = 0; i < curps.length; i += 10) {
+            chunks.push(curps.slice(i, i + 10));
         }
         try {
             const promises = chunks.map(chunk =>
@@ -389,9 +389,9 @@ const database = {
         if (!creditoIds || creditoIds.length === 0) return [];
         const pagos = [];
         const chunks = [];
-        // Firestore limita las consultas 'in' a 30 elementos
-        for (let i = 0; i < creditoIds.length; i += 30) {
-            chunks.push(creditoIds.slice(i, i + 30));
+        // *** CORRECCIÓN CLAVE: El límite es 10, no 30 ***
+        for (let i = 0; i < creditoIds.length; i += 10) {
+            chunks.push(creditoIds.slice(i, i + 10));
         }
         try {
             const promises = chunks.map(chunk =>
