@@ -3,37 +3,26 @@
 // =============================================
 
 /**
- * Parsea de forma robusta una fecha desde múltiples formatos de entrada.
- * Es la función unificada para toda la aplicación (importación y visualización).
- * @param {string|object|Date} fechaInput La entrada de fecha (string, Timestamp de Firestore, objeto Date).
- * @returns {Date|null} Un objeto Date válido en UTC o null si el formato es irreconocible.
+ * Parsea de forma robusta una fecha desde un string de importación.
+ * Intenta varios formatos comunes (D-M-Y, Y-M-D, M-D-Y) para máxima compatibilidad.
+ * @param {string} fechaStr La cadena de texto de la fecha.
+ * @returns {string|null} Un string en formato ISO 8601 válido o null si el formato es incorrecto.
  */
-function _parsearFechaDeFormaRobusta(fechaInput) {
-    if (!fechaInput) return null;
-    if (fechaInput instanceof Date && !isNaN(fechaInput)) return fechaInput;
+function _parsearFechaImportacion(fechaStr) {
+    if (!fechaStr || typeof fechaStr !== 'string') return null;
 
-    // Manejar Timestamp de Firestore
-    if (typeof fechaInput === 'object' && typeof fechaInput.toDate === 'function') {
-        return fechaInput.toDate();
-    }
+    const fechaTrimmed = fechaStr.trim();
 
-    if (typeof fechaInput !== 'string') return null;
-
-    const fechaStr = fechaInput.trim();
-    if (!fechaStr) return null;
-
-    // Intento 1: Parseo nativo para formatos estándar (ISO 8601, YYYY-MM-DD)
-    if (/^\d{4}-\d{2}-\d{2}/.test(fechaStr)) {
-        const fecha = new Date(fechaStr);
-        if (!isNaN(fecha.getTime())) {
-            // Ajustar a UTC para consistencia
-            return new Date(Date.UTC(fecha.getUTCFullYear(), fecha.getUTCMonth(), fecha.getUTCDate()));
+    // Intenta parsear directamente si es un formato estándar (ISO, YYYY-MM-DD)
+    let fecha = new Date(fechaTrimmed);
+    if (!isNaN(fecha.getTime())) {
+        if (fecha.getFullYear() > 1970 && fechaTrimmed.includes('-')) {
+            return fecha.toISOString();
         }
     }
 
-    // Intento 2: Formatos comunes con separadores (DD-MM-YYYY, MM-DD-YYYY)
-    const separador = fechaStr.includes('/') ? '/' : '-';
-    const partes = fechaStr.split('T')[0].split(separador);
+    const separador = fechaTrimmed.includes('/') ? '/' : '-';
+    const partes = fechaTrimmed.split(separador);
     if (partes.length !== 3) return null;
 
     const [p1, p2, p3] = partes.map(p => parseInt(p, 10));
@@ -41,38 +30,36 @@ function _parsearFechaDeFormaRobusta(fechaInput) {
 
     let anio, mes, dia;
 
-    // Heurística para determinar el formato
-    if (p3 > 1000) { // Formato con año al final: DD-MM-YYYY o MM-DD-YYYY
+    if (p3 > 1000) { // Formato con año al final (DD-MM-YYYY o MM-DD-YYYY)
         anio = p3;
-        if (p1 > 12) { // Definitivamente es DD-MM-YYYY
-            dia = p1; mes = p2;
-        } else if (p2 > 12) { // Definitivamente es MM-DD-YYYY
-            dia = p2; mes = p1;
-        } else { // Ambiguo (ej: 03-04-2023), asumimos DD-MM-YYYY como prioridad para Finzana
-            dia = p1; mes = p2;
+        if (p1 > 12) { // DD-MM-YYYY
+            dia = p1;
+            mes = p2;
+        } else if (p2 > 12) { // MM-DD-YYYY (improbable pero posible)
+            dia = p2;
+            mes = p1;
+        } else { // Ambiguo (ej. 01-02-2023), asumimos DD-MM por ser el formato solicitado
+            dia = p1;
+            mes = p2;
         }
-    } else if (p1 > 1000) { // Formato con año al principio: YYYY-MM-DD
-        anio = p1; mes = p2; dia = p3;
+    }
+    else if (p1 > 1000) { // Formato con año al principio (YYYY-MM-DD)
+        anio = p1;
+        mes = p2;
+        dia = p3;
     } else {
+        return null; // Formato no reconocido
+    }
+
+    if (mes < 1 || mes > 12 || dia < 1 || dia > 31) return null;
+
+    fecha = new Date(Date.UTC(anio, mes - 1, dia));
+
+    if (isNaN(fecha.getTime()) || fecha.getUTCDate() !== dia) {
         return null;
     }
 
-    // Validación final de las partes
-    if (!anio || mes < 1 || mes > 12 || dia < 1 || dia > 31) return null;
-
-    try {
-        const fecha = new Date(Date.UTC(anio, mes - 1, dia));
-        // Verificar que la fecha no se "desbordó" (ej: 31 de Febrero)
-        if (fecha.getUTCMonth() !== mes - 1 || fecha.getUTCDate() !== dia) {
-            return null;
-        }
-        if (isNaN(fecha.getTime())) {
-            return null;
-        }
-        return fecha;
-    } catch (e) {
-        return null;
-    }
+    return fecha.toISOString();
 }
 
 
@@ -180,6 +167,55 @@ const database = {
         }
     },
 
+    buscarClientesPorCURPs: async (curps) => {
+        if (!curps || curps.length === 0) {
+            return [];
+        }
+        try {
+            // Firestore 'in' query supports up to 10 elements.
+            const chunks = [];
+            for (let i = 0; i < curps.length; i += 10) {
+                chunks.push(curps.slice(i, i + 10));
+            }
+
+            const promises = chunks.map(chunk =>
+                db.collection('clientes').where('curp', 'in', chunk).get()
+            );
+
+            const snapshots = await Promise.all(promises);
+            const clientes = [];
+            snapshots.forEach(snapshot => {
+                snapshot.forEach(doc => {
+                    clientes.push({ id: doc.id, ...doc.data() });
+                });
+            });
+            return clientes;
+        } catch (error) {
+            console.error("Error buscando clientes por CURPs:", error);
+            return [];
+        }
+    },
+
+    agregarCliente: async (clienteData) => {
+        try {
+            if (!clienteData.id) {
+                const existe = await database.buscarClientePorCURP(clienteData.curp);
+                if (existe) {
+                    return { success: false, message: 'Ya existe un cliente con esta CURP.' };
+                }
+            }
+            if (!clienteData.fechaRegistro) {
+                clienteData.fechaRegistro = new Date().toISOString();
+            }
+            clienteData.curp = clienteData.curp.toUpperCase();
+            await db.collection('clientes').add(clienteData);
+            return { success: true, message: 'Cliente registrado exitosamente.' };
+        } catch (error) {
+            console.error("Error agregando cliente:", error);
+            return { success: false, message: `Error: ${error.message}` };
+        }
+    },
+
     buscarClientes: async (filtros) => {
         try {
             let query = db.collection('clientes');
@@ -216,32 +252,32 @@ const database = {
             return [];
         }
     },
-    
-    buscarCreditosPorCURPs: async (curps) => {
-        if (!curps || curps.length === 0) return [];
-        const creditos = [];
-        const chunks = [];
-        // *** CORRECCIÓN CLAVE: El límite es 10, no 30 ***
-        for (let i = 0; i < curps.length; i += 10) {
-            chunks.push(curps.slice(i, i + 10));
-        }
+
+    buscarCreditos: async (filtros) => {
         try {
-            const promises = chunks.map(chunk =>
-                db.collection('creditos').where('curpCliente', 'in', chunk).get()
-            );
-            const snapshots = await Promise.all(promises);
-            snapshots.forEach(snapshot => {
-                snapshot.forEach(doc => {
-                    creditos.push({ id: doc.id, ...doc.data() });
-                });
-            });
-            return creditos;
+            let query = db.collection('creditos');
+            if (filtros.idCredito) {
+                const doc = await db.collection('creditos').doc(filtros.idCredito).get();
+                return doc.exists ? [{ id: doc.id, ...doc.data() }] : [];
+            }
+            if (filtros.estado) {
+                query = query.where('estado', '==', filtros.estado);
+            }
+            if (filtros.curpAval) {
+                query = query.where('curpAval', '==', filtros.curpAval.toUpperCase());
+            }
+            if (filtros.plazo) {
+                query = query.where('plazo', '==', parseInt(filtros.plazo, 10));
+            }
+
+            const snapshot = await query.get();
+            return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         } catch (error) {
-            console.error("Error buscando créditos por CURPs:", error);
+            console.error("Error buscando créditos:", error);
             return [];
         }
     },
-    
+
     buscarCreditoActivoPorCliente: async (curp) => {
         try {
             const creditos = await database.buscarCreditosPorCliente(curp);
@@ -372,31 +408,6 @@ const database = {
             return [];
         }
     },
-    
-    getPagosPorCreditoIds: async (creditoIds) => {
-        if (!creditoIds || creditoIds.length === 0) return [];
-        const pagos = [];
-        const chunks = [];
-        // *** CORRECCIÓN CLAVE: El límite es 10, no 30 ***
-        for (let i = 0; i < creditoIds.length; i += 10) {
-            chunks.push(creditoIds.slice(i, i + 10));
-        }
-        try {
-            const promises = chunks.map(chunk =>
-                db.collection('pagos').where('idCredito', 'in', chunk).get()
-            );
-            const snapshots = await Promise.all(promises);
-            snapshots.forEach(snapshot => {
-                snapshot.forEach(doc => {
-                    pagos.push({ id: doc.id, ...doc.data() });
-                });
-            });
-            return pagos;
-        } catch (error) {
-            console.error("Error buscando pagos por IDs de crédito:", error);
-            return [];
-        }
-    },
 
     agregarPago: async (pagoData) => {
         try {
@@ -447,7 +458,7 @@ const database = {
                         errores.push(`Línea ${i + 1}: Faltan columnas (se esperaban 7, se encontraron ${campos.length})`);
                         continue;
                     }
-                    const fechaRegistroISO = _parsearFechaDeFormaRobusta(campos[5])?.toISOString();
+                    const fechaRegistroISO = _parsearFechaImportacion(campos[5]);
                     if (!fechaRegistroISO) {
                         errores.push(`Línea ${i + 1}: Fecha de registro inválida ('${campos[5]}'). Se omitirá el registro.`);
                         continue;
@@ -476,7 +487,7 @@ const database = {
                         errores.push(`Línea ${i + 1}: El ID del crédito está vacío.`);
                         continue;
                     }
-                    const fechaCreacionISO = _parsearFechaDeFormaRobusta(campos[3])?.toISOString();
+                    const fechaCreacionISO = _parsearFechaImportacion(campos[3]);
                     if (!fechaCreacionISO) {
                         errores.push(`Línea ${i + 1}: Fecha de creación inválida o vacía ('${campos[3]}').`);
                         continue;
@@ -503,7 +514,7 @@ const database = {
                         estado: saldo > 0.01 ? 'activo' : 'liquidado'
                     };
                     const docRef = db.collection('creditos').doc(credito.id);
-                    batch.set(docRef, credito, { merge: true });
+                    batch.set(docRef, credito, { merge: true }); // Usar merge para no sobrescribir datos si ya existe
                     importados++;
                 } else if (tipo === 'cobranza') {
                     if (campos.length < 11) {
@@ -511,7 +522,7 @@ const database = {
                         continue;
                     }
                     const idCredito = campos[1].trim();
-                    const fechaPagoISO = _parsearFechaDeFormaRobusta(campos[2])?.toISOString();
+                    const fechaPagoISO = _parsearFechaImportacion(campos[2]);
                     const montoPago = parseFloat(campos[3] || 0);
 
                     if (!idCredito) {
