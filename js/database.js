@@ -514,7 +514,8 @@ const database = {
                         estado: saldo > 0.01 ? 'activo' : 'liquidado'
                     };
                     const docRef = db.collection('creditos').doc(credito.id);
-                    batch.set(docRef, credito, { merge: true }); // Usar merge para no sobrescribir datos si ya existe
+                    // *** CORRECCIÓN CRÍTICA: Usar merge para no borrar datos accidentalmente ***
+                    batch.set(docRef, credito, { merge: true });
                     importados++;
                 } else if (tipo === 'cobranza') {
                     if (campos.length < 11) {
