@@ -10,6 +10,7 @@
     --light: #f8f9fa;
     --dark: #212529;
     --gray: #6c757d;
+    --border-color: #dee2e6; /* MODIFICACIÓN: Nueva variable */
     --border-radius: 12px;
     --box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
     --transition: all 0.3s ease;
@@ -324,37 +325,14 @@ input, select, textarea {
     margin-bottom: 15px;
 }
 
-.icon-clientes {
-    color: #3498db;
-}
-
-.icon-usuarios {
-    color: #9b59b6;
-}
-
-.icon-importar {
-    color: #e74c3c;
-}
-
-.icon-registrar {
-    color: #2ecc71;
-}
-
-.icon-colocacion {
-    color: #f39c12;
-}
-
-.icon-cobranza {
-    color: #16a085;
-}
-
-.icon-reportes {
-    color: #34495e;
-}
-
-.icon-reportes-avanzados {
-    color: #8e44ad;
-}
+.icon-clientes { color: #3498db; }
+.icon-usuarios { color: #9b59b6; }
+.icon-importar { color: #e74c3c; }
+.icon-registrar { color: #2ecc71; }
+.icon-colocacion { color: #f39c12; }
+.icon-cobranza { color: #16a085; }
+.icon-reportes { color: #34495e; }
+.icon-reportes-avanzados { color: #8e44ad; }
 
 .status-message {
     padding: 12px 15px;
@@ -363,36 +341,11 @@ input, select, textarea {
     font-weight: 500;
 }
 
-.status-success {
-    background: #d4edda;
-    color: #155724;
-    border: 1px solid #c3e6cb;
-}
-
-.status-error {
-    background: #f8d7da;
-    color: #721c24;
-    border: 1px solid #f5c6cb;
-}
-
-.status-info {
-    background: #cce7ff;
-    color: #004085;
-    border: 1px solid #b3d7ff;
-}
-
-.status-warning {
-    background: #fff3cd;
-    color: #856404;
-    border: 1px solid #ffeaa7;
-}
-
-.auth-status {
-    margin-top: 15px;
-    padding: 10px;
-    border-radius: var(--border-radius);
-    text-align: center;
-}
+.status-success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+.status-error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+.status-info { background: #cce7ff; color: #004085; border: 1px solid #b3d7ff; }
+.status-warning { background: #fff3cd; color: #856404; border: 1px solid #ffeaa7; }
+.auth-status { margin-top: 15px; padding: 10px; border-radius: var(--border-radius); text-align: center; }
 
 .client-table, .user-table, .report-table {
     width: 100%;
@@ -404,25 +357,35 @@ input, select, textarea {
     box-shadow: 0 2px 5px rgba(0,0,0,0.05);
 }
 
-    .client-table th, .client-table td, .user-table th, .user-table td, .report-table th, .report-table td {
-        padding: 15px;
-        text-align: left;
-        border-bottom: 1px solid #eee;
-    }
+.client-table th, .client-table td, .user-table th, .user-table td, .report-table th, .report-table td {
+    padding: 15px;
+    text-align: left;
+}
 
-    .client-table th, .user-table th, .report-table th {
-        background: #f8f9fa;
-        font-weight: 600;
-        color: var(--dark);
-    }
+/* MODIFICACIÓN: Separador de filas */
+.client-table tr, .user-table tr, .report-table tr {
+    border-bottom: 1px solid var(--border-color);
+}
+.client-table tr:last-child, .user-table tr:last-child, .report-table tr:last-child {
+    border-bottom: none;
+}
 
-    .client-table tr:hover, .user-table tr:hover, .report-table tr:hover {
-        background: #f8f9fa;
-    }
+.client-table th, .user-table th, .report-table th {
+    background: #f8f9fa;
+    font-weight: 600;
+    color: var(--dark);
+}
 
+.client-table tr:hover, .user-table tr:hover, .report-table tr:hover {
+    background: #f8f9fa;
+}
+
+/* MODIFICACIÓN: Alineación de botones de acción */
 .action-buttons {
     display: flex;
-    gap: 5px;
+    gap: 8px;
+    align-items: center;
+    justify-content: flex-start;
 }
 
 .btn-sm {
@@ -430,17 +393,19 @@ input, select, textarea {
     font-size: 14px;
 }
 
+/* MODIFICACIÓN: Estilo de información de crédito */
 .credito-info {
     background: #f8f9fa;
-    border-radius: var(--border-radius);
-    padding: 15px;
-    margin-top: 10px;
+    border-radius: 8px; /* Más sutil */
+    padding: 12px; /* Reducido */
+    margin: 0;
+    border: 1px solid #e9ecef;
 }
 
 .info-grid {
     display: grid;
-    grid-template-columns: 1fr;
-    gap: 10px;
+    grid-template-columns: repeat(2, 1fr); /* Dos columnas */
+    gap: 4px 12px; /* Reducido */
 }
 
 .info-item {
@@ -466,15 +431,19 @@ input, select, textarea {
 .status-liquidado {
     color: var(--success);
 }
+
 .status-al-corriente {
     color: var(--info-blue); /* Se cambia a azul */
 }
+
 .status-atrasado {
     color: var(--warning); /* Se mantiene en amarillo/naranja */
 }
+
 .status-cobranza {
     color: var(--danger); /* Se mantiene en rojo */
 }
+
 .status-juridico {
     color: #B71C1C; /* Rojo oscuro */
 }
@@ -810,30 +779,11 @@ input, select, textarea {
     font-weight: 600;
 }
 
-.role-admin {
-    background: #dc3545;
-    color: white;
-}
-
-.role-supervisor {
-    background: #fd7e14;
-    color: white;
-}
-
-.role-cobrador {
-    background: #20c997;
-    color: white;
-}
-
-.role-consulta {
-    background: #6f42c1;
-    color: white;
-}
-
-.role-comisionista { /* NUEVO */
-    background: #6610f2;
-    color: white;
-}
+.role-admin { background: #dc3545; color: white; }
+.role-supervisor { background: #fd7e14; color: white; }
+.role-cobrador { background: #20c997; color: white; }
+.role-consulta { background: #6f42c1; color: white; }
+.role-comisionista { background: #6610f2; color: white; }
 
 /* Campos requeridos */
 .required {
@@ -855,7 +805,11 @@ input, select, textarea {
         align-items: flex-start;
     }
 
-    .menu-grid, .filtros-grid, .info-grid, .report-grid {
+    .menu-grid, .filtros-grid, .report-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .info-grid {
         grid-template-columns: 1fr;
     }
 
@@ -889,19 +843,23 @@ input, select, textarea {
     }
 
     /* Responsive para barra de progreso */
-    .progress-container {
+    .progress-container-fixed {
         height: 50px;
         padding: 0 10px;
     }
 
-    .progress-text {
+    .progress-text-fixed {
         font-size: 12px;
         min-width: 150px;
     }
 
-    .btn-cancelar-carga {
+    .btn-cancelar-carga-fixed {
         width: 25px;
         height: 25px;
+    }
+    
+    body.has-progress {
+        padding-top: 50px;
     }
 }
 
@@ -927,52 +885,17 @@ input, select, textarea {
         font-size: 24px;
     }
 
-    .progress-text {
+    .progress-text-fixed {
         font-size: 11px;
         min-width: 120px;
     }
 }
 
 /* Animaciones */
-@keyframes fadeIn {
-    from {
-        opacity: 0;
-    }
-
-    to {
-        opacity: 1;
-    }
-}
-
-@keyframes slideUp {
-    from {
-        transform: translateY(20px);
-        opacity: 0;
-    }
-
-    to {
-        transform: translateY(0);
-        opacity: 1;
-    }
-}
-
-@keyframes pulse {
-    0% {
-        transform: scale(1);
-    }
-
-    50% {
-        transform: scale(1.05);
-    }
-
-    100% {
-        transform: scale(1);
-    }
-}
-
-.pulse {
-    animation: pulse 2s infinite;
-}
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+@keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.05); } 100% { transform: scale(1); } }
+.pulse { animation: pulse 2s infinite; }
 
 /* Estilos específicos para la barra de progreso en diferentes vistas */
 #view-gestion-clientes .filtros-container {
@@ -1047,11 +970,6 @@ input, select, textarea {
         padding: 10px 12px;
         font-size: 14px;
     }
-
-    .btn {
-        padding: 10px 16px;
-        font-size: 14px;
-    }
 }
 
 /* Mejoras de accesibilidad */
@@ -1064,12 +982,7 @@ textarea:focus {
 }
 
 /* Estados hover mejorados */
-.menu-card:hover .menu-icon {
-    transform: scale(1.1);
-    transition: transform 0.3s ease;
-}
-
-.report-card:hover .report-icon {
+.menu-card:hover .menu-icon, .report-card:hover .report-icon {
     transform: scale(1.1);
     transition: transform 0.3s ease;
 }
@@ -1080,23 +993,10 @@ textarea:focus {
 }
 
 /* Scrollbar personalizado */
-::-webkit-scrollbar {
-    width: 8px;
-}
-
-::-webkit-scrollbar-track {
-    background: #f1f1f1;
-    border-radius: 10px;
-}
-
-::-webkit-scrollbar-thumb {
-    background: var(--primary);
-    border-radius: 10px;
-}
-
-    ::-webkit-scrollbar-thumb:hover {
-        background: var(--primary-dark);
-    }
+::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 10px; }
+::-webkit-scrollbar-thumb { background: var(--primary); border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: var(--primary-dark); }
 
 /* Mejoras para elementos de formulario */
 select {
@@ -1104,49 +1004,24 @@ select {
     background-repeat: no-repeat;
     background-position: right 15px center;
     background-size: 12px;
-    padding-right: 40px;
     -webkit-appearance: none;
     -moz-appearance: none;
     appearance: none;
 }
 
 /* Placeholders mejorados */
-::placeholder {
-    color: #999;
-    opacity: 1;
-}
-
-:-ms-input-placeholder {
-    color: #999;
-}
-
-::-ms-input-placeholder {
-    color: #999;
-}
-
-/* Focus states mejorados */
-input:focus::placeholder,
-select:focus::placeholder,
-textarea:focus::placeholder {
-    color: #666;
-}
+::placeholder { color: #999; opacity: 1; }
+:-ms-input-placeholder { color: #999; }
+::-ms-input-placeholder { color: #999; }
 
 /* Estilos para mensajes de validación */
-.input-error {
-    border-color: var(--danger) !important;
-    box-shadow: 0 0 0 3px rgba(255, 99, 71, 0.1) !important;
-}
-
-.input-success {
-    border-color: var(--success) !important;
-    box-shadow: 0 0 0 3px rgba(60, 179, 113, 0.1) !important;
-}
+.input-error { border-color: var(--danger) !important; box-shadow: 0 0 0 3px rgba(255, 99, 71, 0.1) !important; }
+.input-success { border-color: var(--success) !important; box-shadow: 0 0 0 3px rgba(60, 179, 113, 0.1) !important; }
 
 /* Tooltips básicos */
 [data-tooltip] {
     position: relative;
 }
-
     [data-tooltip]:hover::after {
         content: attr(data-tooltip);
         position: absolute;
@@ -1161,7 +1036,6 @@ textarea:focus::placeholder {
         white-space: nowrap;
         z-index: 1000;
     }
-
     [data-tooltip]:hover::before {
         content: '';
         position: absolute;
@@ -1230,11 +1104,6 @@ textarea:focus::placeholder {
         transform: scale(1.1);
     }
 
-/* Ajuste para el contenido cuando hay barra de progreso */
-body.has-progress {
-    padding-top: 60px;
-}
-
 /* Filtros para gestión de usuarios */
 .filtros-usuarios {
     background: #f8f9fa;
@@ -1263,17 +1132,14 @@ body.has-progress {
         height: 50px;
         padding: 0 10px;
     }
-
     .progress-text-fixed {
         font-size: 12px;
         min-width: 150px;
     }
-
     .btn-cancelar-carga-fixed {
         width: 25px;
         height: 25px;
     }
-
     body.has-progress {
         padding-top: 50px;
     }
@@ -1283,10 +1149,6 @@ body.has-progress {
     .progress-text-fixed {
         font-size: 11px;
         min-width: 120px;
-    }
-
-    body.has-progress {
-        padding-top: 50px;
     }
 }
 
