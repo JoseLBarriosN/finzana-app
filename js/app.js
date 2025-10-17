@@ -17,76 +17,51 @@ let grupoDePagoActual = null; // Para la nueva función de pago grupal
 let currentChart = null; // Para la nueva función de gráficos
 
 /**
- * Parsea de forma robusta una fecha desde múltiples formatos de entrada.
- * Es la función unificada para toda la aplicación (importación y visualización).
- * @param {string|object|Date} fechaInput La entrada de fecha (string, Timestamp de Firestore, objeto Date).
- * @returns {Date|null} Un objeto Date válido en UTC o null si el formato es irreconocible.
+ * Parsea de forma robusta una fecha que puede ser un string (ISO 8601, yyyy-mm-dd, etc.)
+ * o un objeto Timestamp de Firestore. Esta función es la clave para corregir las fechas existentes en la DB.
+ * @param {string|object} fechaInput La cadena de texto o el objeto de fecha.
+ * @returns {Date|null} Un objeto Date válido o null si el formato es incorrecto.
  */
-function _parsearFechaDeFormaRobusta(fechaInput) {
+function parsearFecha(fechaInput) {
     if (!fechaInput) return null;
-    if (fechaInput instanceof Date && !isNaN(fechaInput)) return fechaInput;
+    if (fechaInput instanceof Date) return fechaInput;
+    if (typeof fechaInput === 'object' && typeof fechaInput.toDate === 'function') return fechaInput.toDate();
 
-    // Manejar Timestamp de Firestore
-    if (typeof fechaInput === 'object' && typeof fechaInput.toDate === 'function') {
-        return fechaInput.toDate();
-    }
+    if (typeof fechaInput === 'string') {
+        const fechaStr = fechaInput.trim();
+        // Prioridad 1: Formato ISO 8601 (el más confiable)
+        if (fechaStr.includes('T') && fechaStr.includes('Z')) {
+            const fecha = new Date(fechaStr);
+            if (!isNaN(fecha.getTime())) return fecha;
+        }
 
-    if (typeof fechaInput !== 'string') return null;
+        // Prioridad 2: Formatos con guiones o slashes (YYYY-MM-DD, DD-MM-YYYY, etc.)
+        const separador = fechaStr.includes('/') ? '/' : '-';
+        const partes = fechaStr.split('T')[0].split(separador);
 
-    const fechaStr = fechaInput.trim();
-    if (!fechaStr) return null;
+        if (partes.length === 3) {
+            const [p1, p2, p3] = partes.map(p => parseInt(p, 10));
+            if (!isNaN(p1) && !isNaN(p2) && !isNaN(p3)) {
+                let anio, mes, dia;
+                // Asumir YYYY-MM-DD
+                if (p1 > 1000) {
+                    anio = p1; mes = p2; dia = p3;
+                }
+                // Asumir DD-MM-YYYY
+                else if (p3 > 1000) {
+                    anio = p3; dia = p1; mes = p2;
+                }
 
-    // Intento 1: Parseo nativo para formatos estándar (ISO 8601, YYYY-MM-DD)
-    if (/^\d{4}-\d{2}-\d{2}/.test(fechaStr)) {
-        const fecha = new Date(fechaStr);
-        if (!isNaN(fecha.getTime())) {
-            // Ajustar a UTC para consistencia
-            return new Date(Date.UTC(fecha.getUTCFullYear(), fecha.getUTCMonth(), fecha.getUTCDate()));
+                if (anio && mes && dia && mes > 0 && mes <= 12 && dia > 0 && dia <= 31) {
+                    const fecha = new Date(Date.UTC(anio, mes - 1, dia));
+                    if (!isNaN(fecha.getTime()) && fecha.getUTCDate() === dia) return fecha;
+                }
+            }
         }
     }
 
-    // Intento 2: Formatos comunes con separadores (DD-MM-YYYY, MM-DD-YYYY)
-    const separador = fechaStr.includes('/') ? '/' : '-';
-    const partes = fechaStr.split('T')[0].split(separador);
-    if (partes.length !== 3) return null;
-
-    const [p1, p2, p3] = partes.map(p => parseInt(p, 10));
-    if (isNaN(p1) || isNaN(p2) || isNaN(p3)) return null;
-
-    let anio, mes, dia;
-
-    // Heurística para determinar el formato
-    if (p3 > 1000) { // Formato con año al final: DD-MM-YYYY o MM-DD-YYYY
-        anio = p3;
-        if (p1 > 12) { // Definitivamente es DD-MM-YYYY
-            dia = p1; mes = p2;
-        } else if (p2 > 12) { // Definitivamente es MM-DD-YYYY
-            dia = p2; mes = p1;
-        } else { // Ambiguo (ej: 03-04-2023), asumimos DD-MM-YYYY como prioridad para Finzana
-            dia = p1; mes = p2;
-        }
-    } else if (p1 > 1000) { // Formato con año al principio: YYYY-MM-DD
-        anio = p1; mes = p2; dia = p3;
-    } else {
-        return null;
-    }
-
-    // Validación final de las partes
-    if (!anio || mes < 1 || mes > 12 || dia < 1 || dia > 31) return null;
-
-    try {
-        const fecha = new Date(Date.UTC(anio, mes - 1, dia));
-        // Verificar que la fecha no se "desbordó" (ej: 31 de Febrero)
-        if (fecha.getUTCMonth() !== mes - 1 || fecha.getUTCDate() !== dia) {
-            return null;
-        }
-        if (isNaN(fecha.getTime())) {
-            return null;
-        }
-        return fecha;
-    } catch (e) {
-        return null;
-    }
+    console.warn("No se pudo parsear el formato de fecha:", fechaInput);
+    return null;
 }
 
 
@@ -787,12 +762,9 @@ async function handleSearchCreditForPayment() {
         showFixedProgress(60, 'Obteniendo información del cliente...');
         if (creditoActual) {
             const cliente = await database.buscarClientePorCURP(creditoActual.curpCliente);
-            const creditosDelCliente = await database.buscarCreditosPorCliente(creditoActual.curpCliente);
-            const pagosDelCredito = await database.getPagosPorCredito(idCredito);
-
+            
             showFixedProgress(80, 'Calculando historial...');
-            // Llama a la función de procesamiento con los datos ya cargados
-            const historial = procesarHistorialClienteConDatosPrecargados(creditosDelCliente, pagosDelCredito, idCredito);
+            const historial = await obtenerHistorialCreditoCliente(creditoActual.curpCliente, idCredito);
             
             if (historial) {
                 const campos = ['nombre_cobranza', 'saldo_cobranza', 'estado_cobranza', 'semanas_atraso_cobranza', 'pago_semanal_cobranza', 'fecha_proximo_pago_cobranza', 'monto_cobranza'];
@@ -894,20 +866,12 @@ async function handleBuscarGrupoParaPago() {
             return;
         }
         
-        // Estrategia de carga optimizada para el grupo
-        const curpsDelGrupo = clientesDelGrupo.map(c => c.curp);
-        const creditosDelGrupo = await database.buscarCreditosPorCURPs(curpsDelGrupo);
-        const idsDeCreditos = creditosDelGrupo.map(cr => cr.id);
-        const todosLosPagos = await database.getPagosPorCreditoIds(idsDeCreditos);
-        
         let totalClientesActivos = 0;
         let totalACobrarSemanal = 0;
         let creditosParaPagar = [];
 
         for (const cliente of clientesDelGrupo) {
-            const creditosDeEsteCliente = creditosDelGrupo.filter(c => c.curpCliente === cliente.curp);
-            // Llama a la función corregida
-            const historial = procesarHistorialClienteConDatosPrecargados(creditosDeEsteCliente, todosLosPagos);
+            const historial = await obtenerHistorialCreditoCliente(cliente.curp);
             if (historial && (historial.estado === 'al corriente' || historial.estado === 'atrasado' || historial.estado === 'cobranza')) {
                 totalClientesActivos++;
                 totalACobrarSemanal += historial.pagoSemanal;
@@ -1304,7 +1268,7 @@ function _calcularEstadoCredito(credito, pagos) {
         return { estado: 'liquidado', diasAtraso: 0, semanasAtraso: 0, pagoSemanal: 0, proximaFechaPago: null };
     }
 
-    const fechaInicio = _parsearFechaDeFormaRobusta(credito.fechaCreacion);
+    const fechaInicio = parsearFecha(credito.fechaCreacion);
     if (!fechaInicio) {
         console.error(`Cálculo de estado fallido para crédito ID ${credito.id}: Fecha de creación inválida.`, credito.fechaCreacion);
         return { estado: 'indeterminado', diasAtraso: 0, semanasAtraso: 0, pagoSemanal: 0, proximaFechaPago: null };
@@ -1344,44 +1308,48 @@ function _calcularEstadoCredito(credito, pagos) {
 }
 
 
-/**
- * NUEVA FUNCIÓN OPTIMIZADA
- * Procesa el historial de un cliente usando datos que ya han sido cargados en memoria.
- * No realiza ninguna llamada a la base de datos.
- */
-function procesarHistorialClienteConDatosPrecargados(creditosCliente, todosLosPagos, idCreditoEspecifico = null) {
-    if (!creditosCliente || creditosCliente.length === 0) return null;
+async function obtenerHistorialCreditoCliente(curp, idCreditoEspecifico = null) {
+    const creditosCliente = await database.buscarCreditosPorCliente(curp);
+    if (creditosCliente.length === 0) return null;
 
-    // Ordenar por fecha de creación para encontrar el primer crédito (fecha de registro)
-    const creditosOrdenadosCronologicamente = [...creditosCliente].sort((a, b) => (_parsearFechaDeFormaRobusta(a.fechaCreacion)?.getTime() || 0) - (_parsearFechaDeFormaRobusta(b.fechaCreacion)?.getTime() || 0));
-    const fechaRegistro = _parsearFechaDeFormaRobusta(creditosOrdenadosCronologicamente[0].fechaCreacion);
+    creditosCliente.sort((a, b) => (parsearFecha(a.fechaCreacion)?.getTime() || 0) - (parsearFecha(b.fechaCreacion)?.getTime() || 0));
+
+    const primerCredito = creditosCliente[0];
+    const fechaRegistro = parsearFecha(primerCredito.fechaCreacion);
+
+    creditosCliente.sort((a, b) => (parsearFecha(b.fechaCreacion)?.getTime() || 0) - (parsearFecha(a.fechaCreacion)?.getTime() || 0));
+
+    const creditosLiquidados = creditosCliente.filter(c => c.estado === 'liquidado');
 
     let creditoActual;
     if (idCreditoEspecifico) {
         creditoActual = creditosCliente.find(c => c.id === idCreditoEspecifico);
     } else {
-        // Ordenar por fecha descendente para encontrar el más reciente
-        const creditosOrdenadosReciente = [...creditosCliente].sort((a, b) => (_parsearFechaDeFormaRobusta(b.fechaCreacion)?.getTime() || 0) - (_parsearFechaDeFormaRobusta(a.fechaCreacion)?.getTime() || 0));
-        creditoActual = creditosOrdenadosReciente.find(c => c.estado !== 'liquidado') || creditosOrdenadosReciente[0];
+        creditoActual = creditosCliente.find(c => c.estado !== 'liquidado') || creditosCliente[0];
     }
 
     if (!creditoActual) return null;
 
-    const pagosDelCredito = todosLosPagos.filter(p => p.idCredito === creditoActual.id);
-    pagosDelCredito.sort((a, b) => (_parsearFechaDeFormaRobusta(b.fecha)?.getTime() || 0) - (_parsearFechaDeFormaRobusta(a.fecha)?.getTime() || 0));
-    const ultimoPago = pagosDelCredito.length > 0 ? pagosDelCredito[0] : null;
+    const cicloCredito = creditosLiquidados.filter(c => parsearFecha(c.fechaCreacion) < parsearFecha(creditoActual.fechaCreacion)).length + 1;
+    const pagos = await database.getPagosPorCredito(creditoActual.id);
 
-    const estadoCalculado = _calcularEstadoCredito(creditoActual, pagosDelCredito);
+    pagos.sort((a, b) => (parsearFecha(b.fecha)?.getTime() || 0) - (parsearFecha(a.fecha)?.getTime() || 0));
+
+    const ultimoPago = pagos.length > 0 ? pagos[0] : null;
+    const estadoCalculado = _calcularEstadoCredito(creditoActual, pagos);
+
     if (!estadoCalculado) return null;
-    
-    const cicloCredito = creditosOrdenadosCronologicamente.filter(c => c.estado === 'liquidado' && _parsearFechaDeFormaRobusta(c.fechaCreacion) < _parsearFechaDeFormaRobusta(creditoActual.fechaCreacion)).length + 1;
-    
-    const montoPagadoTotal = pagosDelCredito.reduce((sum, pago) => sum + (pago.monto || 0), 0);
+
+    const fechaUltimoPagoObj = ultimoPago ? parsearFecha(ultimoPago.fecha) : null;
+
+    const montoPagadoTotal = pagos.reduce((sum, pago) => sum + (pago.monto || 0), 0);
     const saldoRestante = Math.max(0, (creditoActual.montoTotal || 0) - montoPagadoTotal);
+
     let semanasPagadas = 0;
     if (estadoCalculado.pagoSemanal > 0) {
         semanasPagadas = Math.floor(montoPagadoTotal / estadoCalculado.pagoSemanal);
     }
+
     if (estadoCalculado.estado === 'liquidado' && creditoActual.plazo) {
         semanasPagadas = creditoActual.plazo;
     }
@@ -1389,9 +1357,9 @@ function procesarHistorialClienteConDatosPrecargados(creditosCliente, todosLosPa
     return {
         idCredito: creditoActual.id,
         saldoRestante: saldoRestante,
-        fechaUltimoPago: formatDateForDisplay(ultimoPago ? _parsearFechaDeFormaRobusta(ultimoPago.fecha) : null),
+        fechaUltimoPago: formatDateForDisplay(fechaUltimoPagoObj),
         fechaRegistro: formatDateForDisplay(fechaRegistro),
-        totalPagos: pagosDelCredito.length,
+        totalPagos: pagos.length,
         plazoTotal: creditoActual.plazo,
         nombreAval: creditoActual.nombreAval || 'N/A',
         curpAval: creditoActual.curpAval || 'N/A',
@@ -1467,25 +1435,21 @@ async function loadClientesTable() {
             throw new Error("Sin resultados");
         }
         
-        showFixedProgress(50, `Buscando créditos para ${clientesIniciales.length} clientes...`);
-        const curps = clientesIniciales.map(c => c.curp);
-        const todosLosCreditos = await database.buscarCreditosPorCURPs(curps);
-        
-        showFixedProgress(75, `Buscando pagos para ${todosLosCreditos.length} créditos...`);
-        const idsDeCreditos = todosLosCreditos.map(cr => cr.id);
-        const todosLosPagos = await database.getPagosPorCreditoIds(idsDeCreditos);
-        
-        showFixedProgress(90, 'Procesando y mostrando resultados...');
+        showFixedProgress(50, `Procesando ${clientesIniciales.length} clientes...`);
         tbody.innerHTML = '';
         let resultadosEncontrados = 0;
+        let clientesProcesados = 0;
 
         for (const cliente of clientesIniciales) {
             if (operationId !== currentSearchOperation) throw new Error("Búsqueda cancelada");
 
-            const creditosDeEsteCliente = todosLosCreditos.filter(c => c.curpCliente === cliente.curp);
-            // **CORRECCIÓN LÓGICA:** La llamada ahora es correcta
-            const historial = procesarHistorialClienteConDatosPrecargados(creditosDeEsteCliente, todosLosPagos);
-            
+            clientesProcesados++;
+            const progress = 50 + Math.round((clientesProcesados / clientesIniciales.length) * 50);
+            showFixedProgress(progress, `Procesando ${clientesProcesados} de ${clientesIniciales.length}...`);
+
+            // **LÓGICA RESTAURADA Y CONFIABLE**
+            const historial = await obtenerHistorialCreditoCliente(cliente.curp);
+
             // Aplicar filtros secundarios en memoria
             if ((filtros.estado && (!historial || historial.estado !== filtros.estado)) ||
                 (filtros.curpAval && (!historial || !historial.curpAval?.toUpperCase().includes(filtros.curpAval.toUpperCase()))) ||
@@ -1562,7 +1526,7 @@ async function loadBasicReports() {
 
         if (!reportes) {
             showStatus('status_reportes', 'Error al generar reportes.', 'error');
-            return;
+            throw new Error('La función generarReportes devolvió null.');
         }
 
         showFixedProgress(80, 'Actualizando interfaz...');
@@ -1581,11 +1545,8 @@ async function loadBasicReports() {
             if (element) element.textContent = valor;
         });
 
-        const tasaRecuperacion = (reportes.totalCartera + reportes.cobradoMes) > 0 ?
-            (reportes.cobradoMes / (reportes.totalCartera + reportes.cobradoMes) * 100).toFixed(1) : 0;
-
         const tasaElement = document.getElementById('tasa-recuperacion');
-        if (tasaElement) tasaElement.textContent = `${tasaRecuperacion}%`;
+        if (tasaElement) tasaElement.textContent = `${reportes.tasaRecuperacion.toFixed(1)}%`;
 
         showFixedProgress(100, 'Reportes actualizados');
         showStatus('status_reportes', 'Reportes actualizados correctamente.', 'success');
@@ -1600,7 +1561,7 @@ async function loadBasicReports() {
 }
 
 function inicializarVistaReportesAvanzados() {
-    const tbody = document.getElementById('tabla-reportes-avanzados');
+    const tbody = document.getElementById('tabla-reportes_avanzados');
     if (tbody) {
         tbody.innerHTML = '<tr><td colspan="10">Aplica los filtros para generar el reporte.</td></tr>';
     }
@@ -1700,9 +1661,9 @@ function mostrarReporteAvanzado(data) {
     data.forEach(item => {
         const tr = document.createElement('tr');
 
-        const fechaRegistro = formatDateForDisplay(_parsearFechaDeFormaRobusta(item.fechaRegistro));
-        const fechaCreacion = formatDateForDisplay(_parsearFechaDeFormaRobusta(item.fechaCreacion));
-        const fechaPago = formatDateForDisplay(_parsearFechaDeFormaRobusta(item.fecha));
+        const fechaRegistro = formatDateForDisplay(parsearFecha(item.fechaRegistro));
+        const fechaCreacion = formatDateForDisplay(parsearFecha(item.fechaCreacion));
+        const fechaPago = formatDateForDisplay(parsearFecha(item.fecha));
 
         let rowContent = '';
         if (item.tipo === 'cliente') {
@@ -1788,9 +1749,9 @@ function exportToCSV() {
         showFixedProgress(70, 'Generando CSV...');
         reportData.forEach(item => {
             let row = [];
-            const fechaRegistro = formatDateForDisplay(_parsearFechaDeFormaRobusta(item.fechaRegistro));
-            const fechaCreacion = formatDateForDisplay(_parsearFechaDeFormaRobusta(item.fechaCreacion));
-            const fechaPago = formatDateForDisplay(_parsearFechaDeFormaRobusta(item.fecha));
+            const fechaRegistro = formatDateForDisplay(parsearFecha(item.fechaRegistro));
+            const fechaCreacion = formatDateForDisplay(parsearFecha(item.fechaCreacion));
+            const fechaPago = formatDateForDisplay(parsearFecha(item.fecha));
 
             if (item.tipo === 'cliente') {
                 row = ['CLIENTE', item.curp || '', `"${item.nombre || ''}"`, item.poblacion_grupo || '', item.ruta || '', item.office || '', fechaRegistro, '', '', ''];
