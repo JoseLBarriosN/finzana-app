@@ -983,55 +983,101 @@ async function handleGenerarGrafico() {
         return;
     }
     cargaEnProgreso = true;
-
     showProcessingOverlay(true, 'Generando datos para el gráfico...');
     showButtonLoading('btn-generar-grafico', true, 'Generando...');
 
     try {
-        // 1. Obtener los filtros
         const tipoReporte = document.getElementById('grafico_tipo_reporte').value;
         const fechaInicio = document.getElementById('grafico_fecha_inicio').value;
         const fechaFin = document.getElementById('grafico_fecha_fin').value;
+        const sucursal = document.getElementById('grafico_sucursal').value;
+        const agruparPor = document.getElementById('grafico_agrupar_por').value;
+        const tipoGrafico = document.getElementById('grafico_tipo_grafico').value;
 
         if (!tipoReporte || !fechaInicio || !fechaFin) {
             throw new Error("Por favor, selecciona el tipo de reporte y las fechas.");
         }
 
-        // 2. (Opcional) Limpiar el gráfico anterior
         const chartContainer = document.getElementById('grafico-container');
         if (chartContainer) chartContainer.innerHTML = '<canvas id="myChart"></canvas>';
         if (currentChart) {
             currentChart.destroy();
         }
 
-        // 3. Obtener los datos (esta función es un ejemplo, deberás crearla en tu 'database.js')
-        // const datosParaGrafico = await database.obtenerDatosParaGrafico(tipoReporte, fechaInicio, fechaFin);
+        // Llamada a la nueva función de la base de datos
+        const { creditos, pagos } = await database.obtenerDatosParaGraficos({ sucursal, fechaInicio, fechaFin });
+        
+        let datosAgrupados = {};
 
-        // --- INICIO: DATOS DE EJEMPLO (BORRA ESTO CUANDO TENGAS LA FUNCIÓN REAL) ---
-        await new Promise(resolve => setTimeout(resolve, 1500)); // Simular carga
+        // Lógica para agrupar los datos
+        const agruparDatos = (data, campoFecha, campoValor) => {
+            const agrupados = {};
+            data.forEach(item => {
+                const fecha = parsearFecha(item[campoFecha]);
+                if (!fecha) return;
+
+                let clave;
+                const anio = fecha.getUTCFullYear();
+                const mes = fecha.getUTCMonth() + 1;
+                const semana = Math.ceil(fecha.getUTCDate() / 7);
+
+                if (agruparPor === 'anio') {
+                    clave = `${anio}`;
+                } else if (agruparPor === 'mes') {
+                    clave = `${anio}-${String(mes).padStart(2, '0')}`;
+                } else { // semana
+                    clave = `${anio}-S${String(semana).padStart(2, '0')}`;
+                }
+
+                if (!agrupados[clave]) {
+                    agrupados[clave] = 0;
+                }
+                agrupados[clave] += item[campoValor] || 0;
+            });
+            return agrupados;
+        };
+
+        if (tipoReporte === 'colocacion') {
+            datosAgrupados = agruparDatos(creditos, 'fechaCreacion', 'monto');
+        } else if (tipoReporte === 'recuperacion') {
+            datosAgrupados = agruparDatos(pagos, 'fecha', 'monto');
+        } else { // comportamiento
+            // Esta es una métrica más compleja, por ahora usamos un ejemplo
+            const pagosPorEstado = pagos.reduce((acc, pago) => {
+                const tipo = pago.tipoPago || 'normal';
+                if (!acc[tipo]) acc[tipo] = 0;
+                acc[tipo] += pago.monto;
+                return acc;
+            }, {});
+            datosAgrupados = pagosPorEstado;
+        }
+
+        const labels = Object.keys(datosAgrupados).sort();
+        const data = labels.map(label => datosAgrupados[label]);
+        
         const datosParaGrafico = {
-            labels: ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun'],
+            labels,
             datasets: [{
-                label: `Ejemplo de ${tipoReporte}`,
-                data: [65, 59, 80, 81, 56, 55],
-                backgroundColor: 'rgba(54, 162, 235, 0.2)',
+                label: `${tipoReporte.charAt(0).toUpperCase() + tipoReporte.slice(1)} por ${agruparPor}`,
+                data,
+                backgroundColor: tipoGrafico === 'line' ? 'transparent' : 'rgba(54, 162, 235, 0.2)',
                 borderColor: 'rgba(54, 162, 235, 1)',
-                borderWidth: 1
+                borderWidth: tipoGrafico === 'line' ? 2 : 1,
             }]
         };
-        // --- FIN: DATOS DE EJEMPLO ---
 
-        // 4. Dibujar el gráfico usando Chart.js (o la librería que prefieras)
         const ctx = document.getElementById('myChart').getContext('2d');
         currentChart = new Chart(ctx, {
-            type: 'bar', // 'line', 'pie', etc.
+            type: tipoGrafico,
             data: datosParaGrafico,
             options: {
                 scales: {
                     y: {
                         beginAtZero: true
                     }
-                }
+                },
+                responsive: true,
+                maintainAspectRatio: false
             }
         });
 
