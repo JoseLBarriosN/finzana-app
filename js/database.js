@@ -217,31 +217,6 @@ const database = {
         }
     },
     
-    buscarCreditosPorCURPs: async (curps) => {
-        if (!curps || curps.length === 0) return [];
-        const creditos = [];
-        const chunks = [];
-        // *** CORRECCIÓN CLAVE: El límite es 10, no 30 ***
-        for (let i = 0; i < curps.length; i += 10) {
-            chunks.push(curps.slice(i, i + 10));
-        }
-        try {
-            const promises = chunks.map(chunk =>
-                db.collection('creditos').where('curpCliente', 'in', chunk).get()
-            );
-            const snapshots = await Promise.all(promises);
-            snapshots.forEach(snapshot => {
-                snapshot.forEach(doc => {
-                    creditos.push({ id: doc.id, ...doc.data() });
-                });
-            });
-            return creditos;
-        } catch (error) {
-            console.error("Error buscando créditos por CURPs:", error);
-            return [];
-        }
-    },
-    
     buscarCreditoActivoPorCliente: async (curp) => {
         try {
             const creditos = await database.buscarCreditosPorCliente(curp);
@@ -369,31 +344,6 @@ const database = {
             return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         } catch (error) {
             console.error("Error obteniendo pagos:", error);
-            return [];
-        }
-    },
-    
-    getPagosPorCreditoIds: async (creditoIds) => {
-        if (!creditoIds || creditoIds.length === 0) return [];
-        const pagos = [];
-        const chunks = [];
-        // *** CORRECCIÓN CLAVE: El límite es 10, no 30 ***
-        for (let i = 0; i < creditoIds.length; i += 10) {
-            chunks.push(creditoIds.slice(i, i + 10));
-        }
-        try {
-            const promises = chunks.map(chunk =>
-                db.collection('pagos').where('idCredito', 'in', chunk).get()
-            );
-            const snapshots = await Promise.all(promises);
-            snapshots.forEach(snapshot => {
-                snapshot.forEach(doc => {
-                    pagos.push({ id: doc.id, ...doc.data() });
-                });
-            });
-            return pagos;
-        } catch (error) {
-            console.error("Error buscando pagos por IDs de crédito:", error);
             return [];
         }
     },
