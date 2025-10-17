@@ -900,20 +900,13 @@ async function handleBuscarGrupoParaPago() {
         const idsDeCreditos = creditosDelGrupo.map(cr => cr.id);
         const todosLosPagos = await database.getPagosPorCreditoIds(idsDeCreditos);
         
-        const pagosPorCreditoMap = new Map();
-        todosLosPagos.forEach(pago => {
-            if (!pagosPorCreditoMap.has(pago.idCredito)) {
-                pagosPorCreditoMap.set(pago.idCredito, []);
-            }
-            pagosPorCreditoMap.get(pago.idCredito).push(pago);
-        });
-
         let totalClientesActivos = 0;
         let totalACobrarSemanal = 0;
         let creditosParaPagar = [];
 
         for (const cliente of clientesDelGrupo) {
             const creditosDeEsteCliente = creditosDelGrupo.filter(c => c.curpCliente === cliente.curp);
+            // Llama a la función corregida
             const historial = procesarHistorialClienteConDatosPrecargados(creditosDeEsteCliente, todosLosPagos);
             if (historial && (historial.estado === 'al corriente' || historial.estado === 'atrasado' || historial.estado === 'cobranza')) {
                 totalClientesActivos++;
@@ -1290,44 +1283,71 @@ function inicializarDropdowns() {
     console.log('Dropdowns inicializados correctamente');
 }
 
+// =============================================
+// LÓGICA DE NEGOCIO
+// =============================================
 function _calcularEstadoCredito(credito, pagos) {
-    if (!credito) return null;
-    const montoPagado = pagos.reduce((sum, p) => sum + (p.monto || 0), 0);
-    const saldoReal = (credito.montoTotal || 0) - montoPagado;
-    if (!credito.montoTotal || !credito.plazo || credito.plazo <= 0) {
-        return { estado: saldoReal <= 0.01 ? 'liquidado' : 'activo', diasAtraso: 0, semanasAtraso: 0, pagoSemanal: 0, proximaFechaPago: null };
+    if (!credito) {
+        console.error("Cálculo de estado fallido: El objeto de crédito es nulo.");
+        return null;
     }
+
+    const montoPagado = pagos.reduce((sum, pago) => sum + (pago.monto || 0), 0);
+    const saldoReal = (credito.montoTotal || 0) - montoPagado;
+
+    if (!credito.montoTotal || !credito.plazo || credito.plazo <= 0) {
+        const estadoSimple = saldoReal <= 0.01 ? 'liquidado' : 'activo';
+        return { estado: estadoSimple, diasAtraso: 0, semanasAtraso: 0, pagoSemanal: 0, proximaFechaPago: null };
+    }
+
     if (saldoReal <= 0.01) {
         return { estado: 'liquidado', diasAtraso: 0, semanasAtraso: 0, pagoSemanal: 0, proximaFechaPago: null };
     }
+
     const fechaInicio = _parsearFechaDeFormaRobusta(credito.fechaCreacion);
-    if (!fechaInicio) return { estado: 'indeterminado', diasAtraso: 0, semanasAtraso: 0, pagoSemanal: 0, proximaFechaPago: null };
-    
+    if (!fechaInicio) {
+        console.error(`Cálculo de estado fallido para crédito ID ${credito.id}: Fecha de creación inválida.`, credito.fechaCreacion);
+        return { estado: 'indeterminado', diasAtraso: 0, semanasAtraso: 0, pagoSemanal: 0, proximaFechaPago: null };
+    }
+
     const pagoSemanal = credito.montoTotal / credito.plazo;
     const hoy = new Date();
+
     if (fechaInicio > hoy) {
         return { estado: 'al corriente', diasAtraso: 0, semanasAtraso: 0, pagoSemanal, proximaFechaPago: fechaInicio };
     }
-    const diasTranscurridos = Math.floor((hoy - fechaInicio) / (1000 * 60 * 60 * 24));
+
+    const milisegundosPorDia = 1000 * 60 * 60 * 24;
+    const diasTranscurridos = Math.floor((hoy - fechaInicio) / milisegundosPorDia);
     const semanasTranscurridas = Math.max(0, diasTranscurridos / 7);
+
     const pagoRequerido = Math.min(semanasTranscurridas * pagoSemanal, credito.montoTotal);
     const deficit = pagoRequerido - montoPagado;
     const diasAtraso = (deficit > 0) ? (deficit / pagoSemanal) * 7 : 0;
-    
+
     let estado = 'al corriente';
-    if (diasAtraso >= 7) estado = 'atrasado';
-    if (diasAtraso > 150) estado = 'cobranza';
     if (diasAtraso > 300) estado = 'juridico';
-    
+    else if (diasAtraso > 150) estado = 'cobranza';
+    else if (diasAtraso >= 7) estado = 'atrasado';
+
+    const semanasPagadas = montoPagado / pagoSemanal;
     const proximaFecha = new Date(fechaInicio);
-    proximaFecha.setDate(proximaFecha.getDate() + (Math.floor(montoPagado / pagoSemanal) + 1) * 7);
-    
-    return { estado, diasAtraso: Math.round(diasAtraso), semanasAtraso: Math.ceil(diasAtraso / 7), pagoSemanal, proximaFechaPago: proximaFecha };
+    proximaFecha.setDate(proximaFecha.getDate() + (Math.floor(semanasPagadas) + 1) * 7);
+
+    return {
+        estado,
+        diasAtraso: Math.round(diasAtraso),
+        semanasAtraso: Math.ceil(diasAtraso / 7),
+        pagoSemanal,
+        proximaFechaPago: proximaFecha
+    };
 }
 
+
 /**
- * MODIFICACIÓN CLAVE: La firma de la función ha cambiado para ser más simple y menos propensa a errores.
- * Ya no necesita el 'curp' porque opera sobre una lista de créditos que ya pertenece a un solo cliente.
+ * NUEVA FUNCIÓN OPTIMIZADA
+ * Procesa el historial de un cliente usando datos que ya han sido cargados en memoria.
+ * No realiza ninguna llamada a la base de datos.
  */
 function procesarHistorialClienteConDatosPrecargados(creditosCliente, todosLosPagos, idCreditoEspecifico = null) {
     if (!creditosCliente || creditosCliente.length === 0) return null;
@@ -1463,7 +1483,7 @@ async function loadClientesTable() {
             if (operationId !== currentSearchOperation) throw new Error("Búsqueda cancelada");
 
             const creditosDeEsteCliente = todosLosCreditos.filter(c => c.curpCliente === cliente.curp);
-            // MODIFICACIÓN CLAVE: Se simplifica la llamada a la función
+            // **CORRECCIÓN LÓGICA:** La llamada ahora es correcta
             const historial = procesarHistorialClienteConDatosPrecargados(creditosDeEsteCliente, todosLosPagos);
             
             // Aplicar filtros secundarios en memoria
