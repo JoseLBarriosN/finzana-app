@@ -3,26 +3,37 @@
 // =============================================
 
 /**
- * Parsea de forma robusta una fecha desde un string de importación.
- * Intenta varios formatos comunes (D-M-Y, Y-M-D, M-D-Y) para máxima compatibilidad.
- * @param {string} fechaStr La cadena de texto de la fecha.
- * @returns {string|null} Un string en formato ISO 8601 válido o null si el formato es incorrecto.
+ * Parsea de forma robusta una fecha desde múltiples formatos de entrada.
+ * Es la función unificada para toda la aplicación (importación y visualización).
+ * @param {string|object|Date} fechaInput La entrada de fecha (string, Timestamp de Firestore, objeto Date).
+ * @returns {Date|null} Un objeto Date válido en UTC o null si el formato es irreconocible.
  */
-function _parsearFechaImportacion(fechaStr) {
-    if (!fechaStr || typeof fechaStr !== 'string') return null;
+function _parsearFechaDeFormaRobusta(fechaInput) {
+    if (!fechaInput) return null;
+    if (fechaInput instanceof Date && !isNaN(fechaInput)) return fechaInput;
 
-    const fechaTrimmed = fechaStr.trim();
-    
-    // Intenta parsear directamente si es un formato estándar (ISO, YYYY-MM-DD)
-    let fecha = new Date(fechaTrimmed);
-    if (!isNaN(fecha.getTime())) {
-        if (fecha.getFullYear() > 1970 && fechaTrimmed.includes('-')) {
-            return fecha.toISOString();
+    // Manejar Timestamp de Firestore
+    if (typeof fechaInput === 'object' && typeof fechaInput.toDate === 'function') {
+        return fechaInput.toDate();
+    }
+
+    if (typeof fechaInput !== 'string') return null;
+
+    const fechaStr = fechaInput.trim();
+    if (!fechaStr) return null;
+
+    // Intento 1: Parseo nativo para formatos estándar (ISO 8601, YYYY-MM-DD)
+    if (/^\d{4}-\d{2}-\d{2}/.test(fechaStr)) {
+        const fecha = new Date(fechaStr);
+        if (!isNaN(fecha.getTime())) {
+            // Ajustar a UTC para consistencia
+            return new Date(Date.UTC(fecha.getUTCFullYear(), fecha.getUTCMonth(), fecha.getUTCDate()));
         }
     }
 
-    const separador = fechaTrimmed.includes('/') ? '/' : '-';
-    const partes = fechaTrimmed.split(separador);
+    // Intento 2: Formatos comunes con separadores (DD-MM-YYYY, MM-DD-YYYY)
+    const separador = fechaStr.includes('/') ? '/' : '-';
+    const partes = fechaStr.split('T')[0].split(separador);
     if (partes.length !== 3) return null;
 
     const [p1, p2, p3] = partes.map(p => parseInt(p, 10));
@@ -30,36 +41,38 @@ function _parsearFechaImportacion(fechaStr) {
 
     let anio, mes, dia;
 
-    if (p3 > 1000) { // Formato con año al final (DD-MM-YYYY o MM-DD-YYYY)
+    // Heurística para determinar el formato
+    if (p3 > 1000) { // Formato con año al final: DD-MM-YYYY o MM-DD-YYYY
         anio = p3;
-        if (p1 > 12) { // DD-MM-YYYY
-            dia = p1;
-            mes = p2;
-        } else if (p2 > 12) { // MM-DD-YYYY (improbable pero posible)
-            dia = p2;
-            mes = p1;
-        } else { // Ambiguo (ej. 01-02-2023), asumimos DD-MM por ser el formato solicitado
-            dia = p1;
-            mes = p2;
+        if (p1 > 12) { // Definitivamente es DD-MM-YYYY
+            dia = p1; mes = p2;
+        } else if (p2 > 12) { // Definitivamente es MM-DD-YYYY
+            dia = p2; mes = p1;
+        } else { // Ambiguo (ej: 03-04-2023), asumimos DD-MM-YYYY como prioridad para Finzana
+            dia = p1; mes = p2;
         }
-    } 
-    else if (p1 > 1000) { // Formato con año al principio (YYYY-MM-DD)
-        anio = p1;
-        mes = p2;
-        dia = p3;
+    } else if (p1 > 1000) { // Formato con año al principio: YYYY-MM-DD
+        anio = p1; mes = p2; dia = p3;
     } else {
-        return null; // Formato no reconocido
-    }
-
-    if (mes < 1 || mes > 12 || dia < 1 || dia > 31) return null;
-
-    fecha = new Date(Date.UTC(anio, mes - 1, dia));
-
-    if (isNaN(fecha.getTime()) || fecha.getUTCDate() !== dia) {
         return null;
     }
 
-    return fecha.toISOString();
+    // Validación final de las partes
+    if (!anio || mes < 1 || mes > 12 || dia < 1 || dia > 31) return null;
+
+    try {
+        const fecha = new Date(Date.UTC(anio, mes - 1, dia));
+        // Verificar que la fecha no se "desbordó" (ej: 31 de Febrero)
+        if (fecha.getUTCMonth() !== mes - 1 || fecha.getUTCDate() !== dia) {
+            return null;
+        }
+        if (isNaN(fecha.getTime())) {
+            return null;
+        }
+        return fecha;
+    } catch (e) {
+        return null;
+    }
 }
 
 
@@ -101,7 +114,7 @@ const database = {
             return null;
         }
     },
-    
+
     actualizarUsuario: async (uid, userData) => {
         try {
             await db.collection('users').doc(uid).update(userData);
@@ -167,7 +180,7 @@ const database = {
         }
     },
 
-     buscarClientesPorCURPs: async (curps) => {
+    buscarClientesPorCURPs: async (curps) => {
         if (!curps || curps.length === 0) {
             return [];
         }
@@ -266,7 +279,7 @@ const database = {
             if (filtros.curpAval) {
                 query = query.where('curpAval', '==', filtros.curpAval.toUpperCase());
             }
-             if (filtros.plazo) {
+            if (filtros.plazo) {
                 query = query.where('plazo', '==', parseInt(filtros.plazo, 10));
             }
 
@@ -304,7 +317,7 @@ const database = {
     verificarElegibilidadCliente: async (curp) => {
         const creditoActivo = await database.buscarCreditoActivoPorCliente(curp);
         if (!creditoActivo) {
-            return { elegible: true }; 
+            return { elegible: true };
         }
 
         if (!creditoActivo.montoTotal || creditoActivo.montoTotal === 0) {
@@ -340,7 +353,7 @@ const database = {
                 if (credito.montoTotal > 0) {
                     const porcentajePagado = ((credito.montoTotal - credito.saldo) / credito.montoTotal) * 100;
                     if (porcentajePagado < 80) {
-                         return {
+                        return {
                             elegible: false,
                             message: `Este aval ya respalda el crédito ${credito.id}, el cual solo tiene un ${porcentajePagado.toFixed(0)}% de avance. Se requiere el 80% para poder avalar otro.`
                         };
@@ -354,7 +367,7 @@ const database = {
             return { elegible: false, message: "Error al consultar la base de datos para el aval." };
         }
     },
-    
+
     agregarCredito: async (creditoData) => {
         try {
             const creditoActivoAnterior = await database.buscarCreditoActivoPorCliente(creditoData.curpCliente);
@@ -378,7 +391,7 @@ const database = {
             });
 
             if (!newId) {
-                 return { success: false, message: "No se pudo generar el ID de crédito." };
+                return { success: false, message: "No se pudo generar el ID de crédito." };
             }
 
             creditoData.id = newId;
@@ -458,8 +471,8 @@ const database = {
                         errores.push(`Línea ${i + 1}: Faltan columnas (se esperaban 7, se encontraron ${campos.length})`);
                         continue;
                     }
-                    const fechaRegistro = _parsearFechaImportacion(campos[5]);
-                    if (!fechaRegistro) {
+                    const fechaRegistroISO = _parsearFechaDeFormaRobusta(campos[5])?.toISOString();
+                    if (!fechaRegistroISO) {
                         errores.push(`Línea ${i + 1}: Fecha de registro inválida ('${campos[5]}'). Se omitirá el registro.`);
                         continue;
                     }
@@ -470,7 +483,7 @@ const database = {
                         domicilio: campos[2],
                         cp: campos[3],
                         telefono: campos[4],
-                        fechaRegistro: fechaRegistro,
+                        fechaRegistro: fechaRegistroISO,
                         poblacion_grupo: campos[6],
                         office: office,
                         ruta: campos[7] || ''
@@ -487,12 +500,12 @@ const database = {
                         errores.push(`Línea ${i + 1}: El ID del crédito está vacío.`);
                         continue;
                     }
-                    const fechaCreacion = _parsearFechaImportacion(campos[3]);
-                    if (!fechaCreacion) {
+                    const fechaCreacionISO = _parsearFechaDeFormaRobusta(campos[3])?.toISOString();
+                    if (!fechaCreacionISO) {
                         errores.push(`Línea ${i + 1}: Fecha de creación inválida o vacía ('${campos[3]}').`);
                         continue;
                     }
-                    
+
                     const saldoIndex = office === 'LEON' ? 13 : 12;
                     const saldo = parseFloat(campos[saldoIndex] || 0);
 
@@ -501,7 +514,7 @@ const database = {
                         office: office,
                         curpCliente: campos[0].toUpperCase(),
                         nombreCliente: campos[1],
-                        fechaCreacion: fechaCreacion,
+                        fechaCreacion: fechaCreacionISO,
                         tipo: campos[4],
                         monto: parseFloat(campos[5] || 0),
                         plazo: parseInt(campos[6] || 0),
@@ -514,22 +527,22 @@ const database = {
                         estado: saldo > 0.01 ? 'activo' : 'liquidado'
                     };
                     const docRef = db.collection('creditos').doc(credito.id);
-                    batch.set(docRef, credito, { merge: true }); // Usar merge para no sobrescribir datos si ya existe
+                    batch.set(docRef, credito, { merge: true });
                     importados++;
                 } else if (tipo === 'cobranza') {
-                     if (campos.length < 11) {
+                    if (campos.length < 11) {
                         errores.push(`Línea ${i + 1}: Formato incorrecto para cobranza (se esperaban 11, se encontraron ${campos.length})`);
                         continue;
                     }
                     const idCredito = campos[1].trim();
-                    const fechaPago = _parsearFechaImportacion(campos[2]);
+                    const fechaPagoISO = _parsearFechaDeFormaRobusta(campos[2])?.toISOString();
                     const montoPago = parseFloat(campos[3] || 0);
 
                     if (!idCredito) {
                         errores.push(`Línea ${i + 1}: ID de crédito vacío.`);
                         continue;
                     }
-                    if (!fechaPago) {
+                    if (!fechaPagoISO) {
                         errores.push(`Línea ${i + 1}: Fecha de pago inválida o vacía ('${campos[2]}').`);
                         continue;
                     }
@@ -542,7 +555,7 @@ const database = {
                         office: office,
                         nombreCliente: campos[0],
                         idCredito: idCredito,
-                        fecha: fechaPago,
+                        fecha: fechaPagoISO,
                         monto: montoPago,
                         cobroSemana: campos[4] || '',
                         comision: parseFloat(campos[5] || 0),
@@ -594,7 +607,7 @@ const database = {
                 pagosQuery = pagosQuery.where('office', '==', sucursal);
             }
             promesas.push(pagosQuery.get());
-            
+
             const [creditosSnap, pagosSnap] = await Promise.all(promesas);
 
             const parseFecha = (fechaStr) => fechaStr ? new Date(fechaStr) : null;
