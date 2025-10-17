@@ -791,7 +791,8 @@ async function handleSearchCreditForPayment() {
             const pagosDelCredito = await database.getPagosPorCredito(idCredito);
 
             showFixedProgress(80, 'Calculando historial...');
-            const historial = procesarHistorialClienteConDatosPrecargados(creditoActual.curpCliente, creditosDelCliente, pagosDelCredito, idCredito);
+            // Llama a la función de procesamiento con los datos ya cargados
+            const historial = procesarHistorialClienteConDatosPrecargados(creditosDelCliente, pagosDelCredito, idCredito);
             
             if (historial) {
                 const campos = ['nombre_cobranza', 'saldo_cobranza', 'estado_cobranza', 'semanas_atraso_cobranza', 'pago_semanal_cobranza', 'fecha_proximo_pago_cobranza', 'monto_cobranza'];
@@ -913,7 +914,7 @@ async function handleBuscarGrupoParaPago() {
 
         for (const cliente of clientesDelGrupo) {
             const creditosDeEsteCliente = creditosDelGrupo.filter(c => c.curpCliente === cliente.curp);
-            const historial = procesarHistorialClienteConDatosPrecargados(cliente.curp, creditosDeEsteCliente, todosLosPagos);
+            const historial = procesarHistorialClienteConDatosPrecargados(creditosDeEsteCliente, todosLosPagos);
             if (historial && (historial.estado === 'al corriente' || historial.estado === 'atrasado' || historial.estado === 'cobranza')) {
                 totalClientesActivos++;
                 totalACobrarSemanal += historial.pagoSemanal;
@@ -1289,87 +1290,58 @@ function inicializarDropdowns() {
     console.log('Dropdowns inicializados correctamente');
 }
 
-// =============================================
-// LÓGICA DE NEGOCIO
-// =============================================
 function _calcularEstadoCredito(credito, pagos) {
-    if (!credito) {
-        console.error("Cálculo de estado fallido: El objeto de crédito es nulo.");
-        return null;
-    }
-
-    const montoPagado = pagos.reduce((sum, pago) => sum + (pago.monto || 0), 0);
+    if (!credito) return null;
+    const montoPagado = pagos.reduce((sum, p) => sum + (p.monto || 0), 0);
     const saldoReal = (credito.montoTotal || 0) - montoPagado;
-
     if (!credito.montoTotal || !credito.plazo || credito.plazo <= 0) {
-        const estadoSimple = saldoReal <= 0.01 ? 'liquidado' : 'activo';
-        return { estado: estadoSimple, diasAtraso: 0, semanasAtraso: 0, pagoSemanal: 0, proximaFechaPago: null };
+        return { estado: saldoReal <= 0.01 ? 'liquidado' : 'activo', diasAtraso: 0, semanasAtraso: 0, pagoSemanal: 0, proximaFechaPago: null };
     }
-
     if (saldoReal <= 0.01) {
         return { estado: 'liquidado', diasAtraso: 0, semanasAtraso: 0, pagoSemanal: 0, proximaFechaPago: null };
     }
-
     const fechaInicio = _parsearFechaDeFormaRobusta(credito.fechaCreacion);
-    if (!fechaInicio) {
-        console.error(`Cálculo de estado fallido para crédito ID ${credito.id}: Fecha de creación inválida.`, credito.fechaCreacion);
-        return { estado: 'indeterminado', diasAtraso: 0, semanasAtraso: 0, pagoSemanal: 0, proximaFechaPago: null };
-    }
-
+    if (!fechaInicio) return { estado: 'indeterminado', diasAtraso: 0, semanasAtraso: 0, pagoSemanal: 0, proximaFechaPago: null };
+    
     const pagoSemanal = credito.montoTotal / credito.plazo;
     const hoy = new Date();
-
     if (fechaInicio > hoy) {
         return { estado: 'al corriente', diasAtraso: 0, semanasAtraso: 0, pagoSemanal, proximaFechaPago: fechaInicio };
     }
-
-    const milisegundosPorDia = 1000 * 60 * 60 * 24;
-    const diasTranscurridos = Math.floor((hoy - fechaInicio) / milisegundosPorDia);
+    const diasTranscurridos = Math.floor((hoy - fechaInicio) / (1000 * 60 * 60 * 24));
     const semanasTranscurridas = Math.max(0, diasTranscurridos / 7);
-
     const pagoRequerido = Math.min(semanasTranscurridas * pagoSemanal, credito.montoTotal);
     const deficit = pagoRequerido - montoPagado;
     const diasAtraso = (deficit > 0) ? (deficit / pagoSemanal) * 7 : 0;
-
+    
     let estado = 'al corriente';
+    if (diasAtraso >= 7) estado = 'atrasado';
+    if (diasAtraso > 150) estado = 'cobranza';
     if (diasAtraso > 300) estado = 'juridico';
-    else if (diasAtraso > 150) estado = 'cobranza';
-    else if (diasAtraso >= 7) estado = 'atrasado';
-
-    const semanasPagadas = montoPagado / pagoSemanal;
+    
     const proximaFecha = new Date(fechaInicio);
-    proximaFecha.setDate(proximaFecha.getDate() + (Math.floor(semanasPagadas) + 1) * 7);
-
-    return {
-        estado,
-        diasAtraso: Math.round(diasAtraso),
-        semanasAtraso: Math.ceil(diasAtraso / 7),
-        pagoSemanal,
-        proximaFechaPago: proximaFecha
-    };
+    proximaFecha.setDate(proximaFecha.getDate() + (Math.floor(montoPagado / pagoSemanal) + 1) * 7);
+    
+    return { estado, diasAtraso: Math.round(diasAtraso), semanasAtraso: Math.ceil(diasAtraso / 7), pagoSemanal, proximaFechaPago: proximaFecha };
 }
 
-
 /**
- * NUEVA FUNCIÓN OPTIMIZADA
- * Procesa el historial de un cliente usando datos que ya han sido cargados en memoria.
- * No realiza ninguna llamada a la base de datos.
+ * MODIFICACIÓN CLAVE: La firma de la función ha cambiado para ser más simple y menos propensa a errores.
+ * Ya no necesita el 'curp' porque opera sobre una lista de créditos que ya pertenece a un solo cliente.
  */
-function procesarHistorialClienteConDatosPrecargados(curp, todosLosCreditos, todosLosPagos, idCreditoEspecifico = null) {
-    const creditosCliente = todosLosCreditos.filter(c => c.curpCliente === curp);
-    if (creditosCliente.length === 0) return null;
+function procesarHistorialClienteConDatosPrecargados(creditosCliente, todosLosPagos, idCreditoEspecifico = null) {
+    if (!creditosCliente || creditosCliente.length === 0) return null;
 
     // Ordenar por fecha de creación para encontrar el primer crédito (fecha de registro)
     const creditosOrdenadosCronologicamente = [...creditosCliente].sort((a, b) => (_parsearFechaDeFormaRobusta(a.fechaCreacion)?.getTime() || 0) - (_parsearFechaDeFormaRobusta(b.fechaCreacion)?.getTime() || 0));
     const fechaRegistro = _parsearFechaDeFormaRobusta(creditosOrdenadosCronologicamente[0].fechaCreacion);
 
-    // Ordenar por fecha descendente para encontrar el más reciente
-    const creditosOrdenadosReciente = [...creditosCliente].sort((a, b) => (_parsearFechaDeFormaRobusta(b.fechaCreacion)?.getTime() || 0) - (_parsearFechaDeFormaRobusta(a.fechaCreacion)?.getTime() || 0));
-
     let creditoActual;
     if (idCreditoEspecifico) {
-        creditoActual = creditosOrdenadosReciente.find(c => c.id === idCreditoEspecifico);
+        creditoActual = creditosCliente.find(c => c.id === idCreditoEspecifico);
     } else {
+        // Ordenar por fecha descendente para encontrar el más reciente
+        const creditosOrdenadosReciente = [...creditosCliente].sort((a, b) => (_parsearFechaDeFormaRobusta(b.fechaCreacion)?.getTime() || 0) - (_parsearFechaDeFormaRobusta(a.fechaCreacion)?.getTime() || 0));
         creditoActual = creditosOrdenadosReciente.find(c => c.estado !== 'liquidado') || creditosOrdenadosReciente[0];
     }
 
@@ -1474,7 +1446,7 @@ async function loadClientesTable() {
             tbody.innerHTML = '<tr><td colspan="6">No se encontraron clientes con los filtros principales.</td></tr>';
             throw new Error("Sin resultados");
         }
-
+        
         showFixedProgress(50, `Buscando créditos para ${clientesIniciales.length} clientes...`);
         const curps = clientesIniciales.map(c => c.curp);
         const todosLosCreditos = await database.buscarCreditosPorCURPs(curps);
@@ -1491,13 +1463,16 @@ async function loadClientesTable() {
             if (operationId !== currentSearchOperation) throw new Error("Búsqueda cancelada");
 
             const creditosDeEsteCliente = todosLosCreditos.filter(c => c.curpCliente === cliente.curp);
-            const historial = procesarHistorialClienteConDatosPrecargados(cliente.curp, creditosDeEsteCliente, todosLosPagos);
-
+            // MODIFICACIÓN CLAVE: Se simplifica la llamada a la función
+            const historial = procesarHistorialClienteConDatosPrecargados(creditosDeEsteCliente, todosLosPagos);
+            
             // Aplicar filtros secundarios en memoria
-            if (filtros.estado && (!historial || historial.estado !== filtros.estado)) continue;
-            if (filtros.curpAval && (!historial || !historial.curpAval || !historial.curpAval.toUpperCase().includes(filtros.curpAval.toUpperCase()))) continue;
-            if (filtros.plazo && (!historial || historial.plazoTotal != filtros.plazo)) continue;
-            if (filtros.idCredito && (!historial || historial.idCredito !== filtros.idCredito)) continue;
+            if ((filtros.estado && (!historial || historial.estado !== filtros.estado)) ||
+                (filtros.curpAval && (!historial || !historial.curpAval?.toUpperCase().includes(filtros.curpAval.toUpperCase()))) ||
+                (filtros.plazo && (!historial || historial.plazoTotal != filtros.plazo)) ||
+                (filtros.idCredito && (!historial || historial.idCredito !== filtros.idCredito))) {
+                continue;
+            }
 
             resultadosEncontrados++;
             let infoCreditoHTML = '<em>Sin historial de crédito</em>';
