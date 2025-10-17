@@ -217,12 +217,6 @@ const database = {
         }
     },
     
-    /**
-     * NUEVA FUNCIÓN OPTIMIZADA
-     * Busca todos los créditos para una lista de CURPs usando consultas por lotes.
-     * @param {string[]} curps - Un array de CURPs de clientes.
-     * @returns {Promise<object[]>} Una lista de todos los créditos encontrados.
-     */
     buscarCreditosPorCURPs: async (curps) => {
         if (!curps || curps.length === 0) return [];
         const creditos = [];
@@ -379,12 +373,6 @@ const database = {
         }
     },
     
-    /**
-     * NUEVA FUNCIÓN OPTIMIZADA
-     * Busca todos los pagos para una lista de IDs de crédito usando consultas por lotes.
-     * @param {string[]} creditoIds - Un array de IDs de crédito.
-     * @returns {Promise<object[]>} Una lista de todos los pagos encontrados.
-     */
     getPagosPorCreditoIds: async (creditoIds) => {
         if (!creditoIds || creditoIds.length === 0) return [];
         const pagos = [];
