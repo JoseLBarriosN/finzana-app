@@ -709,13 +709,11 @@ const database = {
                 pagosQuery = pagosQuery.where('office', '==', filtros.sucursal);
             }
 
-            // Aplicar rango de fechas es crucial para el rendimiento
             if (filtros.fechaInicio) {
                 creditosQuery = creditosQuery.where('fechaCreacion', '>=', new Date(filtros.fechaInicio).toISOString());
                 pagosQuery = pagosQuery.where('fecha', '>=', new Date(filtros.fechaInicio).toISOString());
             }
             if (filtros.fechaFin) {
-                // Para incluir el día final completo, la consulta debe ser hasta el día siguiente
                 const fechaFinSiguiente = new Date(filtros.fechaFin);
                 fechaFinSiguiente.setDate(fechaFinSiguiente.getDate() + 1);
                 creditosQuery = creditosQuery.where('fechaCreacion', '<', fechaFinSiguiente.toISOString());
@@ -740,16 +738,16 @@ const database = {
 
     _cumpleFiltroFecha: (fecha, fechaInicio, fechaFin) => {
         if (!fechaInicio && !fechaFin) return true;
-        if (!fecha) return false; // Si el registro no tiene fecha, no puede cumplir el filtro
+        if (!fecha) return false;
         const fechaObj = new Date(fecha);
         if (fechaInicio) {
             const inicio = new Date(fechaInicio);
-            inicio.setUTCHours(0, 0, 0, 0); // Compara desde el inicio del día
+            inicio.setUTCHours(0, 0, 0, 0);
             if (fechaObj < inicio) return false;
         }
         if (fechaFin) {
             const fin = new Date(fechaFin);
-            fin.setUTCHours(23, 59, 59, 999); // Compara hasta el final del día
+            fin.setUTCHours(23, 59, 59, 999);
             if (fechaObj > fin) return false;
         }
         return true;
