@@ -134,9 +134,12 @@ const database = {
         }
     },
 
-    actualizarCliente: async (id, clienteData) => {
+    actualizarCliente: async (id, clienteData, userEmail) => {
         try {
             clienteData.curp = clienteData.curp.toUpperCase();
+            // **AUDITORÍA**
+            clienteData.modificadoPor = userEmail;
+            clienteData.fechaModificacion = new Date().toISOString();
             await db.collection('clientes').doc(id).update(clienteData);
             return { success: true, message: 'Cliente actualizado exitosamente.' };
         } catch (error) {
@@ -167,7 +170,37 @@ const database = {
         }
     },
 
-    agregarCliente: async (clienteData) => {
+    // **NUEVA FUNCIÓN PARA BÚSQUEDA MÚLTIPLE**
+    buscarClientesPorCURPs: async (curps) => {
+        if (!curps || curps.length === 0) {
+            return [];
+        }
+        try {
+            // Firestore 'in' query supports up to 10 elements.
+            const chunks = [];
+            for (let i = 0; i < curps.length; i += 10) {
+                chunks.push(curps.slice(i, i + 10));
+            }
+
+            const promises = chunks.map(chunk =>
+                db.collection('clientes').where('curp', 'in', chunk).get()
+            );
+
+            const snapshots = await Promise.all(promises);
+            const clientes = [];
+            snapshots.forEach(snapshot => {
+                snapshot.forEach(doc => {
+                    clientes.push({ id: doc.id, ...doc.data() });
+                });
+            });
+            return clientes;
+        } catch (error) {
+            console.error("Error buscando clientes por CURPs:", error);
+            return [];
+        }
+    },
+
+    agregarCliente: async (clienteData, userEmail) => {
         try {
             if (!clienteData.id) {
                 const existe = await database.buscarClientePorCURP(clienteData.curp);
@@ -175,8 +208,12 @@ const database = {
                     return { success: false, message: 'Ya existe un cliente con esta CURP.' };
                 }
             }
+            // **AUDITORÍA**
+            clienteData.fechaCreacion = new Date().toISOString();
+            clienteData.creadoPor = userEmail;
+            
             if (!clienteData.fechaRegistro) {
-                clienteData.fechaRegistro = new Date().toISOString();
+                clienteData.fechaRegistro = clienteData.fechaCreacion;
             }
             clienteData.curp = clienteData.curp.toUpperCase();
             await db.collection('clientes').add(clienteData);
@@ -326,7 +363,7 @@ const database = {
         }
     },
 
-    agregarCredito: async (creditoData) => {
+    agregarCredito: async (creditoData, userEmail) => {
         try {
             const creditoActivoAnterior = await database.buscarCreditoActivoPorCliente(creditoData.curpCliente);
             if (creditoActivoAnterior) {
@@ -352,8 +389,11 @@ const database = {
                 return { success: false, message: "No se pudo generar el ID de crédito." };
             }
 
-            creditoData.id = newId;
+            // **AUDITORÍA**
+            creditoData.creadoPor = userEmail;
             creditoData.fechaCreacion = new Date().toISOString();
+
+            creditoData.id = newId;
             creditoData.estado = 'activo';
             creditoData.montoTotal = creditoData.monto * 1.3;
             creditoData.saldo = creditoData.montoTotal;
@@ -380,7 +420,7 @@ const database = {
         }
     },
 
-    agregarPago: async (pagoData) => {
+    agregarPago: async (pagoData, userEmail) => {
         try {
             const creditoRef = db.collection('creditos').doc(pagoData.idCredito);
             await db.runTransaction(async (transaction) => {
@@ -392,13 +432,18 @@ const database = {
                 const nuevoSaldo = credito.saldo - pagoData.monto;
                 const actualizacion = {
                     saldo: nuevoSaldo,
-                    estado: (nuevoSaldo <= 0.01) ? 'liquidado' : 'activo'
+                    estado: (nuevoSaldo <= 0.01) ? 'liquidado' : 'activo',
+                    // **AUDITORÍA**
+                    modificadoPor: userEmail,
+                    fechaModificacion: new Date().toISOString()
                 };
                 transaction.update(creditoRef, actualizacion);
                 const nuevoPago = {
                     ...pagoData,
                     fecha: new Date().toISOString(),
-                    saldoDespues: nuevoSaldo
+                    saldoDespues: nuevoSaldo,
+                    // **AUDITORÍA**
+                    registradoPor: userEmail
                 };
                 const pagoRef = db.collection('pagos').doc();
                 transaction.set(pagoRef, nuevoPago);
@@ -499,7 +544,7 @@ const database = {
                         estado: saldo > 0.01 ? 'activo' : 'liquidado'
                     };
                     const docRef = db.collection('creditos').doc(credito.id);
-                    batch.set(docRef, credito, { merge: true });
+                    batch.set(docRef, credito, { merge: true }); // Usar merge para no sobrescribir datos si ya existe
                     importados++;
                 } else if (tipo === 'cobranza') {
                     if (campos.length < 11) {
@@ -653,7 +698,6 @@ const database = {
         }
     },
     
-    // Nueva función para los gráficos
     obtenerDatosParaGraficos: async (filtros) => {
         try {
             const promesas = [];
