@@ -277,6 +277,8 @@ function setupEventListeners() {
     // Event Listener para REPORTES GRÁFICOS
     const btnGenerarGrafico = document.getElementById('btn-generar-grafico');
     if (btnGenerarGrafico) btnGenerarGrafico.addEventListener('click', handleGenerarGrafico);
+    const sucursalGrafico = document.getElementById('grafico_sucursal');
+    if (sucursalGrafico) sucursalGrafico.addEventListener('change', handleSucursalGraficoChange);
 }
 
 // =============================================
@@ -997,6 +999,7 @@ async function handleGenerarGrafico() {
         const fechaInicio = document.getElementById('grafico_fecha_inicio').value;
         const fechaFin = document.getElementById('grafico_fecha_fin').value;
         const sucursal = document.getElementById('grafico_sucursal').value;
+        const grupo = document.getElementById('grafico_grupo').value; // NUEVO
         const agruparPor = document.getElementById('grafico_agrupar_por').value;
         const tipoGrafico = document.getElementById('grafico_tipo_grafico').value;
 
@@ -1011,7 +1014,7 @@ async function handleGenerarGrafico() {
         }
 
         // Llamada a la nueva función de la base de datos
-        const { creditos, pagos } = await database.obtenerDatosParaGraficos({ sucursal, fechaInicio, fechaFin });
+        const { creditos, pagos } = await database.obtenerDatosParaGraficos({ sucursal, grupo, fechaInicio, fechaFin });
         
         let datosAgrupados = {};
 
@@ -1025,7 +1028,12 @@ async function handleGenerarGrafico() {
                 let clave;
                 const anio = fecha.getUTCFullYear();
                 const mes = fecha.getUTCMonth() + 1;
-                const semana = Math.ceil(fecha.getUTCDate() / 7);
+                // Cálculo correcto de la semana del año
+                const start = new Date(fecha.getFullYear(), 0, 0);
+                const diff = (fecha - start) + ((start.getTimezoneOffset() - fecha.getTimezoneOffset()) * 60 * 1000);
+                const oneDay = 1000 * 60 * 60 * 24;
+                const day = Math.floor(diff / oneDay);
+                const semana = Math.ceil(day / 7);
 
                 if (agruparPor === 'anio') {
                     clave = `${anio}`;
@@ -1048,14 +1056,14 @@ async function handleGenerarGrafico() {
         } else if (tipoReporte === 'recuperacion') {
             datosAgrupados = agruparDatos(pagos, 'fecha', 'monto');
         } else { // comportamiento
-            // Esta es una métrica más compleja, por ahora usamos un ejemplo
-            const pagosPorEstado = pagos.reduce((acc, pago) => {
+            const pagosPorTipo = pagos.reduce((acc, pago) => {
                 const tipo = pago.tipoPago || 'normal';
-                if (!acc[tipo]) acc[tipo] = 0;
-                acc[tipo] += pago.monto;
+                const clave = tipo.charAt(0).toUpperCase() + tipo.slice(1);
+                if (!acc[clave]) acc[clave] = 0;
+                acc[clave] += pago.monto;
                 return acc;
             }, {});
-            datosAgrupados = pagosPorEstado;
+            datosAgrupados = pagosPorTipo;
         }
 
         const labels = Object.keys(datosAgrupados).sort();
@@ -1064,7 +1072,7 @@ async function handleGenerarGrafico() {
         const datosParaGrafico = {
             labels,
             datasets: [{
-                label: `${tipoReporte.charAt(0).toUpperCase() + tipoReporte.slice(1)} por ${agruparPor}`,
+                label: `${tipoReporte.charAt(0).toUpperCase() + tipoReporte.slice(1)}`,
                 data,
                 backgroundColor: tipoGrafico === 'line' ? 'transparent' : 'rgba(54, 162, 235, 0.2)',
                 borderColor: 'rgba(54, 162, 235, 1)',
@@ -1244,6 +1252,24 @@ function handleOfficeChangeForClientForm() {
     popularDropdown('poblacion_grupo_cliente', poblaciones, 'Selecciona población/grupo');
 }
 
+// **NUEVA FUNCIÓN** para actualizar dinámicamente los grupos en el filtro de gráficos
+function handleSucursalGraficoChange() {
+    const office = this.value;
+    const poblacionesGdl = ['LA CALERA', 'ATEQUIZA', 'SAN JACINTO', 'PONCITLAN', 'OCOTLAN', 'ARENAL', 'AMATITAN', 'ACATLAN DE JUAREZ', 'BELLAVISTA', 'SAN ISIDRO MAZATEPEC', 'TALA', 'CUISILLOS', 'HUAXTLA', 'NEXTIPAC', 'SANTA LUCIA', 'JAMAY', 'LA BARCA', 'SAN JUAN DE OCOTAN', 'TALA 2', 'EL HUMEDO', 'NEXTIPAC 2', 'ZZ PUEBLO'];
+    const poblacionesLeon = ["ARANDAS", "ARANDAS [E]", "BAJIO DE BONILLAS", "BAJIO DE BONILLAS [E]", "CAPULIN", "CARDENAS", "CARDENAS [E]", "CERRITO DE AGUA CALIENTE", "CERRITO DE AGUA CALIENTE [E]", "CORRALEJO", "CORRALEJO [E]", "CUERAMARO", "CUERAMARO [E]", "DOLORES HIDALGO", "EL ALACRAN", "EL EDEN", "EL FUERTE", "EL MEZQUITILLO", "EL MEZQUITILLO [E]", "EL PALENQUE", "EL PALENQUE [E]", "EL PAXTLE", "EL TULE", "EL TULE [E]", "ESTACION ABASOLO", "ESTACION ABASOLO [E]", "ESTACION CORRALEJO", "ESTACION CORRALEJO [E]", "ESTACION JOAQUIN", "ESTACION JOAQUIN [E]", "EX ESTACION CHIRIMOYA", "EX ESTacion CHIRIMOYA [E]", "GAVIA DE RIONDA", "GODOY", "GODOY [E]", "IBARRA", "IBARRA [E]", "LA ALDEA", "LA CARROZA", "LA CARROZA [E]", "LA ESCONDIDA", "LA SANDIA", "LA SANDIA [E]", "LAGUNA DE GUADALUPE", "LAS CRUCES", "LAS CRUCES [E]", "LAS MASAS", "LAS MASAS [E]", "LAS PALOMAS", "LAS TIRITAS", "LOMA DE LA ESPERANZA", "LOMA DE LA ESPERANZA [E]", "LOS DOLORES", "LOS GALVANES", "LOS GALVANES [E]", "MAGUEY BLANCO", "MEDRANOS", "MEXICANOS", "MEXICANOS [E]", "MINERAL DE LA LUZ", "MISION DE ABAJO", "MISION DE ABAJO [E]", "MISION DE ARRIBA", "MISION DE ARRIBA [E]", "NORIA DE ALDAY", "OCAMPO", "PURISIMA DEL RINCON", "PURISima DEL RINCON [E]", "RANCHO NUEVO DE LA CRUZ", "RANCHO NUEVO DE LA CRUZ [E]", "RANCHO VIEJO", "RIO LAJA", "RIO LAJA [E]", "SAN ANDRES DE JALPA", "SAN ANDRES DE JALPA [E]", "SAN BERNARDO", "SAN BERNARDO [E]", "SAN CRISTOBAL", "SAN CRISTOBAL [E]", "SAN GREGORIO", "SAN GREGORIO [E]", "SAN ISIDRO DE CRESPO", "SAN ISIDRO DE CRESPO [E]", "SAN JOSE DE BADILLO", "SAN JOSE DE BADILLO [E]", "SAN JOSE DEL RODEO", "SAN JOSE DEL RODEO [E]", "SAN JUAN DE LA PUERTA", "SAN JUAN DE LA PUERTA [E]", "SANTA ANA DEL CONDE", "SANTA ROSA", "SANTA ROSA [E]", "SANTA ROSA PLAN DE AYALA", "SANTA ROSA PLAN DE AYALA [E]", "SANTO DOMINGO", "SERRANO", "TENERIA DEL SANTUARIO", "TENERIA DEL SANTUARIO [E]", "TIERRAS BLANCAS", "TIERRAS BLANCAS [E]", "TREJO", "TREJO [E]", "TUPATARO", "TUPATARO [E]", "VALTIERRILLA", "VALTIERRILLA 2", "VALTIERRILLA [E]", "VAQUERIAS", "VILLA DE ARRIAGA", "VILLA DE ARRIAGA [E]"].sort();
+    
+    let poblaciones;
+    if (office === 'GDL') {
+        poblaciones = poblacionesGdl;
+    } else if (office === 'LEON') {
+        poblaciones = poblacionesLeon;
+    } else {
+        poblaciones = [...new Set([...poblacionesGdl, ...poblacionesLeon])].sort();
+    }
+    popularDropdown('grafico_grupo', poblaciones, 'Todos');
+}
+
+
 // =============================================
 // LÓGICA DE NEGOCIO Y CÁLCULOS
 // =============================================
@@ -1295,8 +1321,7 @@ function inicializarDropdowns() {
         { value: 'comportamiento', text: 'Comportamiento de Pago' },
     ];
     popularDropdown('grafico_tipo_reporte', tiposDeReporteGrafico, 'Selecciona un reporte', true);
-
-    console.log('Dropdowns inicializados correctamente');
+    popularDropdown('grafico_grupo', todasLasPoblaciones, 'Todos'); // **NUEVO**
 }
 
 // =============================================
@@ -1520,7 +1545,7 @@ async function loadClientesTable() {
 
             resultadosEncontrados++;
             
-            const comisionistaBadge = cliente.isComisionista ? '<span class="comisionista-badge-cliente">COMISIONISTA</span>' : '';
+            const comisionistaBadge = cliente.isComisionista ? '<span class="comisionista-badge-cliente">★</span>' : '';
             
             let infoCreditoHTML = '<em>Sin historial de crédito</em>';
             if (historial) {
@@ -2013,6 +2038,7 @@ document.addEventListener('viewshown', function (e) {
             const haceUnAnio = new Date(hoy.getFullYear() - 1, hoy.getMonth(), hoy.getDate());
             document.getElementById('grafico_fecha_inicio').value = haceUnAnio.toISOString().split('T')[0];
             document.getElementById('grafico_fecha_fin').value = hoy.toISOString().split('T')[0];
+            handleSucursalGraficoChange.call(document.getElementById('grafico_sucursal'));
             break;
     }
 });
