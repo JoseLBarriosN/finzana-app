@@ -419,6 +419,13 @@ const database = {
         let importados = 0;
         let batch = db.batch();
         let batchCounter = 0;
+        
+        // **NUEVA LÓGICA ANTI-DUPLICADOS**
+        let curpsExistentes = new Set();
+        if (tipo === 'clientes') {
+            const snapshot = await db.collection('clientes').get();
+            snapshot.forEach(doc => curpsExistentes.add(doc.data().curp));
+        }
 
         try {
             for (const [i, linea] of lineas.entries()) {
@@ -429,6 +436,13 @@ const database = {
                         errores.push(`Línea ${i + 1}: Faltan columnas (se esperaban 7, se encontraron ${campos.length})`);
                         continue;
                     }
+                    
+                    const curp = campos[0].toUpperCase();
+                    if (curpsExistentes.has(curp)) {
+                        errores.push(`Línea ${i + 1}: Cliente con CURP ${curp} ya existe. Se omitió.`);
+                        continue;
+                    }
+
                     const fechaRegistroISO = _parsearFechaImportacion(campos[5]);
                     if (!fechaRegistroISO) {
                         errores.push(`Línea ${i + 1}: Fecha de registro inválida ('${campos[5]}'). Se omitirá el registro.`);
@@ -436,7 +450,7 @@ const database = {
                     }
                     const docRef = db.collection('clientes').doc();
                     batch.set(docRef, {
-                        curp: campos[0].toUpperCase(),
+                        curp: curp,
                         nombre: campos[1],
                         domicilio: campos[2],
                         cp: campos[3],
@@ -446,6 +460,7 @@ const database = {
                         office: office,
                         ruta: campos[7] || ''
                     });
+                    curpsExistentes.add(curp); // Evita duplicados dentro del mismo archivo
                     importados++;
                 } else if (tipo === 'colocacion') {
                     const columnasEsperadas = office === 'LEON' ? 20 : 13;
@@ -549,7 +564,7 @@ const database = {
         }
     },
 
-    // --- FUNCIONES DE REPORTES ---
+    // --- FUNCIONES DE REPORTES Y MANTENIMIENTO ---
     generarReportes: async () => {
         try {
             const [clientesSnap, creditosSnap, pagosSnap] = await Promise.all([
@@ -638,60 +653,19 @@ const database = {
             return [];
         }
     },
-    
-    // Nueva función para los gráficos
-    obtenerDatosParaGraficos: async (filtros) => {
-        try {
-            const promesas = [];
-            let creditosQuery = db.collection('creditos');
-            let pagosQuery = db.collection('pagos');
-
-            if (filtros.sucursal) {
-                creditosQuery = creditosQuery.where('office', '==', filtros.sucursal);
-                pagosQuery = pagosQuery.where('office', '==', filtros.sucursal);
-            }
-
-            // Aplicar rango de fechas es crucial para el rendimiento
-            if (filtros.fechaInicio) {
-                creditosQuery = creditosQuery.where('fechaCreacion', '>=', new Date(filtros.fechaInicio).toISOString());
-                pagosQuery = pagosQuery.where('fecha', '>=', new Date(filtros.fechaInicio).toISOString());
-            }
-            if (filtros.fechaFin) {
-                // Para incluir el día final completo, la consulta debe ser hasta el día siguiente
-                const fechaFinSiguiente = new Date(filtros.fechaFin);
-                fechaFinSiguiente.setDate(fechaFinSiguiente.getDate() + 1);
-                creditosQuery = creditosQuery.where('fechaCreacion', '<', fechaFinSiguiente.toISOString());
-                pagosQuery = pagosQuery.where('fecha', '<', fechaFinSiguiente.toISOString());
-            }
-
-            promesas.push(creditosQuery.get());
-            promesas.push(pagosQuery.get());
-
-            const [creditosSnap, pagosSnap] = await Promise.all(promesas);
-
-            const creditos = creditosSnap.docs.map(doc => doc.data());
-            const pagos = pagosSnap.docs.map(doc => doc.data());
-
-            return { creditos, pagos };
-
-        } catch(error) {
-            console.error("Error obteniendo datos para gráficos:", error);
-            return { creditos: [], pagos: [] };
-        }
-    },
 
     _cumpleFiltroFecha: (fecha, fechaInicio, fechaFin) => {
         if (!fechaInicio && !fechaFin) return true;
-        if (!fecha) return false; // Si el registro no tiene fecha, no puede cumplir el filtro
+        if (!fecha) return false;
         const fechaObj = new Date(fecha);
         if (fechaInicio) {
             const inicio = new Date(fechaInicio);
-            inicio.setUTCHours(0, 0, 0, 0); // Compara desde el inicio del día
+            inicio.setUTCHours(0, 0, 0, 0);
             if (fechaObj < inicio) return false;
         }
         if (fechaFin) {
             const fin = new Date(fechaFin);
-            fin.setUTCHours(23, 59, 59, 999); // Compara hasta el final del día
+            fin.setUTCHours(23, 59, 59, 999);
             if (fechaObj > fin) return false;
         }
         return true;
@@ -704,4 +678,65 @@ const database = {
         fechaVencimiento.setDate(fechaVencimiento.getDate() + (credito.plazo * 7));
         return new Date() > fechaVencimiento;
     },
+
+    // *** NUEVAS FUNCIONES PARA LIMPIEZA DE DUPLICADOS ***
+    encontrarClientesDuplicados: async () => {
+        try {
+            const clientesSnapshot = await db.collection('clientes').get();
+            const clientes = clientesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            
+            const curpMap = new Map();
+            clientes.forEach(cliente => {
+                if (!curpMap.has(cliente.curp)) {
+                    curpMap.set(cliente.curp, []);
+                }
+                curpMap.get(cliente.curp).push(cliente);
+            });
+
+            const idsParaEliminar = [];
+            const curpsAfectadas = [];
+            let duplicadosEncontrados = 0;
+
+            for (const [curp, clientesAgrupados] of curpMap.entries()) {
+                if (clientesAgrupados.length > 1) {
+                    duplicadosEncontrados += clientesAgrupados.length;
+                    curpsAfectadas.push(curp);
+                    
+                    // Ordenar por fecha de registro, el más nuevo primero
+                    clientesAgrupados.sort((a, b) => {
+                        const fechaA = new Date(a.fechaRegistro || 0).getTime();
+                        const fechaB = new Date(b.fechaRegistro || 0).getTime();
+                        return fechaB - fechaA;
+                    });
+                    
+                    // El primero es el que se conserva, el resto se elimina
+                    const paraEliminar = clientesAgrupados.slice(1);
+                    paraEliminar.forEach(cliente => idsParaEliminar.push(cliente.id));
+                }
+            }
+
+            return { success: true, idsParaEliminar, duplicadosEncontrados, curpsAfectadas };
+        } catch (error) {
+            console.error("Error encontrando clientes duplicados:", error);
+            return { success: false, message: error.message };
+        }
+    },
+
+    ejecutarEliminacionDuplicados: async (ids) => {
+        if (!ids || ids.length === 0) {
+            return { success: true, message: "No se encontraron IDs para eliminar." };
+        }
+        try {
+            const batch = db.batch();
+            ids.forEach(id => {
+                const docRef = db.collection('clientes').doc(id);
+                batch.delete(docRef);
+            });
+            await batch.commit();
+            return { success: true, message: `Se eliminaron ${ids.length} registros duplicados exitosamente.` };
+        } catch (error) {
+            console.error("Error eliminando duplicados:", error);
+            return { success: false, message: `Error al eliminar: ${error.message}` };
+        }
+    }
 };
