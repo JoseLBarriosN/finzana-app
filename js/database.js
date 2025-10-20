@@ -420,7 +420,6 @@ const database = {
         let batch = db.batch();
         let batchCounter = 0;
         
-        // **NUEVA LÓGICA ANTI-DUPLICADOS**
         let curpsExistentes = new Set();
         if (tipo === 'clientes') {
             const snapshot = await db.collection('clientes').get();
@@ -460,7 +459,7 @@ const database = {
                         office: office,
                         ruta: campos[7] || ''
                     });
-                    curpsExistentes.add(curp); // Evita duplicados dentro del mismo archivo
+                    curpsExistentes.add(curp);
                     importados++;
                 } else if (tipo === 'colocacion') {
                     const columnasEsperadas = office === 'LEON' ? 20 : 13;
@@ -500,7 +499,7 @@ const database = {
                         estado: saldo > 0.01 ? 'activo' : 'liquidado'
                     };
                     const docRef = db.collection('creditos').doc(credito.id);
-                    batch.set(docRef, credito, { merge: true }); // Usar merge para no sobrescribir datos si ya existe
+                    batch.set(docRef, credito, { merge: true });
                     importados++;
                 } else if (tipo === 'cobranza') {
                     if (campos.length < 11) {
@@ -653,19 +652,60 @@ const database = {
             return [];
         }
     },
+    
+    // Nueva función para los gráficos
+    obtenerDatosParaGraficos: async (filtros) => {
+        try {
+            const promesas = [];
+            let creditosQuery = db.collection('creditos');
+            let pagosQuery = db.collection('pagos');
+
+            if (filtros.sucursal) {
+                creditosQuery = creditosQuery.where('office', '==', filtros.sucursal);
+                pagosQuery = pagosQuery.where('office', '==', filtros.sucursal);
+            }
+
+            // Aplicar rango de fechas es crucial para el rendimiento
+            if (filtros.fechaInicio) {
+                creditosQuery = creditosQuery.where('fechaCreacion', '>=', new Date(filtros.fechaInicio).toISOString());
+                pagosQuery = pagosQuery.where('fecha', '>=', new Date(filtros.fechaInicio).toISOString());
+            }
+            if (filtros.fechaFin) {
+                // Para incluir el día final completo, la consulta debe ser hasta el día siguiente
+                const fechaFinSiguiente = new Date(filtros.fechaFin);
+                fechaFinSiguiente.setDate(fechaFinSiguiente.getDate() + 1);
+                creditosQuery = creditosQuery.where('fechaCreacion', '<', fechaFinSiguiente.toISOString());
+                pagosQuery = pagosQuery.where('fecha', '<', fechaFinSiguiente.toISOString());
+            }
+
+            promesas.push(creditosQuery.get());
+            promesas.push(pagosQuery.get());
+
+            const [creditosSnap, pagosSnap] = await Promise.all(promesas);
+
+            const creditos = creditosSnap.docs.map(doc => doc.data());
+            const pagos = pagosSnap.docs.map(doc => doc.data());
+
+            return { creditos, pagos };
+
+        } catch(error) {
+            console.error("Error obteniendo datos para gráficos:", error);
+            return { creditos: [], pagos: [] };
+        }
+    },
 
     _cumpleFiltroFecha: (fecha, fechaInicio, fechaFin) => {
         if (!fechaInicio && !fechaFin) return true;
-        if (!fecha) return false;
+        if (!fecha) return false; // Si el registro no tiene fecha, no puede cumplir el filtro
         const fechaObj = new Date(fecha);
         if (fechaInicio) {
             const inicio = new Date(fechaInicio);
-            inicio.setUTCHours(0, 0, 0, 0);
+            inicio.setUTCHours(0, 0, 0, 0); // Compara desde el inicio del día
             if (fechaObj < inicio) return false;
         }
         if (fechaFin) {
             const fin = new Date(fechaFin);
-            fin.setUTCHours(23, 59, 59, 999);
+            fin.setUTCHours(23, 59, 59, 999); // Compara hasta el final del día
             if (fechaObj > fin) return false;
         }
         return true;
@@ -678,7 +718,7 @@ const database = {
         fechaVencimiento.setDate(fechaVencimiento.getDate() + (credito.plazo * 7));
         return new Date() > fechaVencimiento;
     },
-
+    
     // *** NUEVAS FUNCIONES PARA LIMPIEZA DE DUPLICADOS ***
     encontrarClientesDuplicados: async () => {
         try {
