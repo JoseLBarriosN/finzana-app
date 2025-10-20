@@ -596,6 +596,7 @@ async function loadUsersTable() {
                 tr.title = 'Este usuario está deshabilitado';
             }
             const roleBadgeClass = `role-${usuario.role || 'default'}`;
+            // **NUEVA LÓGICA PARA BADGE DE COMISIONISTA**
             const comisionistaBadge = usuario.role === 'comisionista' ? '<span class="comisionista-badge">COMISIONISTA</span>' : '';
             const usuarioJsonString = JSON.stringify(usuario).replace(/'/g, "&apos;");
             tr.innerHTML = `
