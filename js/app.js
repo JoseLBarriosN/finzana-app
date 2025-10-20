@@ -210,7 +210,6 @@ function setupEventListeners() {
     const btnNuevoUsuario = document.getElementById('btn-nuevo-usuario');
     if (btnNuevoUsuario) btnNuevoUsuario.addEventListener('click', () => mostrarFormularioUsuario());
     
-    // **NUEVO EVENT LISTENER**
     const btnVerificarDuplicados = document.getElementById('btn-verificar-duplicados');
     if(btnVerificarDuplicados) btnVerificarDuplicados.addEventListener('click', handleVerificarDuplicados);
 
@@ -436,7 +435,8 @@ async function handleClientForm(e) {
     try {
         let resultado;
         if (editingClientId) {
-            resultado = await database.actualizarCliente(editingClientId, clienteData);
+            // **CORRECCIÓN DE AUDITORÍA**
+            resultado = await database.actualizarCliente(editingClientId, clienteData, currentUser.email);
         } else {
             const existe = await database.buscarClientePorCURP(clienteData.curp);
             if (existe) {
@@ -444,7 +444,8 @@ async function handleClientForm(e) {
                 showButtonLoading(submitButton, false);
                 return;
             }
-            resultado = await database.agregarCliente(clienteData);
+            // **CORRECCIÓN DE AUDITORÍA**
+            resultado = await database.agregarCliente(clienteData, currentUser.email);
         }
         let successMessage = resultado.message;
         if (!isOnline && resultado.success) {
@@ -454,7 +455,6 @@ async function handleClientForm(e) {
         if (resultado.success) {
             resetClientForm();
             showView('view-gestion-clientes');
-            loadClientesTable(); // Forzar recarga de la tabla
         } else {
             showStatus('status_cliente', resultado.message, 'error');
         }
@@ -596,7 +596,6 @@ async function loadUsersTable() {
                 tr.title = 'Este usuario está deshabilitado';
             }
             const roleBadgeClass = `role-${usuario.role || 'default'}`;
-            // **NUEVA LÓGICA PARA BADGE DE COMISIONISTA**
             const comisionistaBadge = usuario.role === 'comisionista' ? '<span class="comisionista-badge">COMISIONISTA</span>' : '';
             const usuarioJsonString = JSON.stringify(usuario).replace(/'/g, "&apos;");
             tr.innerHTML = `
@@ -714,7 +713,6 @@ async function handleCreditForm(e) {
     const submitButton = document.querySelector('#form-credito-submit button[type="submit"]');
     showButtonLoading(submitButton, true, 'Verificando y generando...');
 
-    // 1. Verificar elegibilidad del cliente (ya se hizo en la búsqueda, pero doble-check)
     const elegibilidadCliente = await database.verificarElegibilidadCliente(credito.curpCliente);
     if (!elegibilidadCliente.elegible) {
         showStatus('status_colocacion', elegibilidadCliente.message, 'error');
@@ -722,7 +720,6 @@ async function handleCreditForm(e) {
         return;
     }
 
-    // 2. Verificar elegibilidad del aval
     const elegibilidadAval = await database.verificarElegibilidadAval(credito.curpAval);
     if (!elegibilidadAval.elegible) {
         showStatus('status_colocacion', elegibilidadAval.message, 'error');
@@ -732,7 +729,8 @@ async function handleCreditForm(e) {
 
     showFixedProgress(50, 'Procesando crédito...');
     try {
-        const resultado = await database.agregarCredito(credito);
+        // **CORRECCIÓN DE AUDITORÍA**
+        const resultado = await database.agregarCredito(credito, currentUser.email);
         showFixedProgress(100, 'Crédito generado exitosamente');
         let successMessage = resultado.message;
         if (resultado.success) {
@@ -820,7 +818,8 @@ async function handlePaymentForm(e) {
     showButtonLoading('#form-pago-submit button[type="submit"]', true, 'Registrando pago...');
     showFixedProgress(50, 'Procesando pago...');
     try {
-        const resultado = await database.agregarPago(pago);
+        // **CORRECCIÓN DE AUDITORÍA**
+        const resultado = await database.agregarPago(pago, currentUser.email);
         showFixedProgress(100, 'Pago registrado exitosamente');
         let successMessage = resultado.message;
         if (!isOnline && resultado.success) {
@@ -1481,7 +1480,16 @@ async function loadClientesTable() {
         }
 
         showFixedProgress(25, 'Buscando clientes...');
-        let clientesIniciales = await database.buscarClientes({ sucursal: filtros.sucursal, curp: filtros.curp, nombre: filtros.nombre, grupo: filtros.grupo });
+        
+        let clientesIniciales = [];
+        // **NUEVA LÓGICA PARA BÚSQUEDA MÚLTIPLE**
+        if (filtros.curp && filtros.curp.includes(',')) {
+            const curps = filtros.curp.split(',').map(c => c.trim().toUpperCase()).filter(c => c);
+            clientesIniciales = await database.buscarClientesPorCURPs(curps);
+        } else {
+            clientesIniciales = await database.buscarClientes({ sucursal: filtros.sucursal, curp: filtros.curp, nombre: filtros.nombre, grupo: filtros.grupo });
+        }
+
         if (operationId !== currentSearchOperation) throw new Error("Búsqueda cancelada");
         if (clientesIniciales.length === 0) {
             tbody.innerHTML = '<tr><td colspan="6">No se encontraron clientes con los filtros principales.</td></tr>';
@@ -1500,7 +1508,6 @@ async function loadClientesTable() {
             const progress = 50 + Math.round((clientesProcesados / clientesIniciales.length) * 50);
             showFixedProgress(progress, `Procesando ${clientesProcesados} de ${clientesIniciales.length}...`);
 
-            // **LÓGICA RESTAURADA Y CONFIABLE**
             const historial = await obtenerHistorialCreditoCliente(cliente.curp);
 
             // Aplicar filtros secundarios en memoria
@@ -1513,7 +1520,6 @@ async function loadClientesTable() {
 
             resultadosEncontrados++;
             
-            // **NUEVA LÓGICA PARA BADGE DE COMISIONISTA EN CLIENTES**
             const comisionistaBadge = cliente.isComisionista ? '<span class="comisionista-badge-cliente">COMISIONISTA</span>' : '';
             
             let infoCreditoHTML = '<em>Sin historial de crédito</em>';
