@@ -7,7 +7,7 @@
     <link rel="icon" type="image/x-icon" href="/favicon.ico">
     <link rel="stylesheet" href="css/styles.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <meta name="theme-color" content="#2E8B57">
@@ -239,7 +239,11 @@
                     </div>
                 </div>
 
-                <button id="btn-nuevo-usuario" class="btn btn-primary"><i class="fas fa-user-plus"></i> Nuevo Usuario</button>
+                <div class="user-actions">
+                    <button id="btn-nuevo-usuario" class="btn btn-primary"><i class="fas fa-user-plus"></i> Nuevo Usuario</button>
+                    <button id="btn-verificar-duplicados" class="btn btn-warning"><i class="fas fa-users-slash"></i> Verificar Clientes Duplicados</button>
+                </div>
+
                 <div id="status_usuarios"></div>
                 <div id="form-usuario-container" class="hidden">
                     <h3 id="form-usuario-titulo">Nuevo Usuario</h3>
@@ -560,7 +564,7 @@
                             <span class="info-label">Clientes con Crédito Activo:</span>
                             <span class="info-value" id="total-clientes-grupo">0</span>
                         </div>
-                         <div class="info-item">
+                        <div class="info-item">
                             <span class="info-label">Total a Cobrar Esta Semana:</span>
                             <span class="info-value" id="total-a-cobrar-grupo">$0.00</span>
                         </div>
@@ -575,7 +579,7 @@
                 </div>
                 <div id="status_pago_grupo"></div>
             </div>
-            
+
             <div id="view-reportes" class="view hidden">
                 <div class="view-header">
                     <h2>Reportes del Sistema</h2>
@@ -809,11 +813,11 @@
                     </div>
                     <div class="card-body">
                         <div id="grafico-container">
-                            </div>
+                        </div>
                         <div id="status_graficos" class="status-message">Selecciona los filtros para generar un gráfico.</div>
                     </div>
                 </div>
-                </div>
+            </div>
         </main>
     </div>
 
