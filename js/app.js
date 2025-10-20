@@ -1512,6 +1512,10 @@ async function loadClientesTable() {
             }
 
             resultadosEncontrados++;
+            
+            // **NUEVA LÓGICA PARA BADGE DE COMISIONISTA EN CLIENTES**
+            const comisionistaBadge = cliente.isComisionista ? '<span class="comisionista-badge-cliente">COMISIONISTA</span>' : '';
+            
             let infoCreditoHTML = '<em>Sin historial de crédito</em>';
             if (historial) {
                 const estadoClase = `status-${historial.estado.replace(/\s/g, '-')}`;
@@ -1536,7 +1540,7 @@ async function loadClientesTable() {
                 <tr>
                     <td><b>${cliente.office || 'N/A'}</b><br><small>Registro: ${historial ? historial.fechaRegistro : 'N/A'}</small></td>
                     <td>${cliente.curp}</td>
-                    <td>${cliente.nombre}</td>
+                    <td>${cliente.nombre} ${comisionistaBadge}</td>
                     <td>${cliente.poblacion_grupo}</td>
                     <td>${infoCreditoHTML}</td>
                     <td class="action-buttons">
