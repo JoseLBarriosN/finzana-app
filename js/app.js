@@ -209,6 +209,11 @@ function setupEventListeners() {
     if (btnLimpiarFiltrosUsuarios) btnLimpiarFiltrosUsuarios.addEventListener('click', limpiarFiltrosUsuarios);
     const btnNuevoUsuario = document.getElementById('btn-nuevo-usuario');
     if (btnNuevoUsuario) btnNuevoUsuario.addEventListener('click', () => mostrarFormularioUsuario());
+    
+    // **NUEVO EVENT LISTENER**
+    const btnVerificarDuplicados = document.getElementById('btn-verificar-duplicados');
+    if(btnVerificarDuplicados) btnVerificarDuplicados.addEventListener('click', handleVerificarDuplicados);
+
     const btnCancelarUsuario = document.getElementById('btn-cancelar-usuario');
     if (btnCancelarUsuario) btnCancelarUsuario.addEventListener('click', ocultarFormularioUsuario);
     const formUsuario = document.getElementById('form-usuario');
@@ -591,11 +596,12 @@ async function loadUsersTable() {
                 tr.title = 'Este usuario está deshabilitado';
             }
             const roleBadgeClass = `role-${usuario.role || 'default'}`;
+            const comisionistaBadge = usuario.role === 'comisionista' ? '<span class="comisionista-badge">COMISIONISTA</span>' : '';
             const usuarioJsonString = JSON.stringify(usuario).replace(/'/g, "&apos;");
             tr.innerHTML = `
                 <td>${usuario.email || 'N/A'}</td>
                 <td>${usuario.name || 'N/A'}</td>
-                <td><span class="role-badge ${roleBadgeClass}">${usuario.role || 'N/A'}</span></td>
+                <td><span class="role-badge ${roleBadgeClass}">${usuario.role || 'N/A'}</span> ${comisionistaBadge}</td>
                 <td>${usuario.office || 'N/A'}</td>
                 <td>${usuario.status === 'disabled' ? 'Deshabilitado' : 'Activo'}</td>
                 <td class="action-buttons">
@@ -1999,5 +2005,46 @@ document.addEventListener('viewshown', function (e) {
             break;
     }
 });
+
+// *** NUEVA FUNCIÓN PARA MANEJAR DUPLICADOS ***
+async function handleVerificarDuplicados() {
+    showProcessingOverlay(true, 'Buscando clientes duplicados...');
+    showButtonLoading('btn-verificar-duplicados', true);
+    try {
+        const resultado = await database.encontrarClientesDuplicados();
+        if (!resultado.success) {
+            throw new Error(resultado.message);
+        }
+
+        const { idsParaEliminar, duplicadosEncontrados, curpsAfectadas } = resultado;
+
+        if (idsParaEliminar.length === 0) {
+            showStatus('status_usuarios', '¡Excelente! No se encontraron clientes duplicados en la base de datos.', 'success');
+            return;
+        }
+
+        const confirmacion = confirm(
+            `Se encontraron ${duplicadosEncontrados} registros que corresponden a ${curpsAfectadas.length} clientes duplicados (por CURP).\n\n` +
+            `Se conservará el registro más reciente de cada uno y se eliminarán ${idsParaEliminar.length} registros antiguos.\n\n` +
+            `¿Deseas proceder con la limpieza? Esta acción no se puede deshacer.`
+        );
+
+        if (confirmacion) {
+            showProcessingOverlay(true, `Eliminando ${idsParaEliminar.length} registros...`);
+            const resEliminacion = await database.ejecutarEliminacionDuplicados(idsParaEliminar);
+            showStatus('status_usuarios', resEliminacion.message, resEliminacion.success ? 'success' : 'error');
+        } else {
+            showStatus('status_usuarios', 'Operación de limpieza cancelada por el usuario.', 'info');
+        }
+
+    } catch (error) {
+        console.error("Error al verificar duplicados:", error);
+        showStatus('status_usuarios', `Error al verificar duplicados: ${error.message}`, 'error');
+    } finally {
+        showProcessingOverlay(false);
+        showButtonLoading('btn-verificar-duplicados', false);
+    }
+}
+
 
 console.log('app.js cargado correctamente');
