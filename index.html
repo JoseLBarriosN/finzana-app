@@ -287,7 +287,22 @@
                         </tr>
                     </tbody>
                 </table>
-            </div>
+
+                <div class="diagnostic-tool">
+                    <h3><i class="fas fa-stethoscope"></i> Herramienta de Diagnóstico de Pagos</h3>
+                    <p>Usa esta herramienta para verificar si los pagos de un crédito existen en la base de datos. Pega el ID del crédito y presiona "Verificar".</p>
+                    <div class="form-group">
+                        <label for="diagnostico-id-credito">ID de Crédito a Verificar</label>
+                        <input type="text" id="diagnostico-id-credito" placeholder="Pega el ID del crédito aquí...">
+                    </div>
+                    <button id="btn-diagnosticar-pagos" class="btn btn-info"><i class="fas fa-search-plus"></i> Verificar Pagos</button>
+                    <div id="status-diagnostico" class="status-message hidden"></div>
+                    <div id="resultado-diagnostico" class="diagnostic-result hidden">
+                        <h4>Resultados:</h4>
+                        <pre id="diagnostico-json-output">Cargando...</pre>
+                    </div>
+                </div>
+                </div>
 
             <div id="view-importar" class="view hidden">
                 <div class="view-header">
