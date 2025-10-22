@@ -325,14 +325,37 @@ input, select, textarea {
     margin-bottom: 15px;
 }
 
-.icon-clientes { color: #3498db; }
-.icon-usuarios { color: #9b59b6; }
-.icon-importar { color: #e74c3c; }
-.icon-registrar { color: #2ecc71; }
-.icon-colocacion { color: #f39c12; }
-.icon-cobranza { color: #16a085; }
-.icon-reportes { color: #34495e; }
-.icon-reportes-avanzados { color: #8e44ad; }
+.icon-clientes {
+    color: #3498db;
+}
+
+.icon-usuarios {
+    color: #9b59b6;
+}
+
+.icon-importar {
+    color: #e74c3c;
+}
+
+.icon-registrar {
+    color: #2ecc71;
+}
+
+.icon-colocacion {
+    color: #f39c12;
+}
+
+.icon-cobranza {
+    color: #16a085;
+}
+
+.icon-reportes {
+    color: #34495e;
+}
+
+.icon-reportes-avanzados {
+    color: #8e44ad;
+}
 
 .status-message {
     padding: 12px 15px;
@@ -341,11 +364,36 @@ input, select, textarea {
     font-weight: 500;
 }
 
-.status-success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
-.status-error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
-.status-info { background: #cce7ff; color: #004085; border: 1px solid #b3d7ff; }
-.status-warning { background: #fff3cd; color: #856404; border: 1px solid #ffeaa7; }
-.auth-status { margin-top: 15px; padding: 10px; border-radius: var(--border-radius); text-align: center; }
+.status-success {
+    background: #d4edda;
+    color: #155724;
+    border: 1px solid #c3e6cb;
+}
+
+.status-error {
+    background: #f8d7da;
+    color: #721c24;
+    border: 1px solid #f5c6cb;
+}
+
+.status-info {
+    background: #cce7ff;
+    color: #004085;
+    border: 1px solid #b3d7ff;
+}
+
+.status-warning {
+    background: #fff3cd;
+    color: #856404;
+    border: 1px solid #ffeaa7;
+}
+
+.auth-status {
+    margin-top: 15px;
+    padding: 10px;
+    border-radius: var(--border-radius);
+    text-align: center;
+}
 
 .client-table, .user-table, .report-table {
     width: 100%;
@@ -357,28 +405,29 @@ input, select, textarea {
     box-shadow: 0 2px 5px rgba(0,0,0,0.05);
 }
 
-.client-table th, .client-table td, .user-table th, .user-table td, .report-table th, .report-table td {
-    padding: 15px;
-    text-align: left;
-}
+    .client-table th, .client-table td, .user-table th, .user-table td, .report-table th, .report-table td {
+        padding: 15px;
+        text-align: left;
+    }
 
-/* MODIFICACIÓN: Separador de filas */
-.client-table tr, .user-table tr, .report-table tr {
-    border-bottom: 1px solid var(--border-color);
-}
-.client-table tr:last-child, .user-table tr:last-child, .report-table tr:last-child {
-    border-bottom: none;
-}
+    /* MODIFICACIÓN: Separador de filas */
+    .client-table tr, .user-table tr, .report-table tr {
+        border-bottom: 1px solid var(--border-color);
+    }
 
-.client-table th, .user-table th, .report-table th {
-    background: #f8f9fa;
-    font-weight: 600;
-    color: var(--dark);
-}
+        .client-table tr:last-child, .user-table tr:last-child, .report-table tr:last-child {
+            border-bottom: none;
+        }
 
-.client-table tr:hover, .user-table tr:hover, .report-table tr:hover {
-    background: #f8f9fa;
-}
+    .client-table th, .user-table th, .report-table th {
+        background: #f8f9fa;
+        font-weight: 600;
+        color: var(--dark);
+    }
+
+    .client-table tr:hover, .user-table tr:hover, .report-table tr:hover {
+        background: #f8f9fa;
+    }
 
 /* MODIFICACIÓN: Alineación de botones de acción */
 .action-buttons {
@@ -779,11 +828,30 @@ input, select, textarea {
     font-weight: 600;
 }
 
-.role-admin { background: #dc3545; color: white; }
-.role-supervisor { background: #fd7e14; color: white; }
-.role-cobrador { background: #20c997; color: white; }
-.role-consulta { background: #6f42c1; color: white; }
-.role-comisionista { background: #6610f2; color: white; }
+.role-admin {
+    background: #dc3545;
+    color: white;
+}
+
+.role-supervisor {
+    background: #fd7e14;
+    color: white;
+}
+
+.role-cobrador {
+    background: #20c997;
+    color: white;
+}
+
+.role-consulta {
+    background: #6f42c1;
+    color: white;
+}
+
+.role-comisionista {
+    background: #6610f2;
+    color: white;
+}
 
 /* Campos requeridos */
 .required {
@@ -808,7 +876,7 @@ input, select, textarea {
     .menu-grid, .filtros-grid, .report-grid {
         grid-template-columns: 1fr;
     }
-    
+
     .info-grid {
         grid-template-columns: 1fr;
     }
@@ -857,7 +925,7 @@ input, select, textarea {
         width: 25px;
         height: 25px;
     }
-    
+
     body.has-progress {
         padding-top: 50px;
     }
@@ -892,10 +960,45 @@ input, select, textarea {
 }
 
 /* Animaciones */
-@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-@keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-@keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.05); } 100% { transform: scale(1); } }
-.pulse { animation: pulse 2s infinite; }
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes slideUp {
+    from {
+        transform: translateY(20px);
+        opacity: 0;
+    }
+
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+@keyframes pulse {
+    0% {
+        transform: scale(1);
+    }
+
+    50% {
+        transform: scale(1.05);
+    }
+
+    100% {
+        transform: scale(1);
+    }
+}
+
+.pulse {
+    animation: pulse 2s infinite;
+}
 
 /* Estilos específicos para la barra de progreso en diferentes vistas */
 #view-gestion-clientes .filtros-container {
@@ -993,10 +1096,23 @@ textarea:focus {
 }
 
 /* Scrollbar personalizado */
-::-webkit-scrollbar { width: 8px; }
-::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 10px; }
-::-webkit-scrollbar-thumb { background: var(--primary); border-radius: 10px; }
-::-webkit-scrollbar-thumb:hover { background: var(--primary-dark); }
+::-webkit-scrollbar {
+    width: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--primary);
+    border-radius: 10px;
+}
+
+    ::-webkit-scrollbar-thumb:hover {
+        background: var(--primary-dark);
+    }
 
 /* Mejoras para elementos de formulario */
 select {
@@ -1010,18 +1126,35 @@ select {
 }
 
 /* Placeholders mejorados */
-::placeholder { color: #999; opacity: 1; }
-:-ms-input-placeholder { color: #999; }
-::-ms-input-placeholder { color: #999; }
+::placeholder {
+    color: #999;
+    opacity: 1;
+}
+
+:-ms-input-placeholder {
+    color: #999;
+}
+
+::-ms-input-placeholder {
+    color: #999;
+}
 
 /* Estilos para mensajes de validación */
-.input-error { border-color: var(--danger) !important; box-shadow: 0 0 0 3px rgba(255, 99, 71, 0.1) !important; }
-.input-success { border-color: var(--success) !important; box-shadow: 0 0 0 3px rgba(60, 179, 113, 0.1) !important; }
+.input-error {
+    border-color: var(--danger) !important;
+    box-shadow: 0 0 0 3px rgba(255, 99, 71, 0.1) !important;
+}
+
+.input-success {
+    border-color: var(--success) !important;
+    box-shadow: 0 0 0 3px rgba(60, 179, 113, 0.1) !important;
+}
 
 /* Tooltips básicos */
 [data-tooltip] {
     position: relative;
 }
+
     [data-tooltip]:hover::after {
         content: attr(data-tooltip);
         position: absolute;
@@ -1036,6 +1169,7 @@ select {
         white-space: nowrap;
         z-index: 1000;
     }
+
     [data-tooltip]:hover::before {
         content: '';
         position: absolute;
@@ -1132,14 +1266,17 @@ select {
         height: 50px;
         padding: 0 10px;
     }
+
     .progress-text-fixed {
         font-size: 12px;
         min-width: 150px;
     }
+
     .btn-cancelar-carga-fixed {
         width: 25px;
         height: 25px;
     }
+
     body.has-progress {
         padding-top: 50px;
     }
@@ -1174,3 +1311,100 @@ select {
         display: block !important; /* Sobrescribe .hidden temporalmente cuando vuelve a estar online */
     }
 /* ===== FIN DE LA MODIFICACIÓN ===== */
+
+/* =============================================
+   NUEVOS ESTILOS PARA MODAL GENÉRICO
+   ============================================= */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10002; /* Por encima de la barra de progreso */
+    animation: fadeIn 0.3s ease;
+}
+
+.modal-content {
+    background: white;
+    border-radius: var(--border-radius);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+    width: 90%;
+    max-width: 800px;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    animation: slideUp 0.3s ease;
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px 25px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.modal-header h2 {
+    margin: 0;
+    font-size: 20px;
+}
+
+.modal-close-btn {
+    background: none;
+    border: none;
+    font-size: 28px;
+    font-weight: 300;
+    color: var(--gray);
+    cursor: pointer;
+    padding: 0 5px;
+    line-height: 1;
+}
+    .modal-close-btn:hover {
+        color: var(--dark);
+    }
+
+.modal-body {
+    padding: 25px;
+    overflow-y: auto;
+}
+
+/* Estilos para la tabla de pagos en el modal */
+.payment-history-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 15px;
+}
+    .payment-history-table th,
+    .payment-history-table td {
+        padding: 10px 12px;
+        border: 1px solid var(--border-color);
+        text-align: left;
+    }
+    .payment-history-table th {
+        background: #f8f9fa;
+    }
+    .payment-history-table tr:nth-child(even) {
+        background: #f8f9fa;
+    }
+
+@media (max-width: 600px) {
+    .modal-content {
+        width: 95%;
+        max-height: 95vh;
+    }
+    .modal-header, .modal-body {
+        padding: 15px;
+    }
+    .payment-history-table {
+        font-size: 12px;
+    }
+    .payment-history-table th,
+    .payment-history-table td {
+        padding: 8px;
+    }
+}
