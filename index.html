@@ -191,7 +191,7 @@
                 <table class="client-table">
                     <thead>
                         <tr>
-                            <th>Sucursal / Registro</th>
+                            <th>Sucursal / Inicio Crédito</th>
                             <th>CURP</th>
                             <th>Nombre</th>
                             <th>Grupo</th>
@@ -827,6 +827,17 @@
         </main>
     </div>
 
+    <div id="generic-modal" class="modal-overlay hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="modal-title">Detalle</h2>
+                <button id="modal-close-btn" class="modal-close-btn">&times;</button>
+            </div>
+            <div id="modal-body" class="modal-body">
+                <p>Cargando...</p>
+            </div>
+        </div>
+    </div>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
