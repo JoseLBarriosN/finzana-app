@@ -426,6 +426,36 @@ async function loadClientesTable() {
     }
 }
 
+function inicializarVistaGestionClientes() {
+    const tbody = document.getElementById('tabla-clientes');
+    if (tbody) {
+        tbody.innerHTML = `<tr><td colspan="6">Utiliza los filtros para buscar y mostrar clientes/créditos.</td></tr>`;
+    }
+    // No resetear formulario de cliente aquí, se hace al ir a la vista 'view-cliente'
+    // resetClientForm();
+}
+
+// **MOVIDA ANTES** para resolver ReferenceError
+function limpiarFiltrosClientes() {
+    if (cargaEnProgreso) {
+        cancelarCarga(); // Cancelar búsqueda si está en progreso
+    }
+    // Limpiar campos del formulario de filtros
+    const filtrosGrid = document.getElementById('filtros-grid');
+    if (filtrosGrid) {
+        filtrosGrid.querySelectorAll('input, select').forEach(el => {
+            if (el.type !== 'date') { // No limpiar fechas? O sí? Decisión: limpiarlas también.
+                el.value = '';
+            } else {
+                 el.value = ''; // Limpiar fechas
+            }
+        });
+    }
+    // Limpiar tabla y mensaje de estado
+    inicializarVistaGestionClientes();
+    showStatus('status_gestion_clientes', 'Filtros limpiados. Ingresa nuevos criterios para buscar.', 'info');
+}
+
 // =============================================
 // INICIALIZACIÓN Y EVENT LISTENERS PRINCIPALES
 // =============================================
@@ -526,9 +556,9 @@ function setupEventListeners() {
 
     // --- Gestión de Clientes ---
     const btnAplicarFiltros = document.getElementById('btn-aplicar-filtros');
-    if (btnAplicarFiltros) btnAplicarFiltros.addEventListener('click', loadClientesTable); // ESTA ES LA LÍNEA DEL ERROR
+    if (btnAplicarFiltros) btnAplicarFiltros.addEventListener('click', loadClientesTable); // ESTA ES LA LÍNEA DEL ERROR ANTERIOR
     const btnLimpiarFiltros = document.getElementById('btn-limpiar-filtros');
-    if (btnLimpiarFiltros) btnLimpiarFiltros.addEventListener('click', limpiarFiltrosClientes);
+    if (btnLimpiarFiltros) btnLimpiarFiltros.addEventListener('click', limpiarFiltrosClientes); // ESTA ES LA LÍNEA DEL NUEVO ERROR
 
     // --- Gestión de Usuarios ---
     const btnAplicarFiltrosUsuarios = document.getElementById('btn-aplicar-filtros-usuarios');
@@ -1425,12 +1455,12 @@ async function handleSearchCreditForPayment() {
 
         showFixedProgress(80, 'Calculando historial del crédito...');
         // Usar el historicalIdCredito y CURP para obtener el historial correcto
-        const historial = await obtenerHistorialCreditoCliente(creditoActual.curpCliente, historicalId); // Pasamos historicalId
+        const historial = await obtenerHistorialCreditoCliente(creditoActual.curpCliente, historicalIdCredito); // Pasamos historicalId
 
         if (!historial) {
             // Esto podría pasar si el crédito encontrado tiene datos inconsistentes
              console.error("No se pudo calcular el historial para el crédito:", creditoActual);
-            throw new Error(`No se pudo calcular el historial del crédito ${historicalId}. Verifica los datos del crédito.`);
+            throw new Error(`No se pudo calcular el historial del crédito ${historicalIdCredito}. Verifica los datos del crédito.`);
         }
 
         // Llenar formulario con datos del historial
@@ -2482,6 +2512,7 @@ function actualizarPlazosSegunCliente(esComisionista) {
     const plazosDisponibles = esComisionista ? [10] : [13, 14]; // Lógica de negocio
     popularDropdown('plazo_colocacion', plazosDisponibles.map(p => ({ value: p, text: `${p} semanas` })), 'Selecciona plazo', true);
 }
+
 
 // Listener para el evento 'viewshown' para cargar datos específicos de cada vista
 document.addEventListener('viewshown', function (e) {
