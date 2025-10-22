@@ -283,6 +283,10 @@ function setupEventListeners() {
     // **NUEVO** Event Listener para cerrar el modal genérico
     const modalCloseBtn = document.getElementById('modal-close-btn');
     if (modalCloseBtn) modalCloseBtn.addEventListener('click', () => document.getElementById('generic-modal').classList.add('hidden'));
+
+    // **NUEVO** Event Listener para la herramienta de diagnóstico
+    const btnDiagnosticarPagos = document.getElementById('btn-diagnosticar-pagos');
+    if (btnDiagnosticarPagos) btnDiagnosticarPagos.addEventListener('click', handleDiagnosticarPagos);
 }
 
 // =============================================
@@ -1544,7 +1548,7 @@ async function loadClientesTable() {
 
             if (operationId !== currentSearchOperation) throw new Error("Búsqueda cancelada");
             if (clientesIniciales.length === 0) throw new Error("No se encontraron clientes.");
-            
+
             showFixedProgress(40, `Buscando créditos para ${clientesIniciales.length} clientes...`);
 
             let progress = 40;
@@ -1553,14 +1557,14 @@ async function loadClientesTable() {
                 clientesMap.set(cliente.curp, cliente); // Cache client data
                 const creditosDelCliente = await database.buscarCreditosPorCliente(cliente.curp);
                 creditosAMostrar.push(...creditosDelCliente);
-                
+
                 progress = 40 + (index / clientesIniciales.length) * 30;
                 showFixedProgress(progress, `Revisando cliente ${index + 1} de ${clientesIniciales.length}`);
             }
         } else if (filtros.curpAval || filtros.plazo || filtros.estado) {
             // --- PATH 3: Search by Credit-Only Filters ---
             showFixedProgress(40, `Buscando créditos por filtros...`);
-            // Nota: El filtro de estado de la DB puede no estar 100% actualizado, 
+            // Nota: El filtro de estado de la DB puede no estar 100% actualizado,
             // la validación real se hace después con _calcularEstadoCredito
             creditosAMostrar = await database.buscarCreditos({
                 estado: filtros.estado,
@@ -1597,7 +1601,7 @@ async function loadClientesTable() {
                 if (cliente) clientesMap.set(cliente.curp, cliente);
                 else cliente = { nombre: 'Cliente no encontrado', curp: credito.curpCliente, poblacion_grupo: 'N/A', office: 'N/A' }; // Fallback
             }
-            
+
             // 2. Get Payments & Calculate Status
             const pagos = await database.getPagosPorCredito(credito.id);
             const estadoCalculado = _calcularEstadoCredito(credito, pagos); // Usamos la función de cálculo robusta
@@ -1609,7 +1613,7 @@ async function loadClientesTable() {
             if (filtros.estado && estadoCalculado.estado !== filtros.estado) continue;
             if (filtros.plazo && credito.plazo != filtros.plazo) continue;
             if (filtros.curpAval && (!credito.curpAval || !credito.curpAval.toUpperCase().includes(filtros.curpAval.toUpperCase()))) continue;
-            
+
             if (filtros.sucursal && cliente.office !== filtros.sucursal) continue;
             if (filtros.grupo && cliente.poblacion_grupo !== filtros.grupo) continue;
             if (filtros.curp && !filtros.curp.includes(',') && cliente.curp !== filtros.curp.toUpperCase()) continue;
@@ -1620,19 +1624,19 @@ async function loadClientesTable() {
             resultadosEncontrados++;
 
             // --- Build the Row ---
-            
+
             // Requisito: Fecha de Registro = Fecha de Inicio del Crédito
             const fechaInicioCredito = formatDateForDisplay(parsearFecha(credito.fechaCreacion));
-            
+
             // Requisito: Fecha en Info = Fecha del Último Pago de ESE crédito
             pagos.sort((a, b) => (parsearFecha(b.fecha)?.getTime() || 0) - (parsearFecha(a.fecha)?.getTime() || 0));
             const ultimoPago = pagos.length > 0 ? pagos[0] : null;
             const fechaUltimoPago = formatDateForDisplay(ultimoPago ? parsearFecha(ultimoPago.fecha) : null);
-            
+
             const comisionistaBadge = cliente.isComisionista ? '<span class="comisionista-badge-cliente">★</span>' : '';
             const estadoClase = `status-${estadoCalculado.estado.replace(/\s/g, '-')}`;
             const estadoHTML = `<span class="info-value ${estadoClase}">${estadoCalculado.estado.toUpperCase()}</span>`;
-            
+
             let semanasPagadas = 0;
             const montoPagadoTotal = pagos.reduce((sum, pago) => sum + (pago.monto || 0), 0);
             if (estadoCalculado.pagoSemanal > 0) {
@@ -2106,6 +2110,10 @@ document.addEventListener('viewshown', function (e) {
             break;
         case 'view-usuarios':
             loadUsersTable();
+            // **NUEVO** Limpiar la herramienta de diagnóstico al entrar
+            document.getElementById('diagnostico-id-credito').value = '';
+            document.getElementById('status-diagnostico').classList.add('hidden');
+            document.getElementById('resultado-diagnostico').classList.add('hidden');
             break;
         case 'view-gestion-clientes':
             // No hacer nada aquí, la carga se dispara con el botón de filtrar
@@ -2261,6 +2269,56 @@ async function mostrarHistorialPagos(creditoId) {
     } catch (error) {
         console.error("Error al mostrar historial de pagos:", error);
         modalBody.innerHTML = `<p class="status-message status-error">Error al cargar el historial: ${error.message}</p>`;
+    }
+}
+
+// ====================================================================
+// ** NUEVA FUNCIÓN PARA LA HERRAMIENTA DE DIAGNÓSTICO **
+// ====================================================================
+async function handleDiagnosticarPagos() {
+    const idCredito = document.getElementById('diagnostico-id-credito').value.trim();
+    const statusEl = document.getElementById('status-diagnostico');
+    const resultEl = document.getElementById('resultado-diagnostico');
+    const outputEl = document.getElementById('diagnostico-json-output');
+    const button = document.getElementById('btn-diagnosticar-pagos');
+
+    if (!idCredito) {
+        statusEl.textContent = 'Por favor, ingresa un ID de crédito.';
+        statusEl.className = 'status-message status-warning';
+        statusEl.classList.remove('hidden');
+        resultEl.classList.add('hidden');
+        return;
+    }
+
+    showButtonLoading(button, true, 'Verificando...');
+    statusEl.textContent = 'Buscando pagos en la base de datos...';
+    statusEl.className = 'status-message status-info';
+    statusEl.classList.remove('hidden');
+    resultEl.classList.add('hidden');
+
+    try {
+        const pagos = await database.getPagosPorCredito(idCredito);
+
+        if (pagos.length === 0) {
+            statusEl.textContent = `Diagnóstico completo: Se encontraron 0 pagos para el ID ${idCredito}.`;
+            statusEl.className = 'status-message status-warning';
+            outputEl.textContent = '[]';
+            resultEl.classList.remove('hidden');
+        } else {
+            statusEl.textContent = `Diagnóstico completo: ¡Éxito! Se encontraron ${pagos.length} pagos para el ID ${idCredito}.`;
+            statusEl.className = 'status-message status-success';
+            // Formatear el JSON para que sea legible
+            outputEl.textContent = JSON.stringify(pagos, null, 2);
+            resultEl.classList.remove('hidden');
+        }
+
+    } catch (error) {
+        console.error("Error en diagnóstico:", error);
+        statusEl.textContent = `Error al consultar la base de datos: ${error.message}`;
+        statusEl.className = 'status-message status-error';
+        resultEl.classList.add('hidden');
+    } finally {
+        showButtonLoading(button, false);
     }
 }
 
