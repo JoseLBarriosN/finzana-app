@@ -183,9 +183,10 @@ function setupSecurityListeners() {
 }
 
 // =============================================
-// SECCIÓN DE BÚSQUEDA DE CLIENTES (REESCRITA PARA ALTO RENDIMIENTO)
-// (MOVIDA ANTES DE 'DOMContentLoaded' PARA RESOLVER EL ReferenceError)
+// FUNCIONES MOVIDAS ANTES DE DOMContentLoaded
 // =============================================
+
+// --- Funciones de Gestión de Clientes ---
 async function loadClientesTable() {
     if (cargaEnProgreso) {
         showStatus('status_gestion_clientes', 'Ya hay una búsqueda en progreso. Por favor, espera.', 'warning');
@@ -435,7 +436,6 @@ function inicializarVistaGestionClientes() {
     // resetClientForm();
 }
 
-// **MOVIDA ANTES** para resolver ReferenceError
 function limpiarFiltrosClientes() {
     if (cargaEnProgreso) {
         cancelarCarga(); // Cancelar búsqueda si está en progreso
@@ -454,6 +454,454 @@ function limpiarFiltrosClientes() {
     // Limpiar tabla y mensaje de estado
     inicializarVistaGestionClientes();
     showStatus('status_gestion_clientes', 'Filtros limpiados. Ingresa nuevos criterios para buscar.', 'info');
+}
+
+// --- Funciones de Reportes Avanzados ---
+function inicializarVistaReportesAvanzados() {
+    const tbody = document.getElementById('tabla-reportes_avanzados');
+    if (tbody) {
+        tbody.innerHTML = '<tr><td colspan="10">Aplica los filtros para generar el reporte.</td></tr>';
+    }
+    // Establecer fechas por defecto (ej. último mes)
+    const hoy = new Date();
+    const haceUnMes = new Date(hoy.getFullYear(), hoy.getMonth() - 1, hoy.getDate() + 1); // +1 para incluir hoy si es el mismo día del mes anterior
+    const hoyISO = hoy.toISOString().split('T')[0];
+    const haceUnMesISO = haceUnMes.toISOString().split('T')[0];
+
+    const fechaInicio = document.getElementById('fecha_inicio_reporte');
+    const fechaFin = document.getElementById('fecha_fin_reporte');
+
+    if (fechaInicio) fechaInicio.value = haceUnMesISO;
+    if (fechaFin) fechaFin.value = hoyISO;
+
+    // Limpiar datos de reporte anterior y estadísticas
+    reportData = null;
+    const estadisticasElement = document.getElementById('estadisticas-reporte');
+    if (estadisticasElement) estadisticasElement.innerHTML = '';
+     showStatus('status_reportes_avanzados', 'Filtros inicializados. Presiona "Generar Reporte".', 'info');
+}
+
+function limpiarFiltrosReportes() {
+    if (cargaEnProgreso) {
+        cancelarCarga(); // Cancelar si se está generando un reporte
+    }
+
+    // Limpiar campos de filtro
+    const filtrosContainer = document.getElementById('filtros-reportes-avanzados');
+    if (filtrosContainer) {
+        filtrosContainer.querySelectorAll('input, select').forEach(el => {
+            if (el.type !== 'date') { // No resetear fechas aquí, lo hace inicializarVista
+                el.value = '';
+            }
+        });
+    }
+
+    // Resetear fechas y tabla
+    inicializarVistaReportesAvanzados();
+    showStatus('status_reportes_avanzados', 'Filtros limpiados. Selecciona nuevos criterios y genera el reporte.', 'info');
+}
+
+async function loadAdvancedReports() {
+    if (cargaEnProgreso) {
+        showStatus('status_reportes_avanzados', 'Ya hay una generación de reporte en progreso. Espera a que termine.', 'warning');
+        return;
+    }
+    cargaEnProgreso = true;
+    currentSearchOperation = Date.now(); // Usar para cancelación si es necesario
+    const operationId = currentSearchOperation;
+
+
+    showProcessingOverlay(true, 'Generando reporte avanzado...');
+    showButtonLoading('btn-aplicar-filtros-reportes', true, 'Generando...');
+    showFixedProgress(20, 'Recopilando filtros...');
+    const statusReportes = document.getElementById('status_reportes_avanzados');
+    statusReportes.innerHTML = 'Aplicando filtros y buscando datos...';
+    statusReportes.className = 'status-message status-info';
+     // Limpiar tabla y estadísticas previas
+     document.getElementById('tabla-reportes_avanzados').innerHTML = '<tr><td colspan="10">Generando reporte...</td></tr>';
+     document.getElementById('estadisticas-reporte').innerHTML = '';
+     reportData = null; // Limpiar datos anteriores
+
+
+    try {
+        // Recoger filtros de la UI
+        const filtros = {
+            sucursal: document.getElementById('sucursal_filtro_reporte')?.value || '',
+            grupo: document.getElementById('grupo_filtro_reporte')?.value || '',
+            ruta: document.getElementById('ruta_filtro_reporte')?.value || '',
+            tipoCredito: document.getElementById('tipo_credito_filtro_reporte')?.value || '',
+            estadoCredito: document.getElementById('estado_credito_filtro_reporte')?.value || '',
+            tipoPago: document.getElementById('tipo_pago_filtro_reporte')?.value || '',
+            fechaInicio: document.getElementById('fecha_inicio_reporte')?.value || '',
+            fechaFin: document.getElementById('fecha_fin_reporte')?.value || '',
+            curpCliente: document.getElementById('curp_filtro_reporte')?.value.trim().toUpperCase() || '',
+            idCredito: document.getElementById('id_credito_filtro_reporte')?.value.trim() || '' // ID Histórico
+        };
+
+
+         // Validación simple de fechas
+         if (filtros.fechaInicio && filtros.fechaFin && new Date(filtros.fechaInicio) > new Date(filtros.fechaFin)) {
+             throw new Error("La fecha de inicio no puede ser posterior a la fecha de fin.");
+         }
+
+
+        showFixedProgress(50, 'Consultando base de datos...');
+        // Llamar a la función de database.js
+        const data = await database.generarReporteAvanzado(filtros);
+
+        // Verificar si la operación fue cancelada mientras se esperaba
+        if (operationId !== currentSearchOperation) throw new Error("Búsqueda cancelada");
+
+        reportData = data; // Guardar datos para exportación
+
+        showFixedProgress(80, 'Mostrando resultados...');
+        mostrarReporteAvanzado(reportData); // Función para dibujar la tabla
+        showFixedProgress(100, 'Reporte generado');
+
+        showStatus('status_reportes_avanzados', `Reporte generado: ${reportData.length} registros encontrados.`, 'success');
+
+    } catch (error) {
+         if (error.message === "Búsqueda cancelada") {
+             showStatus('status_reportes_avanzados', 'Generación de reporte cancelada.', 'warning');
+             document.getElementById('tabla-reportes_avanzados').innerHTML = '<tr><td colspan="10">Generación cancelada.</td></tr>';
+         } else {
+            console.error('Error generando reporte avanzado:', error);
+            showStatus('status_reportes_avanzados', `Error al generar el reporte: ${error.message}`, 'error');
+            document.getElementById('tabla-reportes_avanzados').innerHTML = `<tr><td colspan="10">Error: ${error.message}</td></tr>`;
+         }
+          hideFixedProgress(); // Ocultar progreso en error también
+    } finally {
+        // Asegurar que se detenga el estado de carga solo si esta operación terminó
+         if (operationId === currentSearchOperation) {
+            cargaEnProgreso = false;
+            showProcessingOverlay(false);
+            showButtonLoading('btn-aplicar-filtros-reportes', false);
+            setTimeout(hideFixedProgress, 2000); // Ocultar barra después de un tiempo
+        }
+    }
+}
+
+function mostrarReporteAvanzado(data) {
+    const tbody = document.getElementById('tabla-reportes_avanzados');
+    const estadisticasElement = document.getElementById('estadisticas-reporte');
+    if (!tbody || !estadisticasElement) return;
+
+    tbody.innerHTML = ''; // Limpiar tabla
+    estadisticasElement.innerHTML = ''; // Limpiar estadísticas
+
+    if (!data || data.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="10">No se encontraron datos con los filtros aplicados.</td></tr>';
+        return;
+    }
+
+    // Renderizar filas de la tabla
+    data.forEach(item => {
+        const tr = document.createElement('tr');
+
+        // Formatear fechas
+        const fechaRegistro = formatDateForDisplay(parsearFecha(item.fechaRegistro));
+        const fechaCreacion = formatDateForDisplay(parsearFecha(item.fechaCreacion));
+        const fechaPago = formatDateForDisplay(parsearFecha(item.fecha));
+         // Usar ID histórico si existe
+         const idCreditoMostrar = item.historicalIdCredito || item.idCredito || item.id || '';
+
+
+        let rowContent = '';
+        if (item.tipo === 'cliente') {
+            rowContent = `
+                <td>CLIENTE</td>
+                <td>${item.curp || ''}</td>
+                <td>${item.nombre || ''}</td>
+                <td>${item.poblacion_grupo || ''}</td>
+                <td>${item.ruta || ''}</td>
+                <td>${item.office || ''}</td>
+                <td>${fechaRegistro}</td>
+                <td>Registro</td>
+                <td>-</td>
+                <td>-</td>
+                <td>-</td> `;
+        } else if (item.tipo === 'credito') {
+            rowContent = `
+                <td>CRÉDITO</td>
+                <td>${item.curpCliente || ''}</td>
+                <td>${item.nombreCliente || ''}</td>
+                <td>${item.poblacion_grupo || ''}</td>
+                <td>${item.ruta || ''}</td>
+                <td>${item.office || ''}</td>
+                <td>${fechaCreacion}</td>
+                <td>${item.tipo || 'Colocación'}</td>
+                <td>$${(item.monto || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                <td>$${(item.saldo !== undefined ? item.saldo : 'N/A').toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                 <td>${idCreditoMostrar}</td>
+            `;
+        } else if (item.tipo === 'pago') {
+            rowContent = `
+                <td>PAGO</td>
+                <td>${item.curpCliente || ''}</td>
+                <td>${item.nombreCliente || ''}</td>
+                <td>${item.poblacion_grupo || ''}</td>
+                <td>${item.ruta || ''}</td>
+                <td>${item.office || ''}</td>
+                <td>${fechaPago}</td>
+                <td>${item.tipoPago || 'Pago'}</td>
+                <td>$${(item.monto || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                <td>$${(item.saldoDespues !== undefined ? item.saldoDespues : 'N/A').toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                 <td>${idCreditoMostrar}</td>
+            `;
+        }
+
+        tr.innerHTML = rowContent;
+        tbody.appendChild(tr);
+    });
+
+    // Calcular y mostrar estadísticas
+    const totalRegistros = data.length;
+    const totalClientes = new Set(data.filter(item => item.tipo === 'cliente').map(item => item.curp)).size; // Contar clientes únicos
+    const totalCreditos = new Set(data.filter(item => item.tipo === 'credito').map(item => item.historicalIdCredito || item.id)).size; // Contar créditos únicos
+    const totalPagos = data.filter(item => item.tipo === 'pago').length;
+    const totalMontoPagos = data.filter(item => item.tipo === 'pago').reduce((sum, item) => sum + (item.monto || 0), 0);
+     const totalMontoColocado = data.filter(item => item.tipo === 'credito').reduce((sum, item) => sum + (item.monto || 0), 0);
+
+
+    estadisticasElement.innerHTML = `
+        <div class="status-message status-info">
+            <strong>Resumen del Reporte:</strong><br>
+            Registros Totales: ${totalRegistros} |
+            Clientes Únicos (en reporte): ${totalClientes} |
+            Créditos Únicos (en reporte): ${totalCreditos} |
+            Total Pagos: ${totalPagos} |
+            Monto Total Pagado: $${totalMontoPagos.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} |
+             Monto Total Colocado (en reporte): $${totalMontoColocado.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+        </div>
+    `;
+}
+
+function exportToCSV() {
+    if (!reportData || reportData.length === 0) {
+        showStatus('status_reportes_avanzados', 'No hay datos para exportar. Genera un reporte primero.', 'warning');
+        return;
+    }
+
+    showProcessingOverlay(true, 'Generando archivo CSV...');
+    showButtonLoading('btn-exportar-csv', true, 'Generando...');
+    showFixedProgress(50, 'Preparando datos...');
+
+    try {
+         // Añadir ID Histórico al header y a las filas
+        const headers = ['Tipo', 'CURP', 'Nombre', 'Grupo/Población', 'Ruta', 'Sucursal', 'Fecha', 'Tipo Operación', 'Monto', 'Saldo', 'ID Crédito (Hist)'];
+        let csvContent = headers.join(',') + '\n';
+
+        showFixedProgress(70, 'Convirtiendo datos a CSV...');
+        reportData.forEach(item => {
+            let row = [];
+            const fechaRegistro = formatDateForDisplay(parsearFecha(item.fechaRegistro));
+            const fechaCreacion = formatDateForDisplay(parsearFecha(item.fechaCreacion));
+            const fechaPago = formatDateForDisplay(parsearFecha(item.fecha));
+             const idCreditoMostrar = item.historicalIdCredito || item.idCredito || item.id || '';
+             // Función auxiliar para escapar comas y comillas en campos de texto
+             const escapeCSV = (field) => {
+                 if (field === undefined || field === null) return '';
+                 let str = String(field);
+                 // Si contiene comillas, coma o nueva línea, encerrar entre comillas y duplicar comillas internas
+                 if (str.includes('"') || str.includes(',') || str.includes('\n')) {
+                     str = `"${str.replace(/"/g, '""')}"`;
+                 }
+                 return str;
+             };
+
+
+            if (item.tipo === 'cliente') {
+                row = [
+                    'CLIENTE',
+                    escapeCSV(item.curp),
+                    escapeCSV(item.nombre),
+                    escapeCSV(item.poblacion_grupo),
+                    escapeCSV(item.ruta),
+                    escapeCSV(item.office),
+                    fechaRegistro,
+                    'Registro',
+                    '', // Monto
+                    '', // Saldo
+                    '' // ID Crédito
+                ];
+            } else if (item.tipo === 'credito') {
+                row = [
+                    'CRÉDITO',
+                    escapeCSV(item.curpCliente),
+                    escapeCSV(item.nombreCliente),
+                    escapeCSV(item.poblacion_grupo),
+                    escapeCSV(item.ruta),
+                    escapeCSV(item.office),
+                    fechaCreacion,
+                    escapeCSV(item.tipo || 'Colocación'),
+                    item.monto || 0,
+                    item.saldo !== undefined ? item.saldo : '',
+                    escapeCSV(idCreditoMostrar)
+                ];
+            } else if (item.tipo === 'pago') {
+                row = [
+                    'PAGO',
+                    escapeCSV(item.curpCliente),
+                    escapeCSV(item.nombreCliente),
+                    escapeCSV(item.poblacion_grupo),
+                    escapeCSV(item.ruta),
+                    escapeCSV(item.office),
+                    fechaPago,
+                    escapeCSV(item.tipoPago || 'Pago'),
+                    item.monto || 0,
+                    item.saldoDespues !== undefined ? item.saldoDespues : '',
+                    escapeCSV(idCreditoMostrar)
+                ];
+            }
+
+            csvContent += row.join(',') + '\n';
+        });
+
+        showFixedProgress(90, 'Creando archivo descargable...');
+        // Crear Blob con BOM para mejor compatibilidad Excel con acentos/ñ
+         const bom = new Uint8Array([0xEF, 0xBB, 0xBF]);
+        const blob = new Blob([bom, csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        if (link.download !== undefined) { // Check for download attribute support
+            const url = URL.createObjectURL(blob);
+            link.setAttribute('href', url);
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            link.setAttribute('download', `reporte_finzana_${timestamp}.csv`);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+             URL.revokeObjectURL(url); // Liberar memoria
+        } else {
+             // Fallback para navegadores antiguos (puede abrir en la misma pestaña)
+             alert("Tu navegador no soporta la descarga directa. El archivo CSV podría abrirse en una nueva pestaña.");
+             const url = URL.createObjectURL(blob);
+             window.open(url);
+        }
+
+        showFixedProgress(100, 'Archivo CSV exportado');
+        showStatus('status_reportes_avanzados', 'Archivo CSV exportado exitosamente.', 'success');
+    } catch (error) {
+        console.error('Error exportando CSV:', error);
+        showStatus('status_reportes_avanzados', `Error al exportar CSV: ${error.message}`, 'error');
+         hideFixedProgress();
+    } finally {
+        showProcessingOverlay(false);
+        showButtonLoading('btn-exportar-csv', false);
+        setTimeout(hideFixedProgress, 2000);
+    }
+}
+
+function exportToPDF() {
+    if (!reportData || reportData.length === 0) {
+        alert('No hay datos para exportar. Genera un reporte primero.');
+        return;
+    }
+
+    showProcessingOverlay(true, 'Generando archivo PDF...');
+    showButtonLoading('btn-exportar-pdf', true, 'Generando...');
+    showFixedProgress(30, 'Preparando contenido para PDF...');
+
+    try {
+        const tableElement = document.getElementById('tabla-reportes_avanzados');
+         const titleElement = document.querySelector('#view-reportes-avanzados h2');
+         const filtersElement = document.getElementById('filtros-reportes-avanzados'); // Para incluir filtros aplicados
+         const statsElement = document.getElementById('estadisticas-reporte');
+
+
+        if (!tableElement) {
+            throw new Error('No se encontró la tabla del reporte para exportar.');
+        }
+
+         // Crear un contenedor temporal para el contenido del PDF
+         const contentForPdf = document.createElement('div');
+         contentForPdf.style.padding = '20px'; // Añadir padding
+         contentForPdf.style.fontFamily = 'Arial, sans-serif'; // Fuente común para PDF
+         contentForPdf.style.fontSize = '10px'; // Tamaño base más pequeño para PDF
+
+
+         // Añadir Título
+         if (titleElement) {
+             const titleClone = titleElement.cloneNode(true);
+             titleClone.style.textAlign = 'center';
+             titleClone.style.marginBottom = '15px';
+             contentForPdf.appendChild(titleClone);
+         }
+
+
+         // Añadir Resumen de Filtros (Opcional, pero útil)
+          if (filtersElement) {
+              const filtersSummary = document.createElement('div');
+              filtersSummary.style.marginBottom = '15px';
+              filtersSummary.style.fontSize = '9px';
+              filtersSummary.style.border = '1px solid #ccc';
+              filtersSummary.style.padding = '10px';
+              filtersSummary.innerHTML = '<strong>Filtros Aplicados:</strong><br>';
+              filtersElement.querySelectorAll('input, select').forEach(el => {
+                   if (el.value && el.id) {
+                       const label = filtersElement.querySelector(`label[for="${el.id}"]`)?.textContent || el.id;
+                       filtersSummary.innerHTML += `${label}: ${el.selectedOptions ? el.selectedOptions[0].text : el.value}<br>`;
+                   }
+              });
+              contentForPdf.appendChild(filtersSummary);
+          }
+
+         // Añadir Estadísticas
+         if (statsElement) {
+             const statsClone = statsElement.cloneNode(true);
+             statsClone.style.marginBottom = '15px';
+              // Quitar clases de status message para que no tenga fondo/borde de color
+              statsClone.querySelector('div')?.classList.remove('status-message', 'status-info', 'status-success', 'status-warning', 'status-error');
+             contentForPdf.appendChild(statsClone);
+         }
+
+
+        // Clonar tabla y ajustar estilos para PDF
+        const tableClone = tableElement.cloneNode(true);
+         tableClone.style.width = '100%';
+         tableClone.style.borderCollapse = 'collapse';
+         tableClone.querySelectorAll('th, td').forEach(cell => {
+             cell.style.border = '1px solid #ddd';
+             cell.style.padding = '4px 6px';
+             cell.style.fontSize = '9px'; // Reducir tamaño de fuente en tabla
+         });
+         tableClone.querySelector('thead').style.backgroundColor = '#f2f2f2';
+         contentForPdf.appendChild(tableClone);
+
+
+        const opt = {
+            margin:       [1, 1, 1, 1], // Márgenes en cm (top, left, bottom, right)
+            filename:     `reporte_finzana_${new Date().toISOString().replace(/[:.]/g, '-')}.pdf`,
+            image:        { type: 'jpeg', quality: 0.95 },
+            html2canvas:  { scale: 2, useCORS: true }, // scale mejora calidad, useCORS si hay imágenes externas
+            jsPDF:        { unit: 'cm', format: 'a4', orientation: 'landscape' }, // Hoja A4 horizontal
+             pagebreak:    { mode: ['avoid-all', 'css', 'legacy'] } // Intentar evitar cortes feos
+        };
+
+        showFixedProgress(70, 'Generando PDF...');
+
+        // Usar html2pdf
+        html2pdf().set(opt).from(contentForPdf).save()
+            .then(() => {
+                showFixedProgress(100, 'PDF generado');
+                showStatus('status_reportes_avanzados', 'Archivo PDF exportado exitosamente.', 'success');
+                 showProcessingOverlay(false);
+                 showButtonLoading('btn-exportar-pdf', false);
+                 setTimeout(hideFixedProgress, 2000);
+            })
+            .catch(error => {
+                console.error('Error generando PDF con html2pdf:', error);
+                throw new Error(`Error al generar PDF: ${error.message}`); // Re-lanzar para el catch principal
+            });
+
+    } catch (error) {
+        console.error('Error preparando contenido para PDF:', error);
+        showStatus('status_reportes_avanzados', `Error al exportar PDF: ${error.message}`, 'error');
+        showProcessingOverlay(false);
+        showButtonLoading('btn-exportar-pdf', false);
+        hideFixedProgress();
+    }
+     // No usar finally aquí porque html2pdf().save() es asíncrono y necesitamos el .then/.catch
 }
 
 // =============================================
@@ -558,7 +1006,7 @@ function setupEventListeners() {
     const btnAplicarFiltros = document.getElementById('btn-aplicar-filtros');
     if (btnAplicarFiltros) btnAplicarFiltros.addEventListener('click', loadClientesTable); // ESTA ES LA LÍNEA DEL ERROR ANTERIOR
     const btnLimpiarFiltros = document.getElementById('btn-limpiar-filtros');
-    if (btnLimpiarFiltros) btnLimpiarFiltros.addEventListener('click', limpiarFiltrosClientes); // ESTA ES LA LÍNEA DEL NUEVO ERROR
+    if (btnLimpiarFiltros) btnLimpiarFiltros.addEventListener('click', limpiarFiltrosClientes); // ESTA ES LA LÍNEA DEL ERROR ANTERIOR
 
     // --- Gestión de Usuarios ---
     const btnAplicarFiltrosUsuarios = document.getElementById('btn-aplicar-filtros-usuarios');
@@ -640,7 +1088,7 @@ function setupEventListeners() {
 
     // --- Reportes Avanzados ---
     const btnAplicarFiltrosReportes = document.getElementById('btn-aplicar-filtros-reportes');
-    if (btnAplicarFiltrosReportes) btnAplicarFiltrosReportes.addEventListener('click', loadAdvancedReports);
+    if (btnAplicarFiltrosReportes) btnAplicarFiltrosReportes.addEventListener('click', loadAdvancedReports); // ESTA ES LA LÍNEA DEL NUEVO ERROR
     const btnExportarCsv = document.getElementById('btn-exportar-csv');
     if (btnExportarCsv) btnExportarCsv.addEventListener('click', exportToCSV);
     const btnExportarPdf = document.getElementById('btn-exportar-pdf');
@@ -1455,12 +1903,13 @@ async function handleSearchCreditForPayment() {
 
         showFixedProgress(80, 'Calculando historial del crédito...');
         // Usar el historicalIdCredito y CURP para obtener el historial correcto
-        const historial = await obtenerHistorialCreditoCliente(creditoActual.curpCliente, historicalIdCredito); // Pasamos historicalId
+         const historicalId = creditoActual.historicalIdCredito || creditoActual.id; // Asegurar que tenemos el historicalId
+        const historial = await obtenerHistorialCreditoCliente(creditoActual.curpCliente, historicalId); // Pasamos historicalId
 
         if (!historial) {
             // Esto podría pasar si el crédito encontrado tiene datos inconsistentes
              console.error("No se pudo calcular el historial para el crédito:", creditoActual);
-            throw new Error(`No se pudo calcular el historial del crédito ${historicalIdCredito}. Verifica los datos del crédito.`);
+            throw new Error(`No se pudo calcular el historial del crédito ${historicalId}. Verifica los datos del crédito.`);
         }
 
         // Llenar formulario con datos del historial
@@ -1509,10 +1958,11 @@ async function handlePaymentForm(e) {
     const statusCobranza = document.getElementById('status_cobranza');
 
 
-    if (!creditoActual || !creditoActual.id || !creditoActual.historicalIdCredito) {
+    if (!creditoActual || !creditoActual.id || !(creditoActual.historicalIdCredito || creditoActual.id)) { // Usar ID de firestore o histórico como fallback
         showStatus('status_cobranza', 'Error: No hay un crédito válido seleccionado. Por favor, busca el crédito de nuevo.', 'error');
         return;
     }
+    const historicalId = creditoActual.historicalIdCredito || creditoActual.id; // ID a guardar en el pago
 
 
     const montoInput = document.getElementById('monto_cobranza');
@@ -1545,7 +1995,7 @@ async function handlePaymentForm(e) {
 
     try {
         const pagoData = {
-            idCredito: creditoActual.historicalIdCredito, // Guardar el ID histórico en el pago
+            idCredito: historicalId, // Guardar el ID histórico/original en el pago
             monto: montoPago,
             tipoPago: tipoPago
              // curpCliente y office se añadirán dentro de database.agregarPago
@@ -1614,7 +2064,8 @@ function handleMontoPagoChange() {
           const statusCobranza = document.getElementById('status_cobranza');
           if (statusCobranza.classList.contains('status-warning') && statusCobranza.textContent.includes('excede')) {
                // Volver a mensaje de 'listo para registrar' si es el caso
-               showStatus('status_cobranza', `Crédito ${creditoActual.historicalIdCredito} encontrado (${creditoActual.curpCliente}). Listo para registrar pago.`, 'success');
+                const historicalId = creditoActual.historicalIdCredito || creditoActual.id;
+               showStatus('status_cobranza', `Crédito ${historicalId} encontrado (${creditoActual.curpCliente}). Listo para registrar pago.`, 'success');
           }
      }
 }
