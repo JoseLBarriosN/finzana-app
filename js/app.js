@@ -182,14 +182,261 @@ function setupSecurityListeners() {
     });
 }
 
+// =============================================
+// SECCIÓN DE BÚSQUEDA DE CLIENTES (REESCRITA PARA ALTO RENDIMIENTO)
+// (MOVIDA ANTES DE 'DOMContentLoaded' PARA RESOLVER EL ReferenceError)
+// =============================================
+async function loadClientesTable() {
+    if (cargaEnProgreso) {
+        showStatus('status_gestion_clientes', 'Ya hay una búsqueda en progreso. Por favor, espera.', 'warning');
+        return;
+    }
+    cargaEnProgreso = true;
+    currentSearchOperation = Date.now();
+    const operationId = currentSearchOperation;
+
+    const tbody = document.getElementById('tabla-clientes');
+    tbody.innerHTML = '<tr><td colspan="6">Buscando...</td></tr>';
+    showButtonLoading('btn-aplicar-filtros', true, 'Buscando...');
+    showFixedProgress(10, 'Iniciando búsqueda...');
+
+    try {
+        const filtros = {
+            sucursal: document.getElementById('sucursal_filtro')?.value || '',
+            curp: document.getElementById('curp_filtro')?.value?.trim() || '',
+            nombre: document.getElementById('nombre_filtro')?.value?.trim() || '',
+            idCredito: document.getElementById('id_credito_filtro')?.value?.trim() || '',
+            estado: document.getElementById('estado_credito_filtro')?.value || '',
+            curpAval: document.getElementById('curp_aval_filtro')?.value?.trim() || '',
+            plazo: document.getElementById('plazo_filtro')?.value || '',
+            grupo: document.getElementById('grupo_filtro')?.value || ''
+        };
+
+        const hayFiltros = Object.values(filtros).some(val => val && val.trim() !== '');
+        if (!hayFiltros) {
+            tbody.innerHTML = '<tr><td colspan="6">Por favor, especifica al menos un criterio de búsqueda.</td></tr>';
+            throw new Error("Búsqueda vacía");
+        }
+
+        let creditosAMostrar = [];
+        const clientesMap = new Map(); // Cache para client data
+
+        showFixedProgress(25, 'Obteniendo datos base...');
+
+        if (filtros.idCredito) {
+            // --- PATH 1: Search by Credit ID (Historical ID) ---
+             // Usar la función que busca por historicalIdCredito
+            creditosAMostrar = await database.buscarCreditosPorHistoricalId(filtros.idCredito);
+        } else if (filtros.curp || filtros.nombre || filtros.grupo || filtros.sucursal) {
+            // --- PATH 2: Search by Client Filters ---
+            const clientesIniciales = await database.buscarClientes({
+                sucursal: filtros.sucursal,
+                curp: filtros.curp, // Puede ser individual o múltiple separado por comas
+                nombre: filtros.nombre,
+                grupo: filtros.grupo
+            });
+
+
+            if (operationId !== currentSearchOperation) throw new Error("Búsqueda cancelada");
+            if (clientesIniciales.length === 0) throw new Error("No se encontraron clientes.");
+
+            showFixedProgress(40, `Buscando créditos para ${clientesIniciales.length} clientes...`);
+
+            let progress = 40;
+            for (const [index, cliente] of clientesIniciales.entries()) {
+                if (operationId !== currentSearchOperation) throw new Error("Búsqueda cancelada");
+                clientesMap.set(cliente.curp, cliente); // Cache client data
+                const creditosDelCliente = await database.buscarCreditosPorCliente(cliente.curp);
+                creditosAMostrar.push(...creditosDelCliente);
+
+                progress = 40 + Math.round((index / clientesIniciales.length) * 30); // Ajustar progreso
+                showFixedProgress(progress, `Revisando cliente ${index + 1} de ${clientesIniciales.length}`);
+            }
+        } else if (filtros.curpAval || filtros.plazo || filtros.estado) {
+            // --- PATH 3: Search by Credit-Only Filters ---
+            showFixedProgress(40, `Buscando créditos por filtros...`);
+            // Nota: El filtro de estado de la DB puede no estar 100% actualizado,
+            // la validación real se hace después con _calcularEstadoCredito
+            creditosAMostrar = await database.buscarCreditos({
+                // Pasar filtros relevantes a buscarCreditos
+                estado: filtros.estado,
+                curpAval: filtros.curpAval,
+                plazo: filtros.plazo
+                // No pasamos idCredito aquí porque ya se manejó
+            });
+        } else {
+             tbody.innerHTML = '<tr><td colspan="6">Combinación de filtros no soportada o vacía.</td></tr>';
+             throw new Error("Filtros inválidos");
+        }
+
+
+        if (operationId !== currentSearchOperation) throw new Error("Búsqueda cancelada");
+        if (creditosAMostrar.length === 0) throw new Error("No se encontraron créditos que coincidan con los filtros iniciales.");
+
+        showFixedProgress(70, `Procesando ${creditosAMostrar.length} créditos...`);
+        tbody.innerHTML = '';
+        let resultadosEncontrados = 0;
+        let creditosProcesados = 0;
+
+        // Ordenar créditos por fecha de creación, más reciente primero
+        creditosAMostrar.sort((a, b) => (parsearFecha(b.fechaCreacion)?.getTime() || 0) - (parsearFecha(a.fechaCreacion)?.getTime() || 0));
+
+        for (const credito of creditosAMostrar) {
+            if (operationId !== currentSearchOperation) throw new Error("Búsqueda cancelada");
+
+            creditosProcesados++;
+            const progress = 70 + Math.round((creditosProcesados / creditosAMostrar.length) * 30);
+            showFixedProgress(progress, `Procesando crédito ${creditosProcesados} de ${creditosAMostrar.length}...`);
+
+            // 1. Get Client Data (from cache or DB)
+            let cliente = clientesMap.get(credito.curpCliente);
+            if (!cliente) {
+                cliente = await database.buscarClientePorCURP(credito.curpCliente);
+                if (cliente) {
+                    clientesMap.set(cliente.curp, cliente);
+                } else {
+                    // Crear un objeto cliente temporal si no se encuentra
+                    cliente = { id: null, nombre: 'Cliente no encontrado', curp: credito.curpCliente, poblacion_grupo: credito.poblacion_grupo || 'N/A', office: credito.office || 'N/A', isComisionista: false };
+                    console.warn(`No se encontró cliente para CURP ${credito.curpCliente} asociado al crédito ID Firestore ${credito.id}`);
+                }
+            }
+
+            // 2. Get Payments & Calculate Status (using historicalIdCredito)
+             const historicalId = credito.historicalIdCredito || credito.id; // Usar historical si existe, si no, el de Firestore (para nuevos)
+            const pagos = await database.getPagosPorCredito(historicalId); // Busca pagos por ID histórico
+            const estadoCalculado = _calcularEstadoCredito(credito, pagos); // Calcula estado basado en datos del crédito y sus pagos
+
+
+            if (!estadoCalculado) {
+                 console.warn(`No se pudo calcular el estado para el crédito ID Firestore ${credito.id} (Histórico: ${historicalId})`);
+                continue; // Saltar créditos con datos inconsistentes que impiden calcular estado
+            }
+
+
+            // 3. Apply secondary filters (filters not fully applied in the initial DB query)
+            if (filtros.estado && estadoCalculado.estado !== filtros.estado) continue;
+            if (filtros.plazo && credito.plazo != filtros.plazo) continue;
+            if (filtros.curpAval && (!credito.curpAval || !credito.curpAval.toUpperCase().includes(filtros.curpAval.toUpperCase()))) continue;
+            if (filtros.sucursal && cliente.office !== filtros.sucursal) continue; // Re-verificar sucursal del cliente
+             if (filtros.grupo && cliente.poblacion_grupo !== filtros.grupo) continue; // Re-verificar grupo del cliente
+             // Si se buscó por CURP/Nombre y la query inicial fue amplia (muchos clientes), re-verificar aquí
+             if (filtros.curp && !filtros.curp.includes(',') && cliente.curp !== filtros.curp.toUpperCase()) continue;
+             if (filtros.nombre && !(cliente.nombre || '').toLowerCase().includes(filtros.nombre.toLowerCase())) continue;
+             // Si se buscó por ID histórico, ya está filtrado
+
+
+            resultadosEncontrados++;
+
+            // --- Build the Row ---
+
+            const fechaInicioCredito = formatDateForDisplay(parsearFecha(credito.fechaCreacion));
+
+            // Fecha del Último Pago de ESTE crédito (histórico)
+             // Ordenar pagos de este crédito por fecha
+            pagos.sort((a, b) => (parsearFecha(b.fecha)?.getTime() || 0) - (parsearFecha(a.fecha)?.getTime() || 0));
+            const ultimoPago = pagos.length > 0 ? pagos[0] : null;
+            const fechaUltimoPago = formatDateForDisplay(ultimoPago ? parsearFecha(ultimoPago.fecha) : null);
+
+            const comisionistaBadge = cliente.isComisionista ? '<span class="comisionista-badge-cliente" title="Comisionista">★</span>' : '';
+            const estadoClase = `status-${estadoCalculado.estado.replace(/\s/g, '-')}`;
+            const estadoHTML = `<span class="info-value ${estadoClase}">${estadoCalculado.estado.toUpperCase()}</span>`;
+
+            // Semanas pagadas (basado en monto pagado y pago semanal)
+            let semanasPagadas = 0;
+            const montoPagadoTotal = pagos.reduce((sum, pago) => sum + (pago.monto || 0), 0);
+            if (estadoCalculado.pagoSemanal > 0) {
+                semanasPagadas = Math.floor(montoPagadoTotal / estadoCalculado.pagoSemanal);
+            }
+             // Si está liquidado, mostrar plazo completo
+            if (estadoCalculado.estado === 'liquidado' && credito.plazo) {
+                semanasPagadas = credito.plazo;
+            }
+
+            // Saldo restante (basado en saldo del objeto crédito, que es el más actualizado)
+            const saldoRestante = credito.saldo !== undefined ? credito.saldo : Math.max(0, (credito.montoTotal || 0) - montoPagadoTotal);
+
+
+            // Botón de Historial de Pagos (pasa historicalId y CURP)
+            const infoCreditoHTML = `
+                <div class="credito-info">
+                    <div class="info-grid">
+                        <div class="info-item"><span class="info-label">ID Crédito (Hist):</span><span class="info-value">${historicalId}</span></div>
+                        <div class="info-item"><span class="info-label">Estado:</span>${estadoHTML}</div>
+                        <div class="info-item"><span class="info-label">Saldo Actual:</span><span class="info-value">$${saldoRestante.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
+                        <div class="info-item"><span class="info-label">Semanas Pagadas:</span><span class="info-value">${semanasPagadas} de ${credito.plazo || '?'}</span></div>
+                        ${estadoCalculado.semanasAtraso > 0 ? `<div class="info-item"><span class="info-label">Semanas Atraso:</span><span class="info-value">${estadoCalculado.semanasAtraso}</span></div>` : ''}
+                        <div class="info-item"><span class="info-label">Último Pago:</span><span class="info-value">${fechaUltimoPago}</span></div>
+                        <div class="info-item"><span class="info-label">Nombre Aval:</span><span class="info-value">${credito.nombreAval || 'N/A'}</span></div>
+                         <div class="info-item"><span class="info-label">CURP Aval:</span><span class="info-value">${credito.curpAval || 'N/A'}</span></div>
+                    </div>
+                    <button class="btn btn-sm btn-info" onclick="mostrarHistorialPagos('${historicalId}', '${credito.curpCliente}')" style="width: 100%; margin-top: 10px;">
+                        <i class="fas fa-receipt"></i> Ver Historial de Pagos (${pagos.length})
+                    </button>
+                </div>`;
+
+            // Construir fila HTML
+            const rowHTML = `
+                <tr>
+                    <td><b>${cliente.office || 'N/A'}</b><br><small>Inicio Créd.: ${fechaInicioCredito}</small></td>
+                    <td>${cliente.curp}</td>
+                    <td>${cliente.nombre} ${comisionistaBadge}</td>
+                    <td>${cliente.poblacion_grupo}</td>
+                    <td>${infoCreditoHTML}</td>
+                    <td class="action-buttons">
+                        ${cliente.id ? `<button class="btn btn-sm btn-info" onclick="editCliente('${cliente.id}')" title="Editar Cliente"><i class="fas fa-edit"></i></button>` : ''}
+                        ${cliente.id ? `<button class="btn btn-sm btn-danger" onclick="deleteCliente('${cliente.id}', '${cliente.nombre}')" title="Eliminar Cliente"><i class="fas fa-trash"></i></button>` : ''}
+                        </td>
+                </tr>`;
+            tbody.insertAdjacentHTML('beforeend', rowHTML); // Usar insertAdjacentHTML para mejor rendimiento
+        }
+
+        if (resultadosEncontrados === 0) {
+            tbody.innerHTML = '<tr><td colspan="6">No se encontraron créditos que coincidan con todos los criterios de filtro aplicados.</td></tr>';
+        }
+
+        showFixedProgress(100, `Búsqueda completada: ${resultadosEncontrados} resultados encontrados.`);
+
+    } catch (error) {
+         // Manejar errores conocidos de forma más amigable
+        if (error.message === "Búsqueda cancelada") {
+             tbody.innerHTML = '<tr><td colspan="6">Búsqueda cancelada por el usuario.</td></tr>';
+             showStatus('status_gestion_clientes', 'Búsqueda cancelada.', 'info');
+        } else if (error.message === "Búsqueda vacía" || error.message === "Filtros inválidos") {
+             tbody.innerHTML = '<tr><td colspan="6">Por favor, especifica al menos un criterio de búsqueda válido.</td></tr>';
+             showStatus('status_gestion_clientes', 'Especifica filtros para buscar.', 'warning');
+        } else if (error.message === "No se encontraron clientes.") {
+             tbody.innerHTML = '<tr><td colspan="6">No se encontraron clientes que coincidan con los filtros iniciales.</td></tr>';
+             showStatus('status_gestion_clientes', 'No se encontraron clientes.', 'info');
+        } else if (error.message === "No se encontraron créditos que coincidan con los filtros iniciales.") {
+            tbody.innerHTML = '<tr><td colspan="6">No se encontraron créditos para los clientes/filtros especificados.</td></tr>';
+            showStatus('status_gestion_clientes', 'No se encontraron créditos asociados.', 'info');
+        } else {
+            // Error inesperado
+            console.error('Error en loadClientesTable:', error);
+            tbody.innerHTML = `<tr><td colspan="6">Error al cargar los datos: ${error.message}. Revisa la consola para más detalles.</td></tr>`;
+             showStatus('status_gestion_clientes', `Error: ${error.message}`, 'error');
+        }
+    } finally {
+        // Asegurar que los indicadores de carga se detengan solo si esta operación específica terminó
+        if (operationId === currentSearchOperation) {
+            cargaEnProgreso = false;
+            showButtonLoading('btn-aplicar-filtros', false);
+            setTimeout(hideFixedProgress, 2000); // Ocultar barra después de un tiempo
+        }
+    }
+}
+
+// =============================================
+// INICIALIZACIÓN Y EVENT LISTENERS PRINCIPALES
+// =============================================
 
 document.addEventListener('DOMContentLoaded', function () {
     console.log('DOM cargado, inicializando aplicación...');
-    inicializarDropdowns();
-    setupEventListeners();
-    setupSecurityListeners();
+    inicializarDropdowns(); // Poblar selects estáticos
+    setupEventListeners(); // Configurar todos los listeners
+    setupSecurityListeners(); // Configurar timer de inactividad, etc.
 
-    // Listener para estado de autenticación
+    // Listener para estado de autenticación (ya incluye la lógica de mostrar/ocultar vistas)
     auth.onAuthStateChanged(async user => {
         console.log('Estado de autenticación cambiado:', user ? user.uid : 'No user');
         const loadingOverlay = document.getElementById('loading-overlay');
@@ -279,7 +526,7 @@ function setupEventListeners() {
 
     // --- Gestión de Clientes ---
     const btnAplicarFiltros = document.getElementById('btn-aplicar-filtros');
-    if (btnAplicarFiltros) btnAplicarFiltros.addEventListener('click', loadClientesTable);
+    if (btnAplicarFiltros) btnAplicarFiltros.addEventListener('click', loadClientesTable); // ESTA ES LA LÍNEA DEL ERROR
     const btnLimpiarFiltros = document.getElementById('btn-limpiar-filtros');
     if (btnLimpiarFiltros) btnLimpiarFiltros.addEventListener('click', limpiarFiltrosClientes);
 
@@ -617,7 +864,7 @@ async function handleClientForm(e) {
 
     // Validar CURP
     if (!validarFormatoCURP(curp)) {
-        showStatus('status_cliente', 'El formato del CURP es incorrecto (debe tener 18 caracteres).', 'error');
+        showStatus('status_cliente', 'El formato del CURP es incorrecto (debe tener 18 caracteres y seguir el patrón).', 'error');
         curpInput.classList.add('input-error'); // Marcar campo con error
         return;
     } else {
@@ -965,7 +1212,7 @@ async function handleSearchClientForCredit() {
 
 
     if (!validarFormatoCURP(curp)) {
-        showStatus('status_colocacion', 'El CURP debe tener 18 caracteres.', 'error');
+        showStatus('status_colocacion', 'El CURP debe tener 18 caracteres y formato válido.', 'error');
         formColocacion.classList.add('hidden'); // Ocultar formulario si CURP es inválido
         return;
     }
@@ -1012,6 +1259,16 @@ async function handleSearchClientForCredit() {
         // Llenar datos y mostrar formulario
         document.getElementById('nombre_colocacion').value = cliente.nombre;
         document.getElementById('idCredito_colocacion').value = 'Se asignará automáticamente'; // O manejar ID histórico si aplica
+         // Resetear campos específicos del crédito
+         document.getElementById('tipo_colocacion').value = '';
+         document.getElementById('monto_colocacion').value = '';
+         document.getElementById('plazo_colocacion').value = ''; // Se actualiza con actualizarPlazosSegunCliente
+         document.getElementById('montoTotal_colocacion').value = '';
+         document.getElementById('curpAval_colocacion').value = '';
+         document.getElementById('nombreAval_colocacion').value = '';
+         validarCURP(document.getElementById('curpAval_colocacion')); // Resetear validación visual aval
+
+
         formColocacion.classList.remove('hidden');
 
 
@@ -1037,7 +1294,8 @@ async function handleCreditForm(e) {
 
 
     // Recoger datos del formulario
-    const curpAval = document.getElementById('curpAval_colocacion').value.trim().toUpperCase();
+    const curpAvalInput = document.getElementById('curpAval_colocacion');
+    const curpAval = curpAvalInput.value.trim().toUpperCase();
     const creditoData = {
         curpCliente: document.getElementById('curp_colocacion').value.trim().toUpperCase(), // Asegurar CURP cliente
         tipo: document.getElementById('tipo_colocacion').value,
@@ -1058,11 +1316,11 @@ async function handleCreditForm(e) {
          return;
     }
     if (!validarFormatoCURP(curpAval)) {
-        showStatus('status_colocacion', 'Error: El CURP del aval debe tener 18 caracteres.', 'error');
-        document.getElementById('curpAval_colocacion').classList.add('input-error');
+        showStatus('status_colocacion', 'Error: El CURP del aval debe tener 18 caracteres y formato válido.', 'error');
+        curpAvalInput.classList.add('input-error');
         return;
     } else {
-        document.getElementById('curpAval_colocacion').classList.remove('input-error');
+        curpAvalInput.classList.remove('input-error');
     }
 
 
@@ -1126,7 +1384,7 @@ async function handleSearchCreditForPayment() {
     creditoActual = null; // Resetear crédito seleccionado
 
     if (!historicalIdCredito) {
-        showStatus('status_cobranza', 'Por favor, ingresa un ID de crédito.', 'warning');
+        showStatus('status_cobranza', 'Por favor, ingresa un ID de crédito (histórico).', 'warning');
         formCobranza.classList.add('hidden');
         return;
     }
@@ -1146,9 +1404,16 @@ async function handleSearchCreditForPayment() {
             throw new Error(`No se encontró ningún crédito con el ID histórico: ${historicalIdCredito}`);
         }
 
-        // Si hay múltiples, ¿cómo decidimos? Por ahora, tomamos el más reciente.
-        // Podríamos necesitar pedir al usuario que especifique el cliente si hay > 1.
-        creditosEncontrados.sort((a, b) => (parsearFecha(b.fechaCreacion)?.getTime() || 0) - (parsearFecha(a.fechaCreacion)?.getTime() || 0));
+         // Si se encuentran MÚLTIPLES créditos con el MISMO ID histórico (de diferentes clientes/sucursales)
+         if (creditosEncontrados.length > 1) {
+             console.warn(`Se encontraron ${creditosEncontrados.length} créditos con el ID histórico ${historicalIdCredito}. Mostrando el más reciente.`);
+              // Ordenar por fecha de creación para tomar el más reciente como predeterminado
+              creditosEncontrados.sort((a, b) => (parsearFecha(b.fechaCreacion)?.getTime() || 0) - (parsearFecha(a.fechaCreacion)?.getTime() || 0));
+              // Aquí podríamos implementar lógica para que el usuario seleccione cuál quiere,
+              // pero por ahora tomamos el más reciente.
+              showStatus('status_cobranza', `Advertencia: Se encontraron ${creditosEncontrados.length} créditos con ID ${historicalIdCredito}. Se cargó el más reciente (${creditosEncontrados[0].curpCliente}).`, 'warning');
+         }
+
         creditoActual = creditosEncontrados[0]; // Guardamos el objeto completo { id: firestoreId, ..., historicalIdCredito: ... }
 
         showFixedProgress(60, 'Obteniendo datos del cliente...');
@@ -1159,11 +1424,13 @@ async function handleSearchCreditForPayment() {
 
 
         showFixedProgress(80, 'Calculando historial del crédito...');
-        // Usar el historicalIdCredito para obtener el historial correcto
-        const historial = await obtenerHistorialCreditoCliente(creditoActual.curpCliente, historicalIdCredito);
+        // Usar el historicalIdCredito y CURP para obtener el historial correcto
+        const historial = await obtenerHistorialCreditoCliente(creditoActual.curpCliente, historicalId); // Pasamos historicalId
 
         if (!historial) {
-            throw new Error('No se pudo calcular el historial del crédito. Verifica los datos.');
+            // Esto podría pasar si el crédito encontrado tiene datos inconsistentes
+             console.error("No se pudo calcular el historial para el crédito:", creditoActual);
+            throw new Error(`No se pudo calcular el historial del crédito ${historicalId}. Verifica los datos del crédito.`);
         }
 
         // Llenar formulario con datos del historial
@@ -1180,7 +1447,12 @@ async function handleSearchCreditForPayment() {
 
         showFixedProgress(100, 'Crédito encontrado');
         formCobranza.classList.remove('hidden'); // Mostrar formulario de pago
-        showStatus('status_cobranza', `Crédito ${historicalIdCredito} encontrado (${creditoActual.curpCliente}). Listo para registrar pago.`, 'success');
+
+         // Mensaje de éxito, limpiar advertencia previa si la hubo
+         if (!statusCobranza.textContent.includes('Advertencia')) {
+             showStatus('status_cobranza', `Crédito ${historicalIdCredito} encontrado (${creditoActual.curpCliente}). Listo para registrar pago.`, 'success');
+         }
+
         // Poner foco en el monto para agilizar
         montoInput.focus();
         montoInput.select();
@@ -1213,17 +1485,26 @@ async function handlePaymentForm(e) {
     }
 
 
-    const montoPago = parseFloat(document.getElementById('monto_cobranza').value);
+    const montoInput = document.getElementById('monto_cobranza');
+    const montoPago = parseFloat(montoInput.value);
     const tipoPago = document.getElementById('tipo_cobranza').value;
 
 
     if (isNaN(montoPago) || montoPago <= 0) {
         showStatus('status_cobranza', 'Error: El monto del pago debe ser un número positivo.', 'error');
-        document.getElementById('monto_cobranza').classList.add('input-error');
+        montoInput.classList.add('input-error');
         return;
     } else {
-         document.getElementById('monto_cobranza').classList.remove('input-error');
+         montoInput.classList.remove('input-error');
     }
+
+     // Verificar si el monto excede el saldo (usando el saldo del objeto creditoActual)
+     const saldoActual = creditoActual.saldo !== undefined ? creditoActual.saldo : 0;
+     if (montoPago > saldoActual + 0.01) { // Margen pequeño
+         showStatus('status_cobranza', `Error: El monto del pago ($${montoPago.toFixed(2)}) excede el saldo restante ($${saldoActual.toFixed(2)}).`, 'error');
+         montoInput.classList.add('input-error');
+         return;
+     }
 
 
     showButtonLoading(submitButton, true, 'Registrando...');
@@ -1237,6 +1518,7 @@ async function handlePaymentForm(e) {
             idCredito: creditoActual.historicalIdCredito, // Guardar el ID histórico en el pago
             monto: montoPago,
             tipoPago: tipoPago
+             // curpCliente y office se añadirán dentro de database.agregarPago
         };
 
 
@@ -1246,7 +1528,9 @@ async function handlePaymentForm(e) {
 
         if (resultado.success) {
             showFixedProgress(100, 'Pago registrado');
-            showStatus('status_cobranza', '¡Pago registrado exitosamente!', 'success');
+             let successMsg = '¡Pago registrado exitosamente!';
+             if (!isOnline) successMsg += ' (Guardado localmente).';
+            showStatus('status_cobranza', successMsg, 'success');
 
 
             // Limpiar y ocultar formulario
@@ -1256,7 +1540,7 @@ async function handlePaymentForm(e) {
 
 
         } else {
-            // Error devuelto por agregarPago (ej. monto excede saldo)
+            // Error devuelto por agregarPago (ej. monto excede saldo, error de transacción)
             throw new Error(resultado.message);
         }
 
@@ -1272,40 +1556,35 @@ async function handlePaymentForm(e) {
 
 
 function handleMontoPagoChange() {
-    if (!creditoActual) return;
+    // Si no hay crédito cargado, no hacer nada
+    if (!creditoActual || creditoActual.saldo === undefined) return;
+
     const montoInput = document.getElementById('monto_cobranza');
     const saldoDespuesInput = document.getElementById('saldoDespues_cobranza');
-    const saldoActualInput = document.getElementById('saldo_cobranza');
+    const saldoActual = creditoActual.saldo; // Usar el saldo del objeto cargado
 
-
-    if (!montoInput || !saldoDespuesInput || !saldoActualInput) return;
-
+    if (!montoInput || !saldoDespuesInput) return;
 
     const monto = parseFloat(montoInput.value) || 0;
-     // Leer saldo actual directamente del objeto 'creditoActual' si está disponible y es más fiable
-     const saldoActual = creditoActual.saldo !== undefined ? creditoActual.saldo : (parseFloat(saldoActualInput.value.replace(/[$,]/g, '')) || 0);
-
-
     const saldoDespues = saldoActual - monto;
-
 
     // Formatear para mostrar
     saldoDespuesInput.value = `$${saldoDespues.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-
 
      // Validar visualmente si el monto excede el saldo
      if (monto > saldoActual + 0.01) { // Margen pequeño
          montoInput.classList.add('input-error');
          montoInput.title = "El monto excede el saldo actual";
-         showStatus('status_cobranza', 'Advertencia: El monto ingresado excede el saldo restante.', 'warning');
+         // Mostrar advertencia persistente si excede
+          showStatus('status_cobranza', 'Advertencia: El monto ingresado excede el saldo restante.', 'warning');
      } else {
          montoInput.classList.remove('input-error');
          montoInput.title = "";
-         // Limpiar advertencia si estaba visible y ya no aplica
+         // Limpiar advertencia si estaba visible y ya no aplica, solo si no hay otro error
           const statusCobranza = document.getElementById('status_cobranza');
           if (statusCobranza.classList.contains('status-warning') && statusCobranza.textContent.includes('excede')) {
-               // Limpiar solo si era esa advertencia específica
-               // showStatus('status_cobranza', '', 'info'); // O volver al mensaje anterior si lo hubiera
+               // Volver a mensaje de 'listo para registrar' si es el caso
+               showStatus('status_cobranza', `Crédito ${creditoActual.historicalIdCredito} encontrado (${creditoActual.curpCliente}). Listo para registrar pago.`, 'success');
           }
      }
 }
@@ -1838,7 +2117,7 @@ function showStatus(elementId, message, type) {
     if (element) {
         element.innerHTML = message; // Usar innerHTML permite tags como <b>
         // Asegurar que solo una clase de tipo de status esté presente
-        element.classList.remove('status-success', 'status-error', 'status-info', 'status-warning');
+        element.classList.remove('status-success', 'status-error', 'status-info', 'status-warning', 'hidden'); // Quitar hidden también
         if (type === 'success') {
             element.classList.add('status-success');
         } else if (type === 'error') {
@@ -1848,16 +2127,12 @@ function showStatus(elementId, message, type) {
         } else { // 'info' o por defecto
             element.classList.add('status-info');
         }
-        element.classList.remove('hidden'); // Asegurar que sea visible
          // Opcional: Ocultar automáticamente mensajes de éxito después de un tiempo
          if (type === 'success') {
              setTimeout(() => {
-                 // Solo ocultar si el mensaje no ha cambiado mientras tanto
-                 if (element.innerHTML === message) {
-                     // element.classList.add('hidden');
-                     // O mejor, quitar el contenido para que no ocupe espacio
-                     // element.innerHTML = '';
-                     // element.classList.remove('status-success');
+                 // Solo ocultar si el mensaje no ha cambiado mientras tanto y sigue siendo success
+                 if (element.innerHTML === message && element.classList.contains('status-success')) {
+                      element.classList.add('hidden'); // Ocultar con clase
                  }
              }, 5000); // Ocultar éxito después de 5 segundos
          }
@@ -1865,6 +2140,7 @@ function showStatus(elementId, message, type) {
         console.warn(`Elemento de estado con ID "${elementId}" no encontrado.`);
     }
 }
+
 
 function showProcessingOverlay(show, message = 'Procesando...') {
     let overlay = document.getElementById('processing-overlay');
@@ -1914,9 +2190,9 @@ function showButtonLoading(selector, show, loadingText = '') {
     }
 }
 
-// Añadir estilos CSS para .btn-spinner si no existen en styles.css
+// Asegúrate de tener estos estilos en styles.css para el spinner del botón:
 /*
-.btn-spinner {
+.btn-loading .btn-spinner {
     display: inline-block;
     width: 1em;
     height: 1em;
@@ -1926,6 +2202,9 @@ function showButtonLoading(selector, show, loadingText = '') {
     animation: spin 0.75s linear infinite;
     margin-right: 0.5em;
     vertical-align: text-bottom;
+}
+.btn-loading > *:not(.btn-spinner) { // Ocultar otros iconos/texto mientras carga
+    opacity: 0;
 }
 */
 
@@ -1994,18 +2273,19 @@ function cancelarCarga() {
     hideFixedProgress();
     showProcessingOverlay(false);
 
-    // Restaurar botones que podrían estar en estado de carga
-     showButtonLoading('btn-aplicar-filtros', false);
-     showButtonLoading('btn-procesar-importacion', false);
-     showButtonLoading('btn-aplicar-filtros-reportes', false);
-     showButtonLoading('btn-diagnosticar-pagos', false);
-     // Añadir más botones si es necesario
+    // Restaurar botones que podrían estar en estado de carga (usando selector más general)
+     document.querySelectorAll('.btn-loading').forEach(button => {
+         showButtonLoading(button, false);
+     });
 
 
     // Mostrar mensaje de cancelación en la vista activa (si es relevante)
     const activeView = document.querySelector('.view:not(.hidden)');
     if (activeView) {
-        const statusElementId = activeView.querySelector('.status-message')?.id || `status_${activeView.id.replace('view-', '')}`;
+        const statusElement = activeView.querySelector('.status-message'); // Buscar cualquier status message
+        const statusElementId = statusElement?.id || (activeView.id ? `status_${activeView.id.replace('view-', '')}` : null);
+
+
          if (statusElementId) {
              showStatus(statusElementId, 'Operación cancelada por el usuario.', 'warning');
          }
@@ -2043,21 +2323,20 @@ function validarCURP(inputElement) {
     // Validación visual simple (longitud)
     if (inputElement.value.length === 0) {
         inputElement.classList.remove('input-error', 'input-success'); // Sin estilo si está vacío
-    } else if (inputElement.value.length === 18) {
+    } else if (validarFormatoCURP(inputElement.value)) { // Usar validación con Regex
         inputElement.classList.remove('input-error');
-        inputElement.classList.add('input-success'); // Verde si tiene 18
+        inputElement.classList.add('input-success'); // Verde si tiene formato correcto
     } else {
         inputElement.classList.remove('input-success');
-        inputElement.classList.add('input-error'); // Rojo si no tiene 18
+        inputElement.classList.add('input-error'); // Rojo si no
     }
 }
 
 
 function validarFormatoCURP(curp) {
-    // Verifica longitud y opcionalmente un patrón básico (4 letras, 6 números, etc.)
-    // return curp && curp.length === 18; // Validación simple de longitud
+    // Verifica longitud y patrón básico (4 letras, 6 números, H/M, 5 letras, homoclave(A-Z0-9), dígito verificador)
      const curpRegex = /^[A-Z]{4}\d{6}[HM][A-Z]{5}[A-Z0-9]\d$/;
-     return typeof curp === 'string' && curpRegex.test(curp.toUpperCase());
+     return typeof curp === 'string' && curp.length === 18 && curpRegex.test(curp.toUpperCase());
 }
 
 
@@ -2204,18 +2483,17 @@ function actualizarPlazosSegunCliente(esComisionista) {
     popularDropdown('plazo_colocacion', plazosDisponibles.map(p => ({ value: p, text: `${p} semanas` })), 'Selecciona plazo', true);
 }
 
-
 // Listener para el evento 'viewshown' para cargar datos específicos de cada vista
 document.addEventListener('viewshown', function (e) {
     const viewId = e.detail.viewId;
     console.log(`Evento viewshown disparado para: ${viewId}`);
 
-    // Limpiar mensajes de estado al cambiar de vista (opcional)
+    // Limpiar mensajes de estado al cambiar de vista (opcional, cuidado con no borrar mensajes importantes)
      document.querySelectorAll('.status-message').forEach(el => {
-         // No limpiar el de conexión
-         if (el.id !== 'connection-status') {
-             // el.innerHTML = '';
-             // el.className = 'status-message hidden';
+         // No limpiar el de conexión ni los de dentro de un modal activo
+         if (el.id !== 'connection-status' && !el.closest('#generic-modal:not(.hidden)')) {
+             el.innerHTML = '';
+             el.className = 'status-message hidden';
          }
      });
 
@@ -2254,7 +2532,7 @@ document.addEventListener('viewshown', function (e) {
              // Limpiar campos de búsqueda y formulario al entrar
              document.getElementById('idCredito_cobranza').value = '';
              document.getElementById('form-cobranza').classList.add('hidden');
-             showStatus('status_cobranza', 'Ingresa el ID del crédito para buscar.', 'info');
+             showStatus('status_cobranza', 'Ingresa el ID del crédito (histórico) para buscar.', 'info');
              creditoActual = null; // Deseleccionar crédito
              break;
         case 'view-pago-grupo':
@@ -2295,6 +2573,7 @@ document.addEventListener('viewshown', function (e) {
              break;
     }
 });
+
 
 // *** MANEJO DE DUPLICADOS ***
 async function handleVerificarDuplicados() {
