@@ -38,7 +38,7 @@ function parsearFecha(fechaInput) {
         // Prioridad 2: YYYY-MM-DD (sin hora)
         if (/^\d{4}-\d{2}-\d{2}$/.test(fechaStr)) {
             const fecha = new Date(fechaStr + 'T00:00:00Z'); // Interpretar como UTC
-             if (!isNaN(fecha.getTime())) return fecha;
+            if (!isNaN(fecha.getTime())) return fecha;
         }
 
 
@@ -66,12 +66,12 @@ function parsearFecha(fechaInput) {
 
 
                 if (anio && mes && dia && mes > 0 && mes <= 12 && dia > 0 && dia <= 31) {
-                     // Verificar validez del día para el mes y año
-                     const diasEnMes = new Date(Date.UTC(anio, mes, 0)).getUTCDate();
-                     if (dia <= diasEnMes) {
+                    // Verificar validez del día para el mes y año
+                    const diasEnMes = new Date(Date.UTC(anio, mes, 0)).getUTCDate();
+                    if (dia <= diasEnMes) {
                         const fecha = new Date(Date.UTC(anio, mes - 1, dia));
-                         if (!isNaN(fecha.getTime())) return fecha;
-                     }
+                        if (!isNaN(fecha.getTime())) return fecha;
+                    }
                 }
             }
         }
@@ -126,13 +126,13 @@ function updateConnectionStatus() {
             // Verificar si sigue online antes de mostrar "sincronizado"
             if (navigator.onLine) {
                 statusDiv.textContent = 'Datos sincronizados correctamente.';
-                 // Ocultar después de un tiempo
+                // Ocultar después de un tiempo
                 setTimeout(() => {
-                     // Solo ocultar si sigue online
-                     if (navigator.onLine) {
-                         statusDiv.classList.add('hidden');
-                     }
-                 }, 2500);
+                    // Solo ocultar si sigue online
+                    if (navigator.onLine) {
+                        statusDiv.classList.add('hidden');
+                    }
+                }, 2500);
             }
         }, 3000);
     } else {
@@ -145,6 +145,100 @@ function updateConnectionStatus() {
         botonesOnline.forEach(el => { if (el) el.disabled = true; });
     }
 }
+
+// =============================================
+// *** INICIO DE LA CORRECCIÓN 1: FUNCIÓN FALTANTE ***
+// =============================================
+
+/**
+ * Calcula el estado actual de un crédito (atraso, estado, etc.) basado en sus pagos.
+ * @param {object} credito El objeto de crédito de Firestore.
+ * @param {Array<object>} pagos Un array de objetos de pago para ese crédito.
+ * @returns {object|null} Un objeto con { estado, semanasAtraso, pagoSemanal, saldoRestante, proximaFechaPago } o null si hay error.
+ */
+function _calcularEstadoCredito(credito, pagos) {
+    if (!credito || !credito.montoTotal || !credito.plazo || credito.plazo <= 0 || !credito.fechaCreacion) {
+        console.warn("Datos de crédito insuficientes para calcular estado:", credito);
+        return null; // Datos insuficientes
+    }
+
+    const pagoSemanal = credito.montoTotal / credito.plazo;
+    const saldoRestante = credito.saldo !== undefined ? credito.saldo : 0; // Usar saldo del objeto crédito
+
+    // 1. Estado Liquidado
+    if (credito.estado === 'liquidado' || saldoRestante <= 0.01) {
+        return {
+            estado: 'liquidado',
+            semanasAtraso: 0,
+            pagoSemanal: pagoSemanal,
+            saldoRestante: saldoRestante,
+            proximaFechaPago: 'N/A'
+        };
+    }
+
+    const fechaCreacion = parsearFecha(credito.fechaCreacion);
+    if (!fechaCreacion) {
+        console.warn("Fecha de creación de crédito inválida:", credito.fechaCreacion);
+        return null; // Fecha inválida
+    }
+
+    const hoy = new Date();
+    // Calcular semanas transcurridas desde el inicio
+    const msTranscurridos = hoy.getTime() - fechaCreacion.getTime();
+    const semanasTranscurridas = Math.floor(msTranscurridos / (1000 * 60 * 60 * 24 * 7));
+
+    // Calcular semanas pagadas (basado en monto total pagado)
+    const montoPagadoTotal = credito.montoTotal - saldoRestante; // Más preciso que sumar pagos
+    let semanasPagadas = 0;
+    if (pagoSemanal > 0) {
+        semanasPagadas = Math.floor(montoPagadoTotal / pagoSemanal);
+    }
+    
+    // Asegurar que las semanas pagadas no superen el plazo
+    semanasPagadas = Math.min(semanasPagadas, credito.plazo);
+
+    // Calcular semanas de atraso
+    let semanasAtraso = semanasTranscurridas - semanasPagadas;
+    semanasAtraso = Math.max(0, semanasAtraso); // No puede ser negativo
+    
+    // Si el crédito ya terminó (semanas transcurridas > plazo) y no está liquidado, el atraso es el restante
+    if (semanasTranscurridas >= credito.plazo) {
+         // El atraso es el total del plazo menos lo que pagó
+        semanasAtraso = credito.plazo - semanasPagadas;
+    }
+
+    let estado;
+    // Definir estado basado en el atraso (esta es la lógica de negocio)
+    if (semanasAtraso === 0) {
+        estado = 'al corriente';
+    } else if (semanasAtraso >= 1 && semanasAtraso <= 4) {
+        estado = 'atrasado';
+    } else if (semanasAtraso >= 5 && semanasAtraso <= 8) {
+        estado = 'cobranza';
+    } else { // 9 o más
+        estado = 'juridico';
+    }
+
+    // Calcular próxima fecha de pago
+    let proximaFechaPago = 'N/A';
+    if (semanasPagadas < credito.plazo) {
+        const proximaFecha = new Date(fechaCreacion);
+        proximaFecha.setUTCDate(proximaFecha.getUTCDate() + (semanasPagadas + 1) * 7);
+        proximaFechaPago = formatDateForDisplay(proximaFecha);
+    }
+
+    return {
+        estado: estado,
+        semanasAtraso: semanasAtraso,
+        pagoSemanal: pagoSemanal,
+        saldoRestante: saldoRestante,
+        proximaFechaPago: proximaFechaPago
+    };
+}
+
+// =============================================
+// *** FIN DE LA CORRECCIÓN 1 ***
+// =============================================
 
 // =============================================
 // LÓGICA DE SEGURIDAD Y SESIÓN
@@ -198,7 +292,13 @@ async function loadClientesTable() {
 
     const tbody = document.getElementById('tabla-clientes');
     tbody.innerHTML = '<tr><td colspan="6">Buscando...</td></tr>';
-    showButtonLoading('btn-aplicar-filtros', true, 'Buscando...');
+    // =============================================
+    // *** INICIO DE LA CORRECCIÓN 3 (Instancia 1) ***
+    // =============================================
+    showButtonLoading('#btn-aplicar-filtros', true, 'Buscando...');
+    // =============================================
+    // *** FIN DE LA CORRECCIÓN 3 (Instancia 1) ***
+    // =============================================
     showFixedProgress(10, 'Iniciando búsqueda...');
 
     try {
@@ -226,7 +326,7 @@ async function loadClientesTable() {
 
         if (filtros.idCredito) {
             // --- PATH 1: Search by Credit ID (Historical ID) ---
-             // Usar la función que busca por historicalIdCredito
+            // Usar la función que busca por historicalIdCredito
             creditosAMostrar = await database.buscarCreditosPorHistoricalId(filtros.idCredito);
         } else if (filtros.curp || filtros.nombre || filtros.grupo || filtros.sucursal) {
             // --- PATH 2: Search by Client Filters ---
@@ -266,8 +366,8 @@ async function loadClientesTable() {
                 // No pasamos idCredito aquí porque ya se manejó
             });
         } else {
-             tbody.innerHTML = '<tr><td colspan="6">Combinación de filtros no soportada o vacía.</td></tr>';
-             throw new Error("Filtros inválidos");
+            tbody.innerHTML = '<tr><td colspan="6">Combinación de filtros no soportada o vacía.</td></tr>';
+            throw new Error("Filtros inválidos");
         }
 
 
@@ -303,13 +403,13 @@ async function loadClientesTable() {
             }
 
             // 2. Get Payments & Calculate Status (using historicalIdCredito)
-             const historicalId = credito.historicalIdCredito || credito.id; // Usar historical si existe, si no, el de Firestore (para nuevos)
+            const historicalId = credito.historicalIdCredito || credito.id; // Usar historical si existe, si no, el de Firestore (para nuevos)
             const pagos = await database.getPagosPorCredito(historicalId); // Busca pagos por ID histórico
             const estadoCalculado = _calcularEstadoCredito(credito, pagos); // Calcula estado basado en datos del crédito y sus pagos
 
 
             if (!estadoCalculado) {
-                 console.warn(`No se pudo calcular el estado para el crédito ID Firestore ${credito.id} (Histórico: ${historicalId})`);
+                console.warn(`No se pudo calcular el estado para el crédito ID Firestore ${credito.id} (Histórico: ${historicalId})`);
                 continue; // Saltar créditos con datos inconsistentes que impiden calcular estado
             }
 
@@ -319,11 +419,11 @@ async function loadClientesTable() {
             if (filtros.plazo && credito.plazo != filtros.plazo) continue;
             if (filtros.curpAval && (!credito.curpAval || !credito.curpAval.toUpperCase().includes(filtros.curpAval.toUpperCase()))) continue;
             if (filtros.sucursal && cliente.office !== filtros.sucursal) continue; // Re-verificar sucursal del cliente
-             if (filtros.grupo && cliente.poblacion_grupo !== filtros.grupo) continue; // Re-verificar grupo del cliente
-             // Si se buscó por CURP/Nombre y la query inicial fue amplia (muchos clientes), re-verificar aquí
-             if (filtros.curp && !filtros.curp.includes(',') && cliente.curp !== filtros.curp.toUpperCase()) continue;
-             if (filtros.nombre && !(cliente.nombre || '').toLowerCase().includes(filtros.nombre.toLowerCase())) continue;
-             // Si se buscó por ID histórico, ya está filtrado
+            if (filtros.grupo && cliente.poblacion_grupo !== filtros.grupo) continue; // Re-verificar grupo del cliente
+            // Si se buscó por CURP/Nombre y la query inicial fue amplia (muchos clientes), re-verificar aquí
+            if (filtros.curp && !filtros.curp.includes(',') && cliente.curp !== filtros.curp.toUpperCase()) continue;
+            if (filtros.nombre && !(cliente.nombre || '').toLowerCase().includes(filtros.nombre.toLowerCase())) continue;
+            // Si se buscó por ID histórico, ya está filtrado
 
 
             resultadosEncontrados++;
@@ -333,7 +433,7 @@ async function loadClientesTable() {
             const fechaInicioCredito = formatDateForDisplay(parsearFecha(credito.fechaCreacion));
 
             // Fecha del Último Pago de ESTE crédito (histórico)
-             // Ordenar pagos de este crédito por fecha
+            // Ordenar pagos de este crédito por fecha
             pagos.sort((a, b) => (parsearFecha(b.fecha)?.getTime() || 0) - (parsearFecha(a.fecha)?.getTime() || 0));
             const ultimoPago = pagos.length > 0 ? pagos[0] : null;
             const fechaUltimoPago = formatDateForDisplay(ultimoPago ? parsearFecha(ultimoPago.fecha) : null);
@@ -348,7 +448,7 @@ async function loadClientesTable() {
             if (estadoCalculado.pagoSemanal > 0) {
                 semanasPagadas = Math.floor(montoPagadoTotal / estadoCalculado.pagoSemanal);
             }
-             // Si está liquidado, mostrar plazo completo
+            // Si está liquidado, mostrar plazo completo
             if (estadoCalculado.estado === 'liquidado' && credito.plazo) {
                 semanasPagadas = credito.plazo;
             }
@@ -398,16 +498,16 @@ async function loadClientesTable() {
         showFixedProgress(100, `Búsqueda completada: ${resultadosEncontrados} resultados encontrados.`);
 
     } catch (error) {
-         // Manejar errores conocidos de forma más amigable
+        // Manejar errores conocidos de forma más amigable
         if (error.message === "Búsqueda cancelada") {
-             tbody.innerHTML = '<tr><td colspan="6">Búsqueda cancelada por el usuario.</td></tr>';
-             showStatus('status_gestion_clientes', 'Búsqueda cancelada.', 'info');
+            tbody.innerHTML = '<tr><td colspan="6">Búsqueda cancelada por el usuario.</td></tr>';
+            showStatus('status_gestion_clientes', 'Búsqueda cancelada.', 'info');
         } else if (error.message === "Búsqueda vacía" || error.message === "Filtros inválidos") {
-             tbody.innerHTML = '<tr><td colspan="6">Por favor, especifica al menos un criterio de búsqueda válido.</td></tr>';
-             showStatus('status_gestion_clientes', 'Especifica filtros para buscar.', 'warning');
+            tbody.innerHTML = '<tr><td colspan="6">Por favor, especifica al menos un criterio de búsqueda válido.</td></tr>';
+            showStatus('status_gestion_clientes', 'Especifica filtros para buscar.', 'warning');
         } else if (error.message === "No se encontraron clientes.") {
-             tbody.innerHTML = '<tr><td colspan="6">No se encontraron clientes que coincidan con los filtros iniciales.</td></tr>';
-             showStatus('status_gestion_clientes', 'No se encontraron clientes.', 'info');
+            tbody.innerHTML = '<tr><td colspan="6">No se encontraron clientes que coincidan con los filtros iniciales.</td></tr>';
+            showStatus('status_gestion_clientes', 'No se encontraron clientes.', 'info');
         } else if (error.message === "No se encontraron créditos que coincidan con los filtros iniciales.") {
             tbody.innerHTML = '<tr><td colspan="6">No se encontraron créditos para los clientes/filtros especificados.</td></tr>';
             showStatus('status_gestion_clientes', 'No se encontraron créditos asociados.', 'info');
@@ -415,13 +515,19 @@ async function loadClientesTable() {
             // Error inesperado
             console.error('Error en loadClientesTable:', error);
             tbody.innerHTML = `<tr><td colspan="6">Error al cargar los datos: ${error.message}. Revisa la consola para más detalles.</td></tr>`;
-             showStatus('status_gestion_clientes', `Error: ${error.message}`, 'error');
+            showStatus('status_gestion_clientes', `Error: ${error.message}`, 'error');
         }
     } finally {
         // Asegurar que los indicadores de carga se detengan solo si esta operación específica terminó
         if (operationId === currentSearchOperation) {
             cargaEnProgreso = false;
-            showButtonLoading('btn-aplicar-filtros', false);
+            // =============================================
+            // *** INICIO DE LA CORRECCIÓN 3 (Instancia 2) ***
+            // =============================================
+            showButtonLoading('#btn-aplicar-filtros', false);
+            // =============================================
+            // *** FIN DE LA CORRECCIÓN 3 (Instancia 2) ***
+            // =============================================
             setTimeout(hideFixedProgress, 2000); // Ocultar barra después de un tiempo
         }
     }
@@ -447,7 +553,7 @@ function limpiarFiltrosClientes() {
             if (el.type !== 'date') { // No limpiar fechas? O sí? Decisión: limpiarlas también.
                 el.value = '';
             } else {
-                 el.value = ''; // Limpiar fechas
+                el.value = ''; // Limpiar fechas
             }
         });
     }
@@ -478,7 +584,7 @@ function inicializarVistaReportesAvanzados() {
     reportData = null;
     const estadisticasElement = document.getElementById('estadisticas-reporte');
     if (estadisticasElement) estadisticasElement.innerHTML = '';
-     showStatus('status_reportes_avanzados', 'Filtros inicializados. Presiona "Generar Reporte".', 'info');
+    showStatus('status_reportes_avanzados', 'Filtros inicializados. Presiona "Generar Reporte".', 'info');
 }
 
 function limpiarFiltrosReportes() {
@@ -517,10 +623,10 @@ async function loadAdvancedReports() {
     const statusReportes = document.getElementById('status_reportes_avanzados');
     statusReportes.innerHTML = 'Aplicando filtros y buscando datos...';
     statusReportes.className = 'status-message status-info';
-     // Limpiar tabla y estadísticas previas
-     document.getElementById('tabla-reportes_avanzados').innerHTML = '<tr><td colspan="10">Generando reporte...</td></tr>';
-     document.getElementById('estadisticas-reporte').innerHTML = '';
-     reportData = null; // Limpiar datos anteriores
+    // Limpiar tabla y estadísticas previas
+    document.getElementById('tabla-reportes_avanzados').innerHTML = '<tr><td colspan="10">Generando reporte...</td></tr>';
+    document.getElementById('estadisticas-reporte').innerHTML = '';
+    reportData = null; // Limpiar datos anteriores
 
 
     try {
@@ -539,10 +645,10 @@ async function loadAdvancedReports() {
         };
 
 
-         // Validación simple de fechas
-         if (filtros.fechaInicio && filtros.fechaFin && new Date(filtros.fechaInicio) > new Date(filtros.fechaFin)) {
-             throw new Error("La fecha de inicio no puede ser posterior a la fecha de fin.");
-         }
+        // Validación simple de fechas
+        if (filtros.fechaInicio && filtros.fechaFin && new Date(filtros.fechaInicio) > new Date(filtros.fechaFin)) {
+            throw new Error("La fecha de inicio no puede ser posterior a la fecha de fin.");
+        }
 
 
         showFixedProgress(50, 'Consultando base de datos...');
@@ -561,18 +667,18 @@ async function loadAdvancedReports() {
         showStatus('status_reportes_avanzados', `Reporte generado: ${reportData.length} registros encontrados.`, 'success');
 
     } catch (error) {
-         if (error.message === "Búsqueda cancelada") {
-             showStatus('status_reportes_avanzados', 'Generación de reporte cancelada.', 'warning');
-             document.getElementById('tabla-reportes_avanzados').innerHTML = '<tr><td colspan="10">Generación cancelada.</td></tr>';
-         } else {
+        if (error.message === "Búsqueda cancelada") {
+            showStatus('status_reportes_avanzados', 'Generación de reporte cancelada.', 'warning');
+            document.getElementById('tabla-reportes_avanzados').innerHTML = '<tr><td colspan="10">Generación cancelada.</td></tr>';
+        } else {
             console.error('Error generando reporte avanzado:', error);
             showStatus('status_reportes_avanzados', `Error al generar el reporte: ${error.message}`, 'error');
             document.getElementById('tabla-reportes_avanzados').innerHTML = `<tr><td colspan="10">Error: ${error.message}</td></tr>`;
-         }
-          hideFixedProgress(); // Ocultar progreso en error también
+        }
+        hideFixedProgress(); // Ocultar progreso en error también
     } finally {
         // Asegurar que se detenga el estado de carga solo si esta operación terminó
-         if (operationId === currentSearchOperation) {
+        if (operationId === currentSearchOperation) {
             cargaEnProgreso = false;
             showProcessingOverlay(false);
             showButtonLoading('btn-aplicar-filtros-reportes', false);
@@ -602,8 +708,8 @@ function mostrarReporteAvanzado(data) {
         const fechaRegistro = formatDateForDisplay(parsearFecha(item.fechaRegistro));
         const fechaCreacion = formatDateForDisplay(parsearFecha(item.fechaCreacion));
         const fechaPago = formatDateForDisplay(parsearFecha(item.fecha));
-         // Usar ID histórico si existe
-         const idCreditoMostrar = item.historicalIdCredito || item.idCredito || item.id || '';
+        // Usar ID histórico si existe
+        const idCreditoMostrar = item.historicalIdCredito || item.idCredito || item.id || '';
 
 
         let rowContent = '';
@@ -660,7 +766,7 @@ function mostrarReporteAvanzado(data) {
     const totalCreditos = new Set(data.filter(item => item.tipo === 'credito').map(item => item.historicalIdCredito || item.id)).size; // Contar créditos únicos
     const totalPagos = data.filter(item => item.tipo === 'pago').length;
     const totalMontoPagos = data.filter(item => item.tipo === 'pago').reduce((sum, item) => sum + (item.monto || 0), 0);
-     const totalMontoColocado = data.filter(item => item.tipo === 'credito').reduce((sum, item) => sum + (item.monto || 0), 0);
+    const totalMontoColocado = data.filter(item => item.tipo === 'credito').reduce((sum, item) => sum + (item.monto || 0), 0);
 
 
     estadisticasElement.innerHTML = `
@@ -687,7 +793,7 @@ function exportToCSV() {
     showFixedProgress(50, 'Preparando datos...');
 
     try {
-         // Añadir ID Histórico al header y a las filas
+        // Añadir ID Histórico al header y a las filas
         const headers = ['Tipo', 'CURP', 'Nombre', 'Grupo/Población', 'Ruta', 'Sucursal', 'Fecha', 'Tipo Operación', 'Monto', 'Saldo', 'ID Crédito (Hist)'];
         let csvContent = headers.join(',') + '\n';
 
@@ -697,17 +803,17 @@ function exportToCSV() {
             const fechaRegistro = formatDateForDisplay(parsearFecha(item.fechaRegistro));
             const fechaCreacion = formatDateForDisplay(parsearFecha(item.fechaCreacion));
             const fechaPago = formatDateForDisplay(parsearFecha(item.fecha));
-             const idCreditoMostrar = item.historicalIdCredito || item.idCredito || item.id || '';
-             // Función auxiliar para escapar comas y comillas en campos de texto
-             const escapeCSV = (field) => {
-                 if (field === undefined || field === null) return '';
-                 let str = String(field);
-                 // Si contiene comillas, coma o nueva línea, encerrar entre comillas y duplicar comillas internas
-                 if (str.includes('"') || str.includes(',') || str.includes('\n')) {
-                     str = `"${str.replace(/"/g, '""')}"`;
-                 }
-                 return str;
-             };
+            const idCreditoMostrar = item.historicalIdCredito || item.idCredito || item.id || '';
+            // Función auxiliar para escapar comas y comillas en campos de texto
+            const escapeCSV = (field) => {
+                if (field === undefined || field === null) return '';
+                let str = String(field);
+                // Si contiene comillas, coma o nueva línea, encerrar entre comillas y duplicar comillas internas
+                if (str.includes('"') || str.includes(',') || str.includes('\n')) {
+                    str = `"${str.replace(/"/g, '""')}"`;
+                }
+                return str;
+            };
 
 
             if (item.tipo === 'cliente') {
@@ -759,7 +865,7 @@ function exportToCSV() {
 
         showFixedProgress(90, 'Creando archivo descargable...');
         // Crear Blob con BOM para mejor compatibilidad Excel con acentos/ñ
-         const bom = new Uint8Array([0xEF, 0xBB, 0xBF]);
+        const bom = new Uint8Array([0xEF, 0xBB, 0xBF]);
         const blob = new Blob([bom, csvContent], { type: 'text/csv;charset=utf-8;' });
         const link = document.createElement('a');
         if (link.download !== undefined) { // Check for download attribute support
@@ -771,12 +877,12 @@ function exportToCSV() {
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
-             URL.revokeObjectURL(url); // Liberar memoria
+            URL.revokeObjectURL(url); // Liberar memoria
         } else {
-             // Fallback para navegadores antiguos (puede abrir en la misma pestaña)
-             alert("Tu navegador no soporta la descarga directa. El archivo CSV podría abrirse en una nueva pestaña.");
-             const url = URL.createObjectURL(blob);
-             window.open(url);
+            // Fallback para navegadores antiguos (puede abrir en la misma pestaña)
+            alert("Tu navegador no soporta la descarga directa. El archivo CSV podría abrirse en una nueva pestaña.");
+            const url = URL.createObjectURL(blob);
+            window.open(url);
         }
 
         showFixedProgress(100, 'Archivo CSV exportado');
@@ -784,7 +890,7 @@ function exportToCSV() {
     } catch (error) {
         console.error('Error exportando CSV:', error);
         showStatus('status_reportes_avanzados', `Error al exportar CSV: ${error.message}`, 'error');
-         hideFixedProgress();
+        hideFixedProgress();
     } finally {
         showProcessingOverlay(false);
         showButtonLoading('btn-exportar-csv', false);
@@ -804,78 +910,78 @@ function exportToPDF() {
 
     try {
         const tableElement = document.getElementById('tabla-reportes_avanzados');
-         const titleElement = document.querySelector('#view-reportes-avanzados h2');
-         const filtersElement = document.getElementById('filtros-reportes-avanzados'); // Para incluir filtros aplicados
-         const statsElement = document.getElementById('estadisticas-reporte');
+        const titleElement = document.querySelector('#view-reportes-avanzados h2');
+        const filtersElement = document.getElementById('filtros-reportes-avanzados'); // Para incluir filtros aplicados
+        const statsElement = document.getElementById('estadisticas-reporte');
 
 
         if (!tableElement) {
             throw new Error('No se encontró la tabla del reporte para exportar.');
         }
 
-         // Crear un contenedor temporal para el contenido del PDF
-         const contentForPdf = document.createElement('div');
-         contentForPdf.style.padding = '20px'; // Añadir padding
-         contentForPdf.style.fontFamily = 'Arial, sans-serif'; // Fuente común para PDF
-         contentForPdf.style.fontSize = '10px'; // Tamaño base más pequeño para PDF
+        // Crear un contenedor temporal para el contenido del PDF
+        const contentForPdf = document.createElement('div');
+        contentForPdf.style.padding = '20px'; // Añadir padding
+        contentForPdf.style.fontFamily = 'Arial, sans-serif'; // Fuente común para PDF
+        contentForPdf.style.fontSize = '10px'; // Tamaño base más pequeño para PDF
 
 
-         // Añadir Título
-         if (titleElement) {
-             const titleClone = titleElement.cloneNode(true);
-             titleClone.style.textAlign = 'center';
-             titleClone.style.marginBottom = '15px';
-             contentForPdf.appendChild(titleClone);
-         }
+        // Añadir Título
+        if (titleElement) {
+            const titleClone = titleElement.cloneNode(true);
+            titleClone.style.textAlign = 'center';
+            titleClone.style.marginBottom = '15px';
+            contentForPdf.appendChild(titleClone);
+        }
 
 
-         // Añadir Resumen de Filtros (Opcional, pero útil)
-          if (filtersElement) {
-              const filtersSummary = document.createElement('div');
-              filtersSummary.style.marginBottom = '15px';
-              filtersSummary.style.fontSize = '9px';
-              filtersSummary.style.border = '1px solid #ccc';
-              filtersSummary.style.padding = '10px';
-              filtersSummary.innerHTML = '<strong>Filtros Aplicados:</strong><br>';
-              filtersElement.querySelectorAll('input, select').forEach(el => {
-                   if (el.value && el.id) {
-                       const label = filtersElement.querySelector(`label[for="${el.id}"]`)?.textContent || el.id;
-                       filtersSummary.innerHTML += `${label}: ${el.selectedOptions ? el.selectedOptions[0].text : el.value}<br>`;
-                   }
-              });
-              contentForPdf.appendChild(filtersSummary);
-          }
+        // Añadir Resumen de Filtros (Opcional, pero útil)
+        if (filtersElement) {
+            const filtersSummary = document.createElement('div');
+            filtersSummary.style.marginBottom = '15px';
+            filtersSummary.style.fontSize = '9px';
+            filtersSummary.style.border = '1px solid #ccc';
+            filtersSummary.style.padding = '10px';
+            filtersSummary.innerHTML = '<strong>Filtros Aplicados:</strong><br>';
+            filtersElement.querySelectorAll('input, select').forEach(el => {
+                if (el.value && el.id) {
+                    const label = filtersElement.querySelector(`label[for="${el.id}"]`)?.textContent || el.id;
+                    filtersSummary.innerHTML += `${label}: ${el.selectedOptions ? el.selectedOptions[0].text : el.value}<br>`;
+                }
+            });
+            contentForPdf.appendChild(filtersSummary);
+        }
 
-         // Añadir Estadísticas
-         if (statsElement) {
-             const statsClone = statsElement.cloneNode(true);
-             statsClone.style.marginBottom = '15px';
-              // Quitar clases de status message para que no tenga fondo/borde de color
-              statsClone.querySelector('div')?.classList.remove('status-message', 'status-info', 'status-success', 'status-warning', 'status-error');
-             contentForPdf.appendChild(statsClone);
-         }
+        // Añadir Estadísticas
+        if (statsElement) {
+            const statsClone = statsElement.cloneNode(true);
+            statsClone.style.marginBottom = '15px';
+            // Quitar clases de status message para que no tenga fondo/borde de color
+            statsClone.querySelector('div')?.classList.remove('status-message', 'status-info', 'status-success', 'status-warning', 'status-error');
+            contentForPdf.appendChild(statsClone);
+        }
 
 
         // Clonar tabla y ajustar estilos para PDF
         const tableClone = tableElement.cloneNode(true);
-         tableClone.style.width = '100%';
-         tableClone.style.borderCollapse = 'collapse';
-         tableClone.querySelectorAll('th, td').forEach(cell => {
-             cell.style.border = '1px solid #ddd';
-             cell.style.padding = '4px 6px';
-             cell.style.fontSize = '9px'; // Reducir tamaño de fuente en tabla
-         });
-         tableClone.querySelector('thead').style.backgroundColor = '#f2f2f2';
-         contentForPdf.appendChild(tableClone);
+        tableClone.style.width = '100%';
+        tableClone.style.borderCollapse = 'collapse';
+        tableClone.querySelectorAll('th, td').forEach(cell => {
+            cell.style.border = '1px solid #ddd';
+            cell.style.padding = '4px 6px';
+            cell.style.fontSize = '9px'; // Reducir tamaño de fuente en tabla
+        });
+        tableClone.querySelector('thead').style.backgroundColor = '#f2f2f2';
+        contentForPdf.appendChild(tableClone);
 
 
         const opt = {
-            margin:       [1, 1, 1, 1], // Márgenes en cm (top, left, bottom, right)
-            filename:     `reporte_finzana_${new Date().toISOString().replace(/[:.]/g, '-')}.pdf`,
-            image:        { type: 'jpeg', quality: 0.95 },
-            html2canvas:  { scale: 2, useCORS: true }, // scale mejora calidad, useCORS si hay imágenes externas
-            jsPDF:        { unit: 'cm', format: 'a4', orientation: 'landscape' }, // Hoja A4 horizontal
-             pagebreak:    { mode: ['avoid-all', 'css', 'legacy'] } // Intentar evitar cortes feos
+            margin: [1, 1, 1, 1], // Márgenes en cm (top, left, bottom, right)
+            filename: `reporte_finzana_${new Date().toISOString().replace(/[:.]/g, '-')}.pdf`,
+            image: { type: 'jpeg', quality: 0.95 },
+            html2canvas: { scale: 2, useCORS: true }, // scale mejora calidad, useCORS si hay imágenes externas
+            jsPDF: { unit: 'cm', format: 'a4', orientation: 'landscape' }, // Hoja A4 horizontal
+            pagebreak: { mode: ['avoid-all', 'css', 'legacy'] } // Intentar evitar cortes feos
         };
 
         showFixedProgress(70, 'Generando PDF...');
@@ -885,9 +991,9 @@ function exportToPDF() {
             .then(() => {
                 showFixedProgress(100, 'PDF generado');
                 showStatus('status_reportes_avanzados', 'Archivo PDF exportado exitosamente.', 'success');
-                 showProcessingOverlay(false);
-                 showButtonLoading('btn-exportar-pdf', false);
-                 setTimeout(hideFixedProgress, 2000);
+                showProcessingOverlay(false);
+                showButtonLoading('btn-exportar-pdf', false);
+                setTimeout(hideFixedProgress, 2000);
             })
             .catch(error => {
                 console.error('Error generando PDF con html2pdf:', error);
@@ -901,7 +1007,7 @@ function exportToPDF() {
         showButtonLoading('btn-exportar-pdf', false);
         hideFixedProgress();
     }
-     // No usar finally aquí porque html2pdf().save() es asíncrono y necesitamos el .then/.catch
+    // No usar finally aquí porque html2pdf().save() es asíncrono y necesitamos el .then/.catch
 }
 
 // =============================================
@@ -926,21 +1032,21 @@ document.addEventListener('DOMContentLoaded', function () {
         if (user) {
             currentUser = user;
             try {
-                 currentUserData = await database.obtenerUsuarioPorId(user.uid);
+                currentUserData = await database.obtenerUsuarioPorId(user.uid);
 
 
-                 if (currentUserData) {
-                     document.getElementById('user-name').textContent = currentUserData.name || user.email;
-                     document.getElementById('user-role-display').textContent = currentUserData.role || 'Rol Desconocido';
-                     // Podrías habilitar/deshabilitar vistas aquí según el rol
-                     // Ejemplo: toggleAdminFeatures(currentUserData.role === 'admin');
-                 } else {
-                     console.warn(`No se encontraron datos en Firestore para el usuario ${user.uid}`);
-                     document.getElementById('user-name').textContent = user.email;
-                     document.getElementById('user-role-display').textContent = 'Datos no encontrados';
-                     // Considerar cerrar sesión si los datos son obligatorios
-                     // auth.signOut();
-                 }
+                if (currentUserData) {
+                    document.getElementById('user-name').textContent = currentUserData.name || user.email;
+                    document.getElementById('user-role-display').textContent = currentUserData.role || 'Rol Desconocido';
+                    // Podrías habilitar/deshabilitar vistas aquí según el rol
+                    // Ejemplo: toggleAdminFeatures(currentUserData.role === 'admin');
+                } else {
+                    console.warn(`No se encontraron datos en Firestore para el usuario ${user.uid}`);
+                    document.getElementById('user-name').textContent = user.email;
+                    document.getElementById('user-role-display').textContent = 'Datos no encontrados';
+                    // Considerar cerrar sesión si los datos son obligatorios
+                    // auth.signOut();
+                }
 
 
                 loginScreen.classList.add('hidden');
@@ -951,12 +1057,12 @@ document.addEventListener('DOMContentLoaded', function () {
 
 
             } catch (error) {
-                 console.error("Error al obtener datos del usuario:", error);
-                 // Manejar el error, quizás mostrar un mensaje y cerrar sesión
-                 document.getElementById('user-name').textContent = user.email;
-                 document.getElementById('user-role-display').textContent = 'Error al cargar datos';
-                 // Opcional: Cerrar sesión si no se pueden cargar datos críticos
-                 // auth.signOut();
+                console.error("Error al obtener datos del usuario:", error);
+                // Manejar el error, quizás mostrar un mensaje y cerrar sesión
+                document.getElementById('user-name').textContent = user.email;
+                document.getElementById('user-role-display').textContent = 'Error al cargar datos';
+                // Opcional: Cerrar sesión si no se pueden cargar datos críticos
+                // auth.signOut();
             }
 
 
@@ -967,8 +1073,8 @@ document.addEventListener('DOMContentLoaded', function () {
             mainApp.classList.add('hidden');
             loginScreen.classList.remove('hidden');
             // Limpiar cualquier estado residual de la app si es necesario
-             const authStatus = document.getElementById('auth-status');
-             if (authStatus) authStatus.textContent = ''; // Limpiar mensaje de error de login
+            const authStatus = document.getElementById('auth-status');
+            if (authStatus) authStatus.textContent = ''; // Limpiar mensaje de error de login
         }
     });
 });
@@ -990,12 +1096,12 @@ function setupEventListeners() {
         button.addEventListener('click', function () {
             // Si el botón está dentro del formulario de cliente y es tipo button, resetear
             if (this.type === 'button' && this.closest('#form-cliente') && !editingClientId) {
-                 // resetClientForm(); // Resetear solo si NO se está editando
+                // resetClientForm(); // Resetear solo si NO se está editando
             } else if (this.closest('.menu-card')) {
                 // Si viene de una tarjeta de menú, asegurar que se resetea si va a vista de cliente nuevo
-                 if (this.getAttribute('data-view') === 'view-cliente') {
-                     resetClientForm();
-                 }
+                if (this.getAttribute('data-view') === 'view-cliente') {
+                    resetClientForm();
+                }
             }
             showView(this.getAttribute('data-view'));
         });
@@ -1021,9 +1127,9 @@ function setupEventListeners() {
     if (btnCancelarUsuario) btnCancelarUsuario.addEventListener('click', ocultarFormularioUsuario);
     const formUsuario = document.getElementById('form-usuario');
     if (formUsuario) formUsuario.addEventListener('submit', handleUserForm);
-     // **NUEVO** Herramienta de Diagnóstico
-     const btnDiagnosticarPagos = document.getElementById('btn-diagnosticar-pagos');
-     if (btnDiagnosticarPagos) btnDiagnosticarPagos.addEventListener('click', handleDiagnosticarPagos);
+    // **NUEVO** Herramienta de Diagnóstico
+    const btnDiagnosticarPagos = document.getElementById('btn-diagnosticar-pagos');
+    if (btnDiagnosticarPagos) btnDiagnosticarPagos.addEventListener('click', handleDiagnosticarPagos);
 
 
     // --- Importar Datos ---
@@ -1036,8 +1142,8 @@ function setupEventListeners() {
     if (btnLimpiarDatos) {
         btnLimpiarDatos.addEventListener('click', async () => {
             if (confirm('¿Estás seguro de que deseas limpiar TODA la base de datos en la nube? Esta acción es experimental y no se puede deshacer.')) {
-                 // !! ADVERTENCIA !! Esto debería estar protegido y no ser accesible fácilmente
-                 // Preferiblemente usar Cloud Functions o hacerlo manualmente en consola Firebase.
+                // !! ADVERTENCIA !! Esto debería estar protegido y no ser accesible fácilmente
+                // Preferiblemente usar Cloud Functions o hacerlo manualmente en consola Firebase.
                 showStatus('estado-importacion', 'Acción peligrosa. La limpieza masiva debe hacerse desde la consola de Firebase o Cloud Functions.', 'error');
                 // await database.limpiarColeccion('pagos'); // Ejemplo (necesitaría implementar limpiarColeccion)
                 // await database.limpiarColeccion('creditos');
@@ -1106,14 +1212,14 @@ function setupEventListeners() {
     const modalCloseBtn = document.getElementById('modal-close-btn');
     if (modalCloseBtn) modalCloseBtn.addEventListener('click', () => document.getElementById('generic-modal').classList.add('hidden'));
     // Cerrar modal si se hace clic fuera del contenido
-     const modalOverlay = document.getElementById('generic-modal');
-     if (modalOverlay) {
-         modalOverlay.addEventListener('click', (event) => {
-             if (event.target === modalOverlay) { // Solo si el clic es en el overlay mismo
-                 modalOverlay.classList.add('hidden');
-             }
-         });
-     }
+    const modalOverlay = document.getElementById('generic-modal');
+    if (modalOverlay) {
+        modalOverlay.addEventListener('click', (event) => {
+            if (event.target === modalOverlay) { // Solo si el clic es en el overlay mismo
+                modalOverlay.classList.add('hidden');
+            }
+        });
+    }
 }
 
 // =============================================
@@ -1138,11 +1244,11 @@ async function handleLogin(e) {
         statusElement.textContent = '¡Inicio de sesión exitoso!';
         statusElement.className = 'status-message status-success';
         // No ocultar inmediatamente para que el usuario vea el mensaje
-         setTimeout(() => {
-             if (!currentUser) { // Si por alguna razón onAuthStateChanged no se disparó rápido
+        setTimeout(() => {
+            if (!currentUser) { // Si por alguna razón onAuthStateChanged no se disparó rápido
                 statusElement.classList.add('hidden');
-             }
-         }, 1500);
+            }
+        }, 1500);
 
 
     } catch (error) {
@@ -1151,9 +1257,9 @@ async function handleLogin(e) {
         if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
             mensajeError = 'Error: Correo electrónico o contraseña incorrectos.';
         } else if (error.code === 'auth/network-request-failed') {
-             mensajeError = 'Error: No se pudo conectar al servidor. Verifica tu conexión a internet.';
+            mensajeError = 'Error: No se pudo conectar al servidor. Verifica tu conexión a internet.';
         } else if (error.code === 'auth/too-many-requests') {
-             mensajeError = 'Error: Demasiados intentos fallidos. Intenta más tarde.';
+            mensajeError = 'Error: Demasiados intentos fallidos. Intenta más tarde.';
         }
         statusElement.textContent = mensajeError;
         statusElement.className = 'status-message status-error';
@@ -1185,10 +1291,10 @@ function handleOfficeChange() {
         const clienteContent = document.getElementById(clienteContentId);
         if (clienteContent) clienteContent.classList.remove('hidden');
     }
-     // Limpiar resultados anteriores al cambiar de oficina
-     document.getElementById('resultado-importacion')?.classList.add('hidden');
-     document.getElementById('estado-importacion').innerHTML = '';
-     document.getElementById('detalle-importacion').innerHTML = '';
+    // Limpiar resultados anteriores al cambiar de oficina
+    document.getElementById('resultado-importacion')?.classList.add('hidden');
+    document.getElementById('estado-importacion').innerHTML = '';
+    document.getElementById('detalle-importacion').innerHTML = '';
 }
 
 
@@ -1216,14 +1322,14 @@ function handleTabClick() {
     if (targetTabContent) {
         targetTabContent.classList.remove('hidden');
         // Limpiar el textarea correspondiente al mostrar la pestaña
-         const textareaId = `datos-importar-${officePrefix}-${currentImportTab}`;
-         const textarea = document.getElementById(textareaId);
-         if (textarea) textarea.value = '';
+        const textareaId = `datos-importar-${officePrefix.toLowerCase()}-${currentImportTab}`;
+        const textarea = document.getElementById(textareaId);
+        if (textarea) textarea.value = '';
     }
-     // Limpiar resultados anteriores al cambiar de pestaña
-     document.getElementById('resultado-importacion')?.classList.add('hidden');
-     document.getElementById('estado-importacion').innerHTML = '';
-     document.getElementById('detalle-importacion').innerHTML = '';
+    // Limpiar resultados anteriores al cambiar de pestaña
+    document.getElementById('resultado-importacion')?.classList.add('hidden');
+    document.getElementById('estado-importacion').innerHTML = '';
+    document.getElementById('detalle-importacion').innerHTML = '';
 }
 
 
@@ -1253,7 +1359,13 @@ async function handleImport() {
 
     // Mostrar indicadores de progreso
     showProcessingOverlay(true, `Importando ${currentImportTab} para ${office}...`);
-    showButtonLoading('btn-procesar-importacion', true, 'Importando...');
+    // =============================================
+    // *** INICIO DE LA CORRECCIÓN 3 (Instancia 3) ***
+    // =============================================
+    showButtonLoading('#btn-procesar-importacion', true, 'Importando...');
+    // =============================================
+    // *** FIN DE LA CORRECCIÓN 3 (Instancia 3) ***
+    // =============================================
     showFixedProgress(0, `Iniciando importación de ${currentImportTab}...`);
     estadoImportacionDiv.innerHTML = 'Procesando archivo CSV...';
     estadoImportacionDiv.className = 'status-message status-info';
@@ -1281,10 +1393,10 @@ async function handleImport() {
                 }
             }
             // Mostrar estado como warning si hubo errores pero algunos se importaron, error si falló todo
-             showStatus('estado-importacion', mensaje, resultado.importados > 0 ? 'warning' : 'error');
+            showStatus('estado-importacion', mensaje, resultado.importados > 0 ? 'warning' : 'error');
         } else {
             if (detalleImportacionDiv) detalleImportacionDiv.innerHTML = 'No se encontraron errores.';
-             showStatus('estado-importacion', mensaje, 'success');
+            showStatus('estado-importacion', mensaje, 'success');
         }
 
         // Limpiar textarea después de importar
@@ -1298,7 +1410,13 @@ async function handleImport() {
     } finally {
         // Ocultar indicadores de progreso
         showProcessingOverlay(false);
-        showButtonLoading('btn-procesar-importacion', false);
+        // =============================================
+        // *** INICIO DE LA CORRECCIÓN 3 (Instancia 4) ***
+        // =============================================
+        showButtonLoading('#btn-procesar-importacion', false);
+        // =============================================
+        // *** FIN DE LA CORRECCIÓN 3 (Instancia 4) ***
+        // =============================================
         // Ocultar barra de progreso después de un tiempo
         setTimeout(hideFixedProgress, 3000);
     }
@@ -1318,18 +1436,18 @@ function resetClientForm() {
 
     // Resetear estado de solo lectura de CURP
     const curpInput = document.getElementById('curp_cliente');
-     curpInput.readOnly = !(currentUserData && (currentUserData.role === 'admin' || currentUserData.role === 'supervisor'));
+    curpInput.readOnly = !(currentUserData && (currentUserData.role === 'admin' || currentUserData.role === 'supervisor'));
 
 
-     // Resetear validación visual de CURP
-     validarCURP(curpInput);
+    // Resetear validación visual de CURP
+    validarCURP(curpInput);
 
 
     // Resetear dropdown de población/grupo a la oficina por defecto (GDL)
     handleOfficeChangeForClientForm.call(document.getElementById('office_cliente') || { value: 'GDL' });
 
 
-     // Limpiar mensaje de estado
+    // Limpiar mensaje de estado
     showStatus('status_cliente', '', 'info'); // Limpia el mensaje anterior
 }
 
@@ -1346,7 +1464,7 @@ async function handleClientForm(e) {
         curpInput.classList.add('input-error'); // Marcar campo con error
         return;
     } else {
-         curpInput.classList.remove('input-error');
+        curpInput.classList.remove('input-error');
     }
 
     // Recoger datos del formulario
@@ -1376,16 +1494,16 @@ async function handleClientForm(e) {
         let resultado;
         if (editingClientId) {
             // --- Lógica de Actualización ---
-             // Si se puede editar CURP y ha cambiado, verificar que no exista ya en otro cliente
-             if (!curpInput.readOnly) {
-                 const clienteOriginal = await database.obtenerClientePorId(editingClientId);
-                 if (clienteOriginal && clienteOriginal.curp !== curp) {
-                     const existeNuevoCURP = await database.buscarClientePorCURP(curp);
-                     if (existeNuevoCURP) {
-                         throw new Error(`La nueva CURP (${curp}) ya pertenece a otro cliente (${existeNuevoCURP.nombre}).`);
-                     }
-                 }
-             }
+            // Si se puede editar CURP y ha cambiado, verificar que no exista ya en otro cliente
+            if (!curpInput.readOnly) {
+                const clienteOriginal = await database.obtenerClientePorId(editingClientId);
+                if (clienteOriginal && clienteOriginal.curp !== curp) {
+                    const existeNuevoCURP = await database.buscarClientePorCURP(curp);
+                    if (existeNuevoCURP) {
+                        throw new Error(`La nueva CURP (${curp}) ya pertenece a otro cliente (${existeNuevoCURP.nombre}).`);
+                    }
+                }
+            }
             resultado = await database.actualizarCliente(editingClientId, clienteData, currentUser.email);
         } else {
             // --- Lógica de Creación ---
@@ -1503,7 +1621,7 @@ async function handleUserForm(e) {
                 throw new Error('Todos los campos son obligatorios para crear un usuario.');
             }
             if (password.length < 6) {
-                 throw new Error('La contraseña debe tener al menos 6 caracteres.');
+                throw new Error('La contraseña debe tener al menos 6 caracteres.');
             }
             if (!isOnline) {
                 throw new Error("La creación de nuevos usuarios requiere conexión a internet.");
@@ -1549,7 +1667,13 @@ async function loadUsersTable() {
     cargaEnProgreso = true;
     const tbody = document.getElementById('tabla-usuarios');
     tbody.innerHTML = '<tr><td colspan="6"><div class="spinner" style="margin: 20px auto; border-top-color: var(--primary);"></div></td></tr>'; // Spinner
-    showButtonLoading('btn-aplicar-filtros-usuarios', true, 'Buscando...');
+    // =============================================
+    // *** INICIO DE LA CORRECCIÓN 3 (Instancia 5) ***
+    // =============================================
+    showButtonLoading('#btn-aplicar-filtros-usuarios', true, 'Buscando...');
+    // =============================================
+    // *** FIN DE LA CORRECCIÓN 3 (Instancia 5) ***
+    // =============================================
     showStatus('status_usuarios', '', 'info'); // Limpiar mensaje previo
 
 
@@ -1580,8 +1704,8 @@ async function loadUsersTable() {
             tbody.innerHTML = '<tr><td colspan="6">No se encontraron usuarios que coincidan con los filtros.</td></tr>';
             showStatus('status_usuarios', 'No se encontraron usuarios.', 'info');
         } else {
-             // Ordenar por nombre
-             usuariosFiltrados.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+            // Ordenar por nombre
+            usuariosFiltrados.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 
 
             usuariosFiltrados.forEach(usuario => {
@@ -1596,8 +1720,8 @@ async function loadUsersTable() {
                 const roleBadgeClass = `role-${(usuario.role || 'default').toLowerCase()}`;
 
                 // Escapar datos de usuario para el onclick
-                 // Convertir a string JSON, luego escapar comillas simples para HTML
-                 const usuarioJsonString = JSON.stringify(usuario).replace(/'/g, "&apos;").replace(/"/g, "&quot;");
+                // Convertir a string JSON, luego escapar comillas simples para HTML
+                const usuarioJsonString = JSON.stringify(usuario).replace(/'/g, "&apos;").replace(/"/g, "&quot;");
 
 
                 tr.innerHTML = `
@@ -1621,13 +1745,19 @@ async function loadUsersTable() {
         showStatus('status_usuarios', `Error: ${error.message}`, 'error');
     } finally {
         cargaEnProgreso = false;
-        showButtonLoading('btn-aplicar-filtros-usuarios', false); // Restaurar botón de búsqueda
+        // =============================================
+        // *** INICIO DE LA CORRECCIÓN 3 (Instancia 6) ***
+        // =============================================
+        showButtonLoading('#btn-aplicar-filtros-usuarios', false); // Restaurar botón de búsqueda
+        // =============================================
+        // *** FIN DE LA CORRECCIÓN 3 (Instancia 6) ***
+        // =============================================
     }
 }
 
 function limpiarFiltrosUsuarios() {
     if (cargaEnProgreso) {
-         console.warn("Intento de limpiar filtros mientras carga estaba en progreso. Cancelando carga.");
+        console.warn("Intento de limpiar filtros mientras carga estaba en progreso. Cancelando carga.");
         cancelarCarga(); // Intentar cancelar si hay algo en progreso
     }
     // Limpiar campos de filtro
@@ -1641,12 +1771,12 @@ function limpiarFiltrosUsuarios() {
 }
 
 function editUsuario(usuario) {
-     // Asegurarse de que el objeto 'usuario' es válido
-     if (typeof usuario !== 'object' || usuario === null) {
-         console.error("Intento de editar usuario con datos inválidos:", usuario);
-         alert("Error: No se pudieron cargar los datos del usuario para editar.");
-         return;
-     }
+    // Asegurarse de que el objeto 'usuario' es válido
+    if (typeof usuario !== 'object' || usuario === null) {
+        console.error("Intento de editar usuario con datos inválidos:", usuario);
+        alert("Error: No se pudieron cargar los datos del usuario para editar.");
+        return;
+    }
     mostrarFormularioUsuario(usuario);
 }
 
@@ -1737,14 +1867,14 @@ async function handleSearchClientForCredit() {
         // Llenar datos y mostrar formulario
         document.getElementById('nombre_colocacion').value = cliente.nombre;
         document.getElementById('idCredito_colocacion').value = 'Se asignará automáticamente'; // O manejar ID histórico si aplica
-         // Resetear campos específicos del crédito
-         document.getElementById('tipo_colocacion').value = '';
-         document.getElementById('monto_colocacion').value = '';
-         document.getElementById('plazo_colocacion').value = ''; // Se actualiza con actualizarPlazosSegunCliente
-         document.getElementById('montoTotal_colocacion').value = '';
-         document.getElementById('curpAval_colocacion').value = '';
-         document.getElementById('nombreAval_colocacion').value = '';
-         validarCURP(document.getElementById('curpAval_colocacion')); // Resetear validación visual aval
+        // Resetear campos específicos del crédito
+        document.getElementById('tipo_colocacion').value = '';
+        document.getElementById('monto_colocacion').value = '';
+        document.getElementById('plazo_colocacion').value = ''; // Se actualiza con actualizarPlazosSegunCliente
+        document.getElementById('montoTotal_colocacion').value = '';
+        document.getElementById('curpAval_colocacion').value = '';
+        document.getElementById('nombreAval_colocacion').value = '';
+        validarCURP(document.getElementById('curpAval_colocacion')); // Resetear validación visual aval
 
 
         formColocacion.classList.remove('hidden');
@@ -1790,8 +1920,8 @@ async function handleCreditForm(e) {
         return;
     }
     if (!validarFormatoCURP(creditoData.curpCliente)) {
-         showStatus('status_colocacion', 'Error: CURP del cliente inválido.', 'error');
-         return;
+        showStatus('status_colocacion', 'Error: CURP del cliente inválido.', 'error');
+        return;
     }
     if (!validarFormatoCURP(curpAval)) {
         showStatus('status_colocacion', 'Error: El CURP del aval debe tener 18 caracteres y formato válido.', 'error');
@@ -1814,9 +1944,9 @@ async function handleCreditForm(e) {
 
         if (resultado.success) {
             showFixedProgress(100, 'Crédito generado');
-             let successMessage = `¡Crédito generado exitosamente! ID Firestore: ${resultado.data.id}.`;
-             // Si tuviéramos historicalId aquí, lo mostraríamos:
-             // if (resultado.data.historicalIdCredito) successMessage += ` (ID Histórico: ${resultado.data.historicalIdCredito})`;
+            let successMessage = `¡Crédito generado exitosamente! ID Firestore: ${resultado.data.id}.`;
+            // Si tuviéramos historicalId aquí, lo mostraríamos:
+            // if (resultado.data.historicalIdCredito) successMessage += ` (ID Histórico: ${resultado.data.historicalIdCredito})`;
 
 
             if (!isOnline) {
@@ -1882,35 +2012,44 @@ async function handleSearchCreditForPayment() {
             throw new Error(`No se encontró ningún crédito con el ID histórico: ${historicalIdCredito}`);
         }
 
-         // Si se encuentran MÚLTIPLES créditos con el MISMO ID histórico (de diferentes clientes/sucursales)
-         if (creditosEncontrados.length > 1) {
-             console.warn(`Se encontraron ${creditosEncontrados.length} créditos con el ID histórico ${historicalIdCredito}. Mostrando el más reciente.`);
-              // Ordenar por fecha de creación para tomar el más reciente como predeterminado
-              creditosEncontrados.sort((a, b) => (parsearFecha(b.fechaCreacion)?.getTime() || 0) - (parsearFecha(a.fechaCreacion)?.getTime() || 0));
-              // Aquí podríamos implementar lógica para que el usuario seleccione cuál quiere,
-              // pero por ahora tomamos el más reciente.
-              showStatus('status_cobranza', `Advertencia: Se encontraron ${creditosEncontrados.length} créditos con ID ${historicalIdCredito}. Se cargó el más reciente (${creditosEncontrados[0].curpCliente}).`, 'warning');
-         }
+        // Si se encuentran MÚLTIPLES créditos con el MISMO ID histórico (de diferentes clientes/sucursales)
+        if (creditosEncontrados.length > 1) {
+            console.warn(`Se encontraron ${creditosEncontrados.length} créditos con el ID histórico ${historicalIdCredito}. Mostrando el más reciente.`);
+            // Ordenar por fecha de creación para tomar el más reciente como predeterminado
+            creditosEncontrados.sort((a, b) => (parsearFecha(b.fechaCreacion)?.getTime() || 0) - (parsearFecha(a.fechaCreacion)?.getTime() || 0));
+            // Aquí podríamos implementar lógica para que el usuario seleccione cuál quiere,
+            // pero por ahora tomamos el más reciente.
+            showStatus('status_cobranza', `Advertencia: Se encontraron ${creditosEncontrados.length} créditos con ID ${historicalIdCredito}. Se cargó el más reciente (${creditosEncontrados[0].curpCliente}).`, 'warning');
+        }
 
         creditoActual = creditosEncontrados[0]; // Guardamos el objeto completo { id: firestoreId, ..., historicalIdCredito: ... }
 
         showFixedProgress(60, 'Obteniendo datos del cliente...');
         const cliente = await database.buscarClientePorCURP(creditoActual.curpCliente);
         if (!cliente) {
-             console.warn(`No se encontró cliente para CURP ${creditoActual.curpCliente} del crédito ${historicalIdCredito}`);
+            console.warn(`No se encontró cliente para CURP ${creditoActual.curpCliente} del crédito ${historicalIdCredito}`);
         }
 
 
+        // =============================================
+        // *** INICIO DE LA CORRECCIÓN 2 ***
+        // =============================================
         showFixedProgress(80, 'Calculando historial del crédito...');
-        // Usar el historicalIdCredito y CURP para obtener el historial correcto
-         const historicalId = creditoActual.historicalIdCredito || creditoActual.id; // Asegurar que tenemos el historicalId
-        const historial = await obtenerHistorialCreditoCliente(creditoActual.curpCliente, historicalId); // Pasamos historicalId
+        // Usar el historicalIdCredito para obtener los pagos
+        const historicalId = creditoActual.historicalIdCredito || creditoActual.id; // Asegurar que tenemos el historicalId
+        const pagos = await database.getPagosPorCredito(historicalId); // Obtener los pagos
+        
+        // Calcular el historial/estado usando la función helper que acabamos de agregar
+        const historial = _calcularEstadoCredito(creditoActual, pagos); 
 
         if (!historial) {
             // Esto podría pasar si el crédito encontrado tiene datos inconsistentes
-             console.error("No se pudo calcular el historial para el crédito:", creditoActual);
-            throw new Error(`No se pudo calcular el historial del crédito ${historicalId}. Verifica los datos del crédito.`);
+            console.error("No se pudo calcular el historial para el crédito:", creditoActual);
+            throw new Error(`No se pudo calcular el historial del crédito ${historicalId}. Verifica los datos del crédito (monto, plazo, fecha).`);
         }
+        // =============================================
+        // *** FIN DE LA CORRECCIÓN 2 ***
+        // =============================================
 
         // Llenar formulario con datos del historial
         document.getElementById('nombre_cobranza').value = cliente ? cliente.nombre : (creditoActual.nombreCliente || 'Cliente Desconocido');
@@ -1927,10 +2066,10 @@ async function handleSearchCreditForPayment() {
         showFixedProgress(100, 'Crédito encontrado');
         formCobranza.classList.remove('hidden'); // Mostrar formulario de pago
 
-         // Mensaje de éxito, limpiar advertencia previa si la hubo
-         if (!statusCobranza.textContent.includes('Advertencia')) {
-             showStatus('status_cobranza', `Crédito ${historicalIdCredito} encontrado (${creditoActual.curpCliente}). Listo para registrar pago.`, 'success');
-         }
+        // Mensaje de éxito, limpiar advertencia previa si la hubo
+        if (!statusCobranza.textContent.includes('Advertencia')) {
+            showStatus('status_cobranza', `Crédito ${historicalIdCredito} encontrado (${creditoActual.curpCliente}). Listo para registrar pago.`, 'success');
+        }
 
         // Poner foco en el monto para agilizar
         montoInput.focus();
@@ -1945,7 +2084,7 @@ async function handleSearchCreditForPayment() {
         hideFixedProgress();
     } finally {
         showButtonLoading(btnBuscar, false);
-         if (!document.querySelector('#status_cobranza.status-error')) {
+        if (!document.querySelector('#status_cobranza.status-error')) {
             setTimeout(hideFixedProgress, 1500);
         }
     }
@@ -1975,16 +2114,16 @@ async function handlePaymentForm(e) {
         montoInput.classList.add('input-error');
         return;
     } else {
-         montoInput.classList.remove('input-error');
+        montoInput.classList.remove('input-error');
     }
 
-     // Verificar si el monto excede el saldo (usando el saldo del objeto creditoActual)
-     const saldoActual = creditoActual.saldo !== undefined ? creditoActual.saldo : 0;
-     if (montoPago > saldoActual + 0.01) { // Margen pequeño
-         showStatus('status_cobranza', `Error: El monto del pago ($${montoPago.toFixed(2)}) excede el saldo restante ($${saldoActual.toFixed(2)}).`, 'error');
-         montoInput.classList.add('input-error');
-         return;
-     }
+    // Verificar si el monto excede el saldo (usando el saldo del objeto creditoActual)
+    const saldoActual = creditoActual.saldo !== undefined ? creditoActual.saldo : 0;
+    if (montoPago > saldoActual + 0.01) { // Margen pequeño
+        showStatus('status_cobranza', `Error: El monto del pago ($${montoPago.toFixed(2)}) excede el saldo restante ($${saldoActual.toFixed(2)}).`, 'error');
+        montoInput.classList.add('input-error');
+        return;
+    }
 
 
     showButtonLoading(submitButton, true, 'Registrando...');
@@ -1998,7 +2137,7 @@ async function handlePaymentForm(e) {
             idCredito: historicalId, // Guardar el ID histórico/original en el pago
             monto: montoPago,
             tipoPago: tipoPago
-             // curpCliente y office se añadirán dentro de database.agregarPago
+            // curpCliente y office se añadirán dentro de database.agregarPago
         };
 
 
@@ -2008,8 +2147,8 @@ async function handlePaymentForm(e) {
 
         if (resultado.success) {
             showFixedProgress(100, 'Pago registrado');
-             let successMsg = '¡Pago registrado exitosamente!';
-             if (!isOnline) successMsg += ' (Guardado localmente).';
+            let successMsg = '¡Pago registrado exitosamente!';
+            if (!isOnline) successMsg += ' (Guardado localmente).';
             showStatus('status_cobranza', successMsg, 'success');
 
 
@@ -2051,23 +2190,23 @@ function handleMontoPagoChange() {
     // Formatear para mostrar
     saldoDespuesInput.value = `$${saldoDespues.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-     // Validar visualmente si el monto excede el saldo
-     if (monto > saldoActual + 0.01) { // Margen pequeño
-         montoInput.classList.add('input-error');
-         montoInput.title = "El monto excede el saldo actual";
-         // Mostrar advertencia persistente si excede
-          showStatus('status_cobranza', 'Advertencia: El monto ingresado excede el saldo restante.', 'warning');
-     } else {
-         montoInput.classList.remove('input-error');
-         montoInput.title = "";
-         // Limpiar advertencia si estaba visible y ya no aplica, solo si no hay otro error
-          const statusCobranza = document.getElementById('status_cobranza');
-          if (statusCobranza.classList.contains('status-warning') && statusCobranza.textContent.includes('excede')) {
-               // Volver a mensaje de 'listo para registrar' si es el caso
-                const historicalId = creditoActual.historicalIdCredito || creditoActual.id;
-               showStatus('status_cobranza', `Crédito ${historicalId} encontrado (${creditoActual.curpCliente}). Listo para registrar pago.`, 'success');
-          }
-     }
+    // Validar visualmente si el monto excede el saldo
+    if (monto > saldoActual + 0.01) { // Margen pequeño
+        montoInput.classList.add('input-error');
+        montoInput.title = "El monto excede el saldo actual";
+        // Mostrar advertencia persistente si excede
+        showStatus('status_cobranza', 'Advertencia: El monto ingresado excede el saldo restante.', 'warning');
+    } else {
+        montoInput.classList.remove('input-error');
+        montoInput.title = "";
+        // Limpiar advertencia si estaba visible y ya no aplica, solo si no hay otro error
+        const statusCobranza = document.getElementById('status_cobranza');
+        if (statusCobranza.classList.contains('status-warning') && statusCobranza.textContent.includes('excede')) {
+            // Volver a mensaje de 'listo para registrar' si es el caso
+            const historicalId = creditoActual.historicalIdCredito || creditoActual.id;
+            showStatus('status_cobranza', `Crédito ${historicalId} encontrado (${creditoActual.curpCliente}). Listo para registrar pago.`, 'success');
+        }
+    }
 }
 
 
@@ -2120,31 +2259,31 @@ async function handleBuscarGrupoParaPago() {
 
 
             if (creditoActivo && creditoActivo.saldo > 0.01) { // Solo si hay crédito activo con saldo
-                 // Calcular pago semanal para este crédito
-                 if (creditoActivo.montoTotal && creditoActivo.plazo && creditoActivo.plazo > 0) {
-                     const pagoSemanal = creditoActivo.montoTotal / creditoActivo.plazo;
-                     totalClientesActivos++;
-                     totalACobrarSemanal += pagoSemanal;
-                     creditosParaPagar.push({
-                         firestoreId: creditoActivo.id, // ID Único de Firestore
-                         historicalIdCredito: creditoActivo.historicalIdCredito || creditoActivo.id, // ID Histórico
-                         curpCliente: cliente.curp,
-                         nombreCliente: cliente.nombre,
-                         pagoSemanal: pagoSemanal
-                     });
-                 } else {
-                     console.warn(`Crédito ${creditoActivo.historicalIdCredito || creditoActivo.id} de ${cliente.curp} tiene datos inconsistentes (monto/plazo).`);
-                     clientesConErrores.push(`${cliente.nombre} (${cliente.curp}) - Datos inconsistentes`);
-                 }
+                // Calcular pago semanal para este crédito
+                if (creditoActivo.montoTotal && creditoActivo.plazo && creditoActivo.plazo > 0) {
+                    const pagoSemanal = creditoActivo.montoTotal / creditoActivo.plazo;
+                    totalClientesActivos++;
+                    totalACobrarSemanal += pagoSemanal;
+                    creditosParaPagar.push({
+                        firestoreId: creditoActivo.id, // ID Único de Firestore
+                        historicalIdCredito: creditoActivo.historicalIdCredito || creditoActivo.id, // ID Histórico
+                        curpCliente: cliente.curp,
+                        nombreCliente: cliente.nombre,
+                        pagoSemanal: pagoSemanal
+                    });
+                } else {
+                    console.warn(`Crédito ${creditoActivo.historicalIdCredito || creditoActivo.id} de ${cliente.curp} tiene datos inconsistentes (monto/plazo).`);
+                    clientesConErrores.push(`${cliente.nombre} (${cliente.curp}) - Datos inconsistentes`);
+                }
             }
         }
 
 
         if (totalClientesActivos === 0) {
-             let msg = `No se encontraron créditos activos con saldo pendiente en el grupo '${grupo}'.`;
-             if (clientesConErrores.length > 0) {
-                 msg += ` ${clientesConErrores.length} clientes tuvieron créditos con datos inconsistentes.`
-             }
+            let msg = `No se encontraron créditos activos con saldo pendiente en el grupo '${grupo}'.`;
+            if (clientesConErrores.length > 0) {
+                msg += ` ${clientesConErrores.length} clientes tuvieron créditos con datos inconsistentes.`
+            }
             throw new Error(msg);
         }
 
@@ -2164,13 +2303,13 @@ async function handleBuscarGrupoParaPago() {
 
 
         detailsDiv.classList.remove('hidden');
-         let successMsg = `Se encontraron ${totalClientesActivos} créditos activos para cobrar esta semana en el grupo '${grupo}'.`;
-         if (clientesConErrores.length > 0) {
-              successMsg += ` (${clientesConErrores.length} con datos inconsistentes omitidos).`;
-              showStatus('status_pago_grupo', successMsg, 'warning');
-         } else {
-             showStatus('status_pago_grupo', successMsg, 'success');
-         }
+        let successMsg = `Se encontraron ${totalClientesActivos} créditos activos para cobrar esta semana en el grupo '${grupo}'.`;
+        if (clientesConErrores.length > 0) {
+            successMsg += ` (${clientesConErrores.length} con datos inconsistentes omitidos).`;
+            showStatus('status_pago_grupo', successMsg, 'warning');
+        } else {
+            showStatus('status_pago_grupo', successMsg, 'success');
+        }
 
 
     } catch (error) {
@@ -2206,7 +2345,7 @@ async function handleRegistroPagoGrupal() {
         montoRecibidoInput.classList.add('input-error');
         return;
     } else {
-         montoRecibidoInput.classList.remove('input-error');
+        montoRecibidoInput.classList.remove('input-error');
     }
 
 
@@ -2215,13 +2354,13 @@ async function handleRegistroPagoGrupal() {
     if (montoRecibido < totalCalculado - 0.01) { // Pequeño margen
         showStatus('status_pago_grupo', `Advertencia: El monto recibido ($${montoRecibido.toFixed(2)}) es menor al total calculado ($${totalCalculado.toFixed(2)}). El pago grupal solo registra el pago semanal completo. Registra faltantes individualmente.`, 'warning');
         // Decisión: No continuar si el monto es menor para evitar confusión.
-         return;
+        return;
     }
-     // Permitir que sea mayor (pagos extra)? Por ahora, no. El pago grupal aplica solo el semanal.
-     if (montoRecibido > totalCalculado + 0.01) {
-         showStatus('status_pago_grupo', `Advertencia: El monto recibido ($${montoRecibido.toFixed(2)}) es mayor al total calculado ($${totalCalculado.toFixed(2)}). Solo se registrará el pago semanal ($${totalCalculado.toFixed(2)}). Registra pagos extraordinarios individualmente.`, 'warning');
-         // Continuar, pero solo registrar el pago semanal.
-     }
+    // Permitir que sea mayor (pagos extra)? Por ahora, no. El pago grupal aplica solo el semanal.
+    if (montoRecibido > totalCalculado + 0.01) {
+        showStatus('status_pago_grupo', `Advertencia: El monto recibido ($${montoRecibido.toFixed(2)}) es mayor al total calculado ($${totalCalculado.toFixed(2)}). Solo se registrará el pago semanal ($${totalCalculado.toFixed(2)}). Registra pagos extraordinarios individualmente.`, 'warning');
+        // Continuar, pero solo registrar el pago semanal.
+    }
 
 
     showButtonLoading(btnRegistrar, true, 'Registrando...');
@@ -2247,15 +2386,15 @@ async function handleRegistroPagoGrupal() {
             const creditosSnapshot = await db.collection('creditos').where(firebase.firestore.FieldPath.documentId(), 'in', firestoreIdsChunk).get();
             const creditosDataMap = new Map();
             creditosSnapshot.forEach(doc => {
-                 creditosDataMap.set(doc.id, doc.data());
+                creditosDataMap.set(doc.id, doc.data());
             });
 
 
             for (const creditoInfo of chunk) {
-                 const creditoActualData = creditosDataMap.get(creditoInfo.firestoreId);
+                const creditoActualData = creditosDataMap.get(creditoInfo.firestoreId);
 
 
-                 if (creditoActualData && creditoActualData.saldo > 0.01) { // Doble check
+                if (creditoActualData && creditoActualData.saldo > 0.01) { // Doble check
                     const pagoMonto = creditoInfo.pagoSemanal; // Usar el pago semanal calculado
                     const nuevoSaldo = creditoActualData.saldo - pagoMonto;
 
@@ -2283,35 +2422,35 @@ async function handleRegistroPagoGrupal() {
                         curpCliente: creditoActualData.curpCliente,
                         grupo: grupo // Guardar el grupo al que pertenecía el pago
                     });
-                     pagosRegistrados++;
-                 } else if (!creditoActualData) {
-                     erroresRegistro.push(`No se encontró el crédito con ID Firestore ${creditoInfo.firestoreId} para ${creditoInfo.curpCliente}`);
-                 } else {
-                      // Ya estaba liquidado o sin saldo
-                      console.log(`Crédito ${creditoInfo.historicalIdCredito} ya liquidado, omitiendo pago grupal.`);
-                 }
+                    pagosRegistrados++;
+                } else if (!creditoActualData) {
+                    erroresRegistro.push(`No se encontró el crédito con ID Firestore ${creditoInfo.firestoreId} para ${creditoInfo.curpCliente}`);
+                } else {
+                    // Ya estaba liquidado o sin saldo
+                    console.log(`Crédito ${creditoInfo.historicalIdCredito} ya liquidado, omitiendo pago grupal.`);
+                }
             }
 
 
             // Ejecutar el batch
-             await batch.commit();
-             console.log(`Lote de ${chunk.length} pagos grupales procesado.`);
-              // Pausa breve entre lotes si hay muchos
-             if (i + MAX_BATCH_SIZE < creditos.length) {
-                 await new Promise(resolve => setTimeout(resolve, 100));
-             }
+            await batch.commit();
+            console.log(`Lote de ${chunk.length} pagos grupales procesado.`);
+            // Pausa breve entre lotes si hay muchos
+            if (i + MAX_BATCH_SIZE < creditos.length) {
+                await new Promise(resolve => setTimeout(resolve, 100));
+            }
         } // Fin del bucle for (lotes)
 
 
         let finalMessage = `¡Éxito! Se registraron ${pagosRegistrados} pagos grupales para el grupo '${grupo}'.`;
-         let finalStatusType = 'success';
+        let finalStatusType = 'success';
 
 
-         if (erroresRegistro.length > 0) {
-             finalMessage += ` Se encontraron ${erroresRegistro.length} errores: ${erroresRegistro.join(', ')}`;
-             finalStatusType = 'warning';
-             console.error("Errores durante registro de pago grupal:", erroresRegistro);
-         }
+        if (erroresRegistro.length > 0) {
+            finalMessage += ` Se encontraron ${erroresRegistro.length} errores: ${erroresRegistro.join(', ')}`;
+            finalStatusType = 'warning';
+            console.error("Errores durante registro de pago grupal:", erroresRegistro);
+        }
 
 
         showStatus('status_pago_grupo', finalMessage, finalStatusType);
@@ -2345,7 +2484,13 @@ async function handleGenerarGrafico() {
     }
     cargaEnProgreso = true;
     showProcessingOverlay(true, 'Generando datos para el gráfico...');
-    showButtonLoading('btn-generar-grafico', true, 'Generando...');
+    // =============================================
+    // *** INICIO DE LA CORRECCIÓN 3 (Instancia 7) ***
+    // =============================================
+    showButtonLoading('#btn-generar-grafico', true, 'Generando...');
+    // =============================================
+    // *** FIN DE LA CORRECCIÓN 3 (Instancia 7) ***
+    // =============================================
     const statusGraficos = document.getElementById('status_graficos');
     const chartContainer = document.getElementById('grafico-container');
     chartContainer.innerHTML = ''; // Limpiar gráfico anterior
@@ -2365,7 +2510,7 @@ async function handleGenerarGrafico() {
         }
         // Validar rango de fechas?
         if (new Date(fechaInicio) > new Date(fechaFin)) {
-             throw new Error("La fecha de inicio no puede ser posterior a la fecha de fin.");
+            throw new Error("La fecha de inicio no puede ser posterior a la fecha de fin.");
         }
 
 
@@ -2397,11 +2542,11 @@ async function handleGenerarGrafico() {
                 const dia = fecha.getUTCDate();
 
 
-                 // Cálculo de la semana del año (ISO 8601 week date)
-                 const fechaInicioSemana = new Date(Date.UTC(anio, mes, dia));
-                 fechaInicioSemana.setUTCDate(fechaInicioSemana.getUTCDate() + 4 - (fechaInicioSemana.getUTCDay() || 7)); // Jueves de la semana
-                 const inicioAnio = new Date(Date.UTC(anio, 0, 1));
-                 const semana = Math.ceil((((fechaInicioSemana - inicioAnio) / 86400000) + 1) / 7);
+                // Cálculo de la semana del año (ISO 8601 week date)
+                const fechaInicioSemana = new Date(Date.UTC(anio, mes, dia));
+                fechaInicioSemana.setUTCDate(fechaInicioSemana.getUTCDate() + 4 - (fechaInicioSemana.getUTCDay() || 7)); // Jueves de la semana
+                const inicioAnio = new Date(Date.UTC(anio, 0, 1));
+                const semana = Math.ceil((((fechaInicioSemana - inicioAnio) / 86400000) + 1) / 7);
 
 
                 if (agruparPor === 'anio') {
@@ -2430,10 +2575,10 @@ async function handleGenerarGrafico() {
             datosAgrupados = agruparDatos(pagos, 'fecha', 'monto');
             labelPrefix = 'Monto Recuperado';
         } else if (tipoReporte === 'comportamiento') {
-             // Agrupar pagos por tipo
+            // Agrupar pagos por tipo
             datosAgrupados = pagos.reduce((acc, pago) => {
                 const tipo = (pago.tipoPago || 'normal').toLowerCase();
-                 // Capitalizar primera letra para la etiqueta
+                // Capitalizar primera letra para la etiqueta
                 const clave = tipo.charAt(0).toUpperCase() + tipo.slice(1);
                 if (!acc[clave]) acc[clave] = 0;
                 acc[clave] += parseFloat(pago.monto || 0);
@@ -2441,7 +2586,7 @@ async function handleGenerarGrafico() {
             }, {});
             labelPrefix = 'Monto por Tipo de Pago';
         } else {
-             throw new Error("Tipo de reporte gráfico no reconocido.");
+            throw new Error("Tipo de reporte gráfico no reconocido.");
         }
 
 
@@ -2458,14 +2603,14 @@ async function handleGenerarGrafico() {
 
 
         // Configuración de colores (simple, se puede mejorar)
-         const baseColor = 'rgba(46, 139, 87, 0.6)'; // Verde Finzana semitransparente
-         const borderColor = 'rgba(46, 139, 87, 1)'; // Verde Finzana sólido
+        const baseColor = 'rgba(46, 139, 87, 0.6)'; // Verde Finzana semitransparente
+        const borderColor = 'rgba(46, 139, 87, 1)'; // Verde Finzana sólido
 
 
-         // Generar colores diferentes para gráficos de pastel/dona
-         const backgroundColors = (tipoGrafico === 'pie' || tipoGrafico === 'doughnut')
-             ? labels.map((_, index) => `hsl(${index * (360 / labels.length)}, 70%, 60%)`)
-             : baseColor;
+        // Generar colores diferentes para gráficos de pastel/dona
+        const backgroundColors = (tipoGrafico === 'pie' || tipoGrafico === 'doughnut')
+            ? labels.map((_, index) => `hsl(${index * (360 / labels.length)}, 70%, 60%)`)
+            : baseColor;
 
 
         const datosParaGrafico = {
@@ -2477,7 +2622,7 @@ async function handleGenerarGrafico() {
                 borderColor: borderColor,
                 borderWidth: (tipoGrafico === 'line') ? 2 : 1,
                 fill: (tipoGrafico === 'line') ? false : true, // No rellenar bajo la línea por defecto
-                 tension: (tipoGrafico === 'line') ? 0.1 : 0 // Suavizar línea ligeramente
+                tension: (tipoGrafico === 'line') ? 0.1 : 0 // Suavizar línea ligeramente
             }]
         };
 
@@ -2495,54 +2640,54 @@ async function handleGenerarGrafico() {
             options: {
                 responsive: true,
                 maintainAspectRatio: false, // Permitir que el canvas se ajuste al contenedor
-                 plugins: {
-                     legend: {
-                         position: 'top', // Posición de la leyenda
-                     },
-                     title: {
-                         display: true,
-                         text: `Gráfico de ${labelPrefix}` // Título del gráfico
-                     },
-                     tooltip: {
-                          callbacks: {
-                              label: function(context) {
-                                   let label = context.dataset.label || '';
-                                   if (label) {
-                                       label += ': ';
-                                   }
-                                   if (context.parsed.y !== null) {
-                                       // Formatear como moneda
-                                        label += new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(context.parsed.y);
-                                   }
-                                   return label;
-                              }
-                          }
-                     }
-                 },
-                 scales: {
-                     // Ocultar escalas para pie/doughnut
-                     x: {
-                         display: !(tipoGrafico === 'pie' || tipoGrafico === 'doughnut'),
-                         title: {
-                             display: true,
-                             text: agruparPor.charAt(0).toUpperCase() + agruparPor.slice(1) // Eje X = Semana/Mes/Año
-                         }
-                     },
-                     y: {
-                          display: !(tipoGrafico === 'pie' || tipoGrafico === 'doughnut'),
-                         beginAtZero: true,
-                         title: {
-                             display: true,
-                             text: 'Monto ($)' // Eje Y = Monto
-                         },
-                         ticks: {
-                              // Formatear ticks del eje Y como moneda
-                              callback: function(value, index, values) {
-                                   return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 0 }).format(value);
-                              }
-                         }
-                     }
-                 }
+                plugins: {
+                    legend: {
+                        position: 'top', // Posición de la leyenda
+                    },
+                    title: {
+                        display: true,
+                        text: `Gráfico de ${labelPrefix}` // Título del gráfico
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function (context) {
+                                let label = context.dataset.label || '';
+                                if (label) {
+                                    label += ': ';
+                                }
+                                if (context.parsed.y !== null) {
+                                    // Formatear como moneda
+                                    label += new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(context.parsed.y);
+                                }
+                                return label;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    // Ocultar escalas para pie/doughnut
+                    x: {
+                        display: !(tipoGrafico === 'pie' || tipoGrafico === 'doughnut'),
+                        title: {
+                            display: true,
+                            text: agruparPor.charAt(0).toUpperCase() + agruparPor.slice(1) // Eje X = Semana/Mes/Año
+                        }
+                    },
+                    y: {
+                        display: !(tipoGrafico === 'pie' || tipoGrafico === 'doughnut'),
+                        beginAtZero: true,
+                        title: {
+                            display: true,
+                            text: 'Monto ($)' // Eje Y = Monto
+                        },
+                        ticks: {
+                            // Formatear ticks del eje Y como moneda
+                            callback: function (value, index, values) {
+                                return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 0 }).format(value);
+                            }
+                        }
+                    }
+                }
             }
         });
 
@@ -2556,14 +2701,20 @@ async function handleGenerarGrafico() {
         statusGraficos.textContent = `Error al generar gráfico: ${error.message}`;
         statusGraficos.className = 'status-message status-error';
         if (currentChart) {
-             currentChart.destroy(); // Limpiar si hubo error
-             currentChart = null;
+            currentChart.destroy(); // Limpiar si hubo error
+            currentChart = null;
         }
-         chartContainer.innerHTML = '<p style="text-align: center; color: var(--danger);">No se pudo generar el gráfico.</p>'; // Mensaje en lugar del canvas
+        chartContainer.innerHTML = '<p style="text-align: center; color: var(--danger);">No se pudo generar el gráfico.</p>'; // Mensaje en lugar del canvas
     } finally {
         cargaEnProgreso = false;
         showProcessingOverlay(false);
-        showButtonLoading('btn-generar-grafico', false);
+        // =============================================
+        // *** INICIO DE LA CORRECCIÓN 3 (Instancia 8) ***
+        // =============================================
+        showButtonLoading('#btn-generar-grafico', false);
+        // =============================================
+        // *** FIN DE LA CORRECCIÓN 3 (Instancia 8) ***
+        // =============================================
     }
 }
 
@@ -2588,8 +2739,8 @@ function showView(viewId) {
     } else {
         console.error(`Error: No se encontró la vista con ID ${viewId}`);
         // Opcional: Mostrar vista de error o volver al menú principal
-         const fallbackView = document.getElementById('view-main-menu');
-         if (fallbackView) fallbackView.classList.remove('hidden');
+        const fallbackView = document.getElementById('view-main-menu');
+        if (fallbackView) fallbackView.classList.remove('hidden');
     }
 }
 
@@ -2608,15 +2759,15 @@ function showStatus(elementId, message, type) {
         } else { // 'info' o por defecto
             element.classList.add('status-info');
         }
-         // Opcional: Ocultar automáticamente mensajes de éxito después de un tiempo
-         if (type === 'success') {
-             setTimeout(() => {
-                 // Solo ocultar si el mensaje no ha cambiado mientras tanto y sigue siendo success
-                 if (element.innerHTML === message && element.classList.contains('status-success')) {
-                      element.classList.add('hidden'); // Ocultar con clase
-                 }
-             }, 5000); // Ocultar éxito después de 5 segundos
-         }
+        // Opcional: Ocultar automáticamente mensajes de éxito después de un tiempo
+        if (type === 'success') {
+            setTimeout(() => {
+                // Solo ocultar si el mensaje no ha cambiado mientras tanto y sigue siendo success
+                if (element.innerHTML === message && element.classList.contains('status-success')) {
+                    element.classList.add('hidden'); // Ocultar con clase
+                }
+            }, 5000); // Ocultar éxito después de 5 segundos
+        }
     } else {
         console.warn(`Elemento de estado con ID "${elementId}" no encontrado.`);
     }
@@ -2646,26 +2797,26 @@ function showProcessingOverlay(show, message = 'Procesando...') {
 function showButtonLoading(selector, show, loadingText = '') {
     const button = (typeof selector === 'string') ? document.querySelector(selector) : selector;
     if (!button) {
-         console.warn("showButtonLoading: Botón no encontrado con selector:", selector);
+        console.warn("showButtonLoading: Botón no encontrado con selector:", selector);
         return;
     }
 
     if (show) {
-         // Guardar texto original si no se ha guardado ya
-         if (!button.hasAttribute('data-original-text')) {
+        // Guardar texto original si no se ha guardado ya
+        if (!button.hasAttribute('data-original-text')) {
             button.setAttribute('data-original-text', button.innerHTML);
-         }
-         // Mostrar spinner y texto opcional
+        }
+        // Mostrar spinner y texto opcional
         button.innerHTML = `<span class="btn-spinner"></span> ${loadingText}`;
         button.classList.add('btn-loading'); // Aplicar clase para estilos
         button.disabled = true; // Deshabilitar botón
     } else {
-         // Restaurar texto original y habilitar
-         const originalText = button.getAttribute('data-original-text');
-         if (originalText !== null) { // Restaurar solo si se guardó
+        // Restaurar texto original y habilitar
+        const originalText = button.getAttribute('data-original-text');
+        if (originalText !== null) { // Restaurar solo si se guardó
             button.innerHTML = originalText;
             button.removeAttribute('data-original-text'); // Limpiar atributo
-         }
+        }
         button.classList.remove('btn-loading');
         button.disabled = false;
     }
@@ -2715,8 +2866,8 @@ function showFixedProgress(percentage, message = '') {
     const progressBar = document.getElementById('progress-bar-fixed');
     const progressText = document.getElementById('progress-text-fixed');
 
-     // Validar porcentaje
-     const validPercentage = Math.max(0, Math.min(100, percentage));
+    // Validar porcentaje
+    const validPercentage = Math.max(0, Math.min(100, percentage));
 
 
     if (progressBar) progressBar.style.width = validPercentage + '%';
@@ -2736,8 +2887,8 @@ function hideFixedProgress() {
         // Resetear barra para la próxima vez
         const progressBar = document.getElementById('progress-bar-fixed');
         if (progressBar) progressBar.style.width = '0%';
-         const progressText = document.getElementById('progress-text-fixed');
-         if (progressText) progressText.textContent = '';
+        const progressText = document.getElementById('progress-text-fixed');
+        if (progressText) progressText.textContent = '';
 
 
     }
@@ -2755,9 +2906,9 @@ function cancelarCarga() {
     showProcessingOverlay(false);
 
     // Restaurar botones que podrían estar en estado de carga (usando selector más general)
-     document.querySelectorAll('.btn-loading').forEach(button => {
-         showButtonLoading(button, false);
-     });
+    document.querySelectorAll('.btn-loading').forEach(button => {
+        showButtonLoading(button, false);
+    });
 
 
     // Mostrar mensaje de cancelación en la vista activa (si es relevante)
@@ -2767,14 +2918,14 @@ function cancelarCarga() {
         const statusElementId = statusElement?.id || (activeView.id ? `status_${activeView.id.replace('view-', '')}` : null);
 
 
-         if (statusElementId) {
-             showStatus(statusElementId, 'Operación cancelada por el usuario.', 'warning');
-         }
-         // Resetear tabla si es la de gestión de clientes
-         if (activeView.id === 'view-gestion-clientes') {
-              const tabla = document.getElementById('tabla-clientes');
-              if (tabla) tabla.innerHTML = '<tr><td colspan="6">Búsqueda cancelada. Utiliza los filtros para buscar de nuevo.</td></tr>';
-         }
+        if (statusElementId) {
+            showStatus(statusElementId, 'Operación cancelada por el usuario.', 'warning');
+        }
+        // Resetear tabla si es la de gestión de clientes
+        if (activeView.id === 'view-gestion-clientes') {
+            const tabla = document.getElementById('tabla-clientes');
+            if (tabla) tabla.innerHTML = '<tr><td colspan="6">Búsqueda cancelada. Utiliza los filtros para buscar de nuevo.</td></tr>';
+        }
     }
 }
 
@@ -2790,9 +2941,9 @@ function calcularMontoTotalColocacion() {
 
 
     // Formatear como moneda para mostrar
-     montoTotalInput.value = monto > 0
-         ? `$${montoTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-         : '';
+    montoTotalInput.value = monto > 0
+        ? `$${montoTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+        : '';
 }
 
 
@@ -2816,8 +2967,8 @@ function validarCURP(inputElement) {
 
 function validarFormatoCURP(curp) {
     // Verifica longitud y patrón básico (4 letras, 6 números, H/M, 5 letras, homoclave(A-Z0-9), dígito verificador)
-     const curpRegex = /^[A-Z]{4}\d{6}[HM][A-Z]{5}[A-Z0-9]\d$/;
-     return typeof curp === 'string' && curp.length === 18 && curpRegex.test(curp.toUpperCase());
+    const curpRegex = /^[A-Z]{4}\d{6}[HM][A-Z]{5}[A-Z0-9]\d$/;
+    return typeof curp === 'string' && curp.length === 18 && curpRegex.test(curp.toUpperCase());
 }
 
 
@@ -2849,9 +3000,9 @@ const popularDropdown = (elementId, options, placeholder, isObjectValueKey = fal
 
 
     // Intentar restaurar valor seleccionado
-     if (select.querySelector(`option[value="${selectedValue}"]`)) {
+    if (select.querySelector(`option[value="${selectedValue}"]`)) {
         select.value = selectedValue;
-     }
+    }
 };
 
 
@@ -2898,7 +3049,7 @@ function inicializarDropdowns() {
     const rutas = ['AUDITORIA', 'SUPERVISION', 'ADMINISTRACION', 'DIRECCION', 'COMERCIAL', 'COBRANZA', 'R1', 'R2', 'R3', 'JC1', 'RX'].sort();
     const tiposCredito = ['NUEVO', 'RENOVACION', 'REINGRESO'];
     const montos = [3000, 3500, 4000, 4500, 5000, 6000, 7000, 8000, 9000, 10000];
-    const plazosCredito = [10, 13, 14].sort((a,b) => a-b); // Incluir 10 para comisionistas
+    const plazosCredito = [10, 13, 14].sort((a, b) => a - b); // Incluir 10 para comisionistas
     const estadosCredito = ['al corriente', 'atrasado', 'cobranza', 'juridico', 'liquidado'];
     const tiposPago = ['normal', 'extraordinario', 'actualizado', 'grupal']; // Añadir grupal
     const sucursales = ['GDL', 'LEON'];
@@ -2909,7 +3060,7 @@ function inicializarDropdowns() {
         { value: 'consulta', text: 'Consulta' },
         { value: 'comisionista', text: 'Comisionista' } // Asegurar que esté aquí
     ];
-     const tiposReporteGrafico = [
+    const tiposReporteGrafico = [
         { value: 'colocacion', text: 'Colocación (Monto)' },
         { value: 'recuperacion', text: 'Recuperación (Pagos)' },
         { value: 'comportamiento', text: 'Comportamiento de Pago (Tipos)' },
@@ -2934,7 +3085,7 @@ function inicializarDropdowns() {
     popularDropdown('estado_credito_filtro', estadosCredito.map(e => ({ value: e, text: e.charAt(0).toUpperCase() + e.slice(1) })), 'Todos', true);
 
 
-     // Filtros y Formulario Usuarios
+    // Filtros y Formulario Usuarios
     popularDropdown('filtro-rol-usuario', roles, 'Todos los roles', true);
     popularDropdown('nuevo-rol', roles, 'Seleccione un rol', true);
 
@@ -2952,9 +3103,9 @@ function inicializarDropdowns() {
     popularDropdown('tipo_pago_filtro_reporte', tiposPago.map(t => ({ value: t, text: t.toUpperCase() })), 'Todos', true);
 
 
-     // Filtros Reportes Gráficos
-     popularDropdown('grafico_tipo_reporte', tiposReporteGrafico, 'Selecciona un reporte', true);
-     popularDropdown('grafico_grupo', todasLasPoblaciones, 'Todos'); // Inicializar con todas
+    // Filtros Reportes Gráficos
+    popularDropdown('grafico_tipo_reporte', tiposReporteGrafico, 'Selecciona un reporte', true);
+    popularDropdown('grafico_grupo', todasLasPoblaciones, 'Todos'); // Inicializar con todas
 }
 
 
@@ -2971,13 +3122,13 @@ document.addEventListener('viewshown', function (e) {
     console.log(`Evento viewshown disparado para: ${viewId}`);
 
     // Limpiar mensajes de estado al cambiar de vista (opcional, cuidado con no borrar mensajes importantes)
-     document.querySelectorAll('.status-message').forEach(el => {
-         // No limpiar el de conexión ni los de dentro de un modal activo
-         if (el.id !== 'connection-status' && !el.closest('#generic-modal:not(.hidden)')) {
-             el.innerHTML = '';
-             el.className = 'status-message hidden';
-         }
-     });
+    document.querySelectorAll('.status-message').forEach(el => {
+        // No limpiar el de conexión ni los de dentro de un modal activo
+        if (el.id !== 'connection-status' && !el.closest('#generic-modal:not(.hidden)')) {
+            el.innerHTML = '';
+            el.className = 'status-message hidden';
+        }
+    });
 
 
     switch (viewId) {
@@ -3010,13 +3161,13 @@ document.addEventListener('viewshown', function (e) {
             document.getElementById('form-colocacion').classList.add('hidden');
             showStatus('status_colocacion', 'Ingresa la CURP del cliente para buscar.', 'info');
             break;
-         case 'view-cobranza':
-             // Limpiar campos de búsqueda y formulario al entrar
-             document.getElementById('idCredito_cobranza').value = '';
-             document.getElementById('form-cobranza').classList.add('hidden');
-             showStatus('status_cobranza', 'Ingresa el ID del crédito (histórico) para buscar.', 'info');
-             creditoActual = null; // Deseleccionar crédito
-             break;
+        case 'view-cobranza':
+            // Limpiar campos de búsqueda y formulario al entrar
+            document.getElementById('idCredito_cobranza').value = '';
+            document.getElementById('form-cobranza').classList.add('hidden');
+            showStatus('status_cobranza', 'Ingresa el ID del crédito (histórico) para buscar.', 'info');
+            creditoActual = null; // Deseleccionar crédito
+            break;
         case 'view-pago-grupo':
             // Limpiar formulario de pago grupal al entrar
             document.getElementById('grupo_pago_grupal').value = '';
@@ -3029,30 +3180,30 @@ document.addEventListener('viewshown', function (e) {
             // Inicializar fechas por defecto (ej. último año)
             const hoyGraf = new Date();
             const haceUnAnio = new Date(hoyGraf.getFullYear() - 1, hoyGraf.getMonth(), hoyGraf.getDate() + 1); // +1 para incluir hoy
-             const hoyISO = hoyGraf.toISOString().split('T')[0];
-             const haceUnAnioISO = haceUnAnio.toISOString().split('T')[0];
+            const hoyISO = hoyGraf.toISOString().split('T')[0];
+            const haceUnAnioISO = haceUnAnio.toISOString().split('T')[0];
 
             document.getElementById('grafico_fecha_inicio').value = haceUnAnioISO;
             document.getElementById('grafico_fecha_fin').value = hoyISO;
-             // Actualizar grupos según la sucursal seleccionada (por defecto 'Ambas')
+            // Actualizar grupos según la sucursal seleccionada (por defecto 'Ambas')
             handleSucursalGraficoChange.call(document.getElementById('grafico_sucursal') || { value: '' });
-             // Limpiar gráfico anterior y mensaje
-             if (currentChart) {
-                 currentChart.destroy();
-                 currentChart = null;
-             }
-              document.getElementById('grafico-container').innerHTML = '';
-             showStatus('status_graficos', 'Selecciona los filtros y genera un gráfico.', 'info');
+            // Limpiar gráfico anterior y mensaje
+            if (currentChart) {
+                currentChart.destroy();
+                currentChart = null;
+            }
+            document.getElementById('grafico-container').innerHTML = '';
+            showStatus('status_graficos', 'Selecciona los filtros y genera un gráfico.', 'info');
             break;
-         // Añadir casos para otras vistas si necesitan inicialización
-         case 'view-importar':
-              // Resetear a GDL y pestaña clientes por defecto
-              document.getElementById('office-select').value = 'GDL';
-              handleOfficeChange.call(document.getElementById('office-select'));
-              break;
-         case 'view-main-menu':
-             // Podría limpiarse algún estado global aquí si fuera necesario
-             break;
+        // Añadir casos para otras vistas si necesitan inicialización
+        case 'view-importar':
+            // Resetear a GDL y pestaña clientes por defecto
+            document.getElementById('office-select').value = 'GDL';
+            handleOfficeChange.call(document.getElementById('office-select'));
+            break;
+        case 'view-main-menu':
+            // Podría limpiarse algún estado global aquí si fuera necesario
+            break;
     }
 });
 
@@ -3060,7 +3211,13 @@ document.addEventListener('viewshown', function (e) {
 // *** MANEJO DE DUPLICADOS ***
 async function handleVerificarDuplicados() {
     showProcessingOverlay(true, 'Buscando clientes duplicados (por CURP + Oficina)...');
-    showButtonLoading('btn-verificar-duplicados', true);
+    // =============================================
+    // *** INICIO DE LA CORRECCIÓN 3 (Instancia 9) ***
+    // =============================================
+    showButtonLoading('#btn-verificar-duplicados', true);
+    // =============================================
+    // *** FIN DE LA CORRECCIÓN 3 (Instancia 9) ***
+    // =============================================
     const statusUsuarios = document.getElementById('status_usuarios');
     statusUsuarios.textContent = 'Buscando duplicados...';
     statusUsuarios.className = 'status-message status-info';
@@ -3076,15 +3233,15 @@ async function handleVerificarDuplicados() {
         if (idsParaEliminar.length === 0) {
             showStatus('status_usuarios', '¡Verificación completa! No se encontraron clientes duplicados (misma CURP y Oficina).', 'success');
         } else {
-             const confirmacion = confirm(
+            const confirmacion = confirm(
                 `Se encontraron ${duplicadosEncontrados} registros duplicados (clientes con misma CURP y Oficina).\n` +
                 `CURPs afectadas: ${curpsAfectadas.join(', ')}\n\n` +
                 `Se conservará el registro más reciente de cada grupo duplicado y se eliminarán los ${idsParaEliminar.length} registros más antiguos.\n\n` +
                 `¿Deseas proceder con la limpieza? Esta acción no se puede deshacer.`
-             );
+            );
 
 
-             if (confirmacion) {
+            if (confirmacion) {
                 showProcessingOverlay(true, `Eliminando ${idsParaEliminar.length} registros duplicados...`);
                 statusUsuarios.textContent = 'Eliminando duplicados...';
                 statusUsuarios.className = 'status-message status-info';
@@ -3094,14 +3251,14 @@ async function handleVerificarDuplicados() {
 
 
                 if (resEliminacion.success) {
-                     showStatus('status_usuarios', resEliminacion.message, 'success');
-                     await loadUsersTable(); // Recargar tabla de usuarios por si acaso, aunque afecta clientes
+                    showStatus('status_usuarios', resEliminacion.message, 'success');
+                    await loadUsersTable(); // Recargar tabla de usuarios por si acaso, aunque afecta clientes
                 } else {
-                     throw new Error(resEliminacion.message);
+                    throw new Error(resEliminacion.message);
                 }
-             } else {
+            } else {
                 showStatus('status_usuarios', 'Operación de limpieza de duplicados cancelada por el usuario.', 'info');
-             }
+            }
         }
 
     } catch (error) {
@@ -3109,7 +3266,13 @@ async function handleVerificarDuplicados() {
         showStatus('status_usuarios', `Error durante la verificación/eliminación de duplicados: ${error.message}`, 'error');
     } finally {
         showProcessingOverlay(false);
-        showButtonLoading('btn-verificar-duplicados', false);
+        // =============================================
+        // *** INICIO DE LA CORRECCIÓN 3 (Instancia 10) ***
+        // =============================================
+        showButtonLoading('#btn-verificar-duplicados', false);
+        // =============================================
+        // *** FIN DE LA CORRECCIÓN 3 (Instancia 10) ***
+        // =============================================
     }
 }
 
@@ -3127,8 +3290,8 @@ async function mostrarHistorialPagos(historicalIdCredito, curpCliente) {
     const modalTitle = document.getElementById('modal-title');
     const modalBody = document.getElementById('modal-body');
     if (!modal || !modalTitle || !modalBody) {
-         console.error("Elementos del modal no encontrados.");
-         alert("Error al intentar mostrar el historial. Faltan elementos en la página.");
+        console.error("Elementos del modal no encontrados.");
+        alert("Error al intentar mostrar el historial. Faltan elementos en la página.");
         return;
     }
 
@@ -3143,8 +3306,8 @@ async function mostrarHistorialPagos(historicalIdCredito, curpCliente) {
         if (creditos.length === 0) {
             throw new Error(`No se encontró el crédito con ID histórico ${historicalIdCredito} para el cliente ${curpCliente}.`);
         }
-         // Si hubiera más de uno (no debería con CURP), tomar el más reciente
-         creditos.sort((a, b) => (parsearFecha(b.fechaCreacion)?.getTime() || 0) - (parsearFecha(a.fechaCreacion)?.getTime() || 0));
+        // Si hubiera más de uno (no debería con CURP), tomar el más reciente
+        creditos.sort((a, b) => (parsearFecha(b.fechaCreacion)?.getTime() || 0) - (parsearFecha(a.fechaCreacion)?.getTime() || 0));
         const credito = creditos[0]; // El crédito específico { id: firestoreId, ..., historicalIdCredito: ... }
 
         // 2. Buscar datos del cliente (para nombre)
@@ -3156,7 +3319,7 @@ async function mostrarHistorialPagos(historicalIdCredito, curpCliente) {
         // --- Renderizar Contenido del Modal ---
 
         // Información Resumen del Crédito
-         let resumenHTML = `
+        let resumenHTML = `
             <div class="info-grid" style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
                 <div class="info-item"><span class="info-label">Cliente:</span><span class="info-value">${cliente ? cliente.nombre : 'N/A'} (${credito.curpCliente})</span></div>
                  <div class="info-item"><span class="info-label">ID Crédito (Hist.):</span><span class="info-value">${credito.historicalIdCredito || 'N/A'}</span></div>
@@ -3169,7 +3332,7 @@ async function mostrarHistorialPagos(historicalIdCredito, curpCliente) {
 
 
         // Tabla de Pagos
-         let tablaHTML = '';
+        let tablaHTML = '';
         if (pagos.length === 0) {
             tablaHTML = '<p class="status-message status-info">Este crédito no tiene pagos registrados.</p>';
         } else {
@@ -3181,8 +3344,8 @@ async function mostrarHistorialPagos(historicalIdCredito, curpCliente) {
             const tableRows = pagos.map(pago => {
                 totalPagado += pago.monto || 0;
                 const saldoDespuesFormateado = (pago.saldoDespues !== undefined && pago.saldoDespues !== null)
-                     ? `$${pago.saldoDespues.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                     : 'N/A'; // Mostrar N/A si no está definido
+                    ? `$${pago.saldoDespues.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                    : 'N/A'; // Mostrar N/A si no está definido
                 return `
                     <tr>
                         <td>${formatDateForDisplay(parsearFecha(pago.fecha))}</td>
@@ -3195,8 +3358,8 @@ async function mostrarHistorialPagos(historicalIdCredito, curpCliente) {
             }).join('');
 
 
-             // Añadir fila de total al final (opcional)
-             // const totalRow = `<tfoot><tr><td colspan="1"><strong>Total Pagado:</strong></td><td><strong>$${totalPagado.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></td><td colspan="3"></td></tr></tfoot>`;
+            // Añadir fila de total al final (opcional)
+            // const totalRow = `<tfoot><tr><td colspan="1"><strong>Total Pagado:</strong></td><td><strong>$${totalPagado.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></td><td colspan="3"></td></tr></tfoot>`;
 
 
             tablaHTML = `
@@ -3272,10 +3435,10 @@ async function handleDiagnosticarPagos() {
 
             // Formatear el JSON para que sea legible, incluyendo fechas formateadas
             outputEl.textContent = JSON.stringify(pagos.map(p => ({
-                 ...p,
-                 fecha_formateada: formatDateForDisplay(parsearFecha(p.fecha)), // Añadir fecha legible
-                 monto: p.monto?.toFixed(2), // Asegurar formato decimal
-                 saldoDespues: p.saldoDespues?.toFixed(2) // Asegurar formato decimal
+                ...p,
+                fecha_formateada: formatDateForDisplay(parsearFecha(p.fecha)), // Añadir fecha legible
+                monto: p.monto?.toFixed(2), // Asegurar formato decimal
+                saldoDespues: p.saldoDespues?.toFixed(2) // Asegurar formato decimal
             })), null, 2); // Indentación de 2 espacios
 
             resultEl.classList.remove('hidden'); // Mostrar área de resultados con el JSON
