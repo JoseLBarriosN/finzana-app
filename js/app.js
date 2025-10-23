@@ -110,7 +110,7 @@ function updateConnectionStatus() {
     isOnline = navigator.onLine;
     // Habilitar/deshabilitar filtros que dependen de queries más complejos online
     const filtrosOnline = document.querySelectorAll('#sucursal_filtro, #estado_credito_filtro, #plazo_filtro, #curp_aval_filtro, #grupo_filtro, #tipo_colocacion_filtro');
-    const botonesOnline = document.querySelectorAll('#btn-aplicar-filtros-reportes, #btn-exportar-csv, #btn-exportar-pdf, #btn-generar-grafico, #btn-verificar-duplicados'); // Añadir más si aplica
+    const botonesOnline = document.querySelectorAll('#btn-aplicar-filtros-reportes, #btn-exportar-csv, #btn-exportar-pdf, #btn-generar-grafico, #btn-verificar-duplicados, #btn-diagnosticar-pagos, #btn-agregar-poblacion, #btn-agregar-ruta'); // Añadir más si aplica
 
     if (isOnline) {
         statusDiv.textContent = 'Conexión restablecida. Sincronizando datos...';
@@ -120,6 +120,8 @@ function updateConnectionStatus() {
         logoutBtn.title = 'Cerrar Sesión';
         filtrosOnline.forEach(el => { if (el) el.disabled = false; });
         botonesOnline.forEach(el => { if (el) el.disabled = false; });
+        // Re-aplicar permisos de sucursal (algunos filtros pueden estar deshabilitados por rol)
+        if (currentUserData) aplicarPermisosUI(currentUserData.role);
 
         // Mensaje temporal de sincronización
         setTimeout(() => {
@@ -147,132 +149,123 @@ function updateConnectionStatus() {
 }
 
 // =============================================
-// *** INICIO DE LA CORRECCIÓN: LÓGICA DE ESTADO/SEMANAS PAGADAS ***
+// *** INICIO DE LA CORRECCIÓN: LÓGICA DE ESTADO/SEMANAS PAGADAS (REESCRITA) ***
 // =============================================
 /**
  * Calcula el estado actual de un crédito (atraso, estado, etc.) basado en sus datos y pagos.
  * @param {object} credito El objeto de crédito de Firestore.
- * @param {Array<object>} pagos Un array de objetos de pago para ese crédito (se usa menos ahora).
+ * @param {Array<object>} pagos Un array de objetos de pago para ese crédito (DEBEN ESTAR ORDENADOS DESC POR FECHA).
  * @returns {object|null} Un objeto con { estado, semanasAtraso, pagoSemanal, saldoRestante, proximaFechaPago } o null si hay error.
  */
-function _calcularEstadoCredito(credito, pagos) { // Aunque 'pagos' ya no se usa mucho aquí, lo mantenemos por compatibilidad de llamadas
+function _calcularEstadoCredito(credito, pagos) {
     if (!credito || !credito.montoTotal || !credito.plazo || credito.plazo <= 0 || !credito.fechaCreacion) {
         console.warn("Datos de crédito insuficientes para calcular estado:", credito);
         return null; // Datos insuficientes
     }
 
-    // Calcular pago semanal primero
+    // --- 1. Calcular valores base ---
     const pagoSemanal = credito.montoTotal / credito.plazo;
-    // Usar saldo del objeto crédito, es la fuente más fiable. Redondear a 2 decimales para comparación.
     const saldoRestante = parseFloat((credito.saldo !== undefined ? credito.saldo : 0).toFixed(2));
 
-    // *** CORRECCIÓN CLAVE: Verificar estado liquidado PRIMERO y de forma robusta ***
+    // --- 2. VERIFICACIÓN DE LIQUIDADO (Prioridad #1) ---
     // Considerar liquidado si el estado ya está marcado o si el saldo es prácticamente cero (<= 1 centavo)
     if (credito.estado === 'liquidado' || saldoRestante <= 0.01) {
         return {
             estado: 'liquidado',
             semanasAtraso: 0,
             pagoSemanal: pagoSemanal,
-            saldoRestante: saldoRestante, // Devolver el saldo (puede ser ligeramente negativo)
-            proximaFechaPago: 'N/A'
+            saldoRestante: saldoRestante, // Devolver el saldo (puede ser 0 o ligeramente negativo)
+            proximaFechaPago: 'N/A',
+            semanasPagadas: credito.plazo // Asumir plazo completo si está liquidado
         };
     }
 
-    // --- Si no está liquidado, continuar con el cálculo de atraso ---
-
+    // --- 3. Calcular Estado según Reglas de Fecha (Si NO está liquidado) ---
     const fechaCreacion = parsearFecha(credito.fechaCreacion);
     if (!fechaCreacion) {
         console.warn("Fecha de creación de crédito inválida:", credito.fechaCreacion);
         return null; // Fecha inválida
     }
 
+    // Encontrar la fecha de referencia (último pago o fecha de creación)
+    // Asume que 'pagos' viene ordenado DESC (el más reciente primero)
+    let fechaReferencia;
+    if (pagos && pagos.length > 0) {
+        fechaReferencia = parsearFecha(pagos[0].fecha);
+    } else {
+        fechaReferencia = fechaCreacion;
+    }
+
+    if (!fechaReferencia) {
+        console.warn("Fecha de referencia inválida para crédito:", credito.id);
+        return null;
+    }
+
     const hoy = new Date();
-    // Calcular semanas transcurridas desde el inicio del crédito
+    const msDesdeReferencia = hoy.getTime() - fechaReferencia.getTime();
+    const diasDesdeReferencia = Math.floor(msDesdeReferencia / (1000 * 60 * 60 * 24));
+
+    let estadoDisplay;
+    // Aplicar las reglas del usuario:
+    if (diasDesdeReferencia <= 7) {
+        estadoDisplay = 'al corriente';
+    } else if (diasDesdeReferencia > 7 && diasDesdeReferencia <= 30) {
+        estadoDisplay = 'atrasado';
+    } else if (diasDesdeReferencia > 30 && diasDesdeReferencia <= 180) {
+        estadoDisplay = 'cobranza';
+    } else { // Más de 180 días
+        estadoDisplay = 'juridico';
+    }
+
+    // --- 4. Calcular Atraso en Semanas (para visualización) ---
+    // Esta lógica se mantiene para mostrar "cuántas semanas debe"
     const msTranscurridos = hoy.getTime() - fechaCreacion.getTime();
-    // Sumar una pequeña fracción de día para asegurar que la semana actual se cuente si ya empezó
     const semanasTranscurridas = Math.floor(msTranscurridos / (1000 * 60 * 60 * 24 * 7));
 
-    // *** CÁLCULO REVISADO de semanasPagadas ***
     let montoPagadoTotal = 0;
-    // Solo calcular si montoTotal es válido
     if (credito.montoTotal > 0) {
-        // Asegurar que montoPagadoTotal no sea negativo si saldo > montoTotal (error de datos)
         montoPagadoTotal = Math.max(0, credito.montoTotal - saldoRestante);
     }
 
     let semanasPagadas = 0;
-    // Solo calcular si pagoSemanal es válido (mayor que un pequeño umbral)
     if (pagoSemanal > 0.01) {
-        // Calcular cuántas semanas completas se cubren con el monto pagado.
-        // Se añade una pequeña tolerancia (epsilon) antes de Math.floor
-        // para manejar casos donde el monto pagado es *casi* el múltiplo exacto
-        // debido a errores de punto flotante (ej. pagado 299.99999, pagoSemanal 100).
-        const epsilon = 0.001; // Tolerancia pequeña
+        const epsilon = 0.001;
         semanasPagadas = Math.floor((montoPagadoTotal / pagoSemanal) + epsilon);
     }
+    semanasPagadas = Math.min(Math.max(0, semanasPagadas), credito.plazo);
 
-    // Asegurar que las semanas pagadas no superen el plazo total del crédito
-    semanasPagadas = Math.min(semanasPagadas, credito.plazo);
-    // Asegurar que las semanas pagadas no sean negativas
-    semanasPagadas = Math.max(0, semanasPagadas);
+    let semanasQueDebieronPagarse = Math.min(semanasTranscurridas + 1, credito.plazo);
+    let semanasAtraso = Math.max(0, semanasQueDebieronPagarse - semanasPagadas);
 
-    // --- Calcular Semanas de Atraso ---
-    // Representa cuántas semanas deberían haberse pagado hasta hoy vs cuántas se han pagado.
-    // Las semanas que deberían haberse pagado son, como máximo, el plazo total.
-    // Y como mínimo, las semanas transcurridas (+1 si consideramos la actual).
-    let semanasQueDebieronPagarse = Math.min(semanasTranscurridas + 1, credito.plazo); // +1 incluye la semana actual, topado al plazo
-    
-    let semanasAtraso = semanasQueDebieronPagarse - semanasPagadas;
-    // El atraso no puede ser negativo.
-    semanasAtraso = Math.max(0, semanasAtraso);
-
-    // Si ya pasó la fecha teórica de finalización (semanasTranscurridas >= plazo)
-    // y aún hay saldo, el atraso es simplemente las semanas que faltan por pagar del total.
-    if (semanasTranscurridas >= credito.plazo && saldoRestante > 0.01) {
-        semanasAtraso = credito.plazo - semanasPagadas;
-        semanasAtraso = Math.max(0, semanasAtraso); // Re-asegurar no negativo
+    if (semanasTranscurridas >= credito.plazo) {
+        semanasAtraso = Math.max(0, credito.plazo - semanasPagadas);
     }
 
-
-    // --- Determinar el Estado basado en el Atraso ---
-    let estado;
-    // Esta lógica se aplica solo si NO se determinó como 'liquidado' antes.
-    if (semanasAtraso === 0) {
-        estado = 'al corriente';
-    } else if (semanasAtraso >= 1 && semanasAtraso <= 4) {
-        estado = 'atrasado';
-    } else if (semanasAtraso >= 5 && semanasAtraso <= 8) {
-        estado = 'cobranza';
-    } else { // 9 o más semanas de atraso
-        estado = 'juridico';
-    }
-
-    // --- Calcular Próxima Fecha de Pago ---
+    // --- 5. Calcular Próxima Fecha de Pago ---
     let proximaFechaPago = 'N/A';
-    // Solo hay próxima fecha si aún no ha completado el plazo en pagos Y no está liquidado
-    if (semanasPagadas < credito.plazo && estado !== 'liquidado') {
+    if (semanasPagadas < credito.plazo) {
         const proximaFecha = new Date(fechaCreacion);
-        // La próxima fecha teórica es después de la última semana que debería haberse pagado
         proximaFecha.setUTCDate(proximaFecha.getUTCDate() + (semanasPagadas + 1) * 7);
         proximaFechaPago = formatDateForDisplay(proximaFecha);
     }
 
     // Devolver el objeto de estado calculado
     return {
-        estado: estado,
-        semanasAtraso: semanasAtraso,
+        estado: estadoDisplay, // El estado se basa en los DÍAS
+        semanasAtraso: semanasAtraso, // El atraso numérico se basa en SEMANAS
         pagoSemanal: pagoSemanal,
-        saldoRestante: saldoRestante, // Devolver el saldo redondeado usado en cálculos
-        proximaFechaPago: proximaFechaPago
+        saldoRestante: saldoRestante,
+        proximaFechaPago: proximaFechaPago,
+        semanasPagadas: semanasPagadas
     };
 }
 // =============================================
-// *** FIN DE LA CORRECCIÓN ***
+// *** FIN DE LA CORRECCIÓN DE ESTADO ***
 // =============================================
 
 
 // =============================================
-// LÓGICA DE SEGURIDAD Y SESIÓN
+// LÓGICA DE SEGURIDAD, SESIÓN Y PERMISOS
 // =============================================
 
 function resetInactivityTimer() {
@@ -303,6 +296,96 @@ function setupSecurityListeners() {
     });
 }
 
+/**
+ * Muestra/oculta elementos del menú y ajusta filtros según el rol y sucursal del usuario.
+ * @param {string} role El rol del usuario (ej. 'admin', 'Gerencia', 'Área comercial').
+ */
+function aplicarPermisosUI(role) {
+    if (!currentUserData) return;
+
+    // 1. Definir permisos del menú
+    const permisosMenu = {
+        'Super Admin': ['all'],
+        'Gerencia': ['all'],
+        'Administrador': [
+            'view-gestion-clientes', 'view-cliente', 'view-colocacion', 'view-cobranza',
+            'view-pago-grupo', 'view-reportes', 'view-reportes-avanzados',
+            'view-usuarios', 'view-importar', 'view-configuracion'
+            // Excluye 'view-reportes-graficos'
+        ],
+        'Área comercial': [
+            'view-gestion-clientes', 'view-cliente', 'view-colocacion',
+            'view-cobranza', 'view-pago-grupo'
+        ],
+        'default': [] // Para roles no definidos (como 'consulta', 'cobrador')
+    };
+    
+    // Mapeo para roles que no se llamen igual que en la lista de permisos
+    const userRoleKey = role === 'admin' ? 'Administrador' : role;
+    const userPerms = permisosMenu[userRoleKey] || permisosMenu['default'];
+    
+    document.querySelectorAll('.menu-card').forEach(card => {
+        const view = card.getAttribute('data-view');
+        if (userPerms.includes('all') || userPerms.includes(view)) {
+            card.style.display = 'block';
+        } else {
+            card.style.display = 'none';
+        }
+        
+        // Excepción específica para Administrador
+        if (userRoleKey === 'Administrador' && view === 'view-reportes-graficos') {
+            card.style.display = 'none';
+        }
+    });
+
+    // 2. Ajustar filtros y UI basados en la SUCURSAL del usuario
+    const sucursalUsuario = currentUserData.sucursal;
+    const filtrosSucursal = [
+        '#sucursal_filtro', '#sucursal_filtro_reporte', '#grafico_sucursal',
+        '#office_cliente', '#nueva-poblacion-sucursal', '#nueva-ruta-sucursal'
+    ];
+
+    if (sucursalUsuario && sucursalUsuario !== 'AMBAS') {
+        filtrosSucursal.forEach(selector => {
+            const el = document.querySelector(selector);
+            if (el) {
+                el.value = sucursalUsuario;
+                el.disabled = true;
+
+                // Disparar 'change' para que los dropdowns dependientes se actualicen
+                if (selector === '#office_cliente') {
+                    handleOfficeChangeForClientForm.call(el);
+                }
+                if (selector === '#grafico_sucursal') {
+                    handleSucursalGraficoChange.call(el);
+                }
+            }
+        });
+    } else {
+        // Habilitar filtros si es AMBAS o no tiene sucursal definida
+        filtrosSucursal.forEach(selector => {
+            const el = document.querySelector(selector);
+            if (el) {
+                el.disabled = false;
+            }
+        });
+    }
+
+    // 3. Ajustar UI específica (ej. CURP editable)
+    const curpInput = document.getElementById('curp_cliente');
+    if (curpInput) {
+        // Permitir edición de CURP a Super Admin, Gerencia y Administrador
+        const puedeEditarCURP = ['Super Admin', 'Gerencia', 'Administrador'].includes(userRoleKey);
+        curpInput.readOnly = !puedeEditarCURP;
+        if (puedeEditarCURP) {
+            document.querySelector('label[for="curp_cliente"] + .field-note').style.display = 'block';
+        } else {
+            document.querySelector('label[for="curp_cliente"] + .field-note').style.display = 'none';
+        }
+    }
+}
+
+
 // =============================================
 // FUNCIONES MOVIDAS ANTES DE DOMContentLoaded
 // =============================================
@@ -331,10 +414,11 @@ async function loadClientesTable() {
             estado: document.getElementById('estado_credito_filtro')?.value || '',
             curpAval: document.getElementById('curp_aval_filtro')?.value?.trim() || '',
             plazo: document.getElementById('plazo_filtro')?.value || '',
-            grupo: document.getElementById('grupo_filtro')?.value || ''
+            grupo: document.getElementById('grupo_filtro')?.value || '',
+            userSucursal: currentUserData?.sucursal // <-- APLICAR SEGREGACIÓN
         };
 
-        const hayFiltros = Object.values(filtros).some(val => val && val.trim() !== '');
+        const hayFiltros = Object.values(filtros).some((val, key) => val && val.trim() !== '' && key !== 'userSucursal');
         if (!hayFiltros) {
             tbody.innerHTML = '<tr><td colspan="6">Por favor, especifica al menos un criterio de búsqueda.</td></tr>';
             throw new Error("Búsqueda vacía");
@@ -347,15 +431,10 @@ async function loadClientesTable() {
 
         if (filtros.idCredito) {
             // --- PATH 1: Search by Credit ID (Historical ID) ---
-            creditosAMostrar = await database.buscarCreditosPorHistoricalId(filtros.idCredito);
+            creditosAMostrar = await database.buscarCreditosPorHistoricalId(filtros.idCredito, { userSucursal: filtros.userSucursal });
         } else if (filtros.curp || filtros.nombre || filtros.grupo || filtros.sucursal) {
             // --- PATH 2: Search by Client Filters ---
-            const clientesIniciales = await database.buscarClientes({
-                sucursal: filtros.sucursal,
-                curp: filtros.curp,
-                nombre: filtros.nombre,
-                grupo: filtros.grupo
-            });
+            const clientesIniciales = await database.buscarClientes(filtros); // filtros ya incluye userSucursal
 
             if (operationId !== currentSearchOperation) throw new Error("Búsqueda cancelada");
             if (clientesIniciales.length === 0) throw new Error("No se encontraron clientes.");
@@ -366,7 +445,7 @@ async function loadClientesTable() {
             for (const [index, cliente] of clientesIniciales.entries()) {
                 if (operationId !== currentSearchOperation) throw new Error("Búsqueda cancelada");
                 clientesMap.set(cliente.curp, cliente);
-                const creditosDelCliente = await database.buscarCreditosPorCliente(cliente.curp);
+                const creditosDelCliente = await database.buscarCreditosPorCliente(cliente.curp); // No necesita filtro sucursal, es por CURP
                 creditosAMostrar.push(...creditosDelCliente);
 
                 progress = 40 + Math.round((index / clientesIniciales.length) * 30);
@@ -375,11 +454,7 @@ async function loadClientesTable() {
         } else if (filtros.curpAval || filtros.plazo || filtros.estado) {
             // --- PATH 3: Search by Credit-Only Filters ---
             showFixedProgress(40, `Buscando créditos por filtros...`);
-            creditosAMostrar = await database.buscarCreditos({
-                estado: filtros.estado, // Pasar estado para pre-filtrar si es posible
-                curpAval: filtros.curpAval,
-                plazo: filtros.plazo
-            });
+            creditosAMostrar = await database.buscarCreditos(filtros); // filtros ya incluye userSucursal
         } else {
             tbody.innerHTML = '<tr><td colspan="6">Combinación de filtros no soportada o vacía.</td></tr>';
             throw new Error("Filtros inválidos");
@@ -406,7 +481,7 @@ async function loadClientesTable() {
             // 1. Get Client Data
             let cliente = clientesMap.get(credito.curpCliente);
             if (!cliente) {
-                cliente = await database.buscarClientePorCURP(credito.curpCliente);
+                cliente = await database.buscarClientePorCURP(credito.curpCliente, filtros.userSucursal); // Aplicar filtro sucursal aquí también
                 if (cliente) {
                     clientesMap.set(cliente.curp, cliente);
                 } else {
@@ -417,8 +492,14 @@ async function loadClientesTable() {
 
             // 2. Get Payments & Calculate Status
             const historicalId = credito.historicalIdCredito || credito.id;
-            // Pasar un array vacío de pagos a _calcularEstadoCredito, ya que ahora usa credito.saldo principalmente
-            const estadoCalculado = _calcularEstadoCredito(credito, []); // <--- Usa la función corregida
+            
+            // *** CORRECCIÓN IMPORTANTE: Obtener pagos para el cálculo de estado ***
+            const pagos = await database.getPagosPorCredito(historicalId);
+            // Ordenar pagos DESC (más reciente primero) para _calcularEstadoCredito
+            pagos.sort((a, b) => (parsearFecha(b.fecha)?.getTime() || 0) - (parsearFecha(a.fecha)?.getTime() || 0));
+            const ultimoPago = pagos.length > 0 ? pagos[0] : null;
+
+            const estadoCalculado = _calcularEstadoCredito(credito, pagos); // <-- Pasa los pagos
 
             if (!estadoCalculado) {
                 console.warn(`No se pudo calcular el estado para el crédito ID Firestore ${credito.id} (Histórico: ${historicalId})`);
@@ -429,7 +510,8 @@ async function loadClientesTable() {
             if (filtros.estado && estadoCalculado.estado !== filtros.estado) continue;
             if (filtros.plazo && credito.plazo != filtros.plazo) continue;
             if (filtros.curpAval && (!credito.curpAval || !credito.curpAval.toUpperCase().includes(filtros.curpAval.toUpperCase()))) continue;
-            if (filtros.sucursal && cliente.office !== filtros.sucursal) continue;
+            // Filtros de cliente (nombre, curp, grupo, sucursal) ya se aplicaron en la búsqueda inicial (PATH 2) o se verifican aquí
+            if (filtros.sucursal && cliente.office !== filtros.sucursal) continue; // Doble chequeo
             if (filtros.grupo && cliente.poblacion_grupo !== filtros.grupo) continue;
             if (filtros.curp && !filtros.curp.includes(',') && cliente.curp !== filtros.curp.toUpperCase()) continue;
             if (filtros.nombre && !(cliente.nombre || '').toLowerCase().includes(filtros.nombre.toLowerCase())) continue;
@@ -438,10 +520,6 @@ async function loadClientesTable() {
 
             // --- Build the Row ---
             const fechaInicioCredito = formatDateForDisplay(parsearFecha(credito.fechaCreacion));
-            // Necesitamos los pagos solo para el historial y fecha de último pago
-            const pagos = await database.getPagosPorCredito(historicalId); // Obtener pagos para detalles
-            pagos.sort((a, b) => (parsearFecha(b.fecha)?.getTime() || 0) - (parsearFecha(a.fecha)?.getTime() || 0));
-            const ultimoPago = pagos.length > 0 ? pagos[0] : null;
             const fechaUltimoPago = formatDateForDisplay(ultimoPago ? parsearFecha(ultimoPago.fecha) : null);
 
             const comisionistaBadge = cliente.isComisionista ? '<span class="comisionista-badge-cliente" title="Comisionista">★</span>' : '';
@@ -449,7 +527,7 @@ async function loadClientesTable() {
             const estadoHTML = `<span class="info-value ${estadoClase}">${estadoCalculado.estado.toUpperCase()}</span>`;
 
             // Usar semanasPagadas del objeto estadoCalculado
-            const semanasPagadas = estadoCalculado.semanasPagadas || 0; // Usar valor calculado
+            const semanasPagadas = estadoCalculado.semanasPagadas || 0;
 
             // Usar saldoRestante del objeto estadoCalculado
             const saldoRestante = estadoCalculado.saldoRestante;
@@ -471,7 +549,7 @@ async function loadClientesTable() {
                     </button>
                 </div>`;
 
-             // Pasar el objeto cliente completo a editCliente
+            // Pasar el objeto cliente completo a editCliente
             const clienteJsonString = JSON.stringify(cliente).replace(/'/g, "&apos;").replace(/"/g, "&quot;");
 
             const rowHTML = `
@@ -536,7 +614,9 @@ function limpiarFiltrosClientes() {
     const filtrosGrid = document.getElementById('filtros-grid');
     if (filtrosGrid) {
         filtrosGrid.querySelectorAll('input, select').forEach(el => {
-            el.value = '';
+            if (!el.disabled) { // No limpiar filtros deshabilitados (como sucursal)
+                el.value = '';
+            }
         });
     }
     inicializarVistaGestionClientes();
@@ -573,7 +653,7 @@ function limpiarFiltrosReportes() {
     const filtrosContainer = document.getElementById('filtros-reportes-avanzados');
     if (filtrosContainer) {
         filtrosContainer.querySelectorAll('input, select').forEach(el => {
-            if (el.type !== 'date') {
+            if (el.type !== 'date' && !el.disabled) { // No limpiar sucursal si está deshabilitada
                 el.value = '';
             }
         });
@@ -592,7 +672,7 @@ async function loadAdvancedReports() {
     const operationId = currentSearchOperation;
 
     showProcessingOverlay(true, 'Generando reporte avanzado...');
-    showButtonLoading('#btn-aplicar-filtros-reportes', true, 'Generando...'); // Selector Corregido
+    showButtonLoading('#btn-aplicar-filtros-reportes', true, 'Generando...');
     showFixedProgress(20, 'Recopilando filtros...');
     const statusReportes = document.getElementById('status_reportes_avanzados');
     statusReportes.innerHTML = 'Aplicando filtros y buscando datos...';
@@ -612,7 +692,8 @@ async function loadAdvancedReports() {
             fechaInicio: document.getElementById('fecha_inicio_reporte')?.value || '',
             fechaFin: document.getElementById('fecha_fin_reporte')?.value || '',
             curpCliente: document.getElementById('curp_filtro_reporte')?.value.trim().toUpperCase() || '',
-            idCredito: document.getElementById('id_credito_filtro_reporte')?.value.trim() || ''
+            idCredito: document.getElementById('id_credito_filtro_reporte')?.value.trim() || '',
+            userSucursal: currentUserData?.sucursal // <-- APLICAR SEGREGACIÓN
         };
 
         if (filtros.fechaInicio && filtros.fechaFin && new Date(filtros.fechaInicio) > new Date(filtros.fechaFin)) {
@@ -620,7 +701,7 @@ async function loadAdvancedReports() {
         }
 
         showFixedProgress(50, 'Consultando base de datos...');
-        const data = await database.generarReporteAvanzado(filtros);
+        const data = await database.generarReporteAvanzado(filtros); // Pasa todos los filtros, incl. userSucursal
 
         if (operationId !== currentSearchOperation) throw new Error("Búsqueda cancelada");
 
@@ -646,7 +727,7 @@ async function loadAdvancedReports() {
         if (operationId === currentSearchOperation) {
             cargaEnProgreso = false;
             showProcessingOverlay(false);
-            showButtonLoading('#btn-aplicar-filtros-reportes', false); // Selector Corregido
+            showButtonLoading('#btn-aplicar-filtros-reportes', false);
             setTimeout(hideFixedProgress, 2000);
         }
     }
@@ -673,7 +754,7 @@ function mostrarReporteAvanzado(data) {
 
         let rowContent = '';
         if (item.tipo === 'cliente') {
-             rowContent = `<td>CLIENTE</td><td>${item.curp || ''}</td><td>${item.nombre || ''}</td><td>${item.poblacion_grupo || ''}</td><td>${item.ruta || ''}</td><td>${item.office || ''}</td><td>${fechaRegistro}</td><td>Registro</td><td>-</td><td>-</td>`;
+            rowContent = `<td>CLIENTE</td><td>${item.curp || ''}</td><td>${item.nombre || ''}</td><td>${item.poblacion_grupo || ''}</td><td>${item.ruta || ''}</td><td>${item.office || ''}</td><td>${fechaRegistro}</td><td>Registro</td><td>-</td><td>-</td>`;
         } else if (item.tipo === 'credito') {
             rowContent = `<td>CRÉDITO</td><td>${item.curpCliente || ''}</td><td>${item.nombreCliente || ''}</td><td>${item.poblacion_grupo || ''}</td><td>${item.ruta || ''}</td><td>${item.office || ''}</td><td>${fechaCreacion}</td><td>${item.tipo || 'Colocación'}</td><td>$${(item.monto || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td><td>$${(item.saldo !== undefined ? item.saldo : 'N/A').toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>`;
         } else if (item.tipo === 'pago') {
@@ -836,18 +917,18 @@ function exportToPDF() {
         const tableClone = tableElement.cloneNode(true);
         const headers = tableClone.querySelector('thead tr');
         if (headers) {
-             const th = document.createElement('th');
-             th.textContent = 'ID Crédito (Hist)';
-             headers.appendChild(th);
+            const th = document.createElement('th');
+            th.textContent = 'ID Crédito (Hist)';
+            headers.appendChild(th);
         }
         const rows = tableClone.querySelectorAll('tbody tr');
-         rows.forEach((row, index) => {
-             const item = reportData[index];
-             const idCreditoMostrar = item.historicalIdCredito || item.idCredito || item.id || '';
-             const td = document.createElement('td');
-             td.textContent = idCreditoMostrar;
-             row.appendChild(td);
-         });
+        rows.forEach((row, index) => {
+            const item = reportData[index];
+            const idCreditoMostrar = item.historicalIdCredito || item.idCredito || item.id || '';
+            const td = document.createElement('td');
+            td.textContent = idCreditoMostrar;
+            row.appendChild(td);
+        });
 
         tableClone.style.width = '100%';
         tableClone.style.borderCollapse = 'collapse';
@@ -918,10 +999,14 @@ document.addEventListener('DOMContentLoaded', function () {
                 if (currentUserData) {
                     document.getElementById('user-name').textContent = currentUserData.name || user.email;
                     document.getElementById('user-role-display').textContent = currentUserData.role || 'Rol Desconocido';
+                    // Aplicar permisos y filtros de sucursal
+                    aplicarPermisosUI(currentUserData.role);
                 } else {
                     console.warn(`No se encontraron datos en Firestore para el usuario ${user.uid}`);
                     document.getElementById('user-name').textContent = user.email;
                     document.getElementById('user-role-display').textContent = 'Datos no encontrados';
+                    // Aplicar permisos por defecto (ninguno)
+                    aplicarPermisosUI('default');
                 }
 
                 loginScreen.classList.add('hidden');
@@ -942,8 +1027,18 @@ document.addEventListener('DOMContentLoaded', function () {
             clearTimeout(inactivityTimer);
             mainApp.classList.add('hidden');
             loginScreen.classList.remove('hidden');
+            
+            // *** CORRECCIÓN: Habilitar botón de login al cerrar sesión ***
+            const loginButton = document.querySelector('#login-form button[type="submit"]');
+            if (loginButton) {
+                showButtonLoading(loginButton, false);
+            }
+            
             const authStatus = document.getElementById('auth-status');
-            if (authStatus) authStatus.textContent = '';
+            if (authStatus) {
+                authStatus.textContent = '';
+                authStatus.classList.add('hidden');
+            }
         }
     });
 });
@@ -961,7 +1056,7 @@ function setupEventListeners() {
     document.querySelectorAll('[data-view]').forEach(button => {
         button.addEventListener('click', function () {
             if (this.type === 'button' && this.closest('#form-cliente') && !editingClientId) {
-                 // No resetear si es un botón 'Cancelar' dentro del form de edición
+                // No resetear si es un botón 'Cancelar' dentro del form de edición
             } else if (this.closest('.menu-card')) {
                 if (this.getAttribute('data-view') === 'view-cliente') {
                     resetClientForm(); // Resetear SIEMPRE al ir a registrar nuevo desde menú
@@ -1018,8 +1113,13 @@ function setupEventListeners() {
     if (formCreditoSubmit) formCreditoSubmit.addEventListener('submit', handleCreditForm);
     const curpAvalColocacion = document.getElementById('curpAval_colocacion');
     if (curpAvalColocacion) curpAvalColocacion.addEventListener('input', () => validarCURP(curpAvalColocacion));
+    
+    // *** CORRECCIÓN: Event Listeners para cálculo de interés ***
     const montoColocacion = document.getElementById('monto_colocacion');
     if (montoColocacion) montoColocacion.addEventListener('change', calcularMontoTotalColocacion);
+    const plazoColocacion = document.getElementById('plazo_colocacion');
+    if (plazoColocacion) plazoColocacion.addEventListener('change', calcularMontoTotalColocacion);
+
 
     const btnBuscarCreditoCobranza = document.getElementById('btnBuscarCredito_cobranza');
     if (btnBuscarCreditoCobranza) btnBuscarCreditoCobranza.addEventListener('click', handleSearchCreditForPayment);
@@ -1034,7 +1134,7 @@ function setupEventListeners() {
     if (btnRegistrarPagoGrupal) btnRegistrarPagoGrupal.addEventListener('click', handleRegistroPagoGrupal);
 
     const btnActualizarReportes = document.getElementById('btn-actualizar-reportes');
-    if (btnActualizarReportes) btnActualizarReportes.addEventListener('click', loadBasicReports); // Llamar a la función
+    if (btnActualizarReportes) btnActualizarReportes.addEventListener('click', () => loadBasicReports(currentUserData?.sucursal));
 
     const btnAplicarFiltrosReportes = document.getElementById('btn-aplicar-filtros-reportes');
     if (btnAplicarFiltrosReportes) btnAplicarFiltrosReportes.addEventListener('click', loadAdvancedReports);
@@ -1049,6 +1149,33 @@ function setupEventListeners() {
     if (btnGenerarGrafico) btnGenerarGrafico.addEventListener('click', handleGenerarGrafico);
     const sucursalGrafico = document.getElementById('grafico_sucursal');
     if (sucursalGrafico) sucursalGrafico.addEventListener('change', handleSucursalGraficoChange);
+
+    // Listeners para nueva vista de Configuración
+    const btnAgregarPoblacion = document.getElementById('btn-agregar-poblacion');
+    if (btnAgregarPoblacion) btnAgregarPoblacion.addEventListener('click', () => handleAgregarConfig('poblacion'));
+    const btnAgregarRuta = document.getElementById('btn-agregar-ruta');
+    if (btnAgregarRuta) btnAgregarRuta.addEventListener('click', () => handleAgregarConfig('ruta'));
+
+    // Event delegation para botones de eliminar en listas de configuración
+    const listaPoblaciones = document.getElementById('lista-poblaciones');
+    if (listaPoblaciones) listaPoblaciones.addEventListener('click', (e) => {
+        if (e.target.classList.contains('btn-eliminar-config') || e.target.closest('.btn-eliminar-config')) {
+            const button = e.target.closest('.btn-eliminar-config');
+            const id = button.getAttribute('data-id');
+            const nombre = button.getAttribute('data-nombre');
+            handleEliminarConfig('poblacion', id, nombre);
+        }
+    });
+    
+    const listaRutas = document.getElementById('lista-rutas');
+    if (listaRutas) listaRutas.addEventListener('click', (e) => {
+        if (e.target.classList.contains('btn-eliminar-config') || e.target.closest('.btn-eliminar-config')) {
+            const button = e.target.closest('.btn-eliminar-config');
+            const id = button.getAttribute('data-id');
+            const nombre = button.getAttribute('data-nombre');
+            handleEliminarConfig('ruta', id, nombre);
+        }
+    });
 
     const modalCloseBtn = document.getElementById('modal-close-btn');
     if (modalCloseBtn) modalCloseBtn.addEventListener('click', () => document.getElementById('generic-modal').classList.add('hidden'));
@@ -1079,13 +1206,8 @@ async function handleLogin(e) {
 
     try {
         await auth.signInWithEmailAndPassword(email, password);
-        statusElement.textContent = '¡Inicio de sesión exitoso!';
-        statusElement.className = 'status-message status-success';
-        setTimeout(() => {
-            if (!currentUser) {
-                statusElement.classList.add('hidden');
-            }
-        }, 1500);
+        // El onAuthStateChanged se encargará de ocultar esto y mostrar la app
+        // No es necesario re-habilitar el botón aquí, onAuthStateChanged lo hará si falla
 
     } catch (error) {
         console.error("Error de inicio de sesión:", error.code, error.message);
@@ -1099,7 +1221,7 @@ async function handleLogin(e) {
         }
         statusElement.textContent = mensajeError;
         statusElement.className = 'status-message status-error';
-        showButtonLoading(loginButton, false);
+        showButtonLoading(loginButton, false); // Re-habilitar botón SÓLO si falla el login
     }
 }
 
@@ -1226,11 +1348,21 @@ function resetClientForm() {
     if (titulo) titulo.textContent = 'Registrar Cliente';
     const submitButton = document.querySelector('#form-cliente button[type="submit"]');
     if (submitButton) submitButton.innerHTML = '<i class="fas fa-save"></i> Guardar Cliente';
+    
+    // Volver a aplicar permisos de UI al resetear
+    if (currentUserData) aplicarPermisosUI(currentUserData.role);
+    
     const curpInput = document.getElementById('curp_cliente');
-    if(curpInput){ // Verificar si existe antes de acceder a readOnly
-        curpInput.readOnly = !(currentUserData && (currentUserData.role === 'admin' || currentUserData.role === 'supervisor'));
+    if (curpInput) {
+        // La readonly se establece en aplicarPermisosUI
         validarCURP(curpInput);
     }
+    
+    const officeInput = document.getElementById('office_cliente');
+    if (officeInput && !officeInput.disabled) {
+        officeInput.value = 'GDL'; // Resetear a GDL si no está bloqueado por rol
+    }
+    
     handleOfficeChangeForClientForm.call(document.getElementById('office_cliente') || { value: 'GDL' });
     showStatus('status_cliente', '', 'info');
 }
@@ -1326,6 +1458,7 @@ function mostrarFormularioUsuario(usuario = null) {
         emailInput.value = usuario.email || '';
         emailInput.readOnly = true;
         document.getElementById('nuevo-rol').value = usuario.role || '';
+        document.getElementById('nuevo-sucursal').value = usuario.sucursal || 'GDL'; // Campo nuevo
         passwordInput.required = false;
         passwordInput.placeholder = "Dejar en blanco para no cambiar";
     } else {
@@ -1364,9 +1497,10 @@ async function handleUserForm(e) {
             const userData = {
                 name: document.getElementById('nuevo-nombre').value.trim(),
                 role: document.getElementById('nuevo-rol').value,
+                sucursal: document.getElementById('nuevo-sucursal').value // Campo nuevo
             };
-            if (!userData.name || !userData.role) {
-                throw new Error('Nombre y Rol son obligatorios.');
+            if (!userData.name || !userData.role || !userData.sucursal) {
+                throw new Error('Nombre, Rol y Sucursal son obligatorios.');
             }
             const resultado = await database.actualizarUsuario(editingUserId, userData);
             if (!resultado.success) throw new Error(resultado.message);
@@ -1382,8 +1516,9 @@ async function handleUserForm(e) {
             const password = document.getElementById('nuevo-password').value;
             const nombre = document.getElementById('nuevo-nombre').value.trim();
             const rol = document.getElementById('nuevo-rol').value;
+            const sucursal = document.getElementById('nuevo-sucursal').value; // Campo nuevo
 
-            if (!email || !password || !nombre || !rol) {
+            if (!email || !password || !nombre || !rol || !sucursal) {
                 throw new Error('Todos los campos son obligatorios para crear un usuario.');
             }
             if (password.length < 6) {
@@ -1393,14 +1528,30 @@ async function handleUserForm(e) {
                 throw new Error("La creación de nuevos usuarios requiere conexión a internet.");
             }
 
-            const userCredential = await auth.createUserWithEmailAndPassword(email, password);
-            const user = userCredential.user;
+            // NOTA: La creación de usuarios con auth.createUserWithEmailAndPassword
+            // es una función de cliente que puede estar restringida por reglas de seguridad.
+            // Lo ideal es que esto lo haga una Cloud Function (backend).
+            // Asumiendo que las reglas lo permiten por ahora:
+            let user;
+            try {
+                const userCredential = await auth.createUserWithEmailAndPassword(email, password);
+                user = userCredential.user;
+            } catch (authError) {
+                 // Si falla la creación en Auth, no continuar
+                console.error("Error en Auth createUser:", authError);
+                if (authError.code === 'auth/email-already-in-use') throw new Error('Error: El correo electrónico ya está registrado.');
+                if (authError.code === 'auth/weak-password') throw new Error('Error: La contraseña es demasiado débil (mínimo 6 caracteres).');
+                if (authError.code === 'auth/invalid-email') throw new Error('Error: El formato del correo electrónico no es válido.');
+                throw new Error(`Error de autenticación: ${authError.message}`);
+            }
 
+            // Si la creación en Auth fue exitosa, crear el documento en Firestore
             await db.collection('users').doc(user.uid).set({
                 id: user.uid,
                 email,
                 name: nombre,
                 role: rol,
+                sucursal: sucursal, // Campo nuevo
                 createdAt: new Date().toISOString(),
                 status: 'active'
             });
@@ -1411,11 +1562,7 @@ async function handleUserForm(e) {
         }
     } catch (error) {
         console.error("Error en handleUserForm:", error);
-        let mensajeError = `Error: ${error.message}`;
-        if (error.code === 'auth/email-already-in-use') mensajeError = 'Error: El correo electrónico ya está registrado.';
-        if (error.code === 'auth/weak-password') mensajeError = 'Error: La contraseña es demasiado débil (mínimo 6 caracteres).';
-        if (error.code === 'auth/invalid-email') mensajeError = 'Error: El formato del correo electrónico no es válido.';
-        showStatus('status_usuarios', mensajeError, 'error');
+        showStatus('status_usuarios', error.message, 'error');
     } finally {
         showButtonLoading(submitButton, false);
     }
@@ -1446,7 +1593,12 @@ async function loadUsersTable() {
             const emailMatch = !filtroEmail || (usuario.email && usuario.email.toLowerCase().includes(filtroEmail));
             const nombreMatch = !filtroNombre || (usuario.name && usuario.name.toLowerCase().includes(filtroNombre));
             const rolMatch = !filtroRol || usuario.role === filtroRol;
-            return emailMatch && nombreMatch && rolMatch;
+            
+            // Filtrar por sucursal del admin
+            const sucursalAdmin = currentUserData?.sucursal;
+            const sucursalMatch = !sucursalAdmin || sucursalAdmin === 'AMBAS' || usuario.sucursal === sucursalAdmin || !usuario.sucursal;
+            
+            return emailMatch && nombreMatch && rolMatch && sucursalMatch;
         });
 
         tbody.innerHTML = '';
@@ -1470,10 +1622,10 @@ async function loadUsersTable() {
                     <td>${usuario.email || 'N/A'}</td>
                     <td>${usuario.name || 'N/A'}</td>
                     <td><span class="role-badge ${roleBadgeClass}">${usuario.role || 'Sin Rol'}</span></td>
-                    <td>${usuario.office || 'N/A'}</td>
+                    <td>${usuario.sucursal || 'N/A'}</td>
                     <td>${usuario.status === 'disabled' ? 'Deshabilitado' : 'Activo'}</td>
                     <td class="action-buttons">
-                        <button class="btn btn-sm btn-info" onclick='editUsuario(${usuarioJsonString})' title="Editar"><i class="fas fa-edit"></i></button>
+                        <button class="btn btn-sm btn-info" onclick='mostrarFormularioUsuario(${usuarioJsonString})' title="Editar"><i class="fas fa-edit"></i></button>
                         ${usuario.status !== 'disabled' ? `<button class="btn btn-sm btn-warning" onclick="disableUsuario('${usuario.id}', '${usuario.name || usuario.email}')" title="Deshabilitar"><i class="fas fa-user-slash"></i></button>` : ''}
                         </td>
                 `;
@@ -1527,16 +1679,34 @@ async function editCliente(cliente) {
 
     // Actualizar y seleccionar grupo/ruta
     handleOfficeChangeForClientForm.call(document.getElementById('office_cliente'));
-    setTimeout(() => {
+    
+    // Esperar a que los dropdowns se pueblen (si son asíncronos, aunque aquí no lo son)
+    // Usar setTimeout para asegurar que el DOM se actualice
+    setTimeout(async () => {
+        // Cargar y unificar listas de poblaciones y rutas
+        const [poblacionesGdl, poblacionesLeon, rutasGdl, rutasLeon] = await Promise.all([
+            database.obtenerPoblaciones('GDL'),
+            database.obtenerPoblaciones('LEON'),
+            database.obtenerRutas('GDL'),
+            database.obtenerRutas('LEON')
+        ]);
+        
+        const todasPoblaciones = [...new Set([...poblacionesGdl.map(p => p.nombre), ...poblacionesLeon.map(p => p.nombre)])].sort();
+        const todasRutas = [...new Set([...rutasGdl.map(r => r.nombre), ...rutasLeon.map(r => r.nombre)])].sort();
+
+        popularDropdown('poblacion_grupo_cliente', todasPoblaciones, 'Selecciona población/grupo');
+        popularDropdown('ruta_cliente', todasRutas, 'Selecciona una ruta');
+        
         document.getElementById('poblacion_grupo_cliente').value = cliente.poblacion_grupo || '';
         document.getElementById('ruta_cliente').value = cliente.ruta || '';
     }, 100);
 
     const curpInput = document.getElementById('curp_cliente');
-     if(curpInput){
-        curpInput.readOnly = !(currentUserData && (currentUserData.role === 'admin' || currentUserData.role === 'supervisor'));
+    if (curpInput) {
+        // ReadOnly se maneja ahora por aplicarPermisosUI
+        aplicarPermisosUI(currentUserData.role);
         validarCURP(curpInput);
-     }
+    }
 
     const titulo = document.querySelector('#view-cliente h2');
     if (titulo) titulo.textContent = 'Editar Cliente';
@@ -1599,11 +1769,11 @@ async function handleSearchClientForCredit() {
     formColocacion.classList.add('hidden');
 
     try {
-        const cliente = await database.buscarClientePorCURP(curp);
+        const cliente = await database.buscarClientePorCURP(curp, currentUserData?.sucursal); // Aplicar segregación
 
         if (!cliente) {
             showFixedProgress(100, 'Cliente no encontrado');
-            throw new Error('Cliente no encontrado en la base de datos. Por favor, regístrelo primero.');
+            throw new Error('Cliente no encontrado en la base de datos para tu sucursal. Por favor, regístrelo primero.');
         }
 
         showFixedProgress(70, 'Verificando elegibilidad...');
@@ -1616,22 +1786,40 @@ async function handleSearchClientForCredit() {
         }
 
         showFixedProgress(100, 'Cliente elegible');
-        actualizarPlazosSegunCliente(cliente.isComisionista || false);
-
+        
         const creditoActivo = await database.buscarCreditoActivoPorCliente(curp);
-        const mensaje = creditoActivo ? 'Cliente encontrado y elegible para RENOVACIÓN.' : 'Cliente encontrado y elegible para crédito NUEVO.';
+        const plazoSelect = document.getElementById('plazo_colocacion');
+        const tipoCreditoSelect = document.getElementById('tipo_colocacion');
+
+        let mensaje = '';
+        if (creditoActivo) {
+            // *** CORRECCIÓN: Lógica de Renovación ***
+            mensaje = 'Cliente encontrado y elegible para RENOVACIÓN (solo 14 semanas).';
+            popularDropdown('plazo_colocacion', [14].map(p => ({ value: p, text: `${p} semanas` })), 'Selecciona plazo', true);
+            plazoSelect.value = 14;
+            plazoSelect.disabled = true;
+            tipoCreditoSelect.value = 'renovacion';
+            tipoCreditoSelect.disabled = true;
+        } else {
+            // Lógica de Cliente Nuevo
+            mensaje = 'Cliente encontrado y elegible para crédito NUEVO.';
+            actualizarPlazosSegunCliente(cliente.isComisionista || false);
+            plazoSelect.disabled = false;
+            tipoCreditoSelect.value = 'nuevo';
+            tipoCreditoSelect.disabled = false;
+        }
+        
         showStatus('status_colocacion', mensaje, 'success');
 
         document.getElementById('nombre_colocacion').value = cliente.nombre;
         document.getElementById('idCredito_colocacion').value = 'Se asignará automáticamente';
-        document.getElementById('tipo_colocacion').value = '';
         document.getElementById('monto_colocacion').value = '';
-        document.getElementById('plazo_colocacion').value = '';
         document.getElementById('montoTotal_colocacion').value = '';
         document.getElementById('curpAval_colocacion').value = '';
         document.getElementById('nombreAval_colocacion').value = '';
         validarCURP(document.getElementById('curpAval_colocacion'));
 
+        calcularMontoTotalColocacion(); // Calcular monto (que será $0)
         formColocacion.classList.remove('hidden');
 
     } catch (error) {
@@ -1663,11 +1851,27 @@ async function handleCreditForm(e) {
         curpAval: curpAval,
         nombreAval: document.getElementById('nombreAval_colocacion').value.trim()
     };
+    
+    // *** CORRECCIÓN: Calcular monto total y saldo basado en reglas de interés ***
+    let interesRate = 0;
+    if (creditoData.plazo === 14) interesRate = 0.40;
+    else if (creditoData.plazo === 13) interesRate = 0.30;
+    else if (creditoData.plazo === 10) interesRate = 0.00;
+    
+    creditoData.montoTotal = parseFloat((creditoData.monto * (1 + interesRate)).toFixed(2));
+    creditoData.saldo = creditoData.montoTotal;
+
 
     if (!creditoData.monto || creditoData.monto <= 0 || !creditoData.plazo || !creditoData.tipo || !creditoData.nombreAval) {
         showStatus('status_colocacion', 'Error: Todos los campos del crédito son obligatorios (Monto, Plazo, Tipo, Nombre Aval).', 'error');
         return;
     }
+    // *** CORRECCIÓN: Validar regla de renovación ***
+    if ((creditoData.tipo === 'renovacion' || creditoData.tipo === 'reingreso') && creditoData.plazo !== 14) {
+        showStatus('status_colocacion', 'Error: Las renovaciones y reingresos solo pueden ser a 14 semanas.', 'error');
+        return;
+    }
+    
     if (!validarFormatoCURP(creditoData.curpCliente)) {
         showStatus('status_colocacion', 'Error: CURP del cliente inválido.', 'error');
         return;
@@ -1691,7 +1895,7 @@ async function handleCreditForm(e) {
         if (resultado.success) {
             showFixedProgress(100, 'Crédito generado');
             let successMessage = `¡Crédito generado exitosamente! ID Firestore: ${resultado.data.id}.`;
-             if (resultado.data.historicalIdCredito) successMessage += ` (ID Histórico: ${resultado.data.historicalIdCredito})`;
+            if (resultado.data.historicalIdCredito) successMessage += ` (ID Histórico: ${resultado.data.historicalIdCredito})`;
 
             if (!isOnline) {
                 successMessage += ' (Datos guardados localmente, se sincronizarán al conectar).';
@@ -1744,11 +1948,11 @@ async function handleSearchCreditForPayment() {
     formCobranza.classList.add('hidden');
 
     try {
-        const creditosEncontrados = await database.buscarCreditosPorHistoricalId(historicalIdCredito);
+        const creditosEncontrados = await database.buscarCreditosPorHistoricalId(historicalIdCredito, { userSucursal: currentUserData?.sucursal }); // Aplicar segregación
 
         if (creditosEncontrados.length === 0) {
             showFixedProgress(100, 'Crédito no encontrado');
-            throw new Error(`No se encontró ningún crédito con el ID histórico: ${historicalIdCredito}`);
+            throw new Error(`No se encontró ningún crédito con el ID histórico: ${historicalIdCredito} (en tu sucursal).`);
         }
 
         if (creditosEncontrados.length > 1) {
@@ -1760,19 +1964,21 @@ async function handleSearchCreditForPayment() {
         creditoActual = creditosEncontrados[0];
 
         showFixedProgress(60, 'Obteniendo datos del cliente...');
-        const cliente = await database.buscarClientePorCURP(creditoActual.curpCliente);
+        const cliente = await database.buscarClientePorCURP(creditoActual.curpCliente, currentUserData?.sucursal); // Aplicar segregación
         if (!cliente) {
             console.warn(`No se encontró cliente para CURP ${creditoActual.curpCliente} del crédito ${historicalIdCredito}`);
         }
 
         showFixedProgress(80, 'Calculando historial del crédito...');
-        const historicalId = creditoActual.historicalIdCredito || creditoActual.id;
-        // Pasar array vacío a _calcularEstadoCredito ya que no necesita los pagos individuales aquí
-        const historial = _calcularEstadoCredito(creditoActual, []); // <-- Usa la función corregida
+        // *** CORRECCIÓN: Obtener pagos para cálculo de estado ***
+        const pagos = await database.getPagosPorCredito(historicalIdCredito);
+        pagos.sort((a, b) => (parsearFecha(b.fecha)?.getTime() || 0) - (parsearFecha(a.fecha)?.getTime() || 0));
+        
+        const historial = _calcularEstadoCredito(creditoActual, pagos); // <-- Pasa los pagos
 
         if (!historial) {
             console.error("No se pudo calcular el historial para el crédito:", creditoActual);
-            throw new Error(`No se pudo calcular el historial del crédito ${historicalId}. Verifica los datos del crédito (monto, plazo, fecha).`);
+            throw new Error(`No se pudo calcular el historial del crédito ${historicalIdCredito}. Verifica los datos del crédito (monto, plazo, fecha).`);
         }
 
         document.getElementById('nombre_cobranza').value = cliente ? cliente.nombre : (creditoActual.nombreCliente || 'Cliente Desconocido');
@@ -1935,10 +2141,13 @@ async function handleBuscarGrupoParaPago() {
     grupoDePagoActual = null;
 
     try {
-        const clientesDelGrupo = await database.buscarClientes({ grupo: grupo });
+        const clientesDelGrupo = await database.buscarClientes({ 
+            grupo: grupo, 
+            userSucursal: currentUserData?.sucursal // Aplicar segregación
+        });
 
         if (clientesDelGrupo.length === 0) {
-            throw new Error(`No se encontraron clientes registrados en el grupo '${grupo}'.`);
+            throw new Error(`No se encontraron clientes registrados en el grupo '${grupo}' (en tu sucursal).`);
         }
 
         let totalClientesActivos = 0;
@@ -1959,7 +2168,8 @@ async function handleBuscarGrupoParaPago() {
                         historicalIdCredito: creditoActivo.historicalIdCredito || creditoActivo.id,
                         curpCliente: cliente.curp,
                         nombreCliente: cliente.nombre,
-                        pagoSemanal: pagoSemanal
+                        pagoSemanal: pagoSemanal,
+                        office: creditoActivo.office // Guardar sucursal para el pago
                     });
                 } else {
                     console.warn(`Crédito ${creditoActivo.historicalIdCredito || creditoActivo.id} de ${cliente.curp} tiene datos inconsistentes (monto/plazo).`);
@@ -2079,7 +2289,7 @@ async function handleRegistroPagoGrupal() {
                         fecha: new Date().toISOString(),
                         saldoDespues: nuevoSaldo,
                         registradoPor: currentUser.email,
-                        office: creditoActualData.office,
+                        office: creditoInfo.office, // Usar la sucursal del crédito
                         curpCliente: creditoActualData.curpCliente,
                         grupo: grupo
                     });
@@ -2125,9 +2335,10 @@ async function handleRegistroPagoGrupal() {
 
 /**
  * Carga y muestra las estadísticas básicas del sistema.
+ * @param {string} userSucursal La sucursal del usuario (opcional).
  */
-async function loadBasicReports() {
-    console.log("Cargando reportes básicos...");
+async function loadBasicReports(userSucursal = null) {
+    console.log(`Cargando reportes básicos para sucursal: ${userSucursal || 'Todas'}...`);
     const btnActualizar = document.getElementById('btn-actualizar-reportes');
     showButtonLoading(btnActualizar, true, 'Actualizando...');
     showStatus('status_reportes', 'Calculando estadísticas...', 'info');
@@ -2142,7 +2353,7 @@ async function loadBasicReports() {
     document.getElementById('total-comisiones').textContent = '$...';
 
     try {
-        const reportes = await database.generarReportes();
+        const reportes = await database.generarReportes(userSucursal); // Aplicar segregación
 
         document.getElementById('total-clientes').textContent = reportes.totalClientes?.toLocaleString() ?? 'Error';
         document.getElementById('total-creditos').textContent = reportes.totalCreditos?.toLocaleString() ?? 'Error';
@@ -2158,21 +2369,21 @@ async function loadBasicReports() {
     } catch (error) {
         console.error("Error al cargar reportes básicos:", error);
         showStatus('status_reportes', `Error al cargar reportes: ${error.message}`, 'error');
-         document.getElementById('total-clientes').textContent = 'Error';
-         document.getElementById('total-creditos').textContent = 'Error';
-         document.getElementById('total-cartera').textContent = 'Error';
-         document.getElementById('total-vencidos').textContent = 'Error';
-         document.getElementById('pagos-registrados').textContent = 'Error';
-         document.getElementById('cobrado-mes').textContent = 'Error';
-         document.getElementById('tasa-recuperacion').textContent = 'Error';
-         document.getElementById('total-comisiones').textContent = 'Error';
+        document.getElementById('total-clientes').textContent = 'Error';
+        document.getElementById('total-creditos').textContent = 'Error';
+        document.getElementById('total-cartera').textContent = 'Error';
+        document.getElementById('total-vencidos').textContent = 'Error';
+        document.getElementById('pagos-registrados').textContent = 'Error';
+        document.getElementById('cobrado-mes').textContent = 'Error';
+        document.getElementById('tasa-recuperacion').textContent = 'Error';
+        document.getElementById('total-comisiones').textContent = 'Error';
     } finally {
         showButtonLoading(btnActualizar, false);
     }
 }
 
 // =============================================
-// SECCIÓN DE REPORTES GRÁFICOS
+// SECCIÓN DE REPORTES GRÁFICOS (MODIFICADA)
 // =============================================
 
 async function handleGenerarGrafico() {
@@ -2206,16 +2417,34 @@ async function handleGenerarGrafico() {
         statusGraficos.textContent = 'Obteniendo datos...';
         statusGraficos.className = 'status-message status-info';
 
-        const { creditos, pagos } = await database.obtenerDatosParaGraficos({ sucursal, grupo, fechaInicio, fechaFin });
+        const { creditos, pagos } = await database.obtenerDatosParaGraficos({ 
+            sucursal, 
+            grupo, 
+            fechaInicio, 
+            fechaFin,
+            userSucursal: currentUserData?.sucursal // Aplicar segregación
+        });
 
         statusGraficos.textContent = 'Procesando datos para el gráfico...';
 
-        let datosAgrupados = {};
+        let datasets = [];
+        let labels = [];
         let labelPrefix = '';
+        
+        const colores = {
+            GDL: 'rgba(46, 139, 87, 0.7)', // --primary
+            LEON: 'rgba(30, 144, 255, 0.7)', // --secondary
+            GDL_border: 'rgba(46, 139, 87, 1)',
+            LEON_border: 'rgba(30, 144, 255, 1)',
+            default: 'rgba(46, 139, 87, 0.7)',
+            default_border: 'rgba(46, 139, 87, 1)'
+        };
 
-        const agruparDatos = (data, campoFecha, campoValor) => {
+        const agruparDatos = (data, campoFecha, campoValor, filtroSucursal = null) => {
             const agrupados = {};
-            data.forEach(item => {
+            const datosFiltrados = filtroSucursal ? data.filter(item => item.office === filtroSucursal) : data;
+            
+            datosFiltrados.forEach(item => {
                 const fecha = parsearFecha(item[campoFecha]);
                 if (!fecha || isNaN(fecha.getTime())) {
                     console.warn("Fecha inválida encontrada:", item[campoFecha], "en item:", item);
@@ -2225,14 +2454,18 @@ async function handleGenerarGrafico() {
                 const anio = fecha.getUTCFullYear();
                 const mes = fecha.getUTCMonth();
                 const dia = fecha.getUTCDate();
-                const fechaInicioSemana = new Date(Date.UTC(anio, mes, dia));
-                fechaInicioSemana.setUTCDate(fechaInicioSemana.getUTCDate() + 4 - (fechaInicioSemana.getUTCDay() || 7));
-                const inicioAnio = new Date(Date.UTC(anio, 0, 1));
-                const semana = Math.ceil((((fechaInicioSemana - inicioAnio) / 86400000) + 1) / 7);
-
-                if (agruparPor === 'anio') clave = `${anio}`;
-                else if (agruparPor === 'mes') clave = `${anio}-${String(mes + 1).padStart(2, '0')}`;
-                else clave = `${anio}-S${String(semana).padStart(2, '0')}`;
+                
+                if (agruparPor === 'anio') {
+                    clave = `${anio}`;
+                } else if (agruparPor === 'mes') {
+                    clave = `${anio}-${String(mes + 1).padStart(2, '0')}`;
+                } else { // semana
+                    const fechaInicioSemana = new Date(Date.UTC(anio, mes, dia));
+                    fechaInicioSemana.setUTCDate(fechaInicioSemana.getUTCDate() + 4 - (fechaInicioSemana.getUTCDay() || 7));
+                    const inicioAnio = new Date(Date.UTC(anio, 0, 1));
+                    const semana = Math.ceil((((fechaInicioSemana - inicioAnio) / 86400000) + 1) / 7);
+                    clave = `${anio}-S${String(semana).padStart(2, '0')}`;
+                }
 
                 if (!agrupados[clave]) agrupados[clave] = 0;
                 agrupados[clave] += parseFloat(item[campoValor] || 0);
@@ -2240,27 +2473,100 @@ async function handleGenerarGrafico() {
             return agrupados;
         };
 
+        let dataToProcess = [];
+        let campoFecha = '';
+        let campoValor = '';
+
         if (tipoReporte === 'colocacion') {
-            datosAgrupados = agruparDatos(creditos, 'fechaCreacion', 'monto');
+            dataToProcess = creditos;
+            campoFecha = 'fechaCreacion';
+            campoValor = 'monto';
             labelPrefix = 'Monto Colocado';
         } else if (tipoReporte === 'recuperacion') {
-            datosAgrupados = agruparDatos(pagos, 'fecha', 'monto');
+            dataToProcess = pagos;
+            campoFecha = 'fecha';
+            campoValor = 'monto';
             labelPrefix = 'Monto Recuperado';
         } else if (tipoReporte === 'comportamiento') {
-            datosAgrupados = pagos.reduce((acc, pago) => {
-                const tipo = (pago.tipoPago || 'normal').toLowerCase();
-                const clave = tipo.charAt(0).toUpperCase() + tipo.slice(1);
-                if (!acc[clave]) acc[clave] = 0;
-                acc[clave] += parseFloat(pago.monto || 0);
-                return acc;
-            }, {});
+            // Comportamiento no se agrupa por fecha, sino por tipo
             labelPrefix = 'Monto por Tipo de Pago';
-        } else {
-            throw new Error("Tipo de reporte gráfico no reconocido.");
         }
 
-        const labels = Object.keys(datosAgrupados).sort();
-        const dataValues = labels.map(label => datosAgrupados[label]);
+        // *** LÓGICA DE MÚLTIPLES DATASETS ***
+        if (tipoReporte === 'comportamiento') {
+            // Agrupar por tipo de pago, separado por sucursal si "Ambas" está seleccionado
+            const sucursalesAProcesar = (sucursal === '') ? ['GDL', 'LEON'] : [sucursal];
+            let datosAgrupados = {};
+            
+            sucursalesAProcesar.forEach(suc => {
+                const pagosSucursal = (sucursal === '') ? pagos.filter(p => p.office === suc) : pagos;
+                pagosSucursal.forEach(pago => {
+                    const tipo = (pago.tipoPago || 'normal').toLowerCase();
+                    const clave = tipo.charAt(0).toUpperCase() + tipo.slice(1);
+                    if (!datosAgrupados[clave]) datosAgrupados[clave] = {};
+                    if (!datosAgrupados[clave][suc]) datosAgrupados[clave][suc] = 0;
+                    datosAgrupados[clave][suc] += parseFloat(pago.monto || 0);
+                });
+            });
+
+            labels = Object.keys(datosAgrupados).sort();
+            
+            datasets = sucursalesAProcesar.map(suc => ({
+                label: `${labelPrefix} (${suc})`,
+                data: labels.map(label => datosAgrupados[label][suc] || 0),
+                backgroundColor: colores[suc],
+                borderColor: colores[`${suc}_border`],
+                borderWidth: (tipoGrafico === 'line') ? 2 : 1,
+                fill: (tipoGrafico === 'line') ? false : true,
+                tension: (tipoGrafico === 'line') ? 0.1 : 0
+            }));
+            
+        } else {
+            // Lógica para Colocación y Recuperación (agrupados por fecha)
+            if (sucursal === '') { // AMBAS SUCURSALES
+                const datosGDL = agruparDatos(dataToProcess, campoFecha, campoValor, 'GDL');
+                const datosLEON = agruparDatos(dataToProcess, campoFecha, campoValor, 'LEON');
+                labels = [...new Set([...Object.keys(datosGDL), ...Object.keys(datosLEON)])].sort();
+                
+                datasets.push({
+                    label: `${labelPrefix} (GDL)`,
+                    data: labels.map(label => datosGDL[label] || 0),
+                    backgroundColor: colores.GDL,
+                    borderColor: colores.GDL_border,
+                    borderWidth: (tipoGrafico === 'line') ? 2 : 1,
+                    fill: (tipoGrafico === 'line') ? false : true,
+                    tension: (tipoGrafico === 'line') ? 0.1 : 0
+                });
+                datasets.push({
+                    label: `${labelPrefix} (LEON)`,
+                    data: labels.map(label => datosLEON[label] || 0),
+                    backgroundColor: colores.LEON,
+                    borderColor: colores.LEON_border,
+                    borderWidth: (tipoGrafico === 'line') ? 2 : 1,
+                    fill: (tipoGrafico === 'line') ? false : true,
+                    tension: (tipoGrafico === 'line') ? 0.1 : 0
+                });
+                
+            } else { // UNA SOLA SUCURSAL
+                const datosAgrupados = agruparDatos(dataToProcess, campoFecha, campoValor);
+                labels = Object.keys(datosAgrupados).sort();
+                datasets.push({
+                    label: `${labelPrefix}${sucursal ? ` (${sucursal})` : ''}${grupo ? ` [${grupo}]` : ''}`,
+                    data: labels.map(label => datosAgrupados[label]),
+                    backgroundColor: colores.default,
+                    borderColor: colores.default_border,
+                    borderWidth: (tipoGrafico === 'line') ? 2 : 1,
+                    fill: (tipoGrafico === 'line') ? false : true,
+                    tension: (tipoGrafico === 'line') ? 0.1 : 0
+                });
+            }
+        }
+        
+        // Asignar colores dinámicos para Pie/Doughnut si solo hay un dataset
+        if ((tipoGrafico === 'pie' || tipoGrafico === 'doughnut') && datasets.length === 1) {
+             datasets[0].backgroundColor = labels.map((_, index) => `hsl(${index * (360 / labels.length)}, 70%, 60%)`);
+             datasets[0].borderColor = '#fff';
+        }
 
         if (labels.length === 0) {
             statusGraficos.textContent = 'No se encontraron datos para graficar con los filtros seleccionados.';
@@ -2268,24 +2574,7 @@ async function handleGenerarGrafico() {
             return;
         }
 
-        const baseColor = 'rgba(46, 139, 87, 0.6)';
-        const borderColor = 'rgba(46, 139, 87, 1)';
-        const backgroundColors = (tipoGrafico === 'pie' || tipoGrafico === 'doughnut')
-            ? labels.map((_, index) => `hsl(${index * (360 / labels.length)}, 70%, 60%)`)
-            : baseColor;
-
-        const datosParaGrafico = {
-            labels,
-            datasets: [{
-                label: `${labelPrefix}${sucursal ? ` (${sucursal})` : ''}${grupo ? ` [${grupo}]` : ''}`,
-                data: dataValues,
-                backgroundColor: backgroundColors,
-                borderColor: borderColor,
-                borderWidth: (tipoGrafico === 'line') ? 2 : 1,
-                fill: (tipoGrafico === 'line') ? false : true,
-                tension: (tipoGrafico === 'line') ? 0.1 : 0
-            }]
-        };
+        const datosParaGrafico = { labels, datasets };
 
         chartContainer.innerHTML = '<canvas id="myChart"></canvas>';
         const ctx = document.getElementById('myChart').getContext('2d');
@@ -2308,8 +2597,9 @@ async function handleGenerarGrafico() {
                             label: function (context) {
                                 let label = context.dataset.label || '';
                                 if (label) label += ': ';
-                                if (context.parsed.y !== null) {
-                                    label += new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(context.parsed.y);
+                                const value = (tipoGrafico === 'pie' || tipoGrafico === 'doughnut') ? context.parsed : context.parsed.y;
+                                if (value !== null) {
+                                    label += new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(value);
                                 }
                                 return label;
                             }
@@ -2319,7 +2609,7 @@ async function handleGenerarGrafico() {
                 scales: {
                     x: {
                         display: !(tipoGrafico === 'pie' || tipoGrafico === 'doughnut'),
-                        title: { display: true, text: agruparPor.charAt(0).toUpperCase() + agruparPor.slice(1) }
+                        title: { display: true, text: (tipoReporte === 'comportamiento') ? 'Tipo de Pago' : (agruparPor.charAt(0).toUpperCase() + agruparPor.slice(1)) }
                     },
                     y: {
                         display: !(tipoGrafico === 'pie' || tipoGrafico === 'doughnut'),
@@ -2351,6 +2641,141 @@ async function handleGenerarGrafico() {
         cargaEnProgreso = false;
         showProcessingOverlay(false);
         showButtonLoading('#btn-generar-grafico', false);
+    }
+}
+
+
+// =============================================
+// SECCIÓN DE CONFIGURACIÓN (NUEVA)
+// =============================================
+
+async function loadConfiguracion() {
+    const statusEl = document.getElementById('status_configuracion');
+    const listaPob = document.getElementById('lista-poblaciones');
+    const listaRut = document.getElementById('lista-rutas');
+    
+    if (!listaPob || !listaRut) return;
+
+    listaPob.innerHTML = '<div class="spinner-small"></div>';
+    listaRut.innerHTML = '<div class="spinner-small"></div>';
+    showStatus('status_configuracion', 'Cargando listas...', 'info');
+
+    try {
+        const [poblaciones, rutas] = await Promise.all([
+            database.obtenerPoblaciones(), // Cargar todas para el admin
+            database.obtenerRutas()        // Cargar todas para el admin
+        ]);
+
+        // Renderizar Poblaciones
+        if (poblaciones.length === 0) {
+            listaPob.innerHTML = '<li class="config-list-item">No hay poblaciones registradas.</li>';
+        } else {
+            listaPob.innerHTML = poblaciones
+                .sort((a,b) => `${a.sucursal}-${a.nombre}`.localeCompare(`${b.sucursal}-${b.nombre}`))
+                .map(p => `
+                <li class="config-list-item">
+                    <span><strong>${p.nombre}</strong> (${p.sucursal})</span>
+                    <button class="btn btn-sm btn-danger btn-eliminar-config" data-id="${p.id}" data-nombre="${p.nombre}">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </li>
+            `).join('');
+        }
+        
+        // Renderizar Rutas
+        if (rutas.length === 0) {
+            listaRut.innerHTML = '<li class="config-list-item">No hay rutas registradas.</li>';
+        } else {
+            listaRut.innerHTML = rutas
+                .sort((a,b) => `${a.sucursal}-${a.nombre}`.localeCompare(`${b.sucursal}-${b.nombre}`))
+                .map(r => `
+                <li class="config-list-item">
+                    <span><strong>${r.nombre}</strong> (${r.sucursal})</span>
+                    <button class="btn btn-sm btn-danger btn-eliminar-config" data-id="${r.id}" data-nombre="${r.nombre}">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </li>
+            `).join('');
+        }
+
+        showStatus('status_configuracion', 'Listas cargadas.', 'success');
+    } catch (error) {
+        console.error("Error cargando configuración:", error);
+        showStatus('status_configuracion', `Error al cargar: ${error.message}`, 'error');
+        listaPob.innerHTML = '<li class="config-list-item error">Error al cargar</li>';
+        listaRut.innerHTML = '<li class="config-list-item error">Error al cargar</li>';
+    }
+}
+
+async function handleAgregarConfig(tipo) {
+    const nombreInput = document.getElementById(`nueva-${tipo}-nombre`);
+    const sucursalInput = document.getElementById(`nueva-${tipo}-sucursal`);
+    const button = document.getElementById(`btn-agregar-${tipo}`);
+    
+    const nombre = nombreInput.value.trim().toUpperCase();
+    const sucursal = sucursalInput.value;
+
+    if (!nombre || !sucursal) {
+        showStatus('status_configuracion', 'El nombre y la sucursal son obligatorios.', 'warning');
+        return;
+    }
+
+    showButtonLoading(button, true, 'Agregando...');
+    showStatus('status_configuracion', `Agregando ${tipo}...`, 'info');
+
+    try {
+        let resultado;
+        if (tipo === 'poblacion') {
+            resultado = await database.agregarPoblacion(nombre, sucursal);
+        } else {
+            resultado = await database.agregarRuta(nombre, sucursal);
+        }
+
+        if (resultado.success) {
+            showStatus('status_configuracion', `${tipo.charAt(0).toUpperCase() + tipo.slice(1)} agregada exitosamente.`, 'success');
+            nombreInput.value = '';
+            await loadConfiguracion(); // Recargar listas
+            await inicializarDropdowns(); // Actualizar todos los dropdowns de la app
+        } else {
+            throw new Error(resultado.message);
+        }
+
+    } catch (error) {
+        console.error(`Error agregando ${tipo}:`, error);
+        showStatus('status_configuracion', `Error: ${error.message}`, 'error');
+    } finally {
+        showButtonLoading(button, false);
+    }
+}
+
+async function handleEliminarConfig(tipo, id, nombre) {
+    if (!id) return;
+    
+    if (confirm(`¿Estás seguro de que deseas eliminar ${tipo} "${nombre}"?\nEsta acción no se puede deshacer.`)) {
+        showProcessingOverlay(true, `Eliminando ${tipo}...`);
+        showStatus('status_configuracion', `Eliminando ${tipo}...`, 'info');
+        
+        try {
+            let resultado;
+            if (tipo === 'poblacion') {
+                resultado = await database.eliminarPoblacion(id);
+            } else {
+                resultado = await database.eliminarRuta(id);
+            }
+
+            if (resultado.success) {
+                showStatus('status_configuracion', `${tipo.charAt(0).toUpperCase() + tipo.slice(1)} "${nombre}" eliminada.`, 'success');
+                await loadConfiguracion(); // Recargar listas
+                await inicializarDropdowns(); // Actualizar todos los dropdowns de la app
+            } else {
+                throw new Error(resultado.message);
+            }
+        } catch (error) {
+            console.error(`Error eliminando ${tipo}:`, error);
+            showStatus('status_configuracion', `Error: ${error.message}`, 'error');
+        } finally {
+            showProcessingOverlay(false);
+        }
     }
 }
 
@@ -2419,10 +2844,10 @@ function showProcessingOverlay(show, message = 'Procesando...') {
 
 function showButtonLoading(selector, show, loadingText = '') {
     const button = (typeof selector === 'string') ? document.querySelector(selector) : selector;
-     if (!button || button.tagName !== 'BUTTON') {
-         console.warn("showButtonLoading: Selector no es un botón:", selector);
-         return;
-     }
+    if (!button || button.tagName !== 'BUTTON') {
+        console.warn("showButtonLoading: Selector no es un botón:", selector);
+        return;
+    }
 
     if (show) {
         if (!button.hasAttribute('data-original-text')) {
@@ -2461,7 +2886,7 @@ function showFixedProgress(percentage, message = '') {
         `;
         document.body.insertBefore(progressContainer, document.body.firstChild);
         const cancelButton = document.getElementById('btn-cancelar-carga-fixed');
-        if(cancelButton) cancelButton.addEventListener('click', cancelarCarga);
+        if (cancelButton) cancelButton.addEventListener('click', cancelarCarga);
     }
 
     const progressBar = document.getElementById('progress-bar-fixed');
@@ -2514,25 +2939,43 @@ function cancelarCarga() {
             if (tabla) tabla.innerHTML = '<tr><td colspan="6">Búsqueda cancelada. Utiliza los filtros para buscar de nuevo.</td></tr>';
         }
         if (activeView.id === 'view-reportes-avanzados') {
-             const tablaReporte = document.getElementById('tabla-reportes_avanzados');
-             if (tablaReporte) tablaReporte.innerHTML = '<tr><td colspan="10">Generación de reporte cancelada.</td></tr>';
-             document.getElementById('estadisticas-reporte').innerHTML = '';
+            const tablaReporte = document.getElementById('tabla-reportes_avanzados');
+            if (tablaReporte) tablaReporte.innerHTML = '<tr><td colspan="10">Generación de reporte cancelada.</td></tr>';
+            document.getElementById('estadisticas-reporte').innerHTML = '';
         }
     }
 }
 
 
+/**
+ * CORRECCIÓN: Calcula el monto total basado en plazo (0%, 30%, 40%).
+ */
 function calcularMontoTotalColocacion() {
     const montoInput = document.getElementById('monto_colocacion');
+    const plazoInput = document.getElementById('plazo_colocacion');
     const montoTotalInput = document.getElementById('montoTotal_colocacion');
-    if (!montoInput || !montoTotalInput) return;
+    if (!montoInput || !montoTotalInput || !plazoInput) return;
 
     const monto = parseFloat(montoInput.value) || 0;
-    const montoTotal = monto * 1.3;
+    const plazo = parseInt(plazoInput.value) || 0;
+    
+    let interesRate = 0;
+    if (plazo === 14) interesRate = 0.40;
+    else if (plazo === 13) interesRate = 0.30;
+    else if (plazo === 10) interesRate = 0.00;
+    // Si el plazo no es 10, 13 o 14, el interés es 0 (o podría ser un error, pero 0 es más seguro)
+    
+    const montoTotal = monto * (1 + interesRate);
 
-    montoTotalInput.value = monto > 0
+    montoTotalInput.value = (monto > 0 && plazo > 0)
         ? `$${montoTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
         : '';
+        
+    // Actualizar nota de interés
+    const fieldNote = montoTotalInput.nextElementSibling;
+    if (fieldNote && fieldNote.classList.contains('field-note')) {
+        fieldNote.textContent = `Incluye ${interesRate * 100}% de interés`;
+    }
 }
 
 
@@ -2578,56 +3021,79 @@ const popularDropdown = (elementId, options, placeholder, isObjectValueKey = fal
         select.appendChild(optionElement);
     });
     if (Array.from(select.options).some(opt => opt.value === selectedValue)) {
-       select.value = selectedValue;
+        select.value = selectedValue;
     } else {
         select.value = "";
     }
 };
 
 
-function handleOfficeChangeForClientForm() {
+async function handleOfficeChangeForClientForm() {
     const office = this.value || document.getElementById('office_cliente')?.value;
-    const poblacionesGdl = ['LA CALERA', 'ATEQUIZA', 'SAN JACINTO', 'PONCITLAN', 'OCOTLAN', 'ARENAL', 'AMATITAN', 'ACATLAN DE JUAREZ', 'BELLAVISTA', 'SAN ISIDRO MAZATEPEC', 'TALA', 'CUISILLOS', 'HUAXTLA', 'NEXTIPAC', 'SANTA LUCIA', 'JAMAY', 'LA BARCA', 'SAN JUAN DE OCOTAN', 'TALA 2', 'EL HUMEDO', 'NEXTIPAC 2', 'ZZ PUEBLO'].sort();
-    const poblacionesLeon = ["ARANDAS", "ARANDAS [E]", "BAJIO DE BONILLAS", "BAJIO DE BONILLAS [E]", "CAPULIN", "CARDENAS", "CARDENAS [E]", "CERRITO DE AGUA CALIENTE", "CERRITO DE AGUA CALIENTE [E]", "CORRALEJO", "CORRALEJO [E]", "CUERAMARO", "CUERAMARO [E]", "DOLORES HIDALGO", "EL ALACRAN", "EL EDEN", "EL FUERTE", "EL MEZQUITILLO", "EL MEZQUITILLO [E]", "EL PALENQUE", "EL PALENQUE [E]", "EL PAXTLE", "EL TULE", "EL TULE [E]", "ESTACION ABASOLO", "ESTACION ABASOLO [E]", "ESTACION CORRALEJO", "ESTACION CORRALEJO [E]", "ESTACION JOAQUIN", "ESTACION JOAQUIN [E]", "EX ESTACION CHIRIMOYA", "EX ESTacion CHIRIMOYA [E]", "GAVIA DE RIONDA", "GODOY", "GODOY [E]", "IBARRA", "IBARRA [E]", "LA ALDEA", "LA CARROZA", "LA CARROZA [E]", "LA ESCONDIDA", "LA SANDIA", "LA SANDIA [E]", "LAGUNA DE GUADALUPE", "LAS CRUCES", "LAS CRUCES [E]", "LAS MASAS", "LAS MASAS [E]", "LAS PALOMAS", "LAS TIRITAS", "LOMA DE LA ESPERANZA", "LOMA DE LA ESPERANZA [E]", "LOS DOLORES", "LOS GALVANES", "LOS GALVANES [E]", "MAGUEY BLANCO", "MEDRANOS", "MEXICANOS", "MEXICANOS [E]", "MINERAL DE LA LUZ", "MISION DE ABAJO", "MISION DE ABAJO [E]", "MISION DE ARRIBA", "MISION DE ARRIBA [E]", "NORIA DE ALDAY", "OCAMPO", "PURISIMA DEL RINCON", "PURISima DEL RINCON [E]", "RANCHO NUEVO DE LA CRUZ", "RANCHO NUEVO DE LA CRUZ [E]", "RANCHO VIEJO", "RIO LAJA", "RIO LAJA [E]", "SAN ANDRES DE JALPA", "SAN ANDRES DE JALPA [E]", "SAN BERNARDO", "SAN BERNARDO [E]", "SAN CRISTOBAL", "SAN CRISTOBAL [E]", "SAN GREGORIO", "SAN GREGORIO [E]", "SAN ISIDRO DE CRESPO", "SAN ISIDRO DE CRESPO [E]", "SAN JOSE DE BADILLO", "SAN JOSE DE BADILLO [E]", "SAN JOSE DEL RODEO", "SAN JOSE DEL RODEO [E]", "SAN JUAN DE LA PUERTA", "SAN JUAN DE LA PUERTA [E]", "SANTA ANA DEL CONDE", "SANTA ROSA", "SANTA ROSA [E]", "SANTA ROSA PLAN DE AYALA", "SANTA ROSA PLAN DE AYALA [E]", "SANTO DOMINGO", "SERRANO", "TENERIA DEL SANTUARIO", "TENERIA DEL SANTUARIO [E]", "TIERRAS BLANCAS", "TIERRAS BLANCAS [E]", "TREJO", "TREJO [E]", "TUPATARO", "TUPATARO [E]", "VALTIERRILLA", "VALTIERRILLA 2", "VALTIERRILLA [E]", "VAQUERIAS", "VILLA DE ARRIAGA", "VILLA DE ARRIAGA [E]"].sort();
-
-    const poblaciones = editingClientId
-        ? [...new Set([...poblacionesGdl, ...poblacionesLeon])].sort()
-        : (office === 'LEON' ? poblacionesLeon : poblacionesGdl);
-
-    popularDropdown('poblacion_grupo_cliente', poblaciones, 'Selecciona población/grupo');
+    
+    // Cargar dinámicamente desde la DB
+    const [poblaciones, rutas] = await Promise.all([
+        database.obtenerPoblaciones(office),
+        database.obtenerRutas(office)
+    ]);
+    
+    const poblacionesNombres = poblaciones.map(p => p.nombre).sort();
+    const rutasNombres = rutas.map(r => r.nombre).sort();
+    
+    // Si estamos editando, las listas deben incluir todas las opciones
+    if (editingClientId) {
+         const [todasPoblacionesDB, todasRutasDB] = await Promise.all([
+            database.obtenerPoblaciones(),
+            database.obtenerRutas()
+        ]);
+        const todasPoblacionesNombres = [...new Set(todasPoblacionesDB.map(p => p.nombre))].sort();
+        const todasRutasNombres = [...new Set(todasRutasDB.map(r => r.nombre))].sort();
+        
+        popularDropdown('poblacion_grupo_cliente', todasPoblacionesNombres, 'Selecciona población/grupo');
+        popularDropdown('ruta_cliente', todasRutasNombres, 'Selecciona una ruta');
+    } else {
+        popularDropdown('poblacion_grupo_cliente', poblacionesNombres, 'Selecciona población/grupo');
+        popularDropdown('ruta_cliente', rutasNombres, 'Selecciona una ruta');
+    }
 }
 
 
-function handleSucursalGraficoChange() {
+async function handleSucursalGraficoChange() {
     const office = this.value;
-    const poblacionesGdl = ['LA CALERA', 'ATEQUIZA', 'SAN JACINTO', 'PONCITLAN', 'OCOTLAN', 'ARENAL', 'AMATITAN', 'ACATLAN DE JUAREZ', 'BELLAVISTA', 'SAN ISIDRO MAZATEPEC', 'TALA', 'CUISILLOS', 'HUAXTLA', 'NEXTIPAC', 'SANTA LUCIA', 'JAMAY', 'LA BARCA', 'SAN JUAN DE OCOTAN', 'TALA 2', 'EL HUMEDO', 'NEXTIPAC 2', 'ZZ PUEBLO'].sort();
-    const poblacionesLeon = ["ARANDAS", "ARANDAS [E]", "BAJIO DE BONILLAS", "BAJIO DE BONILLAS [E]", "CAPULIN", "CARDENAS", "CARDENAS [E]", "CERRITO DE AGUA CALIENTE", "CERRITO DE AGUA CALIENTE [E]", "CORRALEJO", "CORRALEJO [E]", "CUERAMARO", "CUERAMARO [E]", "DOLORES HIDALGO", "EL ALACRAN", "EL EDEN", "EL FUERTE", "EL MEZQUITILLO", "EL MEZQUITILLO [E]", "EL PALENQUE", "EL PALENQUE [E]", "EL PAXTLE", "EL TULE", "EL TULE [E]", "ESTACION ABASOLO", "ESTACION ABASOLO [E]", "ESTACION CORRALEJO", "ESTACION CORRALEJO [E]", "ESTACION JOAQUIN", "ESTACION JOAQUIN [E]", "EX ESTACION CHIRIMOYA", "EX ESTacion CHIRIMOYA [E]", "GAVIA DE RIONDA", "GODOY", "GODOY [E]", "IBARRA", "IBARRA [E]", "LA ALDEA", "LA CARROZA", "LA CARROZA [E]", "LA ESCONDIDA", "LA SANDIA", "LA SANDIA [E]", "LAGUNA DE GUADALUPE", "LAS CRUCES", "LAS CRUCES [E]", "LAS MASAS", "LAS MASAS [E]", "LAS PALOMAS", "LAS TIRITAS", "LOMA DE LA ESPERANZA", "LOMA DE LA ESPERANZA [E]", "LOS DOLORES", "LOS GALVANES", "LOS GALVANES [E]", "MAGUEY BLANCO", "MEDRANOS", "MEXICANOS", "MEXICANOS [E]", "MINERAL DE LA LUZ", "MISION DE ABAJO", "MISION DE ABAJO [E]", "MISION DE ARRIBA", "MISION DE ARRIBA [E]", "NORIA DE ALDAY", "OCAMPO", "PURISIMA DEL RINCON", "PURISima DEL RINCON [E]", "RANCHO NUEVO DE LA CRUZ", "RANCHO NUEVO DE LA CRUZ [E]", "RANCHO VIEJO", "RIO LAJA", "RIO LAJA [E]", "SAN ANDRES DE JALPA", "SAN ANDRES DE JALPA [E]", "SAN BERNARDO", "SAN BERNARDO [E]", "SAN CRISTOBAL", "SAN CRISTOBAL [E]", "SAN GREGORIO", "SAN GREGORIO [E]", "SAN ISIDRO DE CRESPO", "SAN ISIDRO DE CRESPO [E]", "SAN JOSE DE BADILLO", "SAN JOSE DE BADILLO [E]", "SAN JOSE DEL RODEO", "SAN JOSE DEL RODEO [E]", "SAN JUAN DE LA PUERTA", "SAN JUAN DE LA PUERTA [E]", "SANTA ANA DEL CONDE", "SANTA ROSA", "SANTA ROSA [E]", "SANTA ROSA PLAN DE AYALA", "SANTA ROSA PLAN DE AYALA [E]", "SANTO DOMINGO", "SERRANO", "TENERIA DEL SANTUARIO", "TENERIA DEL SANTUARIO [E]", "TIERRAS BLANCAS", "TIERRAS BLANCAS [E]", "TREJO", "TREJO [E]", "TUPATARO", "TUPATARO [E]", "VALTIERRILLA", "VALTIERRILLA 2", "VALTIERRILLA [E]", "VAQUERIAS", "VILLA DE ARRIAGA", "VILLA DE ARRIAGA [E]"].sort();
-
-    let poblacionesDisponibles;
-    if (office === 'GDL') poblacionesDisponibles = poblacionesGdl;
-    else if (office === 'LEON') poblacionesDisponibles = poblacionesLeon;
-    else poblacionesDisponibles = [...new Set([...poblacionesGdl, ...poblacionesLeon])].sort();
-
-    popularDropdown('grafico_grupo', poblacionesDisponibles, 'Todos');
+    
+    // Cargar dinámicamente
+    const poblaciones = await database.obtenerPoblaciones(office || null); // null para "Ambas"
+    const poblacionesNombres = [...new Set(poblaciones.map(p => p.nombre))].sort();
+    
+    popularDropdown('grafico_grupo', poblacionesNombres, 'Todos');
 }
 
-function inicializarDropdowns() {
+/**
+ * Inicializa todos los dropdowns estáticos y dinámicos al cargar la app.
+ */
+async function inicializarDropdowns() {
     console.log('Inicializando dropdowns...');
-    const poblacionesGdl = ['LA CALERA', 'ATEQUIZA', 'SAN JACINTO', 'PONCITLAN', 'OCOTLAN', 'ARENAL', 'AMATITAN', 'ACATLAN DE JUAREZ', 'BELLAVISTA', 'SAN ISIDRO MAZATEPEC', 'TALA', 'CUISILLOS', 'HUAXTLA', 'NEXTIPAC', 'SANTA LUCIA', 'JAMAY', 'LA BARCA', 'SAN JUAN DE OCOTAN', 'TALA 2', 'EL HUMEDO', 'NEXTIPAC 2', 'ZZ PUEBLO'].sort();
-    const poblacionesLeon = ["ARANDAS", "ARANDAS [E]", "BAJIO DE BONILLAS", "BAJIO DE BONILLAS [E]", "CAPULIN", "CARDENAS", "CARDENAS [E]", "CERRITO DE AGUA CALIENTE", "CERRITO DE AGUA CALIENTE [E]", "CORRALEJO", "CORRALEJO [E]", "CUERAMARO", "CUERAMARO [E]", "DOLORES HIDALGO", "EL ALACRAN", "EL EDEN", "EL FUERTE", "EL MEZQUITILLO", "EL MEZQUITILLO [E]", "EL PALENQUE", "EL PALENQUE [E]", "EL PAXTLE", "EL TULE", "EL TULE [E]", "ESTACION ABASOLO", "ESTACION ABASOLO [E]", "ESTACION CORRALEJO", "ESTACION CORRALEJO [E]", "ESTACION JOAQUIN", "ESTACION JOAQUIN [E]", "EX ESTACION CHIRIMOYA", "EX ESTacion CHIRIMOYA [E]", "GAVIA DE RIONDA", "GODOY", "GODOY [E]", "IBARRA", "IBARRA [E]", "LA ALDEA", "LA CARROZA", "LA CARROZA [E]", "LA ESCONDIDA", "LA SANDIA", "LA SANDIA [E]", "LAGUNA DE GUADALUPE", "LAS CRUCES", "LAS CRUCES [E]", "LAS MASAS", "LAS MASAS [E]", "LAS PALOMAS", "LAS TIRITAS", "LOMA DE LA ESPERANZA", "LOMA DE LA ESPERANZA [E]", "LOS DOLORES", "LOS GALVANES", "LOS GALVANES [E]", "MAGUEY BLANCO", "MEDRANOS", "MEXICANOS", "MEXICANOS [E]", "MINERAL DE LA LUZ", "MISION DE ABAJO", "MISION DE ABAJO [E]", "MISION DE ARRIBA", "MISION DE ARRIBA [E]", "NORIA DE ALDAY", "OCAMPO", "PURISIMA DEL RINCON", "PURISima DEL RINCON [E]", "RANCHO NUEVO DE LA CRUZ", "RANCHO NUEVO DE LA CRUZ [E]", "RANCHO VIEJO", "RIO LAJA", "RIO LAJA [E]", "SAN ANDRES DE JALPA", "SAN ANDRES DE JALPA [E]", "SAN BERNARDO", "SAN BERNARDO [E]", "SAN CRISTOBAL", "SAN CRISTOBAL [E]", "SAN GREGORIO", "SAN GREGORIO [E]", "SAN ISIDRO DE CRESPO", "SAN ISIDRO DE CRESPO [E]", "SAN JOSE DE BADILLO", "SAN JOSE DE BADILLO [E]", "SAN JOSE DEL RODEO", "SAN JOSE DEL RODEO [E]", "SAN JUAN DE LA PUERTA", "SAN JUAN DE LA PUERTA [E]", "SANTA ANA DEL CONDE", "SANTA ROSA", "SANTA ROSA [E]", "SANTA ROSA PLAN DE AYALA", "SANTA ROSA PLAN DE AYALA [E]", "SANTO DOMINGO", "SERRANO", "TENERIA DEL SANTUARIO", "TENERIA DEL SANTUARIO [E]", "TIERRAS BLANCAS", "TIERRAS BLANCAS [E]", "TREJO", "TREJO [E]", "TUPATARO", "TUPATARO [E]", "VALTIERRILLA", "VALTIERRILLA 2", "VALTIERRILLA [E]", "VAQUERIAS", "VILLA DE ARRIAGA", "VILLA DE ARRIAGA [E]"].sort();
-    const todasLasPoblaciones = [...new Set([...poblacionesGdl, ...poblacionesLeon])].sort();
-    const rutas = ['AUDITORIA', 'SUPERVISION', 'ADMINISTRACION', 'DIRECCION', 'COMERCIAL', 'COBRANZA', 'R1', 'R2', 'R3', 'JC1', 'RX'].sort();
+    
+    // Cargar dinámicamente desde la DB
+    const [poblaciones, rutas] = await Promise.all([
+        database.obtenerPoblaciones(),
+        database.obtenerRutas()
+    ]);
+    
+    const todasLasPoblaciones = [...new Set(poblaciones.map(p => p.nombre))].sort();
+    const todasLasRutas = [...new Set(rutas.map(r => r.nombre))].sort();
+
     const tiposCredito = ['NUEVO', 'RENOVACION', 'REINGRESO'];
     const montos = [3000, 3500, 4000, 4500, 5000, 6000, 7000, 8000, 9000, 10000];
-    const plazosCredito = [10, 13, 14].sort((a, b) => a - b);
+    const plazosCredito = [10, 13, 14].sort((a, b) => a - b); // Plazos base
     const estadosCredito = ['al corriente', 'atrasado', 'cobranza', 'juridico', 'liquidado'];
     const tiposPago = ['normal', 'extraordinario', 'actualizado', 'grupal'];
     const roles = [
-        { value: 'admin', text: 'Administrador' },
-        { value: 'supervisor', text: 'Supervisor' },
-        { value: 'cobrador', text: 'Cobrador' },
-        { value: 'consulta', text: 'Consulta' },
-        { value: 'comisionista', text: 'Comisionista' }
+        { value: 'Super Admin', text: 'Super Admin' },
+        { value: 'Gerencia', text: 'Gerencia' },
+        { value: 'Administrador', text: 'Administrador' },
+        { value: 'Área comercial', text: 'Área comercial' }
+        // Otros roles como consulta, cobrador, se pueden añadir si es necesario
     ];
     const tiposReporteGrafico = [
         { value: 'colocacion', text: 'Colocación (Monto)' },
@@ -2635,34 +3101,39 @@ function inicializarDropdowns() {
         { value: 'comportamiento', text: 'Comportamiento de Pago (Tipos)' },
     ];
 
-    popularDropdown('poblacion_grupo_cliente', poblacionesGdl, 'Selecciona población/grupo');
-    popularDropdown('ruta_cliente', rutas, 'Selecciona una ruta');
+    // --- Dropdowns que dependen de DB ---
+    popularDropdown('poblacion_grupo_cliente', todasLasPoblaciones, 'Selecciona población/grupo');
+    popularDropdown('ruta_cliente', todasLasRutas, 'Selecciona una ruta');
+    popularDropdown('grupo_filtro', todasLasPoblaciones, 'Todos');
+    popularDropdown('grupo_pago_grupal', todasLasPoblaciones, 'Selecciona un Grupo');
+    popularDropdown('grupo_filtro_reporte', todasLasPoblaciones, 'Todos');
+    popularDropdown('ruta_filtro_reporte', todasLasRutas, 'Todas');
+    popularDropdown('grafico_grupo', todasLasPoblaciones, 'Todos');
+
+    // --- Dropdowns estáticos ---
     popularDropdown('tipo_colocacion', tiposCredito.map(t => ({ value: t.toLowerCase(), text: t })), 'Selecciona tipo', true);
     popularDropdown('monto_colocacion', montos.map(m => ({ value: m, text: `$${m.toLocaleString()}` })), 'Selecciona monto', true);
-    popularDropdown('grupo_filtro', todasLasPoblaciones, 'Todos');
+    popularDropdown('plazo_colocacion', plazosCredito.map(p => ({ value: p, text: `${p} semanas` })), 'Selecciona plazo', true);
     popularDropdown('tipo_colocacion_filtro', tiposCredito.map(t => ({ value: t.toLowerCase(), text: t })), 'Todos', true);
     popularDropdown('plazo_filtro', plazosCredito.map(p => ({ value: p, text: `${p} semanas` })), 'Todos', true);
     popularDropdown('estado_credito_filtro', estadosCredito.map(e => ({ value: e, text: e.charAt(0).toUpperCase() + e.slice(1) })), 'Todos', true);
     popularDropdown('filtro-rol-usuario', roles, 'Todos los roles', true);
     popularDropdown('nuevo-rol', roles, 'Seleccione un rol', true);
-    popularDropdown('grupo_pago_grupal', todasLasPoblaciones, 'Selecciona un Grupo');
-    popularDropdown('grupo_filtro_reporte', todasLasPoblaciones, 'Todos');
-    popularDropdown('ruta_filtro_reporte', rutas, 'Todas');
     popularDropdown('tipo_credito_filtro_reporte', tiposCredito.map(t => ({ value: t.toLowerCase(), text: t })), 'Todos', true);
     popularDropdown('estado_credito_filtro_reporte', estadosCredito.map(e => ({ value: e, text: e.toUpperCase() })), 'Todos', true);
     popularDropdown('tipo_pago_filtro_reporte', tiposPago.map(t => ({ value: t, text: t.toUpperCase() })), 'Todos', true);
     popularDropdown('grafico_tipo_reporte', tiposReporteGrafico, 'Selecciona un reporte', true);
-    popularDropdown('grafico_grupo', todasLasPoblaciones, 'Todos');
 }
 
 
 function actualizarPlazosSegunCliente(esComisionista) {
-    const plazosDisponibles = esComisionista ? [10] : [13, 14];
+    // CORRECCIÓN: Un comisionista puede elegir 10, 13 o 14.
+    const plazosDisponibles = esComisionista ? [10, 13, 14] : [13, 14];
     popularDropdown('plazo_colocacion', plazosDisponibles.map(p => ({ value: p, text: `${p} semanas` })), 'Selecciona plazo', true);
 }
 
 
-document.addEventListener('viewshown', function (e) {
+document.addEventListener('viewshown', async function (e) {
     const viewId = e.detail.viewId;
     console.log(`Evento viewshown disparado para: ${viewId}`);
 
@@ -2675,7 +3146,7 @@ document.addEventListener('viewshown', function (e) {
 
     switch (viewId) {
         case 'view-reportes':
-            loadBasicReports(); // Cargar al entrar
+            loadBasicReports(currentUserData?.sucursal); // Cargar al entrar con filtro
             break;
         case 'view-reportes-avanzados':
             inicializarVistaReportesAvanzados();
@@ -2685,6 +3156,9 @@ document.addEventListener('viewshown', function (e) {
             document.getElementById('diagnostico-id-credito').value = '';
             document.getElementById('status-diagnostico').classList.add('hidden');
             document.getElementById('resultado-diagnostico').classList.add('hidden');
+            break;
+        case 'view-configuracion':
+            loadConfiguracion(); // Cargar al entrar
             break;
         case 'view-gestion-clientes':
             inicializarVistaGestionClientes();
@@ -2698,6 +3172,9 @@ document.addEventListener('viewshown', function (e) {
             document.getElementById('curp_colocacion').value = '';
             document.getElementById('form-colocacion').classList.add('hidden');
             showStatus('status_colocacion', 'Ingresa la CURP del cliente para buscar.', 'info');
+            // Asegurar que los selectores de plazo/tipo no estén deshabilitados
+            document.getElementById('plazo_colocacion').disabled = false;
+            document.getElementById('tipo_colocacion').disabled = false;
             break;
         case 'view-cobranza':
             document.getElementById('idCredito_cobranza').value = '';
@@ -2711,6 +3188,10 @@ document.addEventListener('viewshown', function (e) {
             document.getElementById('monto-recibido-grupo').value = '';
             showStatus('status_pago_grupo', 'Selecciona un grupo para calcular la cobranza.', 'info');
             grupoDePagoActual = null;
+            // Actualizar dropdown de grupos por si acaso
+            const poblaciones = await database.obtenerPoblaciones(currentUserData?.sucursal);
+            const poblacionesNombres = [...new Set(poblaciones.map(p => p.nombre))].sort();
+            popularDropdown('grupo_pago_grupal', poblacionesNombres, 'Selecciona un Grupo');
             break;
         case 'view-reportes-graficos':
             const hoyGraf = new Date();
