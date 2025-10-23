@@ -30,7 +30,20 @@ body {
     align-items: center;
     justify-content: center;
     padding: 20px;
+    /*padding-top: 0; /* Asegurar que no haya padding inicial */
+    transition: padding-top 0.3s ease; /* Transición para padding */
 }
+/* Clases para padding dinámico */
+body.has-progress { padding-top: 60px; }
+body.has-connection-status { padding-top: 50px; }
+body.has-connection-status.has-progress { padding-top: 110px; } /* 60px + 50px */
+
+@media (max-width: 768px) {
+    body.has-progress { padding-top: 50px; }
+    body.has-connection-status { padding-top: 40px; }
+    body.has-connection-status.has-progress { padding-top: 90px; } /* 50px + 40px */
+}
+
 
 .hidden {
     display: none !important;
@@ -81,6 +94,8 @@ body {
     width: 100%;
     max-width: 420px;
     animation: fadeIn 0.5s ease;
+    /* Ajuste para que no quede pegado arriba con el connection status */
+    margin-top: 20px;
 }
 
 .login-box {
@@ -239,6 +254,7 @@ input, select, textarea {
     min-height: 80vh;
     display: flex;
     flex-direction: column;
+    margin-top: 20px; /* Margen para espacio con barras superiores */
 }
 
 .app-header {
@@ -621,75 +637,7 @@ input, select, textarea {
 
 /* Contenedor de progreso mejorado */
 .progress-container {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 60px;
-    background: white;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-    z-index: 10001;
-    display: flex;
-    align-items: center;
-    padding: 0 20px;
-    border-bottom: 1px solid #e0e0e0;
-}
-
-.progress-bar {
-    height: 8px;
-    background: linear-gradient(90deg, var(--primary), var(--secondary));
-    border-radius: 10px;
-    transition: width 0.3s ease, background 0.3s ease;
-    width: 0%;
-    flex: 1;
-    margin: 0 15px;
-}
-
-.progress-text {
-    font-size: 14px;
-    color: var(--dark);
-    font-weight: 500;
-    min-width: 200px;
-    text-align: center;
-}
-
-/* Botón de cancelar carga */
-.btn-cancelar-carga {
-    background: var(--danger);
-    color: white;
-    border: none;
-    border-radius: 50%;
-    width: 30px;
-    height: 30px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    transition: all 0.3s ease;
-    margin-left: 10px;
-    font-size: 12px;
-}
-
-    .btn-cancelar-carga:hover {
-        background: #e64a2e;
-        transform: scale(1.1);
-    }
-
-/* Estados de color para la barra de progreso */
-.progress-bar[style*="width: 0%"] {
-    background: var(--danger) !important;
-}
-
-.progress-bar[style*="width: 30%"] {
-    background: var(--warning) !important;
-}
-
-.progress-bar[style*="width: 70%"] {
-    background: var(--info) !important;
-}
-
-.progress-bar[style*="width: 100%"] {
-    background: var(--success) !important;
+    /* No se usa el fijo aquí, se usa el de abajo */
 }
 
 /* Overlay de procesamiento mejorado */
@@ -868,10 +816,14 @@ input, select, textarea {
         padding: 15px;
     }
 
-    /* Responsive para barra de progreso */
+    /* Responsive para barra de progreso y conexión */
     .progress-container-fixed {
         height: 50px;
         padding: 0 10px;
+        top: 0; /* Posición por defecto móvil */
+    }
+     body.has-connection-status .progress-container-fixed {
+        top: 40px; /* Altura ajustada para móvil (asumiendo connection-status más pequeño ~40px) */
     }
 
     .progress-text-fixed {
@@ -883,10 +835,19 @@ input, select, textarea {
         width: 25px;
         height: 25px;
     }
-
-    body.has-progress {
-        padding-top: 50px;
+     /* Ajustar padding del body cuando las barras están visibles */
+     body.has-progress {
+        padding-top: 50px; /* Espacio para la barra de progreso */
     }
+    body.has-connection-status.has-progress {
+         padding-top: 90px; /* Espacio para ambas barras (40px + 50px) */
+    }
+    body.has-connection-status:not(.has-progress) {
+        padding-top: 40px; /* Espacio solo para conexión */
+    }
+     body:not(.has-connection-status):not(.has-progress){
+        padding-top: 0; /* Sin padding si no hay barras */
+     }
 }
 
 @media (max-width: 480px) {
@@ -1126,28 +1087,22 @@ select {
         font-size: 12px;
         white-space: nowrap;
         z-index: 1000;
+        margin-bottom: 5px; /* Pequeño espacio */
     }
 
-    [data-tooltip]:hover::before {
-        content: '';
-        position: absolute;
-        bottom: 100%;
-        left: 50%;
-        transform: translateX(-50%);
-        border: 5px solid transparent;
-        border-top-color: var(--dark);
-        z-index: 1000;
-    }
+    /* Triángulo del tooltip */
+    /* [data-tooltip]:hover::before { ... } */ /* Omitido por simplicidad, se puede añadir si se desea */
+
 
 /* =============================================
-   BARRA DE PROGRESO FIJADA EN PARTE SUPERIOR
+   BARRA DE PROGRESO FIJADA EN PARTE SUPERIOR (REVISADO)
    ============================================= */
 .progress-container-fixed {
     position: fixed;
-    top: 60px; /* Ajustado para estar debajo del indicador de conexión */
+    top: 0; /* Posición por defecto */
     left: 0;
     width: 100%;
-    height: 60px;
+    height: 60px; /* Altura estándar */
     background: white;
     box-shadow: 0 2px 10px rgba(0,0,0,0.1);
     z-index: 10001; /* Debajo del indicador de conexión */
@@ -1158,9 +1113,9 @@ select {
     transition: top 0.3s ease; /* Transición suave */
 }
 
-/* Cuando el indicador de conexión está oculto, la barra sube */
-body:not(.has-connection-status) .progress-container-fixed {
-    top: 0;
+/* Cuando el indicador de conexión está visible, la barra baja */
+body.has-connection-status .progress-container-fixed {
+    top: 50px; /* Altura del connection-status (ajusta si cambia) */
 }
 
 .progress-bar-fixed {
@@ -1179,6 +1134,9 @@ body:not(.has-connection-status) .progress-container-fixed {
     font-weight: 500;
     min-width: 200px;
     text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .btn-cancelar-carga-fixed {
@@ -1195,6 +1153,7 @@ body:not(.has-connection-status) .progress-container-fixed {
     transition: all 0.3s ease;
     margin-left: 10px;
     font-size: 12px;
+    flex-shrink: 0; /* Evitar que se encoja */
 }
 
     .btn-cancelar-carga-fixed:hover {
@@ -1224,49 +1183,33 @@ body:not(.has-connection-status) .progress-container-fixed {
     flex-wrap: wrap;
 }
 
-/* Responsive para barra de progreso fija */
+/* Responsive para barra de progreso fija (REVISADO) */
 @media (max-width: 768px) {
     .progress-container-fixed {
-        height: 50px;
+        height: 50px; /* Más pequeña en móvil */
         padding: 0 10px;
-        top: 50px; /* Ajustar para móvil */
+        top: 0; /* Posición por defecto móvil */
     }
-     body:not(.has-connection-status) .progress-container-fixed {
-        top: 0;
+     body.has-connection-status .progress-container-fixed {
+        top: 40px; /* Ajustar si connection-status es más pequeño en móvil */
     }
 
     .progress-text-fixed {
         font-size: 12px;
-        min-width: 150px;
+        min-width: 120px; /* Reducir ancho mínimo */
     }
 
     .btn-cancelar-carga-fixed {
         width: 25px;
         height: 25px;
     }
-
-    /* Ajustar padding del body cuando la barra de progreso está visible */
-     body.has-progress {
-        padding-top: 50px; /* Espacio para la barra de progreso */
-    }
-    body.has-connection-status.has-progress {
-         padding-top: 100px; /* Espacio para ambas barras */
-    }
-    body.has-connection-status:not(.has-progress) {
-        padding-top: 50px; /* Espacio solo para conexión */
-    }
 }
 
-@media (max-width: 480px) {
-    .progress-text-fixed {
-        font-size: 11px;
-        min-width: 120px;
-    }
-}
 
-/* ===== INICIO DE LA MODIFICACIÓN (Estilos para el indicador de conexión) ===== */
+/* ===== INICIO DE LA MODIFICACIÓN (Estilos para el indicador de conexión - REVISADO) ===== */
 .connection-status {
-    padding: 12px;
+    padding: 10px 12px; /* Ajustar padding si es necesario */
+    height: 40px; /* Altura fija para móvil (ajustar con padding) */
     text-align: center;
     font-weight: 600;
     color: white;
@@ -1280,26 +1223,28 @@ body:not(.has-connection-status) .progress-container-fixed {
     width: 100%;
     z-index: 10002; /* Encima de todo */
     box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    display: flex; /* Centrar verticalmente */
+    align-items: center;
+    justify-content: center;
 }
+@media (min-width: 769px) {
+    .connection-status {
+        height: 50px; /* Altura para escritorio */
+        padding: 12px;
+    }
+}
+
 
     .connection-status.offline {
         background-color: var(--warning);
         color: #333;
-        display: block !important; /* Sobrescribe .hidden cuando está offline */
+        display: flex !important; /* Sobrescribe .hidden cuando está offline */
     }
 
     .connection-status.online {
         background-color: var(--success);
-        display: block !important; /* Sobrescribe .hidden temporalmente cuando vuelve a estar online */
+        display: flex !important; /* Sobrescribe .hidden temporalmente cuando vuelve a estar online */
     }
-/* Ajuste para el contenido principal cuando el indicador está visible */
-body.has-connection-status #main-app {
-    padding-top: 50px; /* Ajusta según la altura del indicador */
-}
-body.has-connection-status .login-container {
-    margin-top: 50px; /* Ajustar login */
-}
-
 
 /* =============================================
    NUEVOS ESTILOS PARA MODAL GENÉRICO
@@ -1368,21 +1313,34 @@ body.has-connection-status .login-container {
     width: 100%;
     border-collapse: collapse;
     margin-top: 15px;
+    font-size: 13px; /* Tamaño más pequeño para más datos */
 }
 
     .payment-history-table th,
     .payment-history-table td {
-        padding: 10px 12px;
+        padding: 8px 10px; /* Menos padding */
         border: 1px solid var(--border-color);
         text-align: left;
+        vertical-align: top;
     }
 
     .payment-history-table th {
         background: #f8f9fa;
+        position: sticky; /* Cabecera fija */
+        top: 0;
     }
 
     .payment-history-table tr:nth-child(even) {
         background: #f8f9fa;
+    }
+    /* Estilo para resaltar discrepancias */
+    .saldo-discrepancy td {
+        background-color: rgba(255, 224, 224, 0.7) !important; /* Rojo claro */
+        font-weight: bold;
+    }
+    .saldo-guardado {
+        font-size: 0.9em;
+        color: var(--gray);
     }
 
 @media (max-width: 600px) {
@@ -1396,12 +1354,12 @@ body.has-connection-status .login-container {
     }
 
     .payment-history-table {
-        font-size: 12px;
+        font-size: 11px; /* Aún más pequeño */
     }
 
         .payment-history-table th,
         .payment-history-table td {
-            padding: 8px;
+            padding: 6px; /* Aún menos padding */
         }
 }
 
@@ -1533,7 +1491,7 @@ body.has-connection-status .login-container {
 }
 .form-inline input, .form-inline select {
     flex: 1;
-    min-width: 150px;
+    min-width: 120px; /* Reducir min-width */
 }
 .form-inline button {
     flex-shrink: 0;
@@ -1546,6 +1504,7 @@ body.has-connection-status .login-container {
     overflow-y: auto;
     border: 1px solid var(--border-color);
     border-radius: var(--border-radius);
+    background-color: #fff; /* Fondo blanco para lista */
 }
 
 .config-list-item {
@@ -1561,13 +1520,16 @@ body.has-connection-status .login-container {
 .config-list-item span {
     flex-grow: 1;
     margin-right: 10px;
+    word-break: break-word; /* Para nombres largos */
 }
 .config-list-item .btn-eliminar-config {
     padding: 4px 8px; /* Hacer más pequeño */
+    flex-shrink: 0;
 }
 .config-list-item.error {
     color: var(--danger);
     font-style: italic;
+    padding: 15px;
 }
 
 /* Badge Comisionista en Tabla Clientes */
