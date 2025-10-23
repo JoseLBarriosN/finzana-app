@@ -9,7 +9,7 @@ let currentImportTab = 'clientes';
 let reportData = null;
 let cargaEnProgreso = false;
 let currentSearchOperation = null;
-let editingClientId = null;
+let editingClientId = null; // ID del cliente que se está editando
 let editingUserId = null;
 let isOnline = true;
 let inactivityTimer; // Temporizador para el cierre de sesión por inactividad
@@ -147,35 +147,36 @@ function updateConnectionStatus() {
 }
 
 // =============================================
-// *** INICIO DE LA CORRECCIÓN 1: FUNCIÓN FALTANTE ***
+// *** INICIO DE LA CORRECCIÓN 1: LÓGICA DE ESTADO ***
 // =============================================
-
 /**
- * Calcula el estado actual de un crédito (atraso, estado, etc.) basado en sus pagos.
+ * Calcula el estado actual de un crédito (atraso, estado, etc.) basado en sus datos y pagos.
  * @param {object} credito El objeto de crédito de Firestore.
- * @param {Array<object>} pagos Un array de objetos de pago para ese crédito.
+ * @param {Array<object>} pagos Un array de objetos de pago para ese crédito (se usa menos ahora).
  * @returns {object|null} Un objeto con { estado, semanasAtraso, pagoSemanal, saldoRestante, proximaFechaPago } o null si hay error.
  */
-function _calcularEstadoCredito(credito, pagos) {
+function _calcularEstadoCredito(credito, pagos) { // Aunque 'pagos' ya no se usa mucho aquí, lo mantenemos por compatibilidad de llamadas
     if (!credito || !credito.montoTotal || !credito.plazo || credito.plazo <= 0 || !credito.fechaCreacion) {
         console.warn("Datos de crédito insuficientes para calcular estado:", credito);
         return null; // Datos insuficientes
     }
 
     const pagoSemanal = credito.montoTotal / credito.plazo;
-    const saldoRestante = credito.saldo !== undefined ? credito.saldo : 0; // Usar saldo del objeto crédito
+    // Usar saldo del objeto crédito, es la fuente más fiable. Redondear a 2 decimales para comparación.
+    const saldoRestante = parseFloat((credito.saldo !== undefined ? credito.saldo : 0).toFixed(2));
 
-    // 1. Estado Liquidado
+    // *** CORRECCIÓN CLAVE: Verificar estado liquidado PRIMERO y de forma robusta ***
     if (credito.estado === 'liquidado' || saldoRestante <= 0.01) {
         return {
             estado: 'liquidado',
             semanasAtraso: 0,
             pagoSemanal: pagoSemanal,
-            saldoRestante: saldoRestante,
+            saldoRestante: saldoRestante, // Devolver el saldo (puede ser ligeramente negativo)
             proximaFechaPago: 'N/A'
         };
     }
 
+    // Si no está liquidado, continuar con el cálculo de atraso
     const fechaCreacion = parsearFecha(credito.fechaCreacion);
     if (!fechaCreacion) {
         console.warn("Fecha de creación de crédito inválida:", credito.fechaCreacion);
@@ -185,30 +186,40 @@ function _calcularEstadoCredito(credito, pagos) {
     const hoy = new Date();
     // Calcular semanas transcurridas desde el inicio
     const msTranscurridos = hoy.getTime() - fechaCreacion.getTime();
+    // Sumar casi un día para asegurar que el día de hoy cuente como transcurrido si es relevante
     const semanasTranscurridas = Math.floor(msTranscurridos / (1000 * 60 * 60 * 24 * 7));
 
     // Calcular semanas pagadas (basado en monto total pagado)
-    const montoPagadoTotal = credito.montoTotal - saldoRestante; // Más preciso que sumar pagos
+    // Usar saldoRestante que ya está redondeado
+    const montoPagadoTotal = credito.montoTotal - saldoRestante;
     let semanasPagadas = 0;
-    if (pagoSemanal > 0) {
+    if (pagoSemanal > 0.01) { // Evitar división por cero o pago semanal muy pequeño
+         // Redondear hacia abajo para semanas completas pagadas
         semanasPagadas = Math.floor(montoPagadoTotal / pagoSemanal);
     }
     
     // Asegurar que las semanas pagadas no superen el plazo
     semanasPagadas = Math.min(semanasPagadas, credito.plazo);
+    // Asegurar que no sean negativas (por si acaso)
+    semanasPagadas = Math.max(0, semanasPagadas);
 
-    // Calcular semanas de atraso
-    let semanasAtraso = semanasTranscurridas - semanasPagadas;
+
+    // Calcular semanas de atraso: Semanas que debieron pagarse vs semanas pagadas
+    // Considerar el plazo máximo: no puede haber más semanas de atraso que las que faltan del plazo
+    let semanasQueDebieronPagarse = Math.min(semanasTranscurridas + 1, credito.plazo); // +1 para incluir semana actual, limitado al plazo
+    let semanasAtraso = semanasQueDebieronPagarse - semanasPagadas;
     semanasAtraso = Math.max(0, semanasAtraso); // No puede ser negativo
-    
-    // Si el crédito ya terminó (semanas transcurridas > plazo) y no está liquidado, el atraso es el restante
+
+    // *** AJUSTE: Si ya pasó el plazo, el atraso es simplemente lo que falta por pagar en semanas ***
     if (semanasTranscurridas >= credito.plazo) {
-         // El atraso es el total del plazo menos lo que pagó
         semanasAtraso = credito.plazo - semanasPagadas;
+        semanasAtraso = Math.max(0, semanasAtraso); // Asegurar que no sea negativo si pagó de más (?)
     }
+
 
     let estado;
     // Definir estado basado en el atraso (esta es la lógica de negocio)
+    // IMPORTANTE: Asegurarse de que si saldo es <= 0.01, ya se retornó 'liquidado'
     if (semanasAtraso === 0) {
         estado = 'al corriente';
     } else if (semanasAtraso >= 1 && semanasAtraso <= 4) {
@@ -221,8 +232,10 @@ function _calcularEstadoCredito(credito, pagos) {
 
     // Calcular próxima fecha de pago
     let proximaFechaPago = 'N/A';
+    // Solo hay próxima fecha si aún no ha completado el plazo en pagos
     if (semanasPagadas < credito.plazo) {
         const proximaFecha = new Date(fechaCreacion);
+        // La próxima fecha es después de la última semana pagada
         proximaFecha.setUTCDate(proximaFecha.getUTCDate() + (semanasPagadas + 1) * 7);
         proximaFechaPago = formatDateForDisplay(proximaFecha);
     }
@@ -235,10 +248,10 @@ function _calcularEstadoCredito(credito, pagos) {
         proximaFechaPago: proximaFechaPago
     };
 }
-
 // =============================================
 // *** FIN DE LA CORRECCIÓN 1 ***
 // =============================================
+
 
 // =============================================
 // LÓGICA DE SEGURIDAD Y SESIÓN
@@ -268,10 +281,7 @@ function setupSecurityListeners() {
         if (cargaEnProgreso) {
             // No podemos *detener* el cierre, pero podemos intentar cancelar la operación interna
             cancelarCarga();
-            // Algunos navegadores podrían mostrar un diálogo si se retorna un string,
-            // pero su comportamiento es inconsistente.
-            // event.returnValue = 'Hay una operación en progreso. ¿Seguro que quieres salir?';
-            // return event.returnValue;
+            // event.returnValue = 'Hay una operación en progreso. ¿Seguro que quieres salir?'; // Descomentar si se quiere advertencia
         }
     });
 }
@@ -292,13 +302,7 @@ async function loadClientesTable() {
 
     const tbody = document.getElementById('tabla-clientes');
     tbody.innerHTML = '<tr><td colspan="6">Buscando...</td></tr>';
-    // =============================================
-    // *** INICIO DE LA CORRECCIÓN 3 (Instancia 1) ***
-    // =============================================
     showButtonLoading('#btn-aplicar-filtros', true, 'Buscando...');
-    // =============================================
-    // *** FIN DE LA CORRECCIÓN 3 (Instancia 1) ***
-    // =============================================
     showFixedProgress(10, 'Iniciando búsqueda...');
 
     try {
@@ -326,17 +330,15 @@ async function loadClientesTable() {
 
         if (filtros.idCredito) {
             // --- PATH 1: Search by Credit ID (Historical ID) ---
-            // Usar la función que busca por historicalIdCredito
             creditosAMostrar = await database.buscarCreditosPorHistoricalId(filtros.idCredito);
         } else if (filtros.curp || filtros.nombre || filtros.grupo || filtros.sucursal) {
             // --- PATH 2: Search by Client Filters ---
             const clientesIniciales = await database.buscarClientes({
                 sucursal: filtros.sucursal,
-                curp: filtros.curp, // Puede ser individual o múltiple separado por comas
+                curp: filtros.curp,
                 nombre: filtros.nombre,
                 grupo: filtros.grupo
             });
-
 
             if (operationId !== currentSearchOperation) throw new Error("Búsqueda cancelada");
             if (clientesIniciales.length === 0) throw new Error("No se encontraron clientes.");
@@ -346,24 +348,20 @@ async function loadClientesTable() {
             let progress = 40;
             for (const [index, cliente] of clientesIniciales.entries()) {
                 if (operationId !== currentSearchOperation) throw new Error("Búsqueda cancelada");
-                clientesMap.set(cliente.curp, cliente); // Cache client data
+                clientesMap.set(cliente.curp, cliente);
                 const creditosDelCliente = await database.buscarCreditosPorCliente(cliente.curp);
                 creditosAMostrar.push(...creditosDelCliente);
 
-                progress = 40 + Math.round((index / clientesIniciales.length) * 30); // Ajustar progreso
+                progress = 40 + Math.round((index / clientesIniciales.length) * 30);
                 showFixedProgress(progress, `Revisando cliente ${index + 1} de ${clientesIniciales.length}`);
             }
         } else if (filtros.curpAval || filtros.plazo || filtros.estado) {
             // --- PATH 3: Search by Credit-Only Filters ---
             showFixedProgress(40, `Buscando créditos por filtros...`);
-            // Nota: El filtro de estado de la DB puede no estar 100% actualizado,
-            // la validación real se hace después con _calcularEstadoCredito
             creditosAMostrar = await database.buscarCreditos({
-                // Pasar filtros relevantes a buscarCreditos
                 estado: filtros.estado,
                 curpAval: filtros.curpAval,
                 plazo: filtros.plazo
-                // No pasamos idCredito aquí porque ya se manejó
             });
         } else {
             tbody.innerHTML = '<tr><td colspan="6">Combinación de filtros no soportada o vacía.</td></tr>';
@@ -379,7 +377,6 @@ async function loadClientesTable() {
         let resultadosEncontrados = 0;
         let creditosProcesados = 0;
 
-        // Ordenar créditos por fecha de creación, más reciente primero
         creditosAMostrar.sort((a, b) => (parsearFecha(b.fechaCreacion)?.getTime() || 0) - (parsearFecha(a.fechaCreacion)?.getTime() || 0));
 
         for (const credito of creditosAMostrar) {
@@ -389,51 +386,41 @@ async function loadClientesTable() {
             const progress = 70 + Math.round((creditosProcesados / creditosAMostrar.length) * 30);
             showFixedProgress(progress, `Procesando crédito ${creditosProcesados} de ${creditosAMostrar.length}...`);
 
-            // 1. Get Client Data (from cache or DB)
+            // 1. Get Client Data
             let cliente = clientesMap.get(credito.curpCliente);
             if (!cliente) {
                 cliente = await database.buscarClientePorCURP(credito.curpCliente);
                 if (cliente) {
                     clientesMap.set(cliente.curp, cliente);
                 } else {
-                    // Crear un objeto cliente temporal si no se encuentra
                     cliente = { id: null, nombre: 'Cliente no encontrado', curp: credito.curpCliente, poblacion_grupo: credito.poblacion_grupo || 'N/A', office: credito.office || 'N/A', isComisionista: false };
                     console.warn(`No se encontró cliente para CURP ${credito.curpCliente} asociado al crédito ID Firestore ${credito.id}`);
                 }
             }
 
-            // 2. Get Payments & Calculate Status (using historicalIdCredito)
-            const historicalId = credito.historicalIdCredito || credito.id; // Usar historical si existe, si no, el de Firestore (para nuevos)
-            const pagos = await database.getPagosPorCredito(historicalId); // Busca pagos por ID histórico
-            const estadoCalculado = _calcularEstadoCredito(credito, pagos); // Calcula estado basado en datos del crédito y sus pagos
-
+            // 2. Get Payments & Calculate Status
+            const historicalId = credito.historicalIdCredito || credito.id;
+            const pagos = await database.getPagosPorCredito(historicalId);
+            const estadoCalculado = _calcularEstadoCredito(credito, pagos); // <--- Usa la función corregida
 
             if (!estadoCalculado) {
                 console.warn(`No se pudo calcular el estado para el crédito ID Firestore ${credito.id} (Histórico: ${historicalId})`);
-                continue; // Saltar créditos con datos inconsistentes que impiden calcular estado
+                continue;
             }
 
-
-            // 3. Apply secondary filters (filters not fully applied in the initial DB query)
+            // 3. Apply secondary filters
             if (filtros.estado && estadoCalculado.estado !== filtros.estado) continue;
             if (filtros.plazo && credito.plazo != filtros.plazo) continue;
             if (filtros.curpAval && (!credito.curpAval || !credito.curpAval.toUpperCase().includes(filtros.curpAval.toUpperCase()))) continue;
-            if (filtros.sucursal && cliente.office !== filtros.sucursal) continue; // Re-verificar sucursal del cliente
-            if (filtros.grupo && cliente.poblacion_grupo !== filtros.grupo) continue; // Re-verificar grupo del cliente
-            // Si se buscó por CURP/Nombre y la query inicial fue amplia (muchos clientes), re-verificar aquí
+            if (filtros.sucursal && cliente.office !== filtros.sucursal) continue;
+            if (filtros.grupo && cliente.poblacion_grupo !== filtros.grupo) continue;
             if (filtros.curp && !filtros.curp.includes(',') && cliente.curp !== filtros.curp.toUpperCase()) continue;
             if (filtros.nombre && !(cliente.nombre || '').toLowerCase().includes(filtros.nombre.toLowerCase())) continue;
-            // Si se buscó por ID histórico, ya está filtrado
-
 
             resultadosEncontrados++;
 
             // --- Build the Row ---
-
             const fechaInicioCredito = formatDateForDisplay(parsearFecha(credito.fechaCreacion));
-
-            // Fecha del Último Pago de ESTE crédito (histórico)
-            // Ordenar pagos de este crédito por fecha
             pagos.sort((a, b) => (parsearFecha(b.fecha)?.getTime() || 0) - (parsearFecha(a.fecha)?.getTime() || 0));
             const ultimoPago = pagos.length > 0 ? pagos[0] : null;
             const fechaUltimoPago = formatDateForDisplay(ultimoPago ? parsearFecha(ultimoPago.fecha) : null);
@@ -442,22 +429,23 @@ async function loadClientesTable() {
             const estadoClase = `status-${estadoCalculado.estado.replace(/\s/g, '-')}`;
             const estadoHTML = `<span class="info-value ${estadoClase}">${estadoCalculado.estado.toUpperCase()}</span>`;
 
-            // Semanas pagadas (basado en monto pagado y pago semanal)
             let semanasPagadas = 0;
-            const montoPagadoTotal = pagos.reduce((sum, pago) => sum + (pago.monto || 0), 0);
-            if (estadoCalculado.pagoSemanal > 0) {
-                semanasPagadas = Math.floor(montoPagadoTotal / estadoCalculado.pagoSemanal);
+            if (estadoCalculado.pagoSemanal > 0.01) {
+                 // Usar montoPagadoTotal = credito.montoTotal - estadoCalculado.saldoRestante (más preciso)
+                const montoPagadoTotalCalc = credito.montoTotal - estadoCalculado.saldoRestante;
+                semanasPagadas = Math.floor(montoPagadoTotalCalc / estadoCalculado.pagoSemanal);
             }
-            // Si está liquidado, mostrar plazo completo
+             // Si está liquidado, mostrar plazo completo
             if (estadoCalculado.estado === 'liquidado' && credito.plazo) {
                 semanasPagadas = credito.plazo;
             }
+             // Asegurar límites
+            semanasPagadas = Math.min(semanasPagadas, credito.plazo || 0);
+            semanasPagadas = Math.max(0, semanasPagadas);
 
-            // Saldo restante (basado en saldo del objeto crédito, que es el más actualizado)
-            const saldoRestante = credito.saldo !== undefined ? credito.saldo : Math.max(0, (credito.montoTotal || 0) - montoPagadoTotal);
 
+            const saldoRestante = estadoCalculado.saldoRestante; // Usar el saldo calculado y redondeado
 
-            // Botón de Historial de Pagos (pasa historicalId y CURP)
             const infoCreditoHTML = `
                 <div class="credito-info">
                     <div class="info-grid">
@@ -475,7 +463,9 @@ async function loadClientesTable() {
                     </button>
                 </div>`;
 
-            // Construir fila HTML
+             // *** CORRECCIÓN: Pasar el objeto cliente completo a editCliente ***
+            const clienteJsonString = JSON.stringify(cliente).replace(/'/g, "&apos;").replace(/"/g, "&quot;");
+
             const rowHTML = `
                 <tr>
                     <td><b>${cliente.office || 'N/A'}</b><br><small>Inicio Créd.: ${fechaInicioCredito}</small></td>
@@ -484,11 +474,11 @@ async function loadClientesTable() {
                     <td>${cliente.poblacion_grupo}</td>
                     <td>${infoCreditoHTML}</td>
                     <td class="action-buttons">
-                        ${cliente.id ? `<button class="btn btn-sm btn-info" onclick="editCliente('${cliente.id}')" title="Editar Cliente"><i class="fas fa-edit"></i></button>` : ''}
+                        ${cliente.id ? `<button class="btn btn-sm btn-info" onclick='editCliente(${clienteJsonString})' title="Editar Cliente"><i class="fas fa-edit"></i></button>` : ''}
                         ${cliente.id ? `<button class="btn btn-sm btn-danger" onclick="deleteCliente('${cliente.id}', '${cliente.nombre}')" title="Eliminar Cliente"><i class="fas fa-trash"></i></button>` : ''}
                         </td>
                 </tr>`;
-            tbody.insertAdjacentHTML('beforeend', rowHTML); // Usar insertAdjacentHTML para mejor rendimiento
+            tbody.insertAdjacentHTML('beforeend', rowHTML);
         }
 
         if (resultadosEncontrados === 0) {
@@ -498,7 +488,6 @@ async function loadClientesTable() {
         showFixedProgress(100, `Búsqueda completada: ${resultadosEncontrados} resultados encontrados.`);
 
     } catch (error) {
-        // Manejar errores conocidos de forma más amigable
         if (error.message === "Búsqueda cancelada") {
             tbody.innerHTML = '<tr><td colspan="6">Búsqueda cancelada por el usuario.</td></tr>';
             showStatus('status_gestion_clientes', 'Búsqueda cancelada.', 'info');
@@ -512,23 +501,15 @@ async function loadClientesTable() {
             tbody.innerHTML = '<tr><td colspan="6">No se encontraron créditos para los clientes/filtros especificados.</td></tr>';
             showStatus('status_gestion_clientes', 'No se encontraron créditos asociados.', 'info');
         } else {
-            // Error inesperado
             console.error('Error en loadClientesTable:', error);
             tbody.innerHTML = `<tr><td colspan="6">Error al cargar los datos: ${error.message}. Revisa la consola para más detalles.</td></tr>`;
             showStatus('status_gestion_clientes', `Error: ${error.message}`, 'error');
         }
     } finally {
-        // Asegurar que los indicadores de carga se detengan solo si esta operación específica terminó
         if (operationId === currentSearchOperation) {
             cargaEnProgreso = false;
-            // =============================================
-            // *** INICIO DE LA CORRECCIÓN 3 (Instancia 2) ***
-            // =============================================
             showButtonLoading('#btn-aplicar-filtros', false);
-            // =============================================
-            // *** FIN DE LA CORRECCIÓN 3 (Instancia 2) ***
-            // =============================================
-            setTimeout(hideFixedProgress, 2000); // Ocultar barra después de un tiempo
+            setTimeout(hideFixedProgress, 2000);
         }
     }
 }
@@ -538,26 +519,18 @@ function inicializarVistaGestionClientes() {
     if (tbody) {
         tbody.innerHTML = `<tr><td colspan="6">Utiliza los filtros para buscar y mostrar clientes/créditos.</td></tr>`;
     }
-    // No resetear formulario de cliente aquí, se hace al ir a la vista 'view-cliente'
-    // resetClientForm();
 }
 
 function limpiarFiltrosClientes() {
     if (cargaEnProgreso) {
-        cancelarCarga(); // Cancelar búsqueda si está en progreso
+        cancelarCarga();
     }
-    // Limpiar campos del formulario de filtros
     const filtrosGrid = document.getElementById('filtros-grid');
     if (filtrosGrid) {
         filtrosGrid.querySelectorAll('input, select').forEach(el => {
-            if (el.type !== 'date') { // No limpiar fechas? O sí? Decisión: limpiarlas también.
-                el.value = '';
-            } else {
-                el.value = ''; // Limpiar fechas
-            }
+            el.value = '';
         });
     }
-    // Limpiar tabla y mensaje de estado
     inicializarVistaGestionClientes();
     showStatus('status_gestion_clientes', 'Filtros limpiados. Ingresa nuevos criterios para buscar.', 'info');
 }
@@ -568,9 +541,8 @@ function inicializarVistaReportesAvanzados() {
     if (tbody) {
         tbody.innerHTML = '<tr><td colspan="10">Aplica los filtros para generar el reporte.</td></tr>';
     }
-    // Establecer fechas por defecto (ej. último mes)
     const hoy = new Date();
-    const haceUnMes = new Date(hoy.getFullYear(), hoy.getMonth() - 1, hoy.getDate() + 1); // +1 para incluir hoy si es el mismo día del mes anterior
+    const haceUnMes = new Date(hoy.getFullYear(), hoy.getMonth() - 1, hoy.getDate() + 1);
     const hoyISO = hoy.toISOString().split('T')[0];
     const haceUnMesISO = haceUnMes.toISOString().split('T')[0];
 
@@ -580,7 +552,6 @@ function inicializarVistaReportesAvanzados() {
     if (fechaInicio) fechaInicio.value = haceUnMesISO;
     if (fechaFin) fechaFin.value = hoyISO;
 
-    // Limpiar datos de reporte anterior y estadísticas
     reportData = null;
     const estadisticasElement = document.getElementById('estadisticas-reporte');
     if (estadisticasElement) estadisticasElement.innerHTML = '';
@@ -589,20 +560,16 @@ function inicializarVistaReportesAvanzados() {
 
 function limpiarFiltrosReportes() {
     if (cargaEnProgreso) {
-        cancelarCarga(); // Cancelar si se está generando un reporte
+        cancelarCarga();
     }
-
-    // Limpiar campos de filtro
     const filtrosContainer = document.getElementById('filtros-reportes-avanzados');
     if (filtrosContainer) {
         filtrosContainer.querySelectorAll('input, select').forEach(el => {
-            if (el.type !== 'date') { // No resetear fechas aquí, lo hace inicializarVista
+            if (el.type !== 'date') {
                 el.value = '';
             }
         });
     }
-
-    // Resetear fechas y tabla
     inicializarVistaReportesAvanzados();
     showStatus('status_reportes_avanzados', 'Filtros limpiados. Selecciona nuevos criterios y genera el reporte.', 'info');
 }
@@ -613,24 +580,20 @@ async function loadAdvancedReports() {
         return;
     }
     cargaEnProgreso = true;
-    currentSearchOperation = Date.now(); // Usar para cancelación si es necesario
+    currentSearchOperation = Date.now();
     const operationId = currentSearchOperation;
 
-
     showProcessingOverlay(true, 'Generando reporte avanzado...');
-    showButtonLoading('btn-aplicar-filtros-reportes', true, 'Generando...');
+    showButtonLoading('#btn-aplicar-filtros-reportes', true, 'Generando...'); // Selector Corregido
     showFixedProgress(20, 'Recopilando filtros...');
     const statusReportes = document.getElementById('status_reportes_avanzados');
     statusReportes.innerHTML = 'Aplicando filtros y buscando datos...';
     statusReportes.className = 'status-message status-info';
-    // Limpiar tabla y estadísticas previas
     document.getElementById('tabla-reportes_avanzados').innerHTML = '<tr><td colspan="10">Generando reporte...</td></tr>';
     document.getElementById('estadisticas-reporte').innerHTML = '';
-    reportData = null; // Limpiar datos anteriores
-
+    reportData = null;
 
     try {
-        // Recoger filtros de la UI
         const filtros = {
             sucursal: document.getElementById('sucursal_filtro_reporte')?.value || '',
             grupo: document.getElementById('grupo_filtro_reporte')?.value || '',
@@ -641,27 +604,22 @@ async function loadAdvancedReports() {
             fechaInicio: document.getElementById('fecha_inicio_reporte')?.value || '',
             fechaFin: document.getElementById('fecha_fin_reporte')?.value || '',
             curpCliente: document.getElementById('curp_filtro_reporte')?.value.trim().toUpperCase() || '',
-            idCredito: document.getElementById('id_credito_filtro_reporte')?.value.trim() || '' // ID Histórico
+            idCredito: document.getElementById('id_credito_filtro_reporte')?.value.trim() || ''
         };
 
-
-        // Validación simple de fechas
         if (filtros.fechaInicio && filtros.fechaFin && new Date(filtros.fechaInicio) > new Date(filtros.fechaFin)) {
             throw new Error("La fecha de inicio no puede ser posterior a la fecha de fin.");
         }
 
-
         showFixedProgress(50, 'Consultando base de datos...');
-        // Llamar a la función de database.js
         const data = await database.generarReporteAvanzado(filtros);
 
-        // Verificar si la operación fue cancelada mientras se esperaba
         if (operationId !== currentSearchOperation) throw new Error("Búsqueda cancelada");
 
-        reportData = data; // Guardar datos para exportación
+        reportData = data;
 
         showFixedProgress(80, 'Mostrando resultados...');
-        mostrarReporteAvanzado(reportData); // Función para dibujar la tabla
+        mostrarReporteAvanzado(reportData);
         showFixedProgress(100, 'Reporte generado');
 
         showStatus('status_reportes_avanzados', `Reporte generado: ${reportData.length} registros encontrados.`, 'success');
@@ -675,14 +633,13 @@ async function loadAdvancedReports() {
             showStatus('status_reportes_avanzados', `Error al generar el reporte: ${error.message}`, 'error');
             document.getElementById('tabla-reportes_avanzados').innerHTML = `<tr><td colspan="10">Error: ${error.message}</td></tr>`;
         }
-        hideFixedProgress(); // Ocultar progreso en error también
+        hideFixedProgress();
     } finally {
-        // Asegurar que se detenga el estado de carga solo si esta operación terminó
         if (operationId === currentSearchOperation) {
             cargaEnProgreso = false;
             showProcessingOverlay(false);
-            showButtonLoading('btn-aplicar-filtros-reportes', false);
-            setTimeout(hideFixedProgress, 2000); // Ocultar barra después de un tiempo
+            showButtonLoading('#btn-aplicar-filtros-reportes', false); // Selector Corregido
+            setTimeout(hideFixedProgress, 2000);
         }
     }
 }
@@ -692,25 +649,20 @@ function mostrarReporteAvanzado(data) {
     const estadisticasElement = document.getElementById('estadisticas-reporte');
     if (!tbody || !estadisticasElement) return;
 
-    tbody.innerHTML = ''; // Limpiar tabla
-    estadisticasElement.innerHTML = ''; // Limpiar estadísticas
+    tbody.innerHTML = '';
+    estadisticasElement.innerHTML = '';
 
     if (!data || data.length === 0) {
         tbody.innerHTML = '<tr><td colspan="10">No se encontraron datos con los filtros aplicados.</td></tr>';
         return;
     }
 
-    // Renderizar filas de la tabla
     data.forEach(item => {
         const tr = document.createElement('tr');
-
-        // Formatear fechas
         const fechaRegistro = formatDateForDisplay(parsearFecha(item.fechaRegistro));
         const fechaCreacion = formatDateForDisplay(parsearFecha(item.fechaCreacion));
         const fechaPago = formatDateForDisplay(parsearFecha(item.fecha));
-        // Usar ID histórico si existe
         const idCreditoMostrar = item.historicalIdCredito || item.idCredito || item.id || '';
-
 
         let rowContent = '';
         if (item.tipo === 'cliente') {
@@ -725,7 +677,7 @@ function mostrarReporteAvanzado(data) {
                 <td>Registro</td>
                 <td>-</td>
                 <td>-</td>
-                <td>-</td> `;
+                <td>-</td> `; // Se añadió un TD extra para alinear con 11 columnas si es necesario
         } else if (item.tipo === 'credito') {
             rowContent = `
                 <td>CRÉDITO</td>
@@ -755,19 +707,30 @@ function mostrarReporteAvanzado(data) {
                  <td>${idCreditoMostrar}</td>
             `;
         }
+        // Asegurarse de que el número de TDs coincida con el número de THs (puede que necesite ajustar la tabla HTML si la estructura cambió)
+        // Revisando tu HTML, la tabla de reportes avanzados tiene 10 THs. Los rowContent parecen tener 11 TDs. Ajustemos.
+        // Quitaremos la última columna (ID Crédito Hist) del HTML generado si no está en la tabla HTML.
+        // --> Revisando index.html: Sí tiene 10 columnas. Quitaremos el ID crédito de aquí.
+
+        if (item.tipo === 'cliente') {
+             rowContent = `<td>CLIENTE</td><td>${item.curp || ''}</td><td>${item.nombre || ''}</td><td>${item.poblacion_grupo || ''}</td><td>${item.ruta || ''}</td><td>${item.office || ''}</td><td>${fechaRegistro}</td><td>Registro</td><td>-</td><td>-</td>`;
+        } else if (item.tipo === 'credito') {
+            rowContent = `<td>CRÉDITO</td><td>${item.curpCliente || ''}</td><td>${item.nombreCliente || ''}</td><td>${item.poblacion_grupo || ''}</td><td>${item.ruta || ''}</td><td>${item.office || ''}</td><td>${fechaCreacion}</td><td>${item.tipo || 'Colocación'}</td><td>$${(item.monto || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td><td>$${(item.saldo !== undefined ? item.saldo : 'N/A').toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>`;
+        } else if (item.tipo === 'pago') {
+            rowContent = `<td>PAGO</td><td>${item.curpCliente || ''}</td><td>${item.nombreCliente || ''}</td><td>${item.poblacion_grupo || ''}</td><td>${item.ruta || ''}</td><td>${item.office || ''}</td><td>${fechaPago}</td><td>${item.tipoPago || 'Pago'}</td><td>$${(item.monto || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td><td>$${(item.saldoDespues !== undefined ? item.saldoDespues : 'N/A').toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>`;
+        }
+
 
         tr.innerHTML = rowContent;
         tbody.appendChild(tr);
     });
 
-    // Calcular y mostrar estadísticas
     const totalRegistros = data.length;
-    const totalClientes = new Set(data.filter(item => item.tipo === 'cliente').map(item => item.curp)).size; // Contar clientes únicos
-    const totalCreditos = new Set(data.filter(item => item.tipo === 'credito').map(item => item.historicalIdCredito || item.id)).size; // Contar créditos únicos
+    const totalClientes = new Set(data.filter(item => item.tipo === 'cliente').map(item => item.curp)).size;
+    const totalCreditos = new Set(data.filter(item => item.tipo === 'credito').map(item => item.historicalIdCredito || item.id)).size;
     const totalPagos = data.filter(item => item.tipo === 'pago').length;
     const totalMontoPagos = data.filter(item => item.tipo === 'pago').reduce((sum, item) => sum + (item.monto || 0), 0);
     const totalMontoColocado = data.filter(item => item.tipo === 'credito').reduce((sum, item) => sum + (item.monto || 0), 0);
-
 
     estadisticasElement.innerHTML = `
         <div class="status-message status-info">
@@ -789,12 +752,11 @@ function exportToCSV() {
     }
 
     showProcessingOverlay(true, 'Generando archivo CSV...');
-    showButtonLoading('btn-exportar-csv', true, 'Generando...');
+    showButtonLoading('#btn-exportar-csv', true, 'Generando...'); // Selector Corregido
     showFixedProgress(50, 'Preparando datos...');
 
     try {
-        // Añadir ID Histórico al header y a las filas
-        const headers = ['Tipo', 'CURP', 'Nombre', 'Grupo/Población', 'Ruta', 'Sucursal', 'Fecha', 'Tipo Operación', 'Monto', 'Saldo', 'ID Crédito (Hist)'];
+        const headers = ['Tipo', 'CURP', 'Nombre', 'Grupo/Población', 'Ruta', 'Sucursal', 'Fecha', 'Tipo Operación', 'Monto', 'Saldo', 'ID Crédito (Hist)']; // Añadimos ID Histórico
         let csvContent = headers.join(',') + '\n';
 
         showFixedProgress(70, 'Convirtiendo datos a CSV...');
@@ -803,72 +765,33 @@ function exportToCSV() {
             const fechaRegistro = formatDateForDisplay(parsearFecha(item.fechaRegistro));
             const fechaCreacion = formatDateForDisplay(parsearFecha(item.fechaCreacion));
             const fechaPago = formatDateForDisplay(parsearFecha(item.fecha));
-            const idCreditoMostrar = item.historicalIdCredito || item.idCredito || item.id || '';
-            // Función auxiliar para escapar comas y comillas en campos de texto
+            const idCreditoMostrar = item.historicalIdCredito || item.idCredito || item.id || ''; // Usar ID Histórico
+
             const escapeCSV = (field) => {
                 if (field === undefined || field === null) return '';
                 let str = String(field);
-                // Si contiene comillas, coma o nueva línea, encerrar entre comillas y duplicar comillas internas
                 if (str.includes('"') || str.includes(',') || str.includes('\n')) {
                     str = `"${str.replace(/"/g, '""')}"`;
                 }
                 return str;
             };
 
-
             if (item.tipo === 'cliente') {
-                row = [
-                    'CLIENTE',
-                    escapeCSV(item.curp),
-                    escapeCSV(item.nombre),
-                    escapeCSV(item.poblacion_grupo),
-                    escapeCSV(item.ruta),
-                    escapeCSV(item.office),
-                    fechaRegistro,
-                    'Registro',
-                    '', // Monto
-                    '', // Saldo
-                    '' // ID Crédito
-                ];
+                row = ['CLIENTE', escapeCSV(item.curp), escapeCSV(item.nombre), escapeCSV(item.poblacion_grupo), escapeCSV(item.ruta), escapeCSV(item.office), fechaRegistro, 'Registro', '', '', '']; // 11 columnas
             } else if (item.tipo === 'credito') {
-                row = [
-                    'CRÉDITO',
-                    escapeCSV(item.curpCliente),
-                    escapeCSV(item.nombreCliente),
-                    escapeCSV(item.poblacion_grupo),
-                    escapeCSV(item.ruta),
-                    escapeCSV(item.office),
-                    fechaCreacion,
-                    escapeCSV(item.tipo || 'Colocación'),
-                    item.monto || 0,
-                    item.saldo !== undefined ? item.saldo : '',
-                    escapeCSV(idCreditoMostrar)
-                ];
+                row = ['CRÉDITO', escapeCSV(item.curpCliente), escapeCSV(item.nombreCliente), escapeCSV(item.poblacion_grupo), escapeCSV(item.ruta), escapeCSV(item.office), fechaCreacion, escapeCSV(item.tipo || 'Colocación'), item.monto || 0, item.saldo !== undefined ? item.saldo : '', escapeCSV(idCreditoMostrar)]; // 11 columnas
             } else if (item.tipo === 'pago') {
-                row = [
-                    'PAGO',
-                    escapeCSV(item.curpCliente),
-                    escapeCSV(item.nombreCliente),
-                    escapeCSV(item.poblacion_grupo),
-                    escapeCSV(item.ruta),
-                    escapeCSV(item.office),
-                    fechaPago,
-                    escapeCSV(item.tipoPago || 'Pago'),
-                    item.monto || 0,
-                    item.saldoDespues !== undefined ? item.saldoDespues : '',
-                    escapeCSV(idCreditoMostrar)
-                ];
+                row = ['PAGO', escapeCSV(item.curpCliente), escapeCSV(item.nombreCliente), escapeCSV(item.poblacion_grupo), escapeCSV(item.ruta), escapeCSV(item.office), fechaPago, escapeCSV(item.tipoPago || 'Pago'), item.monto || 0, item.saldoDespues !== undefined ? item.saldoDespues : '', escapeCSV(idCreditoMostrar)]; // 11 columnas
             }
 
             csvContent += row.join(',') + '\n';
         });
 
         showFixedProgress(90, 'Creando archivo descargable...');
-        // Crear Blob con BOM para mejor compatibilidad Excel con acentos/ñ
         const bom = new Uint8Array([0xEF, 0xBB, 0xBF]);
         const blob = new Blob([bom, csvContent], { type: 'text/csv;charset=utf-8;' });
         const link = document.createElement('a');
-        if (link.download !== undefined) { // Check for download attribute support
+        if (link.download !== undefined) {
             const url = URL.createObjectURL(blob);
             link.setAttribute('href', url);
             const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -877,9 +800,8 @@ function exportToCSV() {
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
-            URL.revokeObjectURL(url); // Liberar memoria
+            URL.revokeObjectURL(url);
         } else {
-            // Fallback para navegadores antiguos (puede abrir en la misma pestaña)
             alert("Tu navegador no soporta la descarga directa. El archivo CSV podría abrirse en una nueva pestaña.");
             const url = URL.createObjectURL(blob);
             window.open(url);
@@ -893,7 +815,7 @@ function exportToCSV() {
         hideFixedProgress();
     } finally {
         showProcessingOverlay(false);
-        showButtonLoading('btn-exportar-csv', false);
+        showButtonLoading('#btn-exportar-csv', false); // Selector Corregido
         setTimeout(hideFixedProgress, 2000);
     }
 }
@@ -905,28 +827,24 @@ function exportToPDF() {
     }
 
     showProcessingOverlay(true, 'Generando archivo PDF...');
-    showButtonLoading('btn-exportar-pdf', true, 'Generando...');
+    showButtonLoading('#btn-exportar-pdf', true, 'Generando...'); // Selector Corregido
     showFixedProgress(30, 'Preparando contenido para PDF...');
 
     try {
         const tableElement = document.getElementById('tabla-reportes_avanzados');
         const titleElement = document.querySelector('#view-reportes-avanzados h2');
-        const filtersElement = document.getElementById('filtros-reportes-avanzados'); // Para incluir filtros aplicados
+        const filtersElement = document.getElementById('filtros-reportes-avanzados');
         const statsElement = document.getElementById('estadisticas-reporte');
-
 
         if (!tableElement) {
             throw new Error('No se encontró la tabla del reporte para exportar.');
         }
 
-        // Crear un contenedor temporal para el contenido del PDF
         const contentForPdf = document.createElement('div');
-        contentForPdf.style.padding = '20px'; // Añadir padding
-        contentForPdf.style.fontFamily = 'Arial, sans-serif'; // Fuente común para PDF
-        contentForPdf.style.fontSize = '10px'; // Tamaño base más pequeño para PDF
+        contentForPdf.style.padding = '20px';
+        contentForPdf.style.fontFamily = 'Arial, sans-serif';
+        contentForPdf.style.fontSize = '10px';
 
-
-        // Añadir Título
         if (titleElement) {
             const titleClone = titleElement.cloneNode(true);
             titleClone.style.textAlign = 'center';
@@ -934,8 +852,6 @@ function exportToPDF() {
             contentForPdf.appendChild(titleClone);
         }
 
-
-        // Añadir Resumen de Filtros (Opcional, pero útil)
         if (filtersElement) {
             const filtersSummary = document.createElement('div');
             filtersSummary.style.marginBottom = '15px';
@@ -952,62 +868,73 @@ function exportToPDF() {
             contentForPdf.appendChild(filtersSummary);
         }
 
-        // Añadir Estadísticas
         if (statsElement) {
             const statsClone = statsElement.cloneNode(true);
             statsClone.style.marginBottom = '15px';
-            // Quitar clases de status message para que no tenga fondo/borde de color
             statsClone.querySelector('div')?.classList.remove('status-message', 'status-info', 'status-success', 'status-warning', 'status-error');
             contentForPdf.appendChild(statsClone);
         }
 
-
-        // Clonar tabla y ajustar estilos para PDF
         const tableClone = tableElement.cloneNode(true);
+        // *** CORRECCIÓN: Añadir columna ID Crédito (Hist) para PDF si se desea ***
+        // Para consistencia con CSV, añadiremos la columna ID Hist al final
+        const headers = tableClone.querySelector('thead tr');
+        if (headers) {
+             const th = document.createElement('th');
+             th.textContent = 'ID Crédito (Hist)';
+             headers.appendChild(th);
+        }
+        const rows = tableClone.querySelectorAll('tbody tr');
+         rows.forEach((row, index) => {
+             const item = reportData[index]; // Asumiendo que reportData está en el mismo orden
+             const idCreditoMostrar = item.historicalIdCredito || item.idCredito || item.id || '';
+             const td = document.createElement('td');
+             td.textContent = idCreditoMostrar;
+             row.appendChild(td);
+         });
+
+
         tableClone.style.width = '100%';
         tableClone.style.borderCollapse = 'collapse';
         tableClone.querySelectorAll('th, td').forEach(cell => {
             cell.style.border = '1px solid #ddd';
             cell.style.padding = '4px 6px';
-            cell.style.fontSize = '9px'; // Reducir tamaño de fuente en tabla
+            cell.style.fontSize = '8px'; // Reducir un poco más para acomodar la nueva columna
         });
         tableClone.querySelector('thead').style.backgroundColor = '#f2f2f2';
         contentForPdf.appendChild(tableClone);
 
-
         const opt = {
-            margin: [1, 1, 1, 1], // Márgenes en cm (top, left, bottom, right)
+            margin: [1, 0.5, 1, 0.5], // Reducir márgenes laterales
             filename: `reporte_finzana_${new Date().toISOString().replace(/[:.]/g, '-')}.pdf`,
             image: { type: 'jpeg', quality: 0.95 },
-            html2canvas: { scale: 2, useCORS: true }, // scale mejora calidad, useCORS si hay imágenes externas
-            jsPDF: { unit: 'cm', format: 'a4', orientation: 'landscape' }, // Hoja A4 horizontal
-            pagebreak: { mode: ['avoid-all', 'css', 'legacy'] } // Intentar evitar cortes feos
+            html2canvas: { scale: 2, useCORS: true },
+            jsPDF: { unit: 'cm', format: 'a4', orientation: 'landscape' },
+            pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
         };
 
         showFixedProgress(70, 'Generando PDF...');
 
-        // Usar html2pdf
         html2pdf().set(opt).from(contentForPdf).save()
             .then(() => {
                 showFixedProgress(100, 'PDF generado');
                 showStatus('status_reportes_avanzados', 'Archivo PDF exportado exitosamente.', 'success');
                 showProcessingOverlay(false);
-                showButtonLoading('btn-exportar-pdf', false);
+                showButtonLoading('#btn-exportar-pdf', false); // Selector Corregido
                 setTimeout(hideFixedProgress, 2000);
             })
             .catch(error => {
                 console.error('Error generando PDF con html2pdf:', error);
-                throw new Error(`Error al generar PDF: ${error.message}`); // Re-lanzar para el catch principal
+                throw new Error(`Error al generar PDF: ${error.message}`);
             });
 
     } catch (error) {
         console.error('Error preparando contenido para PDF:', error);
         showStatus('status_reportes_avanzados', `Error al exportar PDF: ${error.message}`, 'error');
         showProcessingOverlay(false);
-        showButtonLoading('btn-exportar-pdf', false);
+        showButtonLoading('#btn-exportar-pdf', false); // Selector Corregido
         hideFixedProgress();
     }
-    // No usar finally aquí porque html2pdf().save() es asíncrono y necesitamos el .then/.catch
 }
 
 // =============================================
@@ -1016,105 +943,84 @@ function exportToPDF() {
 
 document.addEventListener('DOMContentLoaded', function () {
     console.log('DOM cargado, inicializando aplicación...');
-    inicializarDropdowns(); // Poblar selects estáticos
-    setupEventListeners(); // Configurar todos los listeners
-    setupSecurityListeners(); // Configurar timer de inactividad, etc.
+    inicializarDropdowns();
+    setupEventListeners();
+    setupSecurityListeners();
 
-    // Listener para estado de autenticación (ya incluye la lógica de mostrar/ocultar vistas)
     auth.onAuthStateChanged(async user => {
         console.log('Estado de autenticación cambiado:', user ? user.uid : 'No user');
         const loadingOverlay = document.getElementById('loading-overlay');
         const loginScreen = document.getElementById('login-screen');
         const mainApp = document.getElementById('main-app');
 
-        loadingOverlay.classList.add('hidden'); // Ocultar carga inicial
+        loadingOverlay.classList.add('hidden');
 
         if (user) {
             currentUser = user;
             try {
                 currentUserData = await database.obtenerUsuarioPorId(user.uid);
 
-
                 if (currentUserData) {
                     document.getElementById('user-name').textContent = currentUserData.name || user.email;
                     document.getElementById('user-role-display').textContent = currentUserData.role || 'Rol Desconocido';
-                    // Podrías habilitar/deshabilitar vistas aquí según el rol
-                    // Ejemplo: toggleAdminFeatures(currentUserData.role === 'admin');
                 } else {
                     console.warn(`No se encontraron datos en Firestore para el usuario ${user.uid}`);
                     document.getElementById('user-name').textContent = user.email;
                     document.getElementById('user-role-display').textContent = 'Datos no encontrados';
-                    // Considerar cerrar sesión si los datos son obligatorios
-                    // auth.signOut();
                 }
-
 
                 loginScreen.classList.add('hidden');
                 mainApp.classList.remove('hidden');
-                showView('view-main-menu'); // Mostrar menú principal por defecto
-                updateConnectionStatus(); // Actualizar estado de conexión
-                resetInactivityTimer(); // Iniciar temporizador de inactividad
-
+                showView('view-main-menu');
+                updateConnectionStatus();
+                resetInactivityTimer();
 
             } catch (error) {
                 console.error("Error al obtener datos del usuario:", error);
-                // Manejar el error, quizás mostrar un mensaje y cerrar sesión
                 document.getElementById('user-name').textContent = user.email;
                 document.getElementById('user-role-display').textContent = 'Error al cargar datos';
-                // Opcional: Cerrar sesión si no se pueden cargar datos críticos
-                // auth.signOut();
             }
-
 
         } else {
             currentUser = null;
             currentUserData = null;
-            clearTimeout(inactivityTimer); // Detener temporizador
+            clearTimeout(inactivityTimer);
             mainApp.classList.add('hidden');
             loginScreen.classList.remove('hidden');
-            // Limpiar cualquier estado residual de la app si es necesario
             const authStatus = document.getElementById('auth-status');
-            if (authStatus) authStatus.textContent = ''; // Limpiar mensaje de error de login
+            if (authStatus) authStatus.textContent = '';
         }
     });
 });
 
 function setupEventListeners() {
     console.log('Configurando event listeners...');
-    // Conexión online/offline
     window.addEventListener('online', updateConnectionStatus);
     window.addEventListener('offline', updateConnectionStatus);
 
-    // Login / Logout
     const loginForm = document.getElementById('login-form');
     if (loginForm) loginForm.addEventListener('submit', handleLogin);
     const logoutBtn = document.getElementById('logout-btn');
     if (logoutBtn) logoutBtn.addEventListener('click', () => auth.signOut());
 
-    // Navegación principal (botones con data-view)
     document.querySelectorAll('[data-view]').forEach(button => {
         button.addEventListener('click', function () {
-            // Si el botón está dentro del formulario de cliente y es tipo button, resetear
             if (this.type === 'button' && this.closest('#form-cliente') && !editingClientId) {
-                // resetClientForm(); // Resetear solo si NO se está editando
+                 // No resetear si es un botón 'Cancelar' dentro del form de edición
             } else if (this.closest('.menu-card')) {
-                // Si viene de una tarjeta de menú, asegurar que se resetea si va a vista de cliente nuevo
                 if (this.getAttribute('data-view') === 'view-cliente') {
-                    resetClientForm();
+                    resetClientForm(); // Resetear SIEMPRE al ir a registrar nuevo desde menú
                 }
             }
             showView(this.getAttribute('data-view'));
         });
     });
 
-
-    // --- Gestión de Clientes ---
     const btnAplicarFiltros = document.getElementById('btn-aplicar-filtros');
-    if (btnAplicarFiltros) btnAplicarFiltros.addEventListener('click', loadClientesTable); // ESTA ES LA LÍNEA DEL ERROR ANTERIOR
+    if (btnAplicarFiltros) btnAplicarFiltros.addEventListener('click', loadClientesTable);
     const btnLimpiarFiltros = document.getElementById('btn-limpiar-filtros');
-    if (btnLimpiarFiltros) btnLimpiarFiltros.addEventListener('click', limpiarFiltrosClientes); // ESTA ES LA LÍNEA DEL ERROR ANTERIOR
+    if (btnLimpiarFiltros) btnLimpiarFiltros.addEventListener('click', limpiarFiltrosClientes);
 
-    // --- Gestión de Usuarios ---
     const btnAplicarFiltrosUsuarios = document.getElementById('btn-aplicar-filtros-usuarios');
     if (btnAplicarFiltrosUsuarios) btnAplicarFiltrosUsuarios.addEventListener('click', loadUsersTable);
     const btnLimpiarFiltrosUsuarios = document.getElementById('btn-limpiar-filtros-usuarios');
@@ -1127,74 +1033,62 @@ function setupEventListeners() {
     if (btnCancelarUsuario) btnCancelarUsuario.addEventListener('click', ocultarFormularioUsuario);
     const formUsuario = document.getElementById('form-usuario');
     if (formUsuario) formUsuario.addEventListener('submit', handleUserForm);
-    // **NUEVO** Herramienta de Diagnóstico
     const btnDiagnosticarPagos = document.getElementById('btn-diagnosticar-pagos');
     if (btnDiagnosticarPagos) btnDiagnosticarPagos.addEventListener('click', handleDiagnosticarPagos);
 
-
-    // --- Importar Datos ---
     const officeSelect = document.getElementById('office-select');
     if (officeSelect) officeSelect.addEventListener('change', handleOfficeChange);
     document.querySelectorAll('.import-tab').forEach(tab => tab.addEventListener('click', handleTabClick));
     const btnProcesarImportacion = document.getElementById('btn-procesar-importacion');
     if (btnProcesarImportacion) btnProcesarImportacion.addEventListener('click', handleImport);
-    const btnLimpiarDatos = document.getElementById('btn-limpiar-datos'); // Botón experimental
+    const btnLimpiarDatos = document.getElementById('btn-limpiar-datos');
     if (btnLimpiarDatos) {
         btnLimpiarDatos.addEventListener('click', async () => {
             if (confirm('¿Estás seguro de que deseas limpiar TODA la base de datos en la nube? Esta acción es experimental y no se puede deshacer.')) {
-                // !! ADVERTENCIA !! Esto debería estar protegido y no ser accesible fácilmente
-                // Preferiblemente usar Cloud Functions o hacerlo manualmente en consola Firebase.
                 showStatus('estado-importacion', 'Acción peligrosa. La limpieza masiva debe hacerse desde la consola de Firebase o Cloud Functions.', 'error');
-                // await database.limpiarColeccion('pagos'); // Ejemplo (necesitaría implementar limpiarColeccion)
-                // await database.limpiarColeccion('creditos');
-                // await database.limpiarColeccion('clientes');
-                // showStatus('estado-importacion', 'Colecciones limpiadas (simulado).', 'warning');
             }
         });
     }
 
-    // --- Registrar Cliente ---
     const formCliente = document.getElementById('form-cliente');
     if (formCliente) formCliente.addEventListener('submit', handleClientForm);
     const curpCliente = document.getElementById('curp_cliente');
     if (curpCliente) curpCliente.addEventListener('input', () => validarCURP(curpCliente));
     const officeCliente = document.getElementById('office_cliente');
-    if (officeCliente) officeCliente.addEventListener('change', handleOfficeChangeForClientForm); // Para actualizar grupos
+    if (officeCliente) officeCliente.addEventListener('change', handleOfficeChangeForClientForm);
 
-    // --- Generar Crédito (Colocación) ---
     const btnBuscarClienteColocacion = document.getElementById('btnBuscarCliente_colocacion');
     if (btnBuscarClienteColocacion) btnBuscarClienteColocacion.addEventListener('click', handleSearchClientForCredit);
     const formCreditoSubmit = document.getElementById('form-credito-submit');
     if (formCreditoSubmit) formCreditoSubmit.addEventListener('submit', handleCreditForm);
     const curpAvalColocacion = document.getElementById('curpAval_colocacion');
-    if (curpAvalColocacion) curpAvalColocacion.addEventListener('input', () => validarCURP(curpAvalColocacion)); // Validar CURP aval
+    if (curpAvalColocacion) curpAvalColocacion.addEventListener('input', () => validarCURP(curpAvalColocacion));
     const montoColocacion = document.getElementById('monto_colocacion');
     if (montoColocacion) montoColocacion.addEventListener('change', calcularMontoTotalColocacion);
-    const plazoColocacion = document.getElementById('plazo_colocacion');
-    // No necesita listener, se usa al calcular monto total o al guardar
 
-    // --- Registrar Pago (Cobranza) ---
     const btnBuscarCreditoCobranza = document.getElementById('btnBuscarCredito_cobranza');
     if (btnBuscarCreditoCobranza) btnBuscarCreditoCobranza.addEventListener('click', handleSearchCreditForPayment);
     const formPagoSubmit = document.getElementById('form-pago-submit');
     if (formPagoSubmit) formPagoSubmit.addEventListener('submit', handlePaymentForm);
     const montoCobranza = document.getElementById('monto_cobranza');
-    if (montoCobranza) montoCobranza.addEventListener('input', handleMontoPagoChange); // Calcular saldo después
+    if (montoCobranza) montoCobranza.addEventListener('input', handleMontoPagoChange);
 
-    // --- Pago Grupal ---
     const btnBuscarGrupoPago = document.getElementById('btn-buscar-grupo-pago');
     if (btnBuscarGrupoPago) btnBuscarGrupoPago.addEventListener('click', handleBuscarGrupoParaPago);
     const btnRegistrarPagoGrupal = document.getElementById('btn-registrar-pago-grupal');
     if (btnRegistrarPagoGrupal) btnRegistrarPagoGrupal.addEventListener('click', handleRegistroPagoGrupal);
 
-
-    // --- Reportes Básicos ---
     const btnActualizarReportes = document.getElementById('btn-actualizar-reportes');
-    if (btnActualizarReportes) btnActualizarReportes.addEventListener('click', () => loadBasicReports());
+    // =============================================
+    // *** INICIO DE LA CORRECCIÓN 2 ***
+    // =============================================
+    if (btnActualizarReportes) btnActualizarReportes.addEventListener('click', loadBasicReports); // Llamar a la función
+    // =============================================
+    // *** FIN DE LA CORRECCIÓN 2 ***
+    // =============================================
 
-    // --- Reportes Avanzados ---
     const btnAplicarFiltrosReportes = document.getElementById('btn-aplicar-filtros-reportes');
-    if (btnAplicarFiltrosReportes) btnAplicarFiltrosReportes.addEventListener('click', loadAdvancedReports); // ESTA ES LA LÍNEA DEL NUEVO ERROR
+    if (btnAplicarFiltrosReportes) btnAplicarFiltrosReportes.addEventListener('click', loadAdvancedReports);
     const btnExportarCsv = document.getElementById('btn-exportar-csv');
     if (btnExportarCsv) btnExportarCsv.addEventListener('click', exportToCSV);
     const btnExportarPdf = document.getElementById('btn-exportar-pdf');
@@ -1202,20 +1096,17 @@ function setupEventListeners() {
     const btnLimpiarFiltrosReportes = document.getElementById('btn-limpiar-filtros-reportes');
     if (btnLimpiarFiltrosReportes) btnLimpiarFiltrosReportes.addEventListener('click', limpiarFiltrosReportes);
 
-    // --- Reportes Gráficos ---
     const btnGenerarGrafico = document.getElementById('btn-generar-grafico');
     if (btnGenerarGrafico) btnGenerarGrafico.addEventListener('click', handleGenerarGrafico);
     const sucursalGrafico = document.getElementById('grafico_sucursal');
-    if (sucursalGrafico) sucursalGrafico.addEventListener('change', handleSucursalGraficoChange); // Actualizar grupos
+    if (sucursalGrafico) sucursalGrafico.addEventListener('change', handleSucursalGraficoChange);
 
-    // --- Modal Genérico ---
     const modalCloseBtn = document.getElementById('modal-close-btn');
     if (modalCloseBtn) modalCloseBtn.addEventListener('click', () => document.getElementById('generic-modal').classList.add('hidden'));
-    // Cerrar modal si se hace clic fuera del contenido
     const modalOverlay = document.getElementById('generic-modal');
     if (modalOverlay) {
         modalOverlay.addEventListener('click', (event) => {
-            if (event.target === modalOverlay) { // Solo si el clic es en el overlay mismo
+            if (event.target === modalOverlay) {
                 modalOverlay.classList.add('hidden');
             }
         });
@@ -1235,21 +1126,17 @@ async function handleLogin(e) {
     showButtonLoading(loginButton, true, 'Iniciando...');
     statusElement.textContent = 'Iniciando sesión...';
     statusElement.className = 'status-message status-info';
-    statusElement.classList.remove('hidden'); // Asegurar visibilidad
-
+    statusElement.classList.remove('hidden');
 
     try {
         await auth.signInWithEmailAndPassword(email, password);
-        // El onAuthStateChanged se encargará de ocultar login y mostrar app
         statusElement.textContent = '¡Inicio de sesión exitoso!';
         statusElement.className = 'status-message status-success';
-        // No ocultar inmediatamente para que el usuario vea el mensaje
         setTimeout(() => {
-            if (!currentUser) { // Si por alguna razón onAuthStateChanged no se disparó rápido
+            if (!currentUser) {
                 statusElement.classList.add('hidden');
             }
         }, 1500);
-
 
     } catch (error) {
         console.error("Error de inicio de sesión:", error.code, error.message);
@@ -1263,9 +1150,8 @@ async function handleLogin(e) {
         }
         statusElement.textContent = mensajeError;
         statusElement.className = 'status-message status-error';
-        showButtonLoading(loginButton, false); // Restaurar botón en caso de error
+        showButtonLoading(loginButton, false);
     }
-    // No necesitamos finally showButtonLoading(false) aquí si onAuthStateChanged lo maneja
 }
 
 function handleOfficeChange() {
@@ -1277,7 +1163,6 @@ function handleOfficeChange() {
     if (gdlSection) gdlSection.classList.toggle('hidden', !isGDL);
     if (leonSection) leonSection.classList.toggle('hidden', isGDL);
 
-    // Resetear a la pestaña 'clientes' y activarla visualmente
     currentImportTab = 'clientes';
     const activeSection = isGDL ? gdlSection : leonSection;
     if (activeSection) {
@@ -1291,7 +1176,6 @@ function handleOfficeChange() {
         const clienteContent = document.getElementById(clienteContentId);
         if (clienteContent) clienteContent.classList.remove('hidden');
     }
-    // Limpiar resultados anteriores al cambiar de oficina
     document.getElementById('resultado-importacion')?.classList.add('hidden');
     document.getElementById('estado-importacion').innerHTML = '';
     document.getElementById('detalle-importacion').innerHTML = '';
@@ -1299,34 +1183,24 @@ function handleOfficeChange() {
 
 
 function handleTabClick() {
-    const parentSection = this.closest('[id$="-section"]'); // Encuentra gdl-section o leon-section
+    const parentSection = this.closest('[id$="-section"]');
     if (!parentSection) return;
 
-    // Quitar 'active' de todas las pestañas en esta sección
     parentSection.querySelectorAll('.import-tab').forEach(t => t.classList.remove('active'));
-    // Añadir 'active' a la pestaña clickeada
     this.classList.add('active');
-
-    // Obtener el tipo de datos de la pestaña (clientes, colocacion, cobranza)
     currentImportTab = this.getAttribute('data-tab');
-
-    // Ocultar todos los contenidos de pestañas en esta sección
     parentSection.querySelectorAll('.import-tab-content').forEach(c => c.classList.add('hidden'));
 
-    // Construir el ID del contenido a mostrar
     const officePrefix = parentSection.id.includes('gdl') ? 'gdl' : 'leon';
     const targetTabContentId = `tab-${officePrefix}-${currentImportTab}`;
     const targetTabContent = document.getElementById(targetTabContentId);
 
-    // Mostrar el contenido correspondiente
     if (targetTabContent) {
         targetTabContent.classList.remove('hidden');
-        // Limpiar el textarea correspondiente al mostrar la pestaña
         const textareaId = `datos-importar-${officePrefix.toLowerCase()}-${currentImportTab}`;
         const textarea = document.getElementById(textareaId);
         if (textarea) textarea.value = '';
     }
-    // Limpiar resultados anteriores al cambiar de pestaña
     document.getElementById('resultado-importacion')?.classList.add('hidden');
     document.getElementById('estado-importacion').innerHTML = '';
     document.getElementById('detalle-importacion').innerHTML = '';
@@ -1335,120 +1209,81 @@ function handleTabClick() {
 
 async function handleImport() {
     const office = document.getElementById('office-select').value;
-    // Construir ID del textarea basado en la oficina y pestaña activa
     const textareaId = `datos-importar-${office.toLowerCase()}-${currentImportTab}`;
     const textarea = document.getElementById(textareaId);
     const resultadoImportacionDiv = document.getElementById('resultado-importacion');
     const estadoImportacionDiv = document.getElementById('estado-importacion');
     const detalleImportacionDiv = document.getElementById('detalle-importacion');
 
-
     if (!textarea) {
         showStatus('estado-importacion', 'Error interno: No se encontró el área de texto para importar.', 'error');
         resultadoImportacionDiv?.classList.remove('hidden');
         return;
     }
-
     const csvData = textarea.value;
     if (!csvData.trim()) {
         showStatus('estado-importacion', 'No hay datos en el área de texto para importar.', 'warning');
         resultadoImportacionDiv?.classList.remove('hidden');
-        detalleImportacionDiv.innerHTML = ''; // Limpiar detalles
+        detalleImportacionDiv.innerHTML = '';
         return;
     }
 
-    // Mostrar indicadores de progreso
     showProcessingOverlay(true, `Importando ${currentImportTab} para ${office}...`);
-    // =============================================
-    // *** INICIO DE LA CORRECCIÓN 3 (Instancia 3) ***
-    // =============================================
     showButtonLoading('#btn-procesar-importacion', true, 'Importando...');
-    // =============================================
-    // *** FIN DE LA CORRECCIÓN 3 (Instancia 3) ***
-    // =============================================
     showFixedProgress(0, `Iniciando importación de ${currentImportTab}...`);
     estadoImportacionDiv.innerHTML = 'Procesando archivo CSV...';
     estadoImportacionDiv.className = 'status-message status-info';
     detalleImportacionDiv.innerHTML = '';
     resultadoImportacionDiv?.classList.remove('hidden');
 
-
     try {
-        // Llamar a la función de importación de database.js
         const resultado = await database.importarDatosDesdeCSV(csvData, currentImportTab, office);
-
-        // Actualizar progreso
         showFixedProgress(100, 'Importación completada');
-
         let mensaje = `<b>Importación (${office} - ${currentImportTab}) finalizada:</b> ${resultado.importados} registros importados de ${resultado.total} líneas procesadas.`;
 
         if (resultado.errores && resultado.errores.length > 0) {
             mensaje += `<br><b>Se encontraron ${resultado.errores.length} errores u omisiones.</b>`;
             if (detalleImportacionDiv) {
-                // Limitar el número de errores mostrados para no colapsar la UI
                 const erroresMostrados = resultado.errores.slice(0, 50);
                 detalleImportacionDiv.innerHTML = `<strong>Detalle de errores/omisiones (primeros ${erroresMostrados.length}):</strong><ul>${erroresMostrados.map(e => `<li>${e}</li>`).join('')}</ul>`;
                 if (resultado.errores.length > 50) {
                     detalleImportacionDiv.innerHTML += `<p><i>(${resultado.errores.length - 50} errores más omitidos)</i></p>`;
                 }
             }
-            // Mostrar estado como warning si hubo errores pero algunos se importaron, error si falló todo
             showStatus('estado-importacion', mensaje, resultado.importados > 0 ? 'warning' : 'error');
         } else {
             if (detalleImportacionDiv) detalleImportacionDiv.innerHTML = 'No se encontraron errores.';
             showStatus('estado-importacion', mensaje, 'success');
         }
-
-        // Limpiar textarea después de importar
         textarea.value = '';
-
     } catch (error) {
         console.error('Error crítico en handleImport:', error);
-        showFixedProgress(100, 'Error en importación'); // Marcar como completado con error
+        showFixedProgress(100, 'Error en importación');
         showStatus('estado-importacion', `Error crítico durante la importación: ${error.message}`, 'error');
         if (detalleImportacionDiv) detalleImportacionDiv.innerHTML = `Detalles técnicos: ${error.stack || error}`;
     } finally {
-        // Ocultar indicadores de progreso
         showProcessingOverlay(false);
-        // =============================================
-        // *** INICIO DE LA CORRECCIÓN 3 (Instancia 4) ***
-        // =============================================
         showButtonLoading('#btn-procesar-importacion', false);
-        // =============================================
-        // *** FIN DE LA CORRECCIÓN 3 (Instancia 4) ***
-        // =============================================
-        // Ocultar barra de progreso después de un tiempo
         setTimeout(hideFixedProgress, 3000);
     }
 }
 
 
 function resetClientForm() {
-    editingClientId = null; // Asegurar que no estamos editando
+    editingClientId = null;
     const form = document.getElementById('form-cliente');
     if (form) form.reset();
-
-    // Resetear título y texto del botón
     const titulo = document.querySelector('#view-cliente h2');
     if (titulo) titulo.textContent = 'Registrar Cliente';
     const submitButton = document.querySelector('#form-cliente button[type="submit"]');
     if (submitButton) submitButton.innerHTML = '<i class="fas fa-save"></i> Guardar Cliente';
-
-    // Resetear estado de solo lectura de CURP
     const curpInput = document.getElementById('curp_cliente');
-    curpInput.readOnly = !(currentUserData && (currentUserData.role === 'admin' || currentUserData.role === 'supervisor'));
-
-
-    // Resetear validación visual de CURP
-    validarCURP(curpInput);
-
-
-    // Resetear dropdown de población/grupo a la oficina por defecto (GDL)
+    if(curpInput){ // Verificar si existe antes de acceder a readOnly
+        curpInput.readOnly = !(currentUserData && (currentUserData.role === 'admin' || currentUserData.role === 'supervisor'));
+        validarCURP(curpInput);
+    }
     handleOfficeChangeForClientForm.call(document.getElementById('office_cliente') || { value: 'GDL' });
-
-
-    // Limpiar mensaje de estado
-    showStatus('status_cliente', '', 'info'); // Limpia el mensaje anterior
+    showStatus('status_cliente', '', 'info');
 }
 
 
@@ -1458,16 +1293,14 @@ async function handleClientForm(e) {
     const curp = curpInput.value.trim().toUpperCase();
     const submitButton = e.target.querySelector('button[type="submit"]');
 
-    // Validar CURP
     if (!validarFormatoCURP(curp)) {
         showStatus('status_cliente', 'El formato del CURP es incorrecto (debe tener 18 caracteres y seguir el patrón).', 'error');
-        curpInput.classList.add('input-error'); // Marcar campo con error
+        curpInput.classList.add('input-error');
         return;
     } else {
         curpInput.classList.remove('input-error');
     }
 
-    // Recoger datos del formulario
     const clienteData = {
         office: document.getElementById('office_cliente').value,
         curp,
@@ -1480,10 +1313,8 @@ async function handleClientForm(e) {
         isComisionista: document.getElementById('comisionista_cliente').checked
     };
 
-    // Validar campos obligatorios
     if (!clienteData.nombre || !clienteData.domicilio || !clienteData.poblacion_grupo || !clienteData.ruta) {
         showStatus('status_cliente', 'Los campos con * son obligatorios.', 'error');
-        // Marcar campos vacíos (opcional)
         return;
     }
 
@@ -1493,8 +1324,6 @@ async function handleClientForm(e) {
     try {
         let resultado;
         if (editingClientId) {
-            // --- Lógica de Actualización ---
-            // Si se puede editar CURP y ha cambiado, verificar que no exista ya en otro cliente
             if (!curpInput.readOnly) {
                 const clienteOriginal = await database.obtenerClientePorId(editingClientId);
                 if (clienteOriginal && clienteOriginal.curp !== curp) {
@@ -1506,24 +1335,19 @@ async function handleClientForm(e) {
             }
             resultado = await database.actualizarCliente(editingClientId, clienteData, currentUser.email);
         } else {
-            // --- Lógica de Creación ---
-            // La verificación de CURP existente ahora está dentro de database.agregarCliente
             resultado = await database.agregarCliente(clienteData, currentUser.email);
         }
 
-        // Manejar resultado
         if (resultado.success) {
             let successMessage = editingClientId ? 'Cliente actualizado exitosamente.' : 'Cliente registrado exitosamente.';
             if (!isOnline) {
                 successMessage += ' (Datos guardados localmente, se sincronizarán al conectar).';
             }
-            // Mostrar mensaje en la vista de gestión (a donde redirigimos)
-            showStatus('status_gestion_clientes', successMessage, 'success');
-            resetClientForm(); // Limpiar formulario
+            showStatus('status_gestion_clientes', successMessage, 'success'); // Mostrar mensaje en la tabla
+            resetClientForm(); // Limpiar el formulario
             showView('view-gestion-clientes'); // Volver a la tabla
-            loadClientesTable(); // Recargar tabla para ver cambios/nuevo cliente
+            // loadClientesTable(); // No recargar automáticamente, dejar que el usuario filtre si lo necesita
         } else {
-            // Mostrar error en el formulario actual
             throw new Error(resultado.message || 'Ocurrió un error desconocido.');
         }
 
@@ -1531,7 +1355,7 @@ async function handleClientForm(e) {
         console.error("Error en handleClientForm:", error);
         showStatus('status_cliente', `Error: ${error.message}`, 'error');
     } finally {
-        showButtonLoading(submitButton, false); // Restaurar botón
+        showButtonLoading(submitButton, false);
     }
 }
 
@@ -1551,28 +1375,28 @@ function mostrarFormularioUsuario(usuario = null) {
         formTitulo.textContent = 'Editar Usuario';
         document.getElementById('nuevo-nombre').value = usuario.name || '';
         emailInput.value = usuario.email || '';
-        emailInput.readOnly = true; // No permitir cambiar email al editar
+        emailInput.readOnly = true;
         document.getElementById('nuevo-rol').value = usuario.role || '';
-        passwordInput.required = false; // Contraseña opcional al editar
+        passwordInput.required = false;
         passwordInput.placeholder = "Dejar en blanco para no cambiar";
     } else {
         editingUserId = null;
         formTitulo.textContent = 'Nuevo Usuario';
-        emailInput.readOnly = false; // Permitir escribir email al crear
-        passwordInput.required = true; // Contraseña obligatoria al crear
-        passwordInput.placeholder = "Mínimo 6 caracteres"; // Placeholder para nuevo
+        emailInput.readOnly = false;
+        passwordInput.required = true;
+        passwordInput.placeholder = "Mínimo 6 caracteres";
     }
-    formContainer.classList.remove('hidden'); // Mostrar el formulario
+    formContainer.classList.remove('hidden');
 }
 
 
 function ocultarFormularioUsuario() {
-    editingUserId = null; // Resetear ID de edición
+    editingUserId = null;
     const formContainer = document.getElementById('form-usuario-container');
     if (formContainer) {
-        formContainer.classList.add('hidden'); // Ocultar
-        document.getElementById('form-usuario').reset(); // Limpiar campos
-        showStatus('status_usuarios', '', 'info'); // Limpiar mensajes de estado
+        formContainer.classList.add('hidden');
+        document.getElementById('form-usuario').reset();
+        showStatus('status_usuarios', '', 'info');
     }
 }
 
@@ -1588,19 +1412,13 @@ async function handleUserForm(e) {
 
     try {
         if (editingUserId) {
-            // --- Actualizar Usuario Existente ---
             const userData = {
                 name: document.getElementById('nuevo-nombre').value.trim(),
                 role: document.getElementById('nuevo-rol').value,
-                // No actualizamos email aquí
             };
             if (!userData.name || !userData.role) {
                 throw new Error('Nombre y Rol son obligatorios.');
             }
-            // Considerar actualizar contraseña si se proporcionó una nueva
-            // const newPassword = document.getElementById('nuevo-password').value;
-            // if (newPassword) { /* lógica para actualizar contraseña */ }
-
             const resultado = await database.actualizarUsuario(editingUserId, userData);
             if (!resultado.success) throw new Error(resultado.message);
 
@@ -1608,10 +1426,9 @@ async function handleUserForm(e) {
             if (!isOnline) message += ' (Guardado localmente, se sincronizará).';
             showStatus('status_usuarios', message, 'success');
             ocultarFormularioUsuario();
-            await loadUsersTable(); // Recargar tabla
+            await loadUsersTable();
 
         } else {
-            // --- Crear Nuevo Usuario ---
             const email = document.getElementById('nuevo-email').value.trim();
             const password = document.getElementById('nuevo-password').value;
             const nombre = document.getElementById('nuevo-nombre').value.trim();
@@ -1627,13 +1444,11 @@ async function handleUserForm(e) {
                 throw new Error("La creación de nuevos usuarios requiere conexión a internet.");
             }
 
-            // Crear usuario en Firebase Authentication
             const userCredential = await auth.createUserWithEmailAndPassword(email, password);
             const user = userCredential.user;
 
-            // Crear documento en Firestore
             await db.collection('users').doc(user.uid).set({
-                id: user.uid, // Guardar el UID también en el documento
+                id: user.uid,
                 email,
                 name: nombre,
                 role: rol,
@@ -1643,18 +1458,17 @@ async function handleUserForm(e) {
 
             showStatus('status_usuarios', 'Usuario creado exitosamente.', 'success');
             ocultarFormularioUsuario();
-            await loadUsersTable(); // Recargar tabla
+            await loadUsersTable();
         }
     } catch (error) {
         console.error("Error en handleUserForm:", error);
         let mensajeError = `Error: ${error.message}`;
-        // Errores específicos de Firebase Auth
         if (error.code === 'auth/email-already-in-use') mensajeError = 'Error: El correo electrónico ya está registrado.';
         if (error.code === 'auth/weak-password') mensajeError = 'Error: La contraseña es demasiado débil (mínimo 6 caracteres).';
         if (error.code === 'auth/invalid-email') mensajeError = 'Error: El formato del correo electrónico no es válido.';
         showStatus('status_usuarios', mensajeError, 'error');
     } finally {
-        showButtonLoading(submitButton, false); // Restaurar botón
+        showButtonLoading(submitButton, false);
     }
 }
 
@@ -1666,28 +1480,18 @@ async function loadUsersTable() {
     }
     cargaEnProgreso = true;
     const tbody = document.getElementById('tabla-usuarios');
-    tbody.innerHTML = '<tr><td colspan="6"><div class="spinner" style="margin: 20px auto; border-top-color: var(--primary);"></div></td></tr>'; // Spinner
-    // =============================================
-    // *** INICIO DE LA CORRECCIÓN 3 (Instancia 5) ***
-    // =============================================
+    tbody.innerHTML = '<tr><td colspan="6"><div class="spinner" style="margin: 20px auto; border-top-color: var(--primary);"></div></td></tr>';
     showButtonLoading('#btn-aplicar-filtros-usuarios', true, 'Buscando...');
-    // =============================================
-    // *** FIN DE LA CORRECCIÓN 3 (Instancia 5) ***
-    // =============================================
-    showStatus('status_usuarios', '', 'info'); // Limpiar mensaje previo
-
+    showStatus('status_usuarios', '', 'info');
 
     try {
         const resultado = await database.obtenerUsuarios();
         if (!resultado.success) throw new Error(resultado.message);
         let usuarios = resultado.data || [];
 
-
-        // Aplicar filtros de la UI
         const filtroEmail = (document.getElementById('filtro-email-usuario')?.value || '').trim().toLowerCase();
         const filtroNombre = (document.getElementById('filtro-nombre-usuario')?.value || '').trim().toLowerCase();
         const filtroRol = document.getElementById('filtro-rol-usuario')?.value || '';
-
 
         const usuariosFiltrados = usuarios.filter(usuario => {
             const emailMatch = !filtroEmail || (usuario.email && usuario.email.toLowerCase().includes(filtroEmail));
@@ -1696,33 +1500,22 @@ async function loadUsersTable() {
             return emailMatch && nombreMatch && rolMatch;
         });
 
-
-        tbody.innerHTML = ''; // Limpiar tabla antes de llenar
-
+        tbody.innerHTML = '';
 
         if (usuariosFiltrados.length === 0) {
             tbody.innerHTML = '<tr><td colspan="6">No se encontraron usuarios que coincidan con los filtros.</td></tr>';
             showStatus('status_usuarios', 'No se encontraron usuarios.', 'info');
         } else {
-            // Ordenar por nombre
             usuariosFiltrados.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-
 
             usuariosFiltrados.forEach(usuario => {
                 const tr = document.createElement('tr');
-                // Atenuar visualmente si está deshabilitado
                 if (usuario.status === 'disabled') {
                     tr.style.opacity = '0.5';
                     tr.title = 'Usuario deshabilitado';
                 }
-
-                // Badge de rol con clase específica
                 const roleBadgeClass = `role-${(usuario.role || 'default').toLowerCase()}`;
-
-                // Escapar datos de usuario para el onclick
-                // Convertir a string JSON, luego escapar comillas simples para HTML
                 const usuarioJsonString = JSON.stringify(usuario).replace(/'/g, "&apos;").replace(/"/g, "&quot;");
-
 
                 tr.innerHTML = `
                     <td>${usuario.email || 'N/A'}</td>
@@ -1745,67 +1538,108 @@ async function loadUsersTable() {
         showStatus('status_usuarios', `Error: ${error.message}`, 'error');
     } finally {
         cargaEnProgreso = false;
-        // =============================================
-        // *** INICIO DE LA CORRECCIÓN 3 (Instancia 6) ***
-        // =============================================
-        showButtonLoading('#btn-aplicar-filtros-usuarios', false); // Restaurar botón de búsqueda
-        // =============================================
-        // *** FIN DE LA CORRECCIÓN 3 (Instancia 6) ***
-        // =============================================
+        showButtonLoading('#btn-aplicar-filtros-usuarios', false);
     }
 }
 
 function limpiarFiltrosUsuarios() {
     if (cargaEnProgreso) {
         console.warn("Intento de limpiar filtros mientras carga estaba en progreso. Cancelando carga.");
-        cancelarCarga(); // Intentar cancelar si hay algo en progreso
+        cancelarCarga();
     }
-    // Limpiar campos de filtro
     document.getElementById('filtro-email-usuario').value = '';
     document.getElementById('filtro-nombre-usuario').value = '';
     document.getElementById('filtro-rol-usuario').value = '';
-
-    // Recargar tabla sin filtros
     loadUsersTable();
     showStatus('status_usuarios', 'Filtros limpiados.', 'info');
 }
 
-function editUsuario(usuario) {
-    // Asegurarse de que el objeto 'usuario' es válido
-    if (typeof usuario !== 'object' || usuario === null) {
-        console.error("Intento de editar usuario con datos inválidos:", usuario);
-        alert("Error: No se pudieron cargar los datos del usuario para editar.");
+// =============================================
+// *** INICIO DE LA CORRECCIÓN 3: FUNCIONES FALTANTES ***
+// =============================================
+/**
+ * Carga los datos de un cliente en el formulario de edición.
+ * @param {object} cliente El objeto cliente completo (incluyendo id).
+ */
+async function editCliente(cliente) {
+    if (!cliente || !cliente.id) {
+        console.error("editCliente: Datos de cliente inválidos o falta ID.", cliente);
+        alert("Error al cargar datos del cliente para editar.");
         return;
     }
-    mostrarFormularioUsuario(usuario);
+    console.log("Editando cliente:", cliente);
+    editingClientId = cliente.id; // Marcar que estamos editando
+
+    // Poblar formulario
+    document.getElementById('office_cliente').value = cliente.office || 'GDL';
+    document.getElementById('curp_cliente').value = cliente.curp || '';
+    document.getElementById('nombre_cliente').value = cliente.nombre || '';
+    document.getElementById('domicilio_cliente').value = cliente.domicilio || '';
+    document.getElementById('cp_cliente').value = cliente.cp || '';
+    document.getElementById('telefono_cliente').value = cliente.telefono || '';
+    document.getElementById('comisionista_cliente').checked = cliente.isComisionista || false;
+
+    // Actualizar y seleccionar grupo/ruta
+    // Llama a handleOfficeChangeForClientForm para cargar las poblaciones correctas
+    handleOfficeChangeForClientForm.call(document.getElementById('office_cliente'));
+    // Esperar un instante para que el dropdown se actualice y luego seleccionar
+    setTimeout(() => {
+        document.getElementById('poblacion_grupo_cliente').value = cliente.poblacion_grupo || '';
+        document.getElementById('ruta_cliente').value = cliente.ruta || '';
+    }, 100); // Pequeña espera
+
+    // Validar CURP visualmente
+    const curpInput = document.getElementById('curp_cliente');
+     if(curpInput){
+        // Permitir editar CURP solo a admin/supervisor
+        curpInput.readOnly = !(currentUserData && (currentUserData.role === 'admin' || currentUserData.role === 'supervisor'));
+        validarCURP(curpInput);
+     }
+
+
+    // Cambiar título y botón
+    const titulo = document.querySelector('#view-cliente h2');
+    if (titulo) titulo.textContent = 'Editar Cliente';
+    const submitButton = document.querySelector('#form-cliente button[type="submit"]');
+    if (submitButton) submitButton.innerHTML = '<i class="fas fa-save"></i> Actualizar Cliente';
+
+    // Limpiar estado y mostrar vista
+    showStatus('status_cliente', 'Editando datos del cliente.', 'info');
+    showView('view-cliente');
 }
 
-async function disableUsuario(id, nombre) {
-    // Confirmación
-    if (!confirm(`¿Estás seguro de que deseas deshabilitar al usuario "${nombre}"?\n\nEl usuario no podrá iniciar sesión.`)) {
-        return; // Cancelado por el usuario
-    }
-
-    showProcessingOverlay(true, 'Deshabilitando usuario...'); // Indicador visual
-
-    try {
-        const resultado = await database.deshabilitarUsuario(id);
-        if (resultado.success) {
-            let message = resultado.message;
-            if (!isOnline) message += ' (Acción registrada localmente, se aplicará al conectar).';
-            showStatus('status_usuarios', message, 'success');
-            await loadUsersTable(); // Recargar tabla para reflejar el cambio
-        } else {
-            throw new Error(resultado.message); // Lanzar error si falló
+/**
+ * Elimina un cliente después de confirmación.
+ * @param {string} id ID del cliente a eliminar.
+ * @param {string} nombre Nombre del cliente para confirmación.
+ */
+async function deleteCliente(id, nombre) {
+    if (!id) return;
+    if (confirm(`¿Estás seguro de que deseas eliminar al cliente "${nombre}"?\nEsta acción no se puede deshacer y podría afectar créditos/pagos asociados.`)) {
+        showProcessingOverlay(true, 'Eliminando cliente...');
+        try {
+            const resultado = await database.eliminarCliente(id);
+            if (resultado.success) {
+                showStatus('status_gestion_clientes', `Cliente "${nombre}" eliminado exitosamente.`, 'success');
+                // loadClientesTable(); // Recargar tabla para ver el cambio
+                // Decide si recargar automáticamente o dejar que el usuario filtre de nuevo
+                inicializarVistaGestionClientes(); // O simplemente limpiar la tabla actual
+                showStatus('status_gestion_clientes', `Cliente "${nombre}" eliminado. Filtra de nuevo para actualizar la vista.`, 'success');
+            } else {
+                throw new Error(resultado.message);
+            }
+        } catch (error) {
+            console.error("Error eliminando cliente:", error);
+            alert(`Error al eliminar cliente: ${error.message}`);
+            showStatus('status_gestion_clientes', `Error al eliminar: ${error.message}`, 'error');
+        } finally {
+            showProcessingOverlay(false);
         }
-    } catch (error) {
-        console.error("Error al deshabilitar usuario:", error);
-        alert(`Error al deshabilitar usuario: ${error.message}`); // Mostrar error al usuario
-        showStatus('status_usuarios', `Error: ${error.message}`, 'error'); // Mostrar en status también
-    } finally {
-        showProcessingOverlay(false); // Ocultar indicador
     }
 }
+// =============================================
+// *** FIN DE LA CORRECCIÓN 3 ***
+// =============================================
 
 // =============================================
 // SECCIÓN DE CRÉDITOS (COLOCACIÓN)
@@ -1818,76 +1652,61 @@ async function handleSearchClientForCredit() {
     const formColocacion = document.getElementById('form-colocacion');
     const btnBuscar = document.getElementById('btnBuscarCliente_colocacion');
 
-
     if (!validarFormatoCURP(curp)) {
         showStatus('status_colocacion', 'El CURP debe tener 18 caracteres y formato válido.', 'error');
-        formColocacion.classList.add('hidden'); // Ocultar formulario si CURP es inválido
+        formColocacion.classList.add('hidden');
         return;
     }
-
 
     showButtonLoading(btnBuscar, true, 'Buscando...');
     showFixedProgress(30, 'Buscando cliente...');
     statusColocacion.innerHTML = 'Buscando cliente...';
     statusColocacion.className = 'status-message status-info';
-    formColocacion.classList.add('hidden'); // Ocultar mientras busca
-
+    formColocacion.classList.add('hidden');
 
     try {
         const cliente = await database.buscarClientePorCURP(curp);
-
 
         if (!cliente) {
             showFixedProgress(100, 'Cliente no encontrado');
             throw new Error('Cliente no encontrado en la base de datos. Por favor, regístrelo primero.');
         }
 
-
         showFixedProgress(70, 'Verificando elegibilidad...');
         statusColocacion.innerHTML = 'Cliente encontrado. Verificando elegibilidad para crédito...';
         const elegibilidad = await database.verificarElegibilidadCliente(curp);
 
-
         if (!elegibilidad.elegible) {
             showFixedProgress(100, 'Cliente no elegible');
-            throw new Error(elegibilidad.message); // Lanzar error con el motivo
+            throw new Error(elegibilidad.message);
         }
 
-
-        // Cliente encontrado y elegible
         showFixedProgress(100, 'Cliente elegible');
-        actualizarPlazosSegunCliente(cliente.isComisionista || false); // Ajustar plazos disponibles
+        actualizarPlazosSegunCliente(cliente.isComisionista || false);
 
-
-        const creditoActivo = await database.buscarCreditoActivoPorCliente(curp); // Buscar si ya tiene uno activo
+        const creditoActivo = await database.buscarCreditoActivoPorCliente(curp);
         const mensaje = creditoActivo ? 'Cliente encontrado y elegible para RENOVACIÓN.' : 'Cliente encontrado y elegible para crédito NUEVO.';
         showStatus('status_colocacion', mensaje, 'success');
 
-
-        // Llenar datos y mostrar formulario
         document.getElementById('nombre_colocacion').value = cliente.nombre;
-        document.getElementById('idCredito_colocacion').value = 'Se asignará automáticamente'; // O manejar ID histórico si aplica
-        // Resetear campos específicos del crédito
+        document.getElementById('idCredito_colocacion').value = 'Se asignará automáticamente';
         document.getElementById('tipo_colocacion').value = '';
         document.getElementById('monto_colocacion').value = '';
-        document.getElementById('plazo_colocacion').value = ''; // Se actualiza con actualizarPlazosSegunCliente
+        document.getElementById('plazo_colocacion').value = '';
         document.getElementById('montoTotal_colocacion').value = '';
         document.getElementById('curpAval_colocacion').value = '';
         document.getElementById('nombreAval_colocacion').value = '';
-        validarCURP(document.getElementById('curpAval_colocacion')); // Resetear validación visual aval
-
+        validarCURP(document.getElementById('curpAval_colocacion'));
 
         formColocacion.classList.remove('hidden');
-
 
     } catch (error) {
         console.error("Error buscando cliente para crédito:", error);
         showStatus('status_colocacion', `Error: ${error.message}`, 'error');
-        formColocacion.classList.add('hidden'); // Asegurar que el form esté oculto en caso de error
-        hideFixedProgress(); // Ocultar barra si hubo error rápido
+        formColocacion.classList.add('hidden');
+        hideFixedProgress();
     } finally {
         showButtonLoading(btnBuscar, false);
-        // Ocultar barra de progreso después de un tiempo si no hubo error antes
         if (!document.querySelector('#status_colocacion.status-error')) {
             setTimeout(hideFixedProgress, 1500);
         }
@@ -1900,12 +1719,10 @@ async function handleCreditForm(e) {
     const submitButton = e.target.querySelector('button[type="submit"]');
     const statusColocacion = document.getElementById('status_colocacion');
 
-
-    // Recoger datos del formulario
     const curpAvalInput = document.getElementById('curpAval_colocacion');
     const curpAval = curpAvalInput.value.trim().toUpperCase();
     const creditoData = {
-        curpCliente: document.getElementById('curp_colocacion').value.trim().toUpperCase(), // Asegurar CURP cliente
+        curpCliente: document.getElementById('curp_colocacion').value.trim().toUpperCase(),
         tipo: document.getElementById('tipo_colocacion').value,
         monto: parseFloat(document.getElementById('monto_colocacion').value),
         plazo: parseInt(document.getElementById('plazo_colocacion').value),
@@ -1913,8 +1730,6 @@ async function handleCreditForm(e) {
         nombreAval: document.getElementById('nombreAval_colocacion').value.trim()
     };
 
-
-    // Validaciones básicas
     if (!creditoData.monto || creditoData.monto <= 0 || !creditoData.plazo || !creditoData.tipo || !creditoData.nombreAval) {
         showStatus('status_colocacion', 'Error: Todos los campos del crédito son obligatorios (Monto, Plazo, Tipo, Nombre Aval).', 'error');
         return;
@@ -1931,49 +1746,40 @@ async function handleCreditForm(e) {
         curpAvalInput.classList.remove('input-error');
     }
 
-
     showButtonLoading(submitButton, true, 'Generando...');
     showFixedProgress(50, 'Validando y generando crédito...');
     statusColocacion.innerHTML = 'Validando elegibilidad y generando crédito...';
     statusColocacion.className = 'status-message status-info';
 
     try {
-        // La validación de elegibilidad ahora está DENTRO de agregarCredito
         const resultado = await database.agregarCredito(creditoData, currentUser.email);
-
 
         if (resultado.success) {
             showFixedProgress(100, 'Crédito generado');
             let successMessage = `¡Crédito generado exitosamente! ID Firestore: ${resultado.data.id}.`;
-            // Si tuviéramos historicalId aquí, lo mostraríamos:
-            // if (resultado.data.historicalIdCredito) successMessage += ` (ID Histórico: ${resultado.data.historicalIdCredito})`;
-
+             if (resultado.data.historicalIdCredito) successMessage += ` (ID Histórico: ${resultado.data.historicalIdCredito})`;
 
             if (!isOnline) {
                 successMessage += ' (Datos guardados localmente, se sincronizarán al conectar).';
             }
             showStatus('status_colocacion', successMessage, 'success');
 
-
-            // Limpiar y ocultar formulario
-            e.target.reset(); // Limpia el form de crédito
+            e.target.reset();
             document.getElementById('form-colocacion').classList.add('hidden');
-            document.getElementById('curp_colocacion').value = ''; // Limpia la CURP de búsqueda
+            document.getElementById('curp_colocacion').value = '';
             document.getElementById('nombre_colocacion').value = '';
 
-
         } else {
-            // Error devuelto por agregarCredito (elegibilidad u otro)
             throw new Error(resultado.message);
         }
 
     } catch (error) {
         console.error("Error en handleCreditForm:", error);
-        showFixedProgress(100, 'Error al generar'); // Marcar como completado con error
+        showFixedProgress(100, 'Error al generar');
         showStatus('status_colocacion', `Error al generar crédito: ${error.message}`, 'error');
     } finally {
         showButtonLoading(submitButton, false);
-        setTimeout(hideFixedProgress, 2000); // Ocultar barra después de un tiempo
+        setTimeout(hideFixedProgress, 2000);
     }
 }
 
@@ -1984,12 +1790,12 @@ async function handleCreditForm(e) {
 
 async function handleSearchCreditForPayment() {
     const idCreditoInput = document.getElementById('idCredito_cobranza');
-    const historicalIdCredito = idCreditoInput.value.trim(); // Este es el ID histórico
+    const historicalIdCredito = idCreditoInput.value.trim();
     const statusCobranza = document.getElementById('status_cobranza');
     const formCobranza = document.getElementById('form-cobranza');
     const btnBuscar = document.getElementById('btnBuscarCredito_cobranza');
 
-    creditoActual = null; // Resetear crédito seleccionado
+    creditoActual = null;
 
     if (!historicalIdCredito) {
         showStatus('status_cobranza', 'Por favor, ingresa un ID de crédito (histórico).', 'warning');
@@ -2004,7 +1810,6 @@ async function handleSearchCreditForPayment() {
     formCobranza.classList.add('hidden');
 
     try {
-        // Buscar créditos que coincidan con el ID histórico
         const creditosEncontrados = await database.buscarCreditosPorHistoricalId(historicalIdCredito);
 
         if (creditosEncontrados.length === 0) {
@@ -2012,17 +1817,13 @@ async function handleSearchCreditForPayment() {
             throw new Error(`No se encontró ningún crédito con el ID histórico: ${historicalIdCredito}`);
         }
 
-        // Si se encuentran MÚLTIPLES créditos con el MISMO ID histórico (de diferentes clientes/sucursales)
         if (creditosEncontrados.length > 1) {
             console.warn(`Se encontraron ${creditosEncontrados.length} créditos con el ID histórico ${historicalIdCredito}. Mostrando el más reciente.`);
-            // Ordenar por fecha de creación para tomar el más reciente como predeterminado
             creditosEncontrados.sort((a, b) => (parsearFecha(b.fechaCreacion)?.getTime() || 0) - (parsearFecha(a.fechaCreacion)?.getTime() || 0));
-            // Aquí podríamos implementar lógica para que el usuario seleccione cuál quiere,
-            // pero por ahora tomamos el más reciente.
             showStatus('status_cobranza', `Advertencia: Se encontraron ${creditosEncontrados.length} créditos con ID ${historicalIdCredito}. Se cargó el más reciente (${creditosEncontrados[0].curpCliente}).`, 'warning');
         }
 
-        creditoActual = creditosEncontrados[0]; // Guardamos el objeto completo { id: firestoreId, ..., historicalIdCredito: ... }
+        creditoActual = creditosEncontrados[0];
 
         showFixedProgress(60, 'Obteniendo datos del cliente...');
         const cliente = await database.buscarClientePorCURP(creditoActual.curpCliente);
@@ -2030,57 +1831,41 @@ async function handleSearchCreditForPayment() {
             console.warn(`No se encontró cliente para CURP ${creditoActual.curpCliente} del crédito ${historicalIdCredito}`);
         }
 
-
-        // =============================================
-        // *** INICIO DE LA CORRECCIÓN 2 ***
-        // =============================================
         showFixedProgress(80, 'Calculando historial del crédito...');
-        // Usar el historicalIdCredito para obtener los pagos
-        const historicalId = creditoActual.historicalIdCredito || creditoActual.id; // Asegurar que tenemos el historicalId
-        const pagos = await database.getPagosPorCredito(historicalId); // Obtener los pagos
-        
-        // Calcular el historial/estado usando la función helper que acabamos de agregar
-        const historial = _calcularEstadoCredito(creditoActual, pagos); 
+        const historicalId = creditoActual.historicalIdCredito || creditoActual.id;
+        const pagos = await database.getPagosPorCredito(historicalId);
+        const historial = _calcularEstadoCredito(creditoActual, pagos); // <-- Usa la función corregida
 
         if (!historial) {
-            // Esto podría pasar si el crédito encontrado tiene datos inconsistentes
             console.error("No se pudo calcular el historial para el crédito:", creditoActual);
             throw new Error(`No se pudo calcular el historial del crédito ${historicalId}. Verifica los datos del crédito (monto, plazo, fecha).`);
         }
-        // =============================================
-        // *** FIN DE LA CORRECCIÓN 2 ***
-        // =============================================
 
-        // Llenar formulario con datos del historial
         document.getElementById('nombre_cobranza').value = cliente ? cliente.nombre : (creditoActual.nombreCliente || 'Cliente Desconocido');
         document.getElementById('saldo_cobranza').value = `$${historial.saldoRestante.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
         document.getElementById('estado_cobranza').value = historial.estado.toUpperCase();
         document.getElementById('semanas_atraso_cobranza').value = historial.semanasAtraso || 0;
         document.getElementById('pago_semanal_cobranza').value = `$${historial.pagoSemanal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
         document.getElementById('fecha_proximo_pago_cobranza').value = historial.proximaFechaPago || 'N/A';
-        // Sugerir el monto del pago semanal, pero permitir editarlo
         const montoInput = document.getElementById('monto_cobranza');
         montoInput.value = historial.pagoSemanal > 0 ? historial.pagoSemanal.toFixed(2) : '';
-        handleMontoPagoChange(); // Calcular saldo después con el valor sugerido
+        handleMontoPagoChange();
 
         showFixedProgress(100, 'Crédito encontrado');
-        formCobranza.classList.remove('hidden'); // Mostrar formulario de pago
+        formCobranza.classList.remove('hidden');
 
-        // Mensaje de éxito, limpiar advertencia previa si la hubo
         if (!statusCobranza.textContent.includes('Advertencia')) {
             showStatus('status_cobranza', `Crédito ${historicalIdCredito} encontrado (${creditoActual.curpCliente}). Listo para registrar pago.`, 'success');
         }
 
-        // Poner foco en el monto para agilizar
         montoInput.focus();
         montoInput.select();
-
 
     } catch (error) {
         console.error("Error buscando crédito para pago:", error);
         showStatus('status_cobranza', `Error: ${error.message}`, 'error');
         formCobranza.classList.add('hidden');
-        creditoActual = null; // Asegurar que no quede crédito seleccionado
+        creditoActual = null;
         hideFixedProgress();
     } finally {
         showButtonLoading(btnBuscar, false);
@@ -2096,18 +1881,15 @@ async function handlePaymentForm(e) {
     const submitButton = e.target.querySelector('button[type="submit"]');
     const statusCobranza = document.getElementById('status_cobranza');
 
-
-    if (!creditoActual || !creditoActual.id || !(creditoActual.historicalIdCredito || creditoActual.id)) { // Usar ID de firestore o histórico como fallback
+    if (!creditoActual || !creditoActual.id || !(creditoActual.historicalIdCredito || creditoActual.id)) {
         showStatus('status_cobranza', 'Error: No hay un crédito válido seleccionado. Por favor, busca el crédito de nuevo.', 'error');
         return;
     }
-    const historicalId = creditoActual.historicalIdCredito || creditoActual.id; // ID a guardar en el pago
-
+    const historicalId = creditoActual.historicalIdCredito || creditoActual.id;
 
     const montoInput = document.getElementById('monto_cobranza');
     const montoPago = parseFloat(montoInput.value);
     const tipoPago = document.getElementById('tipo_cobranza').value;
-
 
     if (isNaN(montoPago) || montoPago <= 0) {
         showStatus('status_cobranza', 'Error: El monto del pago debe ser un número positivo.', 'error');
@@ -2117,33 +1899,28 @@ async function handlePaymentForm(e) {
         montoInput.classList.remove('input-error');
     }
 
-    // Verificar si el monto excede el saldo (usando el saldo del objeto creditoActual)
     const saldoActual = creditoActual.saldo !== undefined ? creditoActual.saldo : 0;
-    if (montoPago > saldoActual + 0.01) { // Margen pequeño
+    // Usar una tolerancia mayor para la comparación flotante
+    const tolerancia = 0.015; // Un centavo y medio de margen
+    if (montoPago > saldoActual + tolerancia) {
         showStatus('status_cobranza', `Error: El monto del pago ($${montoPago.toFixed(2)}) excede el saldo restante ($${saldoActual.toFixed(2)}).`, 'error');
         montoInput.classList.add('input-error');
         return;
     }
-
 
     showButtonLoading(submitButton, true, 'Registrando...');
     showFixedProgress(50, 'Procesando pago...');
     statusCobranza.innerHTML = 'Registrando pago...';
     statusCobranza.className = 'status-message status-info';
 
-
     try {
         const pagoData = {
-            idCredito: historicalId, // Guardar el ID histórico/original en el pago
+            idCredito: historicalId,
             monto: montoPago,
             tipoPago: tipoPago
-            // curpCliente y office se añadirán dentro de database.agregarPago
         };
 
-
-        // Pasar el ID único de Firestore a agregarPago para que actualice el documento correcto
         const resultado = await database.agregarPago(pagoData, currentUser.email, creditoActual.id);
-
 
         if (resultado.success) {
             showFixedProgress(100, 'Pago registrado');
@@ -2151,15 +1928,11 @@ async function handlePaymentForm(e) {
             if (!isOnline) successMsg += ' (Guardado localmente).';
             showStatus('status_cobranza', successMsg, 'success');
 
-
-            // Limpiar y ocultar formulario
             document.getElementById('form-cobranza').classList.add('hidden');
-            document.getElementById('idCredito_cobranza').value = ''; // Limpiar campo de búsqueda
-            creditoActual = null; // Deseleccionar crédito
-
+            document.getElementById('idCredito_cobranza').value = '';
+            creditoActual = null;
 
         } else {
-            // Error devuelto por agregarPago (ej. monto excede saldo, error de transacción)
             throw new Error(resultado.message);
         }
 
@@ -2175,34 +1948,29 @@ async function handlePaymentForm(e) {
 
 
 function handleMontoPagoChange() {
-    // Si no hay crédito cargado, no hacer nada
     if (!creditoActual || creditoActual.saldo === undefined) return;
 
     const montoInput = document.getElementById('monto_cobranza');
     const saldoDespuesInput = document.getElementById('saldoDespues_cobranza');
-    const saldoActual = creditoActual.saldo; // Usar el saldo del objeto cargado
+    const saldoActual = creditoActual.saldo;
 
     if (!montoInput || !saldoDespuesInput) return;
 
     const monto = parseFloat(montoInput.value) || 0;
     const saldoDespues = saldoActual - monto;
 
-    // Formatear para mostrar
     saldoDespuesInput.value = `$${saldoDespues.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-    // Validar visualmente si el monto excede el saldo
-    if (monto > saldoActual + 0.01) { // Margen pequeño
+    const tolerancia = 0.015;
+    if (monto > saldoActual + tolerancia) {
         montoInput.classList.add('input-error');
         montoInput.title = "El monto excede el saldo actual";
-        // Mostrar advertencia persistente si excede
         showStatus('status_cobranza', 'Advertencia: El monto ingresado excede el saldo restante.', 'warning');
     } else {
         montoInput.classList.remove('input-error');
         montoInput.title = "";
-        // Limpiar advertencia si estaba visible y ya no aplica, solo si no hay otro error
         const statusCobranza = document.getElementById('status_cobranza');
         if (statusCobranza.classList.contains('status-warning') && statusCobranza.textContent.includes('excede')) {
-            // Volver a mensaje de 'listo para registrar' si es el caso
             const historicalId = creditoActual.historicalIdCredito || creditoActual.id;
             showStatus('status_cobranza', `Crédito ${historicalId} encontrado (${creditoActual.curpCliente}). Listo para registrar pago.`, 'success');
         }
@@ -2220,53 +1988,42 @@ async function handleBuscarGrupoParaPago() {
     const btnBuscar = document.getElementById('btn-buscar-grupo-pago');
     const detailsDiv = document.getElementById('grupo-pago-details');
 
-
     if (!grupo) {
         showStatus('status_pago_grupo', 'Por favor, selecciona un grupo.', 'warning');
-        detailsDiv.classList.add('hidden'); // Ocultar detalles si no hay grupo
+        detailsDiv.classList.add('hidden');
         return;
     }
-
 
     showButtonLoading(btnBuscar, true, 'Calculando...');
     showProcessingOverlay(true, `Buscando créditos activos en el grupo ${grupo}...`);
     statusPagoGrupo.innerHTML = 'Calculando cobranza para el grupo...';
     statusPagoGrupo.className = 'status-message status-info';
-    detailsDiv.classList.add('hidden'); // Ocultar detalles mientras busca
-    grupoDePagoActual = null; // Resetear grupo actual
-
+    detailsDiv.classList.add('hidden');
+    grupoDePagoActual = null;
 
     try {
-        // 1. Buscar clientes en el grupo
         const clientesDelGrupo = await database.buscarClientes({ grupo: grupo });
-
 
         if (clientesDelGrupo.length === 0) {
             throw new Error(`No se encontraron clientes registrados en el grupo '${grupo}'.`);
         }
 
-
-        // 2. Para cada cliente, buscar su crédito activo (no liquidado)
         let totalClientesActivos = 0;
         let totalACobrarSemanal = 0;
         let creditosParaPagar = [];
         let clientesConErrores = [];
 
-
         for (const cliente of clientesDelGrupo) {
-            // Usar buscarCreditoActivoPorCliente que ya filtra por no liquidados y toma el más reciente
             const creditoActivo = await database.buscarCreditoActivoPorCliente(cliente.curp);
 
-
-            if (creditoActivo && creditoActivo.saldo > 0.01) { // Solo si hay crédito activo con saldo
-                // Calcular pago semanal para este crédito
+            if (creditoActivo && creditoActivo.saldo > 0.01) {
                 if (creditoActivo.montoTotal && creditoActivo.plazo && creditoActivo.plazo > 0) {
                     const pagoSemanal = creditoActivo.montoTotal / creditoActivo.plazo;
                     totalClientesActivos++;
                     totalACobrarSemanal += pagoSemanal;
                     creditosParaPagar.push({
-                        firestoreId: creditoActivo.id, // ID Único de Firestore
-                        historicalIdCredito: creditoActivo.historicalIdCredito || creditoActivo.id, // ID Histórico
+                        firestoreId: creditoActivo.id,
+                        historicalIdCredito: creditoActivo.historicalIdCredito || creditoActivo.id,
                         curpCliente: cliente.curp,
                         nombreCliente: cliente.nombre,
                         pagoSemanal: pagoSemanal
@@ -2278,7 +2035,6 @@ async function handleBuscarGrupoParaPago() {
             }
         }
 
-
         if (totalClientesActivos === 0) {
             let msg = `No se encontraron créditos activos con saldo pendiente en el grupo '${grupo}'.`;
             if (clientesConErrores.length > 0) {
@@ -2287,20 +2043,15 @@ async function handleBuscarGrupoParaPago() {
             throw new Error(msg);
         }
 
-
-        // Guardar datos calculados
         grupoDePagoActual = {
             grupo: grupo,
             creditos: creditosParaPagar,
             totalCalculado: totalACobrarSemanal
         };
 
-
-        // Mostrar resultados
         document.getElementById('total-clientes-grupo').textContent = totalClientesActivos;
         document.getElementById('total-a-cobrar-grupo').textContent = `$${totalACobrarSemanal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-        document.getElementById('monto-recibido-grupo').value = totalACobrarSemanal.toFixed(2); // Sugerir monto
-
+        document.getElementById('monto-recibido-grupo').value = totalACobrarSemanal.toFixed(2);
 
         detailsDiv.classList.remove('hidden');
         let successMsg = `Se encontraron ${totalClientesActivos} créditos activos para cobrar esta semana en el grupo '${grupo}'.`;
@@ -2311,12 +2062,11 @@ async function handleBuscarGrupoParaPago() {
             showStatus('status_pago_grupo', successMsg, 'success');
         }
 
-
     } catch (error) {
         console.error("Error al buscar grupo para pago:", error);
         showStatus('status_pago_grupo', `Error: ${error.message}`, 'error');
-        detailsDiv.classList.add('hidden'); // Ocultar si hay error
-        grupoDePagoActual = null; // Resetear
+        detailsDiv.classList.add('hidden');
+        grupoDePagoActual = null;
     } finally {
         showButtonLoading(btnBuscar, false);
         showProcessingOverlay(false);
@@ -2329,16 +2079,13 @@ async function handleRegistroPagoGrupal() {
     const statusPagoGrupo = document.getElementById('status_pago_grupo');
     const montoRecibidoInput = document.getElementById('monto-recibido-grupo');
 
-
     if (!grupoDePagoActual || !grupoDePagoActual.creditos || grupoDePagoActual.creditos.length === 0) {
         showStatus('status_pago_grupo', 'Error: No hay un grupo calculado o no hay créditos para registrar.', 'error');
         return;
     }
 
-
     const montoRecibido = parseFloat(montoRecibidoInput.value);
     const { creditos, totalCalculado, grupo } = grupoDePagoActual;
-
 
     if (isNaN(montoRecibido) || montoRecibido <= 0) {
         showStatus('status_pago_grupo', 'Error: El monto total recibido debe ser un número positivo.', 'error');
@@ -2348,40 +2095,28 @@ async function handleRegistroPagoGrupal() {
         montoRecibidoInput.classList.remove('input-error');
     }
 
-
-    // Advertencia si el monto es menor, pero permitir continuar (se registrará pago parcial proporcionalmente?)
-    // O mejor, exigir el monto completo para el pago grupal simple.
-    if (montoRecibido < totalCalculado - 0.01) { // Pequeño margen
+    const tolerancia = 0.015;
+    if (montoRecibido < totalCalculado - tolerancia) {
         showStatus('status_pago_grupo', `Advertencia: El monto recibido ($${montoRecibido.toFixed(2)}) es menor al total calculado ($${totalCalculado.toFixed(2)}). El pago grupal solo registra el pago semanal completo. Registra faltantes individualmente.`, 'warning');
-        // Decisión: No continuar si el monto es menor para evitar confusión.
         return;
     }
-    // Permitir que sea mayor (pagos extra)? Por ahora, no. El pago grupal aplica solo el semanal.
-    if (montoRecibido > totalCalculado + 0.01) {
+    if (montoRecibido > totalCalculado + tolerancia) {
         showStatus('status_pago_grupo', `Advertencia: El monto recibido ($${montoRecibido.toFixed(2)}) es mayor al total calculado ($${totalCalculado.toFixed(2)}). Solo se registrará el pago semanal ($${totalCalculado.toFixed(2)}). Registra pagos extraordinarios individualmente.`, 'warning');
-        // Continuar, pero solo registrar el pago semanal.
     }
-
 
     showButtonLoading(btnRegistrar, true, 'Registrando...');
     showProcessingOverlay(true, `Registrando ${creditos.length} pagos para el grupo ${grupo}...`);
     statusPagoGrupo.innerHTML = 'Registrando pagos grupales...';
     statusPagoGrupo.className = 'status-message status-info';
 
-
     try {
         let pagosRegistrados = 0;
         const erroresRegistro = [];
+        const MAX_BATCH_SIZE = 100;
 
-
-        // Procesar en lotes más pequeños para mayor robustez
-        const MAX_BATCH_SIZE = 100; // Reducir tamaño de lote para transacciones
         for (let i = 0; i < creditos.length; i += MAX_BATCH_SIZE) {
             const chunk = creditos.slice(i, i + MAX_BATCH_SIZE);
             const batch = db.batch();
-
-
-            // Obtener datos actuales de los créditos en el chunk
             const firestoreIdsChunk = chunk.map(c => c.firestoreId);
             const creditosSnapshot = await db.collection('creditos').where(firebase.firestore.FieldPath.documentId(), 'in', firestoreIdsChunk).get();
             const creditosDataMap = new Map();
@@ -2389,62 +2124,49 @@ async function handleRegistroPagoGrupal() {
                 creditosDataMap.set(doc.id, doc.data());
             });
 
-
             for (const creditoInfo of chunk) {
                 const creditoActualData = creditosDataMap.get(creditoInfo.firestoreId);
 
-
-                if (creditoActualData && creditoActualData.saldo > 0.01) { // Doble check
-                    const pagoMonto = creditoInfo.pagoSemanal; // Usar el pago semanal calculado
+                if (creditoActualData && creditoActualData.saldo > 0.01) {
+                    const pagoMonto = creditoInfo.pagoSemanal;
                     const nuevoSaldo = creditoActualData.saldo - pagoMonto;
-
-
-                    // Referencia al documento de crédito
                     const creditoRef = db.collection('creditos').doc(creditoInfo.firestoreId);
                     batch.update(creditoRef, {
                         saldo: nuevoSaldo,
-                        estado: (nuevoSaldo <= 0.01) ? 'liquidado' : creditoActualData.estado, // Mantener estado si no liquida
+                        estado: (nuevoSaldo <= 0.01) ? 'liquidado' : creditoActualData.estado,
                         modificadoPor: currentUser.email,
                         fechaModificacion: new Date().toISOString()
                     });
 
-
-                    // Crear nuevo documento de pago
-                    const pagoRef = db.collection('pagos').doc(); // ID automático
+                    const pagoRef = db.collection('pagos').doc();
                     batch.set(pagoRef, {
-                        idCredito: creditoInfo.historicalIdCredito, // ID Histórico
+                        idCredito: creditoInfo.historicalIdCredito,
                         monto: pagoMonto,
                         tipoPago: 'grupal',
                         fecha: new Date().toISOString(),
                         saldoDespues: nuevoSaldo,
                         registradoPor: currentUser.email,
-                        office: creditoActualData.office, // Añadir datos relevantes al pago
+                        office: creditoActualData.office,
                         curpCliente: creditoActualData.curpCliente,
-                        grupo: grupo // Guardar el grupo al que pertenecía el pago
+                        grupo: grupo
                     });
                     pagosRegistrados++;
                 } else if (!creditoActualData) {
                     erroresRegistro.push(`No se encontró el crédito con ID Firestore ${creditoInfo.firestoreId} para ${creditoInfo.curpCliente}`);
                 } else {
-                    // Ya estaba liquidado o sin saldo
                     console.log(`Crédito ${creditoInfo.historicalIdCredito} ya liquidado, omitiendo pago grupal.`);
                 }
             }
 
-
-            // Ejecutar el batch
             await batch.commit();
             console.log(`Lote de ${chunk.length} pagos grupales procesado.`);
-            // Pausa breve entre lotes si hay muchos
             if (i + MAX_BATCH_SIZE < creditos.length) {
                 await new Promise(resolve => setTimeout(resolve, 100));
             }
-        } // Fin del bucle for (lotes)
-
+        }
 
         let finalMessage = `¡Éxito! Se registraron ${pagosRegistrados} pagos grupales para el grupo '${grupo}'.`;
         let finalStatusType = 'success';
-
 
         if (erroresRegistro.length > 0) {
             finalMessage += ` Se encontraron ${erroresRegistro.length} errores: ${erroresRegistro.join(', ')}`;
@@ -2452,16 +2174,12 @@ async function handleRegistroPagoGrupal() {
             console.error("Errores durante registro de pago grupal:", erroresRegistro);
         }
 
-
         showStatus('status_pago_grupo', finalMessage, finalStatusType);
 
-
-        // Limpiar
         document.getElementById('grupo-pago-details').classList.add('hidden');
         document.getElementById('grupo_pago_grupal').value = '';
         montoRecibidoInput.value = '';
         grupoDePagoActual = null;
-
 
     } catch (error) {
         console.error("Error crítico al registrar pago grupal:", error);
@@ -2472,6 +2190,63 @@ async function handleRegistroPagoGrupal() {
     }
 }
 
+// =============================================
+// *** INICIO DE LA CORRECCIÓN 2: DEFINICIÓN FUNCIÓN ***
+// =============================================
+/**
+ * Carga y muestra las estadísticas básicas del sistema.
+ */
+async function loadBasicReports() {
+    console.log("Cargando reportes básicos...");
+    const btnActualizar = document.getElementById('btn-actualizar-reportes');
+    showButtonLoading(btnActualizar, true, 'Actualizando...');
+    showStatus('status_reportes', 'Calculando estadísticas...', 'info');
+
+    // Poner placeholders mientras carga
+    document.getElementById('total-clientes').textContent = '...';
+    document.getElementById('total-creditos').textContent = '...';
+    document.getElementById('total-cartera').textContent = '$...';
+    document.getElementById('total-vencidos').textContent = '...';
+    document.getElementById('pagos-registrados').textContent = '...';
+    document.getElementById('cobrado-mes').textContent = '$...';
+    document.getElementById('tasa-recuperacion').textContent = '...%';
+    document.getElementById('total-comisiones').textContent = '$...';
+
+
+    try {
+        const reportes = await database.generarReportes();
+
+        // Actualizar UI con los datos obtenidos
+        document.getElementById('total-clientes').textContent = reportes.totalClientes?.toLocaleString() ?? 'Error';
+        document.getElementById('total-creditos').textContent = reportes.totalCreditos?.toLocaleString() ?? 'Error';
+        document.getElementById('total-cartera').textContent = `$${reportes.totalCartera?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) ?? 'Error'}`;
+        document.getElementById('total-vencidos').textContent = reportes.totalVencidos?.toLocaleString() ?? 'Error';
+        document.getElementById('pagos-registrados').textContent = reportes.pagosRegistrados?.toLocaleString() ?? 'Error';
+        document.getElementById('cobrado-mes').textContent = `$${reportes.cobradoMes?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) ?? 'Error'}`;
+        document.getElementById('tasa-recuperacion').textContent = `${reportes.tasaRecuperacion?.toFixed(1) ?? '0'}%`;
+        document.getElementById('total-comisiones').textContent = `$${reportes.totalComisiones?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) ?? 'Error'}`;
+
+        showStatus('status_reportes', 'Reportes actualizados correctamente.', 'success');
+
+    } catch (error) {
+        console.error("Error al cargar reportes básicos:", error);
+        showStatus('status_reportes', `Error al cargar reportes: ${error.message}`, 'error');
+        // Poner 'Error' en los campos si falla la carga
+         document.getElementById('total-clientes').textContent = 'Error';
+         document.getElementById('total-creditos').textContent = 'Error';
+         document.getElementById('total-cartera').textContent = 'Error';
+         document.getElementById('total-vencidos').textContent = 'Error';
+         document.getElementById('pagos-registrados').textContent = 'Error';
+         document.getElementById('cobrado-mes').textContent = 'Error';
+         document.getElementById('tasa-recuperacion').textContent = 'Error';
+         document.getElementById('total-comisiones').textContent = 'Error';
+    } finally {
+        showButtonLoading(btnActualizar, false);
+    }
+}
+// =============================================
+// *** FIN DE LA CORRECCIÓN 2 ***
+// =============================================
 
 // =============================================
 // SECCIÓN DE REPORTES GRÁFICOS
@@ -2484,19 +2259,12 @@ async function handleGenerarGrafico() {
     }
     cargaEnProgreso = true;
     showProcessingOverlay(true, 'Generando datos para el gráfico...');
-    // =============================================
-    // *** INICIO DE LA CORRECCIÓN 3 (Instancia 7) ***
-    // =============================================
     showButtonLoading('#btn-generar-grafico', true, 'Generando...');
-    // =============================================
-    // *** FIN DE LA CORRECCIÓN 3 (Instancia 7) ***
-    // =============================================
     const statusGraficos = document.getElementById('status_graficos');
     const chartContainer = document.getElementById('grafico-container');
-    chartContainer.innerHTML = ''; // Limpiar gráfico anterior
+    chartContainer.innerHTML = '';
 
     try {
-        // Recoger filtros
         const tipoReporte = document.getElementById('grafico_tipo_reporte').value;
         const fechaInicio = document.getElementById('grafico_fecha_inicio').value;
         const fechaFin = document.getElementById('grafico_fecha_fin').value;
@@ -2508,66 +2276,47 @@ async function handleGenerarGrafico() {
         if (!tipoReporte || !fechaInicio || !fechaFin) {
             throw new Error("Por favor, selecciona el tipo de reporte y un rango de fechas.");
         }
-        // Validar rango de fechas?
         if (new Date(fechaInicio) > new Date(fechaFin)) {
             throw new Error("La fecha de inicio no puede ser posterior a la fecha de fin.");
         }
 
-
         statusGraficos.textContent = 'Obteniendo datos...';
         statusGraficos.className = 'status-message status-info';
 
-        // Obtener datos filtrados
         const { creditos, pagos } = await database.obtenerDatosParaGraficos({ sucursal, grupo, fechaInicio, fechaFin });
 
         statusGraficos.textContent = 'Procesando datos para el gráfico...';
 
         let datosAgrupados = {};
-        let labelPrefix = ''; // Para el título del dataset
+        let labelPrefix = '';
 
-        // --- Lógica de Agrupación ---
         const agruparDatos = (data, campoFecha, campoValor) => {
             const agrupados = {};
             data.forEach(item => {
                 const fecha = parsearFecha(item[campoFecha]);
                 if (!fecha || isNaN(fecha.getTime())) {
                     console.warn("Fecha inválida encontrada:", item[campoFecha], "en item:", item);
-                    return; // Saltar item con fecha inválida
+                    return;
                 }
-
-
                 let clave;
                 const anio = fecha.getUTCFullYear();
-                const mes = fecha.getUTCMonth(); // 0-11
+                const mes = fecha.getUTCMonth();
                 const dia = fecha.getUTCDate();
-
-
-                // Cálculo de la semana del año (ISO 8601 week date)
                 const fechaInicioSemana = new Date(Date.UTC(anio, mes, dia));
-                fechaInicioSemana.setUTCDate(fechaInicioSemana.getUTCDate() + 4 - (fechaInicioSemana.getUTCDay() || 7)); // Jueves de la semana
+                fechaInicioSemana.setUTCDate(fechaInicioSemana.getUTCDate() + 4 - (fechaInicioSemana.getUTCDay() || 7));
                 const inicioAnio = new Date(Date.UTC(anio, 0, 1));
                 const semana = Math.ceil((((fechaInicioSemana - inicioAnio) / 86400000) + 1) / 7);
 
+                if (agruparPor === 'anio') clave = `${anio}`;
+                else if (agruparPor === 'mes') clave = `${anio}-${String(mes + 1).padStart(2, '0')}`;
+                else clave = `${anio}-S${String(semana).padStart(2, '0')}`;
 
-                if (agruparPor === 'anio') {
-                    clave = `${anio}`;
-                } else if (agruparPor === 'mes') {
-                    clave = `${anio}-${String(mes + 1).padStart(2, '0')}`; // Mes 1-12
-                } else { // 'semana'
-                    clave = `${anio}-S${String(semana).padStart(2, '0')}`;
-                }
-
-
-                if (!agrupados[clave]) {
-                    agrupados[clave] = 0;
-                }
-                agrupados[clave] += parseFloat(item[campoValor] || 0); // Asegurar que es número
+                if (!agrupados[clave]) agrupados[clave] = 0;
+                agrupados[clave] += parseFloat(item[campoValor] || 0);
             });
             return agrupados;
         };
 
-
-        // --- Procesamiento según Tipo de Reporte ---
         if (tipoReporte === 'colocacion') {
             datosAgrupados = agruparDatos(creditos, 'fechaCreacion', 'monto');
             labelPrefix = 'Monto Colocado';
@@ -2575,10 +2324,8 @@ async function handleGenerarGrafico() {
             datosAgrupados = agruparDatos(pagos, 'fecha', 'monto');
             labelPrefix = 'Monto Recuperado';
         } else if (tipoReporte === 'comportamiento') {
-            // Agrupar pagos por tipo
             datosAgrupados = pagos.reduce((acc, pago) => {
                 const tipo = (pago.tipoPago || 'normal').toLowerCase();
-                // Capitalizar primera letra para la etiqueta
                 const clave = tipo.charAt(0).toUpperCase() + tipo.slice(1);
                 if (!acc[clave]) acc[clave] = 0;
                 acc[clave] += parseFloat(pago.monto || 0);
@@ -2589,29 +2336,20 @@ async function handleGenerarGrafico() {
             throw new Error("Tipo de reporte gráfico no reconocido.");
         }
 
-
-        // Preparar datos para Chart.js
-        const labels = Object.keys(datosAgrupados).sort(); // Ordenar etiquetas (fechas/semanas/tipos)
+        const labels = Object.keys(datosAgrupados).sort();
         const dataValues = labels.map(label => datosAgrupados[label]);
-
 
         if (labels.length === 0) {
             statusGraficos.textContent = 'No se encontraron datos para graficar con los filtros seleccionados.';
             statusGraficos.className = 'status-message status-info';
-            return; // No generar gráfico vacío
+            return;
         }
 
-
-        // Configuración de colores (simple, se puede mejorar)
-        const baseColor = 'rgba(46, 139, 87, 0.6)'; // Verde Finzana semitransparente
-        const borderColor = 'rgba(46, 139, 87, 1)'; // Verde Finzana sólido
-
-
-        // Generar colores diferentes para gráficos de pastel/dona
+        const baseColor = 'rgba(46, 139, 87, 0.6)';
+        const borderColor = 'rgba(46, 139, 87, 1)';
         const backgroundColors = (tipoGrafico === 'pie' || tipoGrafico === 'doughnut')
             ? labels.map((_, index) => `hsl(${index * (360 / labels.length)}, 70%, 60%)`)
             : baseColor;
-
 
         const datosParaGrafico = {
             labels,
@@ -2621,17 +2359,16 @@ async function handleGenerarGrafico() {
                 backgroundColor: backgroundColors,
                 borderColor: borderColor,
                 borderWidth: (tipoGrafico === 'line') ? 2 : 1,
-                fill: (tipoGrafico === 'line') ? false : true, // No rellenar bajo la línea por defecto
-                tension: (tipoGrafico === 'line') ? 0.1 : 0 // Suavizar línea ligeramente
+                fill: (tipoGrafico === 'line') ? false : true,
+                tension: (tipoGrafico === 'line') ? 0.1 : 0
             }]
         };
 
-        // Crear el canvas y el gráfico
         chartContainer.innerHTML = '<canvas id="myChart"></canvas>';
         const ctx = document.getElementById('myChart').getContext('2d');
 
         if (currentChart) {
-            currentChart.destroy(); // Destruir instancia anterior
+            currentChart.destroy();
         }
 
         currentChart = new Chart(ctx, {
@@ -2639,24 +2376,16 @@ async function handleGenerarGrafico() {
             data: datosParaGrafico,
             options: {
                 responsive: true,
-                maintainAspectRatio: false, // Permitir que el canvas se ajuste al contenedor
+                maintainAspectRatio: false,
                 plugins: {
-                    legend: {
-                        position: 'top', // Posición de la leyenda
-                    },
-                    title: {
-                        display: true,
-                        text: `Gráfico de ${labelPrefix}` // Título del gráfico
-                    },
+                    legend: { position: 'top' },
+                    title: { display: true, text: `Gráfico de ${labelPrefix}` },
                     tooltip: {
                         callbacks: {
                             label: function (context) {
                                 let label = context.dataset.label || '';
-                                if (label) {
-                                    label += ': ';
-                                }
+                                if (label) label += ': ';
                                 if (context.parsed.y !== null) {
-                                    // Formatear como moneda
                                     label += new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(context.parsed.y);
                                 }
                                 return label;
@@ -2665,24 +2394,16 @@ async function handleGenerarGrafico() {
                     }
                 },
                 scales: {
-                    // Ocultar escalas para pie/doughnut
                     x: {
                         display: !(tipoGrafico === 'pie' || tipoGrafico === 'doughnut'),
-                        title: {
-                            display: true,
-                            text: agruparPor.charAt(0).toUpperCase() + agruparPor.slice(1) // Eje X = Semana/Mes/Año
-                        }
+                        title: { display: true, text: agruparPor.charAt(0).toUpperCase() + agruparPor.slice(1) }
                     },
                     y: {
                         display: !(tipoGrafico === 'pie' || tipoGrafico === 'doughnut'),
                         beginAtZero: true,
-                        title: {
-                            display: true,
-                            text: 'Monto ($)' // Eje Y = Monto
-                        },
+                        title: { display: true, text: 'Monto ($)' },
                         ticks: {
-                            // Formatear ticks del eje Y como moneda
-                            callback: function (value, index, values) {
+                            callback: function (value) {
                                 return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 0 }).format(value);
                             }
                         }
@@ -2691,30 +2412,22 @@ async function handleGenerarGrafico() {
             }
         });
 
-
         statusGraficos.textContent = 'Gráfico generado exitosamente.';
         statusGraficos.className = 'status-message status-success';
-
 
     } catch (error) {
         console.error("Error al generar el gráfico:", error);
         statusGraficos.textContent = `Error al generar gráfico: ${error.message}`;
         statusGraficos.className = 'status-message status-error';
         if (currentChart) {
-            currentChart.destroy(); // Limpiar si hubo error
+            currentChart.destroy();
             currentChart = null;
         }
-        chartContainer.innerHTML = '<p style="text-align: center; color: var(--danger);">No se pudo generar el gráfico.</p>'; // Mensaje en lugar del canvas
+        chartContainer.innerHTML = '<p style="text-align: center; color: var(--danger);">No se pudo generar el gráfico.</p>';
     } finally {
         cargaEnProgreso = false;
         showProcessingOverlay(false);
-        // =============================================
-        // *** INICIO DE LA CORRECCIÓN 3 (Instancia 8) ***
-        // =============================================
         showButtonLoading('#btn-generar-grafico', false);
-        // =============================================
-        // *** FIN DE LA CORRECCIÓN 3 (Instancia 8) ***
-        // =============================================
     }
 }
 
@@ -2725,20 +2438,15 @@ async function handleGenerarGrafico() {
 
 function showView(viewId) {
     console.log(`Navegando a vista: ${viewId}`);
-    // Ocultar todas las vistas
     document.querySelectorAll('.view').forEach(view => view.classList.add('hidden'));
-
-    // Mostrar la vista objetivo
     const targetView = document.getElementById(viewId);
     if (targetView) {
         targetView.classList.remove('hidden');
-        // Disparar evento personalizado para que las vistas puedan reaccionar (ej. cargar datos)
         const event = new CustomEvent('viewshown', { detail: { viewId } });
         targetView.dispatchEvent(event);
         console.log(`Vista ${viewId} mostrada.`);
     } else {
         console.error(`Error: No se encontró la vista con ID ${viewId}`);
-        // Opcional: Mostrar vista de error o volver al menú principal
         const fallbackView = document.getElementById('view-main-menu');
         if (fallbackView) fallbackView.classList.remove('hidden');
     }
@@ -2747,26 +2455,19 @@ function showView(viewId) {
 function showStatus(elementId, message, type) {
     const element = document.getElementById(elementId);
     if (element) {
-        element.innerHTML = message; // Usar innerHTML permite tags como <b>
-        // Asegurar que solo una clase de tipo de status esté presente
-        element.classList.remove('status-success', 'status-error', 'status-info', 'status-warning', 'hidden'); // Quitar hidden también
-        if (type === 'success') {
-            element.classList.add('status-success');
-        } else if (type === 'error') {
-            element.classList.add('status-error');
-        } else if (type === 'warning') {
-            element.classList.add('status-warning');
-        } else { // 'info' o por defecto
-            element.classList.add('status-info');
-        }
-        // Opcional: Ocultar automáticamente mensajes de éxito después de un tiempo
+        element.innerHTML = message;
+        element.classList.remove('status-success', 'status-error', 'status-info', 'status-warning', 'hidden');
+        if (type === 'success') element.classList.add('status-success');
+        else if (type === 'error') element.classList.add('status-error');
+        else if (type === 'warning') element.classList.add('status-warning');
+        else element.classList.add('status-info');
+
         if (type === 'success') {
             setTimeout(() => {
-                // Solo ocultar si el mensaje no ha cambiado mientras tanto y sigue siendo success
                 if (element.innerHTML === message && element.classList.contains('status-success')) {
-                    element.classList.add('hidden'); // Ocultar con clase
+                    element.classList.add('hidden');
                 }
-            }, 5000); // Ocultar éxito después de 5 segundos
+            }, 5000);
         }
     } else {
         console.warn(`Elemento de estado con ID "${elementId}" no encontrado.`);
@@ -2776,11 +2477,10 @@ function showStatus(elementId, message, type) {
 
 function showProcessingOverlay(show, message = 'Procesando...') {
     let overlay = document.getElementById('processing-overlay');
-    // Crear si no existe
     if (!overlay) {
         overlay = document.createElement('div');
         overlay.id = 'processing-overlay';
-        overlay.className = 'processing-overlay hidden'; // Empezar oculto
+        overlay.className = 'processing-overlay hidden';
         overlay.innerHTML = `<div class="processing-spinner"></div><div id="processing-message" class="processing-message"></div>`;
         document.body.appendChild(overlay);
     }
@@ -2800,45 +2500,29 @@ function showButtonLoading(selector, show, loadingText = '') {
         console.warn("showButtonLoading: Botón no encontrado con selector:", selector);
         return;
     }
+    // Asegurar que selector sea el botón correcto
+     if (!button || button.tagName !== 'BUTTON') {
+         console.warn("showButtonLoading: Selector no es un botón:", selector);
+         return;
+     }
 
     if (show) {
-        // Guardar texto original si no se ha guardado ya
         if (!button.hasAttribute('data-original-text')) {
             button.setAttribute('data-original-text', button.innerHTML);
         }
-        // Mostrar spinner y texto opcional
         button.innerHTML = `<span class="btn-spinner"></span> ${loadingText}`;
-        button.classList.add('btn-loading'); // Aplicar clase para estilos
-        button.disabled = true; // Deshabilitar botón
+        button.classList.add('btn-loading');
+        button.disabled = true;
     } else {
-        // Restaurar texto original y habilitar
         const originalText = button.getAttribute('data-original-text');
-        if (originalText !== null) { // Restaurar solo si se guardó
+        if (originalText !== null) {
             button.innerHTML = originalText;
-            button.removeAttribute('data-original-text'); // Limpiar atributo
+            button.removeAttribute('data-original-text');
         }
         button.classList.remove('btn-loading');
         button.disabled = false;
     }
 }
-
-// Asegúrate de tener estos estilos en styles.css para el spinner del botón:
-/*
-.btn-loading .btn-spinner {
-    display: inline-block;
-    width: 1em;
-    height: 1em;
-    border: 2px solid currentColor;
-    border-right-color: transparent;
-    border-radius: 50%;
-    animation: spin 0.75s linear infinite;
-    margin-right: 0.5em;
-    vertical-align: text-bottom;
-}
-.btn-loading > *:not(.btn-spinner) { // Ocultar otros iconos/texto mientras carga
-    opacity: 0;
-}
-*/
 
 // =============================================
 // FUNCIONES DE BARRA DE PROGRESO Y UTILIDADES
@@ -2846,11 +2530,10 @@ function showButtonLoading(selector, show, loadingText = '') {
 
 function showFixedProgress(percentage, message = '') {
     let progressContainer = document.getElementById('progress-container-fixed');
-    // Crear si no existe
     if (!progressContainer) {
         progressContainer = document.createElement('div');
         progressContainer.id = 'progress-container-fixed';
-        progressContainer.className = 'progress-container-fixed hidden'; // Empezar oculto
+        progressContainer.className = 'progress-container-fixed hidden';
         progressContainer.innerHTML = `
             <div id="progress-text-fixed" class="progress-text-fixed"></div>
             <div id="progress-bar-fixed" class="progress-bar-fixed" style="width: 0%;"></div>
@@ -2859,72 +2542,64 @@ function showFixedProgress(percentage, message = '') {
             </button>
         `;
         document.body.insertBefore(progressContainer, document.body.firstChild);
-        document.getElementById('btn-cancelar-carga-fixed').addEventListener('click', cancelarCarga);
+        const cancelButton = document.getElementById('btn-cancelar-carga-fixed');
+        if(cancelButton) cancelButton.addEventListener('click', cancelarCarga); // Asegurar listener
     }
 
-    // Actualizar elementos
     const progressBar = document.getElementById('progress-bar-fixed');
     const progressText = document.getElementById('progress-text-fixed');
-
-    // Validar porcentaje
     const validPercentage = Math.max(0, Math.min(100, percentage));
-
 
     if (progressBar) progressBar.style.width = validPercentage + '%';
     if (progressText) progressText.textContent = message;
 
-    // Mostrar contenedor
     progressContainer.classList.remove('hidden');
-    progressContainer.style.display = 'flex'; // Asegurar display flex
-    document.body.classList.add('has-progress'); // Añadir padding al body si es necesario
+    progressContainer.style.display = 'flex';
+    document.body.classList.add('has-progress');
 }
 
 function hideFixedProgress() {
     const progressContainer = document.getElementById('progress-container-fixed');
     if (progressContainer) {
-        progressContainer.classList.add('hidden'); // Ocultar con clase
-        progressContainer.style.display = 'none'; // Asegurar ocultación
-        // Resetear barra para la próxima vez
+        progressContainer.classList.add('hidden');
+        progressContainer.style.display = 'none';
         const progressBar = document.getElementById('progress-bar-fixed');
         if (progressBar) progressBar.style.width = '0%';
         const progressText = document.getElementById('progress-text-fixed');
         if (progressText) progressText.textContent = '';
-
-
     }
-    document.body.classList.remove('has-progress'); // Quitar padding
+    document.body.classList.remove('has-progress');
 }
 
 function cancelarCarga() {
     console.warn("Operación cancelada por el usuario.");
-    // Marcar la operación actual como cancelada para que los bucles se detengan
     currentSearchOperation = null;
-    cargaEnProgreso = false; // Forzar estado a no en progreso
+    cargaEnProgreso = false;
 
-    // Ocultar indicadores visuales
     hideFixedProgress();
     showProcessingOverlay(false);
 
-    // Restaurar botones que podrían estar en estado de carga (usando selector más general)
     document.querySelectorAll('.btn-loading').forEach(button => {
         showButtonLoading(button, false);
     });
 
-
-    // Mostrar mensaje de cancelación en la vista activa (si es relevante)
     const activeView = document.querySelector('.view:not(.hidden)');
     if (activeView) {
-        const statusElement = activeView.querySelector('.status-message'); // Buscar cualquier status message
+        const statusElement = activeView.querySelector('.status-message');
         const statusElementId = statusElement?.id || (activeView.id ? `status_${activeView.id.replace('view-', '')}` : null);
-
 
         if (statusElementId) {
             showStatus(statusElementId, 'Operación cancelada por el usuario.', 'warning');
         }
-        // Resetear tabla si es la de gestión de clientes
         if (activeView.id === 'view-gestion-clientes') {
             const tabla = document.getElementById('tabla-clientes');
             if (tabla) tabla.innerHTML = '<tr><td colspan="6">Búsqueda cancelada. Utiliza los filtros para buscar de nuevo.</td></tr>';
+        }
+        // Añadir reset para otras vistas si es necesario (ej. reportes avanzados)
+        if (activeView.id === 'view-reportes-avanzados') {
+             const tablaReporte = document.getElementById('tabla-reportes_avanzados');
+             if (tablaReporte) tablaReporte.innerHTML = '<tr><td colspan="10">Generación de reporte cancelada.</td></tr>';
+             document.getElementById('estadisticas-reporte').innerHTML = '';
         }
     }
 }
@@ -2935,12 +2610,9 @@ function calcularMontoTotalColocacion() {
     const montoTotalInput = document.getElementById('montoTotal_colocacion');
     if (!montoInput || !montoTotalInput) return;
 
-
     const monto = parseFloat(montoInput.value) || 0;
-    const montoTotal = monto * 1.3; // Calcular con 30%
+    const montoTotal = monto * 1.3;
 
-
-    // Formatear como moneda para mostrar
     montoTotalInput.value = monto > 0
         ? `$${montoTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
         : '';
@@ -2949,24 +2621,21 @@ function calcularMontoTotalColocacion() {
 
 function validarCURP(inputElement) {
     if (!inputElement) return;
-    // Convertir a mayúsculas y limitar longitud
     inputElement.value = inputElement.value.toUpperCase().substring(0, 18);
 
-    // Validación visual simple (longitud)
     if (inputElement.value.length === 0) {
-        inputElement.classList.remove('input-error', 'input-success'); // Sin estilo si está vacío
-    } else if (validarFormatoCURP(inputElement.value)) { // Usar validación con Regex
+        inputElement.classList.remove('input-error', 'input-success');
+    } else if (validarFormatoCURP(inputElement.value)) {
         inputElement.classList.remove('input-error');
-        inputElement.classList.add('input-success'); // Verde si tiene formato correcto
+        inputElement.classList.add('input-success');
     } else {
         inputElement.classList.remove('input-success');
-        inputElement.classList.add('input-error'); // Rojo si no
+        inputElement.classList.add('input-error');
     }
 }
 
 
 function validarFormatoCURP(curp) {
-    // Verifica longitud y patrón básico (4 letras, 6 números, H/M, 5 letras, homoclave(A-Z0-9), dígito verificador)
     const curpRegex = /^[A-Z]{4}\d{6}[HM][A-Z]{5}[A-Z0-9]\d$/;
     return typeof curp === 'string' && curp.length === 18 && curpRegex.test(curp.toUpperCase());
 }
@@ -2978,87 +2647,75 @@ const popularDropdown = (elementId, options, placeholder, isObjectValueKey = fal
         console.warn(`Dropdown con ID "${elementId}" no encontrado.`);
         return;
     }
-
-    // Guardar valor seleccionado si existe
     const selectedValue = select.value;
-
-
-    select.innerHTML = `<option value="">${placeholder}</option>`; // Opción por defecto
-
-
+    select.innerHTML = `<option value="">${placeholder}</option>`;
     options.forEach(option => {
         const optionElement = document.createElement('option');
         if (isObjectValueKey) {
-            optionElement.value = option.value; // ej: { value: 'admin', text: 'Administrador' }
+            optionElement.value = option.value;
             optionElement.textContent = option.text;
         } else {
-            optionElement.value = option; // ej: ['GDL', 'LEON']
+            optionElement.value = option;
             optionElement.textContent = option;
         }
         select.appendChild(optionElement);
     });
-
-
-    // Intentar restaurar valor seleccionado
-    if (select.querySelector(`option[value="${selectedValue}"]`)) {
-        select.value = selectedValue;
+    // Restaurar valor solo si aún existe en las nuevas opciones
+    if (Array.from(select.options).some(opt => opt.value === selectedValue)) {
+       select.value = selectedValue;
+    } else {
+        // Si el valor anterior ya no es válido (ej. cambió de oficina),
+        // dejar el placeholder seleccionado
+        select.value = "";
     }
 };
 
 
 function handleOfficeChangeForClientForm() {
-    const office = this.value || document.getElementById('office_cliente')?.value; // Obtener oficina
+    const office = this.value || document.getElementById('office_cliente')?.value;
     const poblacionesGdl = ['LA CALERA', 'ATEQUIZA', 'SAN JACINTO', 'PONCITLAN', 'OCOTLAN', 'ARENAL', 'AMATITAN', 'ACATLAN DE JUAREZ', 'BELLAVISTA', 'SAN ISIDRO MAZATEPEC', 'TALA', 'CUISILLOS', 'HUAXTLA', 'NEXTIPAC', 'SANTA LUCIA', 'JAMAY', 'LA BARCA', 'SAN JUAN DE OCOTAN', 'TALA 2', 'EL HUMEDO', 'NEXTIPAC 2', 'ZZ PUEBLO'].sort();
     const poblacionesLeon = ["ARANDAS", "ARANDAS [E]", "BAJIO DE BONILLAS", "BAJIO DE BONILLAS [E]", "CAPULIN", "CARDENAS", "CARDENAS [E]", "CERRITO DE AGUA CALIENTE", "CERRITO DE AGUA CALIENTE [E]", "CORRALEJO", "CORRALEJO [E]", "CUERAMARO", "CUERAMARO [E]", "DOLORES HIDALGO", "EL ALACRAN", "EL EDEN", "EL FUERTE", "EL MEZQUITILLO", "EL MEZQUITILLO [E]", "EL PALENQUE", "EL PALENQUE [E]", "EL PAXTLE", "EL TULE", "EL TULE [E]", "ESTACION ABASOLO", "ESTACION ABASOLO [E]", "ESTACION CORRALEJO", "ESTACION CORRALEJO [E]", "ESTACION JOAQUIN", "ESTACION JOAQUIN [E]", "EX ESTACION CHIRIMOYA", "EX ESTacion CHIRIMOYA [E]", "GAVIA DE RIONDA", "GODOY", "GODOY [E]", "IBARRA", "IBARRA [E]", "LA ALDEA", "LA CARROZA", "LA CARROZA [E]", "LA ESCONDIDA", "LA SANDIA", "LA SANDIA [E]", "LAGUNA DE GUADALUPE", "LAS CRUCES", "LAS CRUCES [E]", "LAS MASAS", "LAS MASAS [E]", "LAS PALOMAS", "LAS TIRITAS", "LOMA DE LA ESPERANZA", "LOMA DE LA ESPERANZA [E]", "LOS DOLORES", "LOS GALVANES", "LOS GALVANES [E]", "MAGUEY BLANCO", "MEDRANOS", "MEXICANOS", "MEXICANOS [E]", "MINERAL DE LA LUZ", "MISION DE ABAJO", "MISION DE ABAJO [E]", "MISION DE ARRIBA", "MISION DE ARRIBA [E]", "NORIA DE ALDAY", "OCAMPO", "PURISIMA DEL RINCON", "PURISima DEL RINCON [E]", "RANCHO NUEVO DE LA CRUZ", "RANCHO NUEVO DE LA CRUZ [E]", "RANCHO VIEJO", "RIO LAJA", "RIO LAJA [E]", "SAN ANDRES DE JALPA", "SAN ANDRES DE JALPA [E]", "SAN BERNARDO", "SAN BERNARDO [E]", "SAN CRISTOBAL", "SAN CRISTOBAL [E]", "SAN GREGORIO", "SAN GREGORIO [E]", "SAN ISIDRO DE CRESPO", "SAN ISIDRO DE CRESPO [E]", "SAN JOSE DE BADILLO", "SAN JOSE DE BADILLO [E]", "SAN JOSE DEL RODEO", "SAN JOSE DEL RODEO [E]", "SAN JUAN DE LA PUERTA", "SAN JUAN DE LA PUERTA [E]", "SANTA ANA DEL CONDE", "SANTA ROSA", "SANTA ROSA [E]", "SANTA ROSA PLAN DE AYALA", "SANTA ROSA PLAN DE AYALA [E]", "SANTO DOMINGO", "SERRANO", "TENERIA DEL SANTUARIO", "TENERIA DEL SANTUARIO [E]", "TIERRAS BLANCAS", "TIERRAS BLANCAS [E]", "TREJO", "TREJO [E]", "TUPATARO", "TUPATARO [E]", "VALTIERRILLA", "VALTIERRILLA 2", "VALTIERRILLA [E]", "VAQUERIAS", "VILLA DE ARRIAGA", "VILLA DE ARRIAGA [E]"].sort();
 
-
-    // Si estamos editando, mostrar todas las poblaciones posibles para permitir cambiar cliente de oficina
     const poblaciones = editingClientId
         ? [...new Set([...poblacionesGdl, ...poblacionesLeon])].sort()
         : (office === 'LEON' ? poblacionesLeon : poblacionesGdl);
 
-
     popularDropdown('poblacion_grupo_cliente', poblaciones, 'Selecciona población/grupo');
+    // Actualizar también rutas si dependen de la oficina (si no, no es necesario)
+    // popularDropdown('ruta_cliente', rutasPorOficina[office], 'Selecciona una ruta');
 }
 
 
 function handleSucursalGraficoChange() {
-    const office = this.value; // 'GDL', 'LEON', o ''
+    const office = this.value;
     const poblacionesGdl = ['LA CALERA', 'ATEQUIZA', 'SAN JACINTO', 'PONCITLAN', 'OCOTLAN', 'ARENAL', 'AMATITAN', 'ACATLAN DE JUAREZ', 'BELLAVISTA', 'SAN ISIDRO MAZATEPEC', 'TALA', 'CUISILLOS', 'HUAXTLA', 'NEXTIPAC', 'SANTA LUCIA', 'JAMAY', 'LA BARCA', 'SAN JUAN DE OCOTAN', 'TALA 2', 'EL HUMEDO', 'NEXTIPAC 2', 'ZZ PUEBLO'].sort();
     const poblacionesLeon = ["ARANDAS", "ARANDAS [E]", "BAJIO DE BONILLAS", "BAJIO DE BONILLAS [E]", "CAPULIN", "CARDENAS", "CARDENAS [E]", "CERRITO DE AGUA CALIENTE", "CERRITO DE AGUA CALIENTE [E]", "CORRALEJO", "CORRALEJO [E]", "CUERAMARO", "CUERAMARO [E]", "DOLORES HIDALGO", "EL ALACRAN", "EL EDEN", "EL FUERTE", "EL MEZQUITILLO", "EL MEZQUITILLO [E]", "EL PALENQUE", "EL PALENQUE [E]", "EL PAXTLE", "EL TULE", "EL TULE [E]", "ESTACION ABASOLO", "ESTACION ABASOLO [E]", "ESTACION CORRALEJO", "ESTACION CORRALEJO [E]", "ESTACION JOAQUIN", "ESTACION JOAQUIN [E]", "EX ESTACION CHIRIMOYA", "EX ESTacion CHIRIMOYA [E]", "GAVIA DE RIONDA", "GODOY", "GODOY [E]", "IBARRA", "IBARRA [E]", "LA ALDEA", "LA CARROZA", "LA CARROZA [E]", "LA ESCONDIDA", "LA SANDIA", "LA SANDIA [E]", "LAGUNA DE GUADALUPE", "LAS CRUCES", "LAS CRUCES [E]", "LAS MASAS", "LAS MASAS [E]", "LAS PALOMAS", "LAS TIRITAS", "LOMA DE LA ESPERANZA", "LOMA DE LA ESPERANZA [E]", "LOS DOLORES", "LOS GALVANES", "LOS GALVANES [E]", "MAGUEY BLANCO", "MEDRANOS", "MEXICANOS", "MEXICANOS [E]", "MINERAL DE LA LUZ", "MISION DE ABAJO", "MISION DE ABAJO [E]", "MISION DE ARRIBA", "MISION DE ARRIBA [E]", "NORIA DE ALDAY", "OCAMPO", "PURISIMA DEL RINCON", "PURISima DEL RINCON [E]", "RANCHO NUEVO DE LA CRUZ", "RANCHO NUEVO DE LA CRUZ [E]", "RANCHO VIEJO", "RIO LAJA", "RIO LAJA [E]", "SAN ANDRES DE JALPA", "SAN ANDRES DE JALPA [E]", "SAN BERNARDO", "SAN BERNARDO [E]", "SAN CRISTOBAL", "SAN CRISTOBAL [E]", "SAN GREGORIO", "SAN GREGORIO [E]", "SAN ISIDRO DE CRESPO", "SAN ISIDRO DE CRESPO [E]", "SAN JOSE DE BADILLO", "SAN JOSE DE BADILLO [E]", "SAN JOSE DEL RODEO", "SAN JOSE DEL RODEO [E]", "SAN JUAN DE LA PUERTA", "SAN JUAN DE LA PUERTA [E]", "SANTA ANA DEL CONDE", "SANTA ROSA", "SANTA ROSA [E]", "SANTA ROSA PLAN DE AYALA", "SANTA ROSA PLAN DE AYALA [E]", "SANTO DOMINGO", "SERRANO", "TENERIA DEL SANTUARIO", "TENERIA DEL SANTUARIO [E]", "TIERRAS BLANCAS", "TIERRAS BLANCAS [E]", "TREJO", "TREJO [E]", "TUPATARO", "TUPATARO [E]", "VALTIERRILLA", "VALTIERRILLA 2", "VALTIERRILLA [E]", "VAQUERIAS", "VILLA DE ARRIAGA", "VILLA DE ARRIAGA [E]"].sort();
 
-
     let poblacionesDisponibles;
-    if (office === 'GDL') {
-        poblacionesDisponibles = poblacionesGdl;
-    } else if (office === 'LEON') {
-        poblacionesDisponibles = poblacionesLeon;
-    } else { // 'Ambas' o ''
-        poblacionesDisponibles = [...new Set([...poblacionesGdl, ...poblacionesLeon])].sort();
-    }
+    if (office === 'GDL') poblacionesDisponibles = poblacionesGdl;
+    else if (office === 'LEON') poblacionesDisponibles = poblacionesLeon;
+    else poblacionesDisponibles = [...new Set([...poblacionesGdl, ...poblacionesLeon])].sort();
+
     popularDropdown('grafico_grupo', poblacionesDisponibles, 'Todos');
 }
 
-// Inicializar dropdowns principales al cargar
 function inicializarDropdowns() {
     console.log('Inicializando dropdowns...');
-    // Definir listas de opciones
     const poblacionesGdl = ['LA CALERA', 'ATEQUIZA', 'SAN JACINTO', 'PONCITLAN', 'OCOTLAN', 'ARENAL', 'AMATITAN', 'ACATLAN DE JUAREZ', 'BELLAVISTA', 'SAN ISIDRO MAZATEPEC', 'TALA', 'CUISILLOS', 'HUAXTLA', 'NEXTIPAC', 'SANTA LUCIA', 'JAMAY', 'LA BARCA', 'SAN JUAN DE OCOTAN', 'TALA 2', 'EL HUMEDO', 'NEXTIPAC 2', 'ZZ PUEBLO'].sort();
     const poblacionesLeon = ["ARANDAS", "ARANDAS [E]", "BAJIO DE BONILLAS", "BAJIO DE BONILLAS [E]", "CAPULIN", "CARDENAS", "CARDENAS [E]", "CERRITO DE AGUA CALIENTE", "CERRITO DE AGUA CALIENTE [E]", "CORRALEJO", "CORRALEJO [E]", "CUERAMARO", "CUERAMARO [E]", "DOLORES HIDALGO", "EL ALACRAN", "EL EDEN", "EL FUERTE", "EL MEZQUITILLO", "EL MEZQUITILLO [E]", "EL PALENQUE", "EL PALENQUE [E]", "EL PAXTLE", "EL TULE", "EL TULE [E]", "ESTACION ABASOLO", "ESTACION ABASOLO [E]", "ESTACION CORRALEJO", "ESTACION CORRALEJO [E]", "ESTACION JOAQUIN", "ESTACION JOAQUIN [E]", "EX ESTACION CHIRIMOYA", "EX ESTacion CHIRIMOYA [E]", "GAVIA DE RIONDA", "GODOY", "GODOY [E]", "IBARRA", "IBARRA [E]", "LA ALDEA", "LA CARROZA", "LA CARROZA [E]", "LA ESCONDIDA", "LA SANDIA", "LA SANDIA [E]", "LAGUNA DE GUADALUPE", "LAS CRUCES", "LAS CRUCES [E]", "LAS MASAS", "LAS MASAS [E]", "LAS PALOMAS", "LAS TIRITAS", "LOMA DE LA ESPERANZA", "LOMA DE LA ESPERANZA [E]", "LOS DOLORES", "LOS GALVANES", "LOS GALVANES [E]", "MAGUEY BLANCO", "MEDRANOS", "MEXICANOS", "MEXICANOS [E]", "MINERAL DE LA LUZ", "MISION DE ABAJO", "MISION DE ABAJO [E]", "MISION DE ARRIBA", "MISION DE ARRIBA [E]", "NORIA DE ALDAY", "OCAMPO", "PURISIMA DEL RINCON", "PURISima DEL RINCON [E]", "RANCHO NUEVO DE LA CRUZ", "RANCHO NUEVO DE LA CRUZ [E]", "RANCHO VIEJO", "RIO LAJA", "RIO LAJA [E]", "SAN ANDRES DE JALPA", "SAN ANDRES DE JALPA [E]", "SAN BERNARDO", "SAN BERNARDO [E]", "SAN CRISTOBAL", "SAN CRISTOBAL [E]", "SAN GREGORIO", "SAN GREGORIO [E]", "SAN ISIDRO DE CRESPO", "SAN ISIDRO DE CRESPO [E]", "SAN JOSE DE BADILLO", "SAN JOSE DE BADILLO [E]", "SAN JOSE DEL RODEO", "SAN JOSE DEL RODEO [E]", "SAN JUAN DE LA PUERTA", "SAN JUAN DE LA PUERTA [E]", "SANTA ANA DEL CONDE", "SANTA ROSA", "SANTA ROSA [E]", "SANTA ROSA PLAN DE AYALA", "SANTA ROSA PLAN DE AYALA [E]", "SANTO DOMINGO", "SERRANO", "TENERIA DEL SANTUARIO", "TENERIA DEL SANTUARIO [E]", "TIERRAS BLANCAS", "TIERRAS BLANCAS [E]", "TREJO", "TREJO [E]", "TUPATARO", "TUPATARO [E]", "VALTIERRILLA", "VALTIERRILLA 2", "VALTIERRILLA [E]", "VAQUERIAS", "VILLA DE ARRIAGA", "VILLA DE ARRIAGA [E]"].sort();
     const todasLasPoblaciones = [...new Set([...poblacionesGdl, ...poblacionesLeon])].sort();
     const rutas = ['AUDITORIA', 'SUPERVISION', 'ADMINISTRACION', 'DIRECCION', 'COMERCIAL', 'COBRANZA', 'R1', 'R2', 'R3', 'JC1', 'RX'].sort();
     const tiposCredito = ['NUEVO', 'RENOVACION', 'REINGRESO'];
     const montos = [3000, 3500, 4000, 4500, 5000, 6000, 7000, 8000, 9000, 10000];
-    const plazosCredito = [10, 13, 14].sort((a, b) => a - b); // Incluir 10 para comisionistas
+    const plazosCredito = [10, 13, 14].sort((a, b) => a - b);
     const estadosCredito = ['al corriente', 'atrasado', 'cobranza', 'juridico', 'liquidado'];
-    const tiposPago = ['normal', 'extraordinario', 'actualizado', 'grupal']; // Añadir grupal
-    const sucursales = ['GDL', 'LEON'];
+    const tiposPago = ['normal', 'extraordinario', 'actualizado', 'grupal'];
     const roles = [
         { value: 'admin', text: 'Administrador' },
         { value: 'supervisor', text: 'Supervisor' },
         { value: 'cobrador', text: 'Cobrador' },
         { value: 'consulta', text: 'Consulta' },
-        { value: 'comisionista', text: 'Comisionista' } // Asegurar que esté aquí
+        { value: 'comisionista', text: 'Comisionista' }
     ];
     const tiposReporteGrafico = [
         { value: 'colocacion', text: 'Colocación (Monto)' },
@@ -3066,110 +2723,77 @@ function inicializarDropdowns() {
         { value: 'comportamiento', text: 'Comportamiento de Pago (Tipos)' },
     ];
 
-
-    // --- Poblar Dropdowns ---
-
-    // Formulario Cliente
-    popularDropdown('poblacion_grupo_cliente', poblacionesGdl, 'Selecciona población/grupo'); // Por defecto GDL
+    popularDropdown('poblacion_grupo_cliente', poblacionesGdl, 'Selecciona población/grupo');
     popularDropdown('ruta_cliente', rutas, 'Selecciona una ruta');
-
-    // Formulario Colocación
     popularDropdown('tipo_colocacion', tiposCredito.map(t => ({ value: t.toLowerCase(), text: t })), 'Selecciona tipo', true);
     popularDropdown('monto_colocacion', montos.map(m => ({ value: m, text: `$${m.toLocaleString()}` })), 'Selecciona monto', true);
-    // Plazos se llenan dinámicamente en handleSearchClientForCredit
-
-    // Filtros Gestión Clientes
     popularDropdown('grupo_filtro', todasLasPoblaciones, 'Todos');
     popularDropdown('tipo_colocacion_filtro', tiposCredito.map(t => ({ value: t.toLowerCase(), text: t })), 'Todos', true);
     popularDropdown('plazo_filtro', plazosCredito.map(p => ({ value: p, text: `${p} semanas` })), 'Todos', true);
     popularDropdown('estado_credito_filtro', estadosCredito.map(e => ({ value: e, text: e.charAt(0).toUpperCase() + e.slice(1) })), 'Todos', true);
-
-
-    // Filtros y Formulario Usuarios
     popularDropdown('filtro-rol-usuario', roles, 'Todos los roles', true);
     popularDropdown('nuevo-rol', roles, 'Seleccione un rol', true);
-
-
-    // Formulario Pago Grupal
     popularDropdown('grupo_pago_grupal', todasLasPoblaciones, 'Selecciona un Grupo');
-
-
-    // Filtros Reportes Avanzados
-    // popularDropdown('sucursal_filtro_reporte', sucursales, 'Todas'); // Asumiendo que ya tienes <option value="GDL">...
     popularDropdown('grupo_filtro_reporte', todasLasPoblaciones, 'Todos');
     popularDropdown('ruta_filtro_reporte', rutas, 'Todas');
     popularDropdown('tipo_credito_filtro_reporte', tiposCredito.map(t => ({ value: t.toLowerCase(), text: t })), 'Todos', true);
-    popularDropdown('estado_credito_filtro_reporte', estadosCredito.map(e => ({ value: e, text: e.toUpperCase() })), 'Todos', true); // Estatus capitalizado
+    popularDropdown('estado_credito_filtro_reporte', estadosCredito.map(e => ({ value: e, text: e.toUpperCase() })), 'Todos', true);
     popularDropdown('tipo_pago_filtro_reporte', tiposPago.map(t => ({ value: t, text: t.toUpperCase() })), 'Todos', true);
-
-
-    // Filtros Reportes Gráficos
     popularDropdown('grafico_tipo_reporte', tiposReporteGrafico, 'Selecciona un reporte', true);
-    popularDropdown('grafico_grupo', todasLasPoblaciones, 'Todos'); // Inicializar con todas
+    popularDropdown('grafico_grupo', todasLasPoblaciones, 'Todos');
 }
 
 
-// Función auxiliar para actualizar plazos disponibles en colocación
 function actualizarPlazosSegunCliente(esComisionista) {
-    const plazosDisponibles = esComisionista ? [10] : [13, 14]; // Lógica de negocio
+    const plazosDisponibles = esComisionista ? [10] : [13, 14];
     popularDropdown('plazo_colocacion', plazosDisponibles.map(p => ({ value: p, text: `${p} semanas` })), 'Selecciona plazo', true);
 }
 
 
-// Listener para el evento 'viewshown' para cargar datos específicos de cada vista
 document.addEventListener('viewshown', function (e) {
     const viewId = e.detail.viewId;
     console.log(`Evento viewshown disparado para: ${viewId}`);
 
-    // Limpiar mensajes de estado al cambiar de vista (opcional, cuidado con no borrar mensajes importantes)
     document.querySelectorAll('.status-message').forEach(el => {
-        // No limpiar el de conexión ni los de dentro de un modal activo
         if (el.id !== 'connection-status' && !el.closest('#generic-modal:not(.hidden)')) {
             el.innerHTML = '';
             el.className = 'status-message hidden';
         }
     });
 
-
     switch (viewId) {
         case 'view-reportes':
-            loadBasicReports(); // Cargar reportes básicos al entrar
+            loadBasicReports(); // Cargar al entrar
             break;
         case 'view-reportes-avanzados':
-            inicializarVistaReportesAvanzados(); // Poner fechas por defecto
+            inicializarVistaReportesAvanzados();
             break;
         case 'view-usuarios':
-            loadUsersTable(); // Cargar tabla de usuarios
-            // Limpiar herramienta de diagnóstico
+            loadUsersTable();
             document.getElementById('diagnostico-id-credito').value = '';
             document.getElementById('status-diagnostico').classList.add('hidden');
             document.getElementById('resultado-diagnostico').classList.add('hidden');
             break;
         case 'view-gestion-clientes':
-            inicializarVistaGestionClientes(); // Limpiar tabla, no cargar datos aún
+            inicializarVistaGestionClientes();
             break;
         case 'view-cliente':
-            // Si NO estamos editando, asegurar que el formulario esté limpio
             if (!editingClientId) {
                 resetClientForm();
             }
-            // Si estamos editando, los datos ya se cargaron en la función editCliente
             break;
         case 'view-colocacion':
-            // Limpiar campos de búsqueda y formulario al entrar
             document.getElementById('curp_colocacion').value = '';
             document.getElementById('form-colocacion').classList.add('hidden');
             showStatus('status_colocacion', 'Ingresa la CURP del cliente para buscar.', 'info');
             break;
         case 'view-cobranza':
-            // Limpiar campos de búsqueda y formulario al entrar
             document.getElementById('idCredito_cobranza').value = '';
             document.getElementById('form-cobranza').classList.add('hidden');
             showStatus('status_cobranza', 'Ingresa el ID del crédito (histórico) para buscar.', 'info');
-            creditoActual = null; // Deseleccionar crédito
+            creditoActual = null;
             break;
         case 'view-pago-grupo':
-            // Limpiar formulario de pago grupal al entrar
             document.getElementById('grupo_pago_grupal').value = '';
             document.getElementById('grupo-pago-details').classList.add('hidden');
             document.getElementById('monto-recibido-grupo').value = '';
@@ -3177,17 +2801,11 @@ document.addEventListener('viewshown', function (e) {
             grupoDePagoActual = null;
             break;
         case 'view-reportes-graficos':
-            // Inicializar fechas por defecto (ej. último año)
             const hoyGraf = new Date();
-            const haceUnAnio = new Date(hoyGraf.getFullYear() - 1, hoyGraf.getMonth(), hoyGraf.getDate() + 1); // +1 para incluir hoy
-            const hoyISO = hoyGraf.toISOString().split('T')[0];
-            const haceUnAnioISO = haceUnAnio.toISOString().split('T')[0];
-
-            document.getElementById('grafico_fecha_inicio').value = haceUnAnioISO;
-            document.getElementById('grafico_fecha_fin').value = hoyISO;
-            // Actualizar grupos según la sucursal seleccionada (por defecto 'Ambas')
+            const haceUnAnio = new Date(hoyGraf.getFullYear() - 1, hoyGraf.getMonth(), hoyGraf.getDate() + 1);
+            document.getElementById('grafico_fecha_inicio').value = haceUnAnio.toISOString().split('T')[0];
+            document.getElementById('grafico_fecha_fin').value = hoyGraf.toISOString().split('T')[0];
             handleSucursalGraficoChange.call(document.getElementById('grafico_sucursal') || { value: '' });
-            // Limpiar gráfico anterior y mensaje
             if (currentChart) {
                 currentChart.destroy();
                 currentChart = null;
@@ -3195,14 +2813,11 @@ document.addEventListener('viewshown', function (e) {
             document.getElementById('grafico-container').innerHTML = '';
             showStatus('status_graficos', 'Selecciona los filtros y genera un gráfico.', 'info');
             break;
-        // Añadir casos para otras vistas si necesitan inicialización
         case 'view-importar':
-            // Resetear a GDL y pestaña clientes por defecto
             document.getElementById('office-select').value = 'GDL';
             handleOfficeChange.call(document.getElementById('office-select'));
             break;
         case 'view-main-menu':
-            // Podría limpiarse algún estado global aquí si fuera necesario
             break;
     }
 });
@@ -3211,22 +2826,14 @@ document.addEventListener('viewshown', function (e) {
 // *** MANEJO DE DUPLICADOS ***
 async function handleVerificarDuplicados() {
     showProcessingOverlay(true, 'Buscando clientes duplicados (por CURP + Oficina)...');
-    // =============================================
-    // *** INICIO DE LA CORRECCIÓN 3 (Instancia 9) ***
-    // =============================================
     showButtonLoading('#btn-verificar-duplicados', true);
-    // =============================================
-    // *** FIN DE LA CORRECCIÓN 3 (Instancia 9) ***
-    // =============================================
     const statusUsuarios = document.getElementById('status_usuarios');
     statusUsuarios.textContent = 'Buscando duplicados...';
     statusUsuarios.className = 'status-message status-info';
 
     try {
         const resultado = await database.encontrarClientesDuplicados();
-        if (!resultado.success) {
-            throw new Error(resultado.message);
-        }
+        if (!resultado.success) throw new Error(resultado.message);
 
         const { idsParaEliminar, duplicadosEncontrados, curpsAfectadas } = resultado;
 
@@ -3240,19 +2847,13 @@ async function handleVerificarDuplicados() {
                 `¿Deseas proceder con la limpieza? Esta acción no se puede deshacer.`
             );
 
-
             if (confirmacion) {
                 showProcessingOverlay(true, `Eliminando ${idsParaEliminar.length} registros duplicados...`);
                 statusUsuarios.textContent = 'Eliminando duplicados...';
-                statusUsuarios.className = 'status-message status-info';
-
-
                 const resEliminacion = await database.ejecutarEliminacionDuplicados(idsParaEliminar);
-
-
                 if (resEliminacion.success) {
                     showStatus('status_usuarios', resEliminacion.message, 'success');
-                    await loadUsersTable(); // Recargar tabla de usuarios por si acaso, aunque afecta clientes
+                    await loadUsersTable();
                 } else {
                     throw new Error(resEliminacion.message);
                 }
@@ -3260,31 +2861,18 @@ async function handleVerificarDuplicados() {
                 showStatus('status_usuarios', 'Operación de limpieza de duplicados cancelada por el usuario.', 'info');
             }
         }
-
     } catch (error) {
         console.error("Error al verificar/eliminar duplicados:", error);
         showStatus('status_usuarios', `Error durante la verificación/eliminación de duplicados: ${error.message}`, 'error');
     } finally {
         showProcessingOverlay(false);
-        // =============================================
-        // *** INICIO DE LA CORRECCIÓN 3 (Instancia 10) ***
-        // =============================================
         showButtonLoading('#btn-verificar-duplicados', false);
-        // =============================================
-        // *** FIN DE LA CORRECCIÓN 3 (Instancia 10) ***
-        // =============================================
     }
 }
 
 // ====================================================================
-// ** FUNCIÓN PARA MOSTRAR HISTORIAL DE PAGOS (MODIFICADA) **
+// ** FUNCIÓN PARA MOSTRAR HISTORIAL DE PAGOS **
 // ====================================================================
-/**
- * Muestra un modal con el historial de pagos de un crédito específico.
- * Usa el ID Histórico y la CURP para identificar el crédito correcto.
- * @param {string} historicalIdCredito El ID histórico del crédito a consultar.
- * @param {string} curpCliente La CURP del cliente asociado a este crédito específico.
- */
 async function mostrarHistorialPagos(historicalIdCredito, curpCliente) {
     const modal = document.getElementById('generic-modal');
     const modalTitle = document.getElementById('modal-title');
@@ -3295,57 +2883,43 @@ async function mostrarHistorialPagos(historicalIdCredito, curpCliente) {
         return;
     }
 
-    // Mostrar modal con estado de carga
     modalTitle.textContent = `Historial de Pagos (Crédito: ${historicalIdCredito})`;
     modalBody.innerHTML = '<div class="spinner" style="margin: 20px auto; border-top-color: var(--primary);"></div><p style="text-align: center;">Cargando historial...</p>';
     modal.classList.remove('hidden');
 
     try {
-        // 1. Buscar el crédito específico usando historicalId y CURP para desambiguar
         const creditos = await database.buscarCreditosPorHistoricalId(historicalIdCredito, { curpCliente: curpCliente });
         if (creditos.length === 0) {
             throw new Error(`No se encontró el crédito con ID histórico ${historicalIdCredito} para el cliente ${curpCliente}.`);
         }
-        // Si hubiera más de uno (no debería con CURP), tomar el más reciente
         creditos.sort((a, b) => (parsearFecha(b.fechaCreacion)?.getTime() || 0) - (parsearFecha(a.fechaCreacion)?.getTime() || 0));
-        const credito = creditos[0]; // El crédito específico { id: firestoreId, ..., historicalIdCredito: ... }
-
-        // 2. Buscar datos del cliente (para nombre)
+        const credito = creditos[0];
         const cliente = await database.buscarClientePorCURP(credito.curpCliente);
+        const pagos = await database.getPagosPorCredito(historicalIdCredito);
 
-        // 3. Buscar los pagos asociados al historicalIdCredito
-        const pagos = await database.getPagosPorCredito(historicalIdCredito); // Usa historicalId
-
-        // --- Renderizar Contenido del Modal ---
-
-        // Información Resumen del Crédito
         let resumenHTML = `
             <div class="info-grid" style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
                 <div class="info-item"><span class="info-label">Cliente:</span><span class="info-value">${cliente ? cliente.nombre : 'N/A'} (${credito.curpCliente})</span></div>
                  <div class="info-item"><span class="info-label">ID Crédito (Hist.):</span><span class="info-value">${credito.historicalIdCredito || 'N/A'}</span></div>
                  <div class="info-item"><span class="info-label">Oficina:</span><span class="info-value">${credito.office || 'N/A'}</span></div>
                 <div class="info-item"><span class="info-label">Monto Total:</span><span class="info-value">$${(credito.montoTotal || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
-                 <div class="info-item"><span class="info-label">Saldo Actual:</span><span class="info-value" style="color: var(--danger); font-weight: bold;">$${(credito.saldo || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
+                 <div class="info-item"><span class="info-label">Saldo Actual (DB):</span><span class="info-value" style="color: var(--danger); font-weight: bold;">$${(credito.saldo || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
                  <div class="info-item"><span class="info-label">Fecha Inicio:</span><span class="info-value">${formatDateForDisplay(parsearFecha(credito.fechaCreacion))}</span></div>
             </div>
          `;
 
-
-        // Tabla de Pagos
         let tablaHTML = '';
         if (pagos.length === 0) {
             tablaHTML = '<p class="status-message status-info">Este crédito no tiene pagos registrados.</p>';
         } else {
-            // Ordenar pagos por fecha, del más antiguo al más reciente para ver secuencia
             pagos.sort((a, b) => (parsearFecha(a.fecha)?.getTime() || 0) - (parsearFecha(b.fecha)?.getTime() || 0));
-
-
             let totalPagado = 0;
             const tableRows = pagos.map(pago => {
                 totalPagado += pago.monto || 0;
-                const saldoDespuesFormateado = (pago.saldoDespues !== undefined && pago.saldoDespues !== null)
+                // *** CORRECCIÓN: Usar toLocaleString para saldoDespues si es un número válido ***
+                const saldoDespuesFormateado = (typeof pago.saldoDespues === 'number' && !isNaN(pago.saldoDespues))
                     ? `$${pago.saldoDespues.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                    : 'N/A'; // Mostrar N/A si no está definido
+                    : (pago.saldoDespues || 'N/A'); // Mantener N/A o el valor original si no es número
                 return `
                     <tr>
                         <td>${formatDateForDisplay(parsearFecha(pago.fecha))}</td>
@@ -3357,13 +2931,8 @@ async function mostrarHistorialPagos(historicalIdCredito, curpCliente) {
                 `;
             }).join('');
 
-
-            // Añadir fila de total al final (opcional)
-            // const totalRow = `<tfoot><tr><td colspan="1"><strong>Total Pagado:</strong></td><td><strong>$${totalPagado.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></td><td colspan="3"></td></tr></tfoot>`;
-
-
             tablaHTML = `
-                 <p style="text-align: right; font-size: 14px; color: var(--gray);">Total Pagado (suma de este historial): <strong style="color: var(--success);">$${totalPagado.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></p>
+                 <p style="text-align: right; font-size: 14px; color: var(--gray);">Total Pagado (suma historial): <strong style="color: var(--success);">$${totalPagado.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></p>
                 <table class="payment-history-table">
                     <thead>
                         <tr>
@@ -3380,11 +2949,7 @@ async function mostrarHistorialPagos(historicalIdCredito, curpCliente) {
                  </table>
             `;
         }
-
-
-        // Actualizar cuerpo del modal
         modalBody.innerHTML = resumenHTML + tablaHTML;
-
 
     } catch (error) {
         console.error("Error al mostrar historial de pagos:", error);
@@ -3394,10 +2959,10 @@ async function mostrarHistorialPagos(historicalIdCredito, curpCliente) {
 
 
 // ====================================================================
-// ** FUNCIÓN PARA LA HERRAMIENTA DE DIAGNÓSTICO (ACTUALIZADA) **
+// ** FUNCIÓN PARA LA HERRAMIENTA DE DIAGNÓSTICO **
 // ====================================================================
 async function handleDiagnosticarPagos() {
-    const historicalIdCredito = document.getElementById('diagnostico-id-credito').value.trim(); // Es el ID histórico
+    const historicalIdCredito = document.getElementById('diagnostico-id-credito').value.trim();
     const statusEl = document.getElementById('status-diagnostico');
     const resultEl = document.getElementById('resultado-diagnostico');
     const outputEl = document.getElementById('diagnostico-json-output');
@@ -3415,42 +2980,36 @@ async function handleDiagnosticarPagos() {
     statusEl.textContent = 'Buscando pagos en la base de datos...';
     statusEl.className = 'status-message status-info';
     statusEl.classList.remove('hidden');
-    resultEl.classList.add('hidden'); // Ocultar resultados previos
+    resultEl.classList.add('hidden');
 
     try {
-        // Usar la función getPagosPorCredito que ahora busca por historicalIdCredito
         const pagos = await database.getPagosPorCredito(historicalIdCredito);
 
         if (pagos.length === 0) {
             statusEl.textContent = `Diagnóstico completo: Se encontraron 0 pagos para el ID Histórico ${historicalIdCredito}. Verifica si el ID es correcto o si los pagos se importaron asociados a otro ID.`;
             statusEl.className = 'status-message status-warning';
-            outputEl.textContent = '[]'; // Mostrar array vacío
-            resultEl.classList.remove('hidden'); // Mostrar área de resultados vacía
+            outputEl.textContent = '[]';
+            resultEl.classList.remove('hidden');
         } else {
             statusEl.textContent = `Diagnóstico completo: ¡Éxito! Se encontraron ${pagos.length} pagos para el ID Histórico ${historicalIdCredito}.`;
             statusEl.className = 'status-message status-success';
-
-            // Ordenar por fecha para mejor visualización en el diagnóstico
             pagos.sort((a, b) => (parsearFecha(a.fecha)?.getTime() || 0) - (parsearFecha(b.fecha)?.getTime() || 0));
-
-            // Formatear el JSON para que sea legible, incluyendo fechas formateadas
             outputEl.textContent = JSON.stringify(pagos.map(p => ({
                 ...p,
-                fecha_formateada: formatDateForDisplay(parsearFecha(p.fecha)), // Añadir fecha legible
-                monto: p.monto?.toFixed(2), // Asegurar formato decimal
-                saldoDespues: p.saldoDespues?.toFixed(2) // Asegurar formato decimal
-            })), null, 2); // Indentación de 2 espacios
-
-            resultEl.classList.remove('hidden'); // Mostrar área de resultados con el JSON
+                fecha_formateada: formatDateForDisplay(parsearFecha(p.fecha)),
+                monto: p.monto?.toFixed(2),
+                saldoDespues: typeof p.saldoDespues === 'number' ? p.saldoDespues.toFixed(2) : p.saldoDespues // Formatear si es número
+            })), null, 2);
+            resultEl.classList.remove('hidden');
         }
 
     } catch (error) {
         console.error("Error en diagnóstico:", error);
         statusEl.textContent = `Error al consultar la base de datos: ${error.message}`;
         statusEl.className = 'status-message status-error';
-        resultEl.classList.add('hidden'); // Ocultar resultados si hay error
+        resultEl.classList.add('hidden');
     } finally {
-        showButtonLoading(button, false); // Restaurar botón
+        showButtonLoading(button, false);
     }
 }
 
