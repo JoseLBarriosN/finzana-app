@@ -377,11 +377,13 @@ function aplicarPermisosUI(role) {
         // Permitir edición de CURP a Super Admin, Gerencia y Administrador
         const puedeEditarCURP = ['Super Admin', 'Gerencia', 'Administrador'].includes(userRoleKey);
         curpInput.readOnly = !puedeEditarCURP;
-        if (puedeEditarCURP) {
-            document.querySelector('label[for="curp_cliente"] + .field-note').style.display = 'block';
-        } else {
-            document.querySelector('label[for="curp_cliente"] + .field-note').style.display = 'none';
+
+        // --- Corrección del Selector ---
+        const curpFieldNote = curpInput.closest('.form-group')?.querySelector('.field-note'); // Busca el div.field-note dentro del .form-group padre
+        if (curpFieldNote) {
+             curpFieldNote.style.display = puedeEditarCURP ? 'block' : 'none';
         }
+        // --- Fin Corrección ---
     }
 }
 
@@ -3407,3 +3409,4 @@ async function handleDiagnosticarPagos() {
 
 
 console.log('app.js cargado correctamente y listo.');
+
