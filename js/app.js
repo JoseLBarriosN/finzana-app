@@ -2013,7 +2013,7 @@ async function handleSearchCreditForPayment() {
 
         showFixedProgress(80, 'Calculando historial del crédito...');
         // *** CORRECCIÓN: Obtener pagos para cálculo de estado ***
-        coconst pagos = await database.getPagosPorCredito(historicalIdCredito, creditoActual.office);
+        const pagos = await database.getPagosPorCredito(historicalIdCredito, creditoActual.office);
         pagos.sort((a, b) => (parsearFecha(b.fecha)?.getTime() || 0) - (parsearFecha(a.fecha)?.getTime() || 0));
 
         const historial = _calcularEstadoCredito(creditoActual, pagos); // <-- Pasa los pagos
@@ -3532,5 +3532,6 @@ async function handleDiagnosticarPagos() {
 
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
