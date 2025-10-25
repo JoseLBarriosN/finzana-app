@@ -3461,9 +3461,6 @@ async function mostrarHistorialPagos(historicalIdCredito, office) { // <-- PARÁ
         modalBody.innerHTML = `<p class="status-message status-error">Error al cargar el historial: ${error.message}</p>`;
     }
 }
-    }
-}
-
 
 // ====================================================================
 // ** FUNCIÓN PARA LA HERRAMIENTA DE DIAGNÓSTICO **
@@ -3552,6 +3549,7 @@ async function handleDiagnosticarPagos() {
 
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
