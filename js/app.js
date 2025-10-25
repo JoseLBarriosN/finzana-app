@@ -536,7 +536,7 @@ async function loadClientesTable() {
             const historicalId = credito.historicalIdCredito || credito.id;
 
             // *** CORRECCIÓN IMPORTANTE: Obtener pagos para el cálculo de estado ***
-            const pagos = await database.getPagosPorCredito(historicalId);
+            const pagos = await database.getPagosPorCredito(historicalId, credito.curpCliente);
             // Ordenar pagos DESC (más reciente primero) para _calcularEstadoCredito
             pagos.sort((a, b) => (parsearFecha(b.fecha)?.getTime() || 0) - (parsearFecha(a.fecha)?.getTime() || 0));
             const ultimoPago = pagos.length > 0 ? pagos[0] : null;
@@ -2013,7 +2013,7 @@ async function handleSearchCreditForPayment() {
 
         showFixedProgress(80, 'Calculando historial del crédito...');
         // *** CORRECCIÓN: Obtener pagos para cálculo de estado ***
-        const pagos = await database.getPagosPorCredito(historicalIdCredito);
+        const pagos = await database.getPagosPorCredito(historicalIdCredito, creditoActual.curpCliente);
         pagos.sort((a, b) => (parsearFecha(b.fecha)?.getTime() || 0) - (parsearFecha(a.fecha)?.getTime() || 0));
 
         const historial = _calcularEstadoCredito(creditoActual, pagos); // <-- Pasa los pagos
@@ -2083,7 +2083,7 @@ async function handlePaymentForm(e) {
 
     // *** CORRECCIÓN: Usar el saldo RECALCULADO (si estuviera disponible) o el de la DB para la validación de sobrepago ***
     // Re-buscamos el estado para tener el saldo más fidedigno posible ANTES de pagar
-    const pagos = await database.getPagosPorCredito(historicalId);
+    const pagos = await database.getPagosPorCredito(historicalId, creditoActual.curpCliente);
     pagos.sort((a, b) => (parsearFecha(b.fecha)?.getTime() || 0) - (parsearFecha(a.fecha)?.getTime() || 0));
     const historial = _calcularEstadoCredito(creditoActual, pagos);
     
@@ -2146,7 +2146,7 @@ async function handleMontoPagoChange() {
 
     // *** CORRECCIÓN: Usar el saldo RECALCULADO para la UI ***
     const historicalId = creditoActual.historicalIdCredito || creditoActual.id;
-    const pagos = await database.getPagosPorCredito(historicalId);
+    const pagos = await database.getPagosPorCredito(historicalId, creditoActual.curpCliente);
     pagos.sort((a, b) => (parsearFecha(b.fecha)?.getTime() || 0) - (parsearFecha(a.fecha)?.getTime() || 0));
     const historial = _calcularEstadoCredito(creditoActual, pagos);
     
@@ -2216,7 +2216,7 @@ async function handleBuscarGrupoParaPago() {
 
             // *** CORRECCIÓN: Usar la lógica de _calcularEstadoCredito para asegurar que no esté liquidado por pagos ***
             if (creditoActivo) {
-                 const pagos = await database.getPagosPorCredito(creditoActivo.historicalIdCredito || creditoActivo.id);
+                 const pagos = await database.getPagosPorCredito(creditoActivo.historicalIdCredito || creditoActivo.id, creditoActivo.curpCliente);
                  pagos.sort((a, b) => (parsearFecha(b.fecha)?.getTime() || 0) - (parsearFecha(a.fecha)?.getTime() || 0));
                  const estadoCalc = _calcularEstadoCredito(creditoActivo, pagos);
 
@@ -3370,7 +3370,7 @@ async function mostrarHistorialPagos(historicalIdCredito, curpCliente) {
         creditos.sort((a, b) => (parsearFecha(b.fechaCreacion)?.getTime() || 0) - (parsearFecha(a.fechaCreacion)?.getTime() || 0));
         const credito = creditos[0];
         const cliente = await database.buscarClientePorCURP(credito.curpCliente);
-        const pagos = await database.getPagosPorCredito(historicalIdCredito);
+        const pagos = await database.getPagosPorCredito(historicalIdCredito, curpCliente);
 
         // *** CORRECCIÓN: Calcular estado y saldo REAL aquí también para mostrarlo ***
         pagos.sort((a, b) => (parsearFecha(b.fecha)?.getTime() || 0) - (parsearFecha(a.fecha)?.getTime() || 0)); // Ordenar DESC para cálculo
@@ -3459,31 +3459,61 @@ async function handleDiagnosticarPagos() {
     }
 
     showButtonLoading(button, true, 'Verificando...');
-    statusEl.textContent = 'Buscando pagos en la base de datos...';
+    statusEl.textContent = 'Buscando créditos asociados al ID...';
     statusEl.className = 'status-message status-info';
     statusEl.classList.remove('hidden');
     resultEl.classList.add('hidden');
 
     try {
-        const pagos = await database.getPagosPorCredito(historicalIdCredito);
+        // 1. Buscar TODOS los créditos con ese ID (sin filtro de sucursal/curp)
+        const creditosAsociados = await database.buscarCreditosPorHistoricalId(historicalIdCredito, { userSucursal: null }); // Buscar en todas las sucursales
 
-        if (pagos.length === 0) {
-            statusEl.textContent = `Diagnóstico completo: Se encontraron 0 pagos para el ID Histórico ${historicalIdCredito}. Verifica si el ID es correcto o si los pagos se importaron asociados a otro ID.`;
+        if (creditosAsociados.length === 0) {
+            statusEl.textContent = `Diagnóstico: No se encontró NINGÚN crédito con el ID Histórico ${historicalIdCredito}.`;
             statusEl.className = 'status-message status-warning';
             outputEl.textContent = '[]';
             resultEl.classList.remove('hidden');
-        } else {
-            statusEl.textContent = `Diagnóstico completo: ¡Éxito! Se encontraron ${pagos.length} pagos para el ID Histórico ${historicalIdCredito}.`;
-            statusEl.className = 'status-message status-success';
-            pagos.sort((a, b) => (parsearFecha(a.fecha)?.getTime() || 0) - (parsearFecha(b.fecha)?.getTime() || 0));
-            outputEl.textContent = JSON.stringify(pagos.map(p => ({
-                ...p,
-                fecha_formateada: formatDateForDisplay(parsearFecha(p.fecha)),
-                monto: p.monto?.toFixed(2),
-                saldoDespues: typeof p.saldoDespues === 'number' ? p.saldoDespues.toFixed(2) : p.saldoDespues
-            })), null, 2);
-            resultEl.classList.remove('hidden');
+            showButtonLoading(button, false);
+            return;
         }
+
+        statusEl.textContent = `Se encontraron ${creditosAsociados.length} créditos. Buscando pagos para cada uno...`;
+        const diagnosticoCompleto = {};
+        let totalPagosEncontrados = 0;
+
+        for (const credito of creditosAsociados) {
+            const curp = credito.curpCliente;
+            const office = credito.office;
+            const clave = `Cliente: ${curp} (Sucursal: ${office})`;
+            
+            // 2. Buscar pagos CON el CURP
+            const pagos = await database.getPagosPorCredito(historicalIdCredito, curp);
+            totalPagosEncontrados += pagos.length;
+            
+            pagos.sort((a, b) => (parsearFecha(a.fecha)?.getTime() || 0) - (parsearFecha(b.fecha)?.getTime() || 0));
+            
+            diagnosticoCompleto[clave] = {
+                firestoreCreditoId: credito.id,
+                totalPagos: pagos.length,
+                pagos: pagos.map(p => ({
+                    ...p,
+                    fecha_formateada: formatDateForDisplay(parsearFecha(p.fecha)),
+                    monto: p.monto?.toFixed(2),
+                    saldoDespues: typeof p.saldoDespues === 'number' ? p.saldoDespues.toFixed(2) : p.saldoDespues
+                }))
+            };
+        }
+
+        if (totalPagosEncontrados === 0) {
+             statusEl.textContent = `Diagnóstico completo: Se encontraron ${creditosAsociados.length} créditos, pero 0 pagos asociados (usando el filtro de CURP).`;
+            statusEl.className = 'status-message status-warning';
+        } else {
+            statusEl.textContent = `Diagnóstico completo: ¡Éxito! Se encontraron ${totalPagosEncontrados} pagos distribuidos en ${creditosAsociados.length} créditos.`;
+            statusEl.className = 'status-message status-success';
+        }
+        
+        outputEl.textContent = JSON.stringify(diagnosticoCompleto, null, 2);
+        resultEl.classList.remove('hidden');
 
     } catch (error) {
         console.error("Error en diagnóstico:", error);
@@ -3497,3 +3527,4 @@ async function handleDiagnosticarPagos() {
 
 
 console.log('app.js cargado correctamente y listo.');
+
