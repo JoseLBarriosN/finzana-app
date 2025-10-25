@@ -576,51 +576,38 @@ const database = {
     },
 
 
+    // =============================================
+    // *** INICIO DE LA CORRECCIÓN ***
+    // =============================================
     // --- MÉTODOS DE PAGOS ---
-    getPagosPorCredito: async (historicalIdCredito, options = {}) => {
+    getPagosPorCredito: async (historicalIdCredito, curpCliente) => { // <-- PARÁMETRO AÑADIDO
         try {
-            let query = db.collection('pagos').where('idCredito', '==', historicalIdCredito);
-
-            // *** INICIO DE CORRECCIÓN PARA DESAMBIGUAR PAGOS ***
-            // Filtra los pagos basándose en el CURP del cliente asociado al crédito.
-            // Esto es esencial para evitar mezclar historiales de pago si diferentes
-            // clientes (en diferentes sucursales) comparten el mismo historicalIdCredito.
-            if (options.curpCliente) {
-                query = query.where('curpCliente', '==', options.curpCliente.toUpperCase());
-            } else {
-                 console.warn(`getPagosPorCredito fue llamado SIN options.curpCliente para el ID ${historicalIdCredito}. Los resultados de pagos podrían estar mezclados si este ID existe en múltiples sucursales.`);
+            // *** CORRECCIÓN CRÍTICA ***
+            // Se debe filtrar por historicalIdCredito Y por curpCliente para
+            // desambiguar créditos con el mismo ID en diferentes sucursales/clientes.
+            
+            if (!curpCliente || typeof curpCliente !== 'string' || curpCliente.trim() === '') {
+                // Si la función se llama sin CURP, es un error de lógica en la app.
+                // Devolvemos vacío para evitar mezclar datos.
+                console.warn(`getPagosPorCredito fue llamado para ID ${historicalIdCredito} sin un curpCliente. Devolviendo vacío para evitar datos mezclados. La lógica de app.js debe ser actualizada.`);
+                return []; // Devolver vacío previene el bug de datos mezclados.
             }
+            
+            // EL FILTRO QUE FALTABA:
+            const snapshot = await db.collection('pagos')
+                .where('idCredito', '==', historicalIdCredito)
+                .where('curpCliente', '==', curpCliente.toUpperCase()) // <-- EL FILTRO CLAVE
+                .get();
 
-            // Opcionalmente, filtrar por sucursal si se pasa.
-            // El curpCliente debería ser suficiente en 99% de los casos.
-            if (options.office) {
-                 query = query.where('office', '==', options.office);
-            }
-            // *** FIN DE CORRECCIÓN ***
-
-            const snapshot = await query.get();
             return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         } catch (error) {
-            console.error(`Error obteniendo pagos (filtrados) por historicalIdCredito ${historicalIdCredito}:`, error);
+            console.error(`Error obteniendo pagos por historicalIdCredito (${historicalIdCredito}) y CURP (${curpCliente}):`, error);
             return [];
         }
     },
-
-    /**
-     * Función de diagnóstico: Obtiene TODOS los pagos asociados a un historicalIdCredito,
-     * SIN filtrar por curpCliente u office.
-     * Usar solo para la herramienta de diagnóstico.
-     */
-    getPagosPorHistoricalId_UNFILTERED: async (historicalIdCredito) => {
-        try {
-            // Esta función es para diagnóstico. Trae TODOS los pagos con este ID.
-            const snapshot = await db.collection('pagos').where('idCredito', '==', historicalIdCredito).get();
-            return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        } catch (error) {
-            console.error("Error obteniendo pagos (sin filtrar) por historicalIdCredito:", error);
-            return [];
-        }
-    },
+    // =============================================
+    // *** FIN DE LA CORRECCIÓN ***
+    // =============================================
 
     agregarPago: async (pagoData, userEmail, firestoreCreditoId) => {
         try {
@@ -957,9 +944,29 @@ const database = {
             let totalVencidos = 0;
             creditosActivosPendientes.forEach(credito => {
                 const historicalId = credito.historicalIdCredito || credito.id;
-                const pagosCredito = pagosMap.get(historicalId) || [];
-                // Usar la función esCreditoVencido de este mismo archivo
-                if (database.esCreditoVencido(credito, pagosCredito).vencido) {
+                // *** CORRECCIÓN: Pasar CURP a esCreditoVencido (aunque la lógica interna no lo usa, es buena práctica) ***
+                // La lógica de esCreditoVencido usa el map que ya está segregado por sucursal (implícitamente)
+                // PERO... el map de pagos NO está segregado por CURP, solo por historicalId.
+                // Aquí es donde la lógica de reportes también falla.
+                // Debemos filtrar los pagos del map no solo por ID, sino también por CURP.
+                
+                // Re-hacer el map de pagos para que sea seguro
+                const pagosMapSeguro = new Map(); // clave: 'historicalId_curp'
+                pagos.forEach(p => {
+                    const key = `${p.idCredito}_${p.curpCliente}`;
+                    if (!pagosMapSeguro.has(key)) pagosMapSeguro.set(key, []);
+                    pagosMapSeguro.get(key).push(p);
+                });
+                // Ordenar
+                for (const [key, pagosCredito] of pagosMapSeguro.entries()) {
+                    pagosCredito.sort((a, b) => (parsearFecha(b.fecha)?.getTime() || 0) - (parsearFecha(a.fecha)?.getTime() || 0));
+                }
+
+                // Ahora usamos el map seguro
+                const claveSegura = `${credito.historicalIdCredito || credito.id}_${credito.curpCliente}`;
+                const pagosCreditoSeguro = pagosMapSeguro.get(claveSegura) || [];
+                
+                if (database.esCreditoVencido(credito, pagosCreditoSeguro).vencido) {
                     totalVencidos++;
                 }
             });
