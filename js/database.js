@@ -154,8 +154,8 @@ const database = {
             }
             // Asegurar que tenga sucursal definida o asignarle 'AMBAS' por defecto si no la tiene
             if (!userData.sucursal) {
-                 console.warn(`Usuario ${uid} no tiene sucursal definida. Asignando 'AMBAS' por defecto.`);
-                 userData.sucursal = 'AMBAS'; // O 'GDL'/'LEON' si prefieres un default específico
+                console.warn(`Usuario ${uid} no tiene sucursal definida. Asignando 'AMBAS' por defecto.`);
+                userData.sucursal = 'AMBAS'; // O 'GDL'/'LEON' si prefieres un default específico
             }
             return { id: doc.id, ...userData };
         } catch (error) {
@@ -577,13 +577,47 @@ const database = {
 
 
     // --- MÉTODOS DE PAGOS ---
-    getPagosPorCredito: async (historicalIdCredito) => {
+    getPagosPorCredito: async (historicalIdCredito, options = {}) => {
         try {
-            // No necesita filtro de sucursal, el ID histórico es la clave
+            let query = db.collection('pagos').where('idCredito', '==', historicalIdCredito);
+
+            // *** INICIO DE CORRECCIÓN PARA DESAMBIGUAR PAGOS ***
+            // Filtra los pagos basándose en el CURP del cliente asociado al crédito.
+            // Esto es esencial para evitar mezclar historiales de pago si diferentes
+            // clientes (en diferentes sucursales) comparten el mismo historicalIdCredito.
+            if (options.curpCliente) {
+                query = query.where('curpCliente', '==', options.curpCliente.toUpperCase());
+            } else {
+                 console.warn(`getPagosPorCredito fue llamado SIN options.curpCliente para el ID ${historicalIdCredito}. Los resultados de pagos podrían estar mezclados si este ID existe en múltiples sucursales.`);
+            }
+
+            // Opcionalmente, filtrar por sucursal si se pasa.
+            // El curpCliente debería ser suficiente en 99% de los casos.
+            if (options.office) {
+                 query = query.where('office', '==', options.office);
+            }
+            // *** FIN DE CORRECCIÓN ***
+
+            const snapshot = await query.get();
+            return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        } catch (error) {
+            console.error(`Error obteniendo pagos (filtrados) por historicalIdCredito ${historicalIdCredito}:`, error);
+            return [];
+        }
+    },
+
+    /**
+     * Función de diagnóstico: Obtiene TODOS los pagos asociados a un historicalIdCredito,
+     * SIN filtrar por curpCliente u office.
+     * Usar solo para la herramienta de diagnóstico.
+     */
+    getPagosPorHistoricalId_UNFILTERED: async (historicalIdCredito) => {
+        try {
+            // Esta función es para diagnóstico. Trae TODOS los pagos con este ID.
             const snapshot = await db.collection('pagos').where('idCredito', '==', historicalIdCredito).get();
             return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         } catch (error) {
-            console.error("Error obteniendo pagos por historicalIdCredito:", error);
+            console.error("Error obteniendo pagos (sin filtrar) por historicalIdCredito:", error);
             return [];
         }
     },
@@ -746,10 +780,10 @@ const database = {
                     const montoTotalCalculado = parseFloat((monto * (1 + interesRate)).toFixed(2));
 
                     if (montoTotal <= 0 || Math.abs(montoTotal - montoTotalCalculado) > 0.05) { // Si no viene, es 0, o difiere mucho
-                         if (montoTotal > 0) { // Si venía un monto pero era incorrecto
+                        if (montoTotal > 0) { // Si venía un monto pero era incorrecto
                             errores.push(`L${lineaNum}: Monto Total ${montoTotal} no coincide con ${monto} @ ${plazo}sem (Calc: ${montoTotalCalculado}). Usando calculado.`);
-                         }
-                         montoTotal = montoTotalCalculado;
+                        }
+                        montoTotal = montoTotalCalculado;
                     }
 
                     if (isNaN(saldo)) saldo = montoTotal; // Asumir saldo completo si no viene o es inválido
@@ -1134,7 +1168,7 @@ const database = {
             if (filtros.userSucursal && filtros.userSucursal !== 'AMBAS') {
                 filtros.sucursal = filtros.userSucursal;
             }
-            
+
             let creditosQuery = db.collection('creditos');
             let pagosQuery = db.collection('pagos');
 
@@ -1263,7 +1297,7 @@ const database = {
         }
     },
     ejecutarEliminacionDuplicados: async (ids) => {
-         if (!ids || ids.length === 0) return { success: true, message: 'No hay IDs para eliminar.' };
+        if (!ids || ids.length === 0) return { success: true, message: 'No hay IDs para eliminar.' };
 
         let batch = db.batch();
         let count = 0;
@@ -1293,8 +1327,8 @@ const database = {
             return { success: true, message: `Se eliminaron ${eliminados} registros duplicados.` };
         } catch (error) {
             console.error("Error eliminando duplicados en batch:", error);
-             // Intentar commit final si falla
-            try { if (count > 0) await batch.commit(); } catch (e) {}
+            // Intentar commit final si falla
+            try { if (count > 0) await batch.commit(); } catch (e) { }
             return { success: false, message: `Error durante la eliminación: ${error.message}. ${eliminados} pudieron haberse eliminado.` };
         }
     },
@@ -1313,12 +1347,12 @@ const database = {
         }
     },
     agregarPoblacion: async (nombre, sucursal) => {
-         try {
+        try {
             // Verificar si ya existe
             const existeSnap = await db.collection('poblaciones')
-                                    .where('nombre', '==', nombre)
-                                    .where('sucursal', '==', sucursal)
-                                    .limit(1).get();
+                .where('nombre', '==', nombre)
+                .where('sucursal', '==', sucursal)
+                .limit(1).get();
             if (!existeSnap.empty) {
                 return { success: false, message: `La población "${nombre}" ya existe en la sucursal ${sucursal}.` };
             }
@@ -1353,9 +1387,9 @@ const database = {
         try {
             // Verificar si ya existe
             const existeSnap = await db.collection('rutas')
-                                    .where('nombre', '==', nombre)
-                                    .where('sucursal', '==', sucursal)
-                                    .limit(1).get();
+                .where('nombre', '==', nombre)
+                .where('sucursal', '==', sucursal)
+                .limit(1).get();
             if (!existeSnap.empty) {
                 return { success: false, message: `La ruta "${nombre}" ya existe en la sucursal ${sucursal}.` };
             }
