@@ -1125,8 +1125,6 @@ function setupEventListeners() {
     if (btnCancelarUsuario) btnCancelarUsuario.addEventListener('click', ocultarFormularioUsuario);
     const formUsuario = document.getElementById('form-usuario');
     if (formUsuario) formUsuario.addEventListener('submit', handleUserForm);
-    const btnDiagnosticarPagos = document.getElementById('btn-diagnosticar-pagos');
-    if (btnDiagnosticarPagos) btnDiagnosticarPagos.addEventListener('click', handleDiagnosticarPagos);
 
     const officeSelect = document.getElementById('office-select');
     if (officeSelect) officeSelect.addEventListener('change', handleOfficeChange);
@@ -3233,12 +3231,6 @@ document.addEventListener('viewshown', async function (e) {
         case 'view-reportes-avanzados':
             inicializarVistaReportesAvanzados();
             break;
-        case 'view-usuarios':
-            loadUsersTable();
-            document.getElementById('diagnostico-id-credito').value = '';
-            document.getElementById('status-diagnostico').classList.add('hidden');
-            document.getElementById('resultado-diagnostico').classList.add('hidden');
-            break;
         case 'view-configuracion':
             loadConfiguracion(); // Cargar al entrar
             break;
@@ -3532,6 +3524,7 @@ async function handleDiagnosticarPagos() {
 
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
