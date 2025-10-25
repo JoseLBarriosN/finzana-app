@@ -577,36 +577,60 @@ const database = {
 
 
     // =============================================
-    // *** INICIO DE LA CORRECCIÓN ***
+    // *** INICIO DE LA CORRECCIÓN (REVISIÓN 2) ***
     // =============================================
     // --- MÉTODOS DE PAGOS ---
-    getPagosPorCredito: async (historicalIdCredito, curpCliente) => { // <-- PARÁMETRO AÑADIDO
+    /**
+     * Obtiene los pagos de un crédito específico, desambiguando por SUCURSAL (office).
+     * @param {string} historicalIdCredito El ID histórico del crédito.
+     * @param {string} office La sucursal (GDL o LEON) del crédito.
+     * @returns {Array<object>} Un array de objetos de pago.
+     */
+    getPagosPorCredito: async (historicalIdCredito, office) => {
         try {
-            // *** CORRECCIÓN CRÍTICA ***
-            // Se debe filtrar por historicalIdCredito Y por curpCliente para
-            // desambiguar créditos con el mismo ID en diferentes sucursales/clientes.
+            // *** CORRECCIÓN CRÍTICA (REVISIÓN 2) ***
+            // Usamos 'office' (sucursal) como la clave de desambiguación.
             
-            if (!curpCliente || typeof curpCliente !== 'string' || curpCliente.trim() === '') {
-                // Si la función se llama sin CURP, es un error de lógica en la app.
+            if (!office || (office !== 'GDL' && office !== 'LEON')) {
+                // Si la función se llama sin 'office', es un error de lógica en la app.
                 // Devolvemos vacío para evitar mezclar datos.
-                console.warn(`getPagosPorCredito fue llamado para ID ${historicalIdCredito} sin un curpCliente. Devolviendo vacío para evitar datos mezclados. La lógica de app.js debe ser actualizada.`);
+                console.warn(`getPagosPorCredito fue llamado para ID ${historicalIdCredito} sin una 'office' (sucursal) válida. Devolviendo vacío para evitar datos mezclados. La lógica de app.js debe ser actualizada.`);
                 return []; // Devolver vacío previene el bug de datos mezclados.
             }
             
-            // EL FILTRO QUE FALTABA:
+            // EL FILTRO QUE FALTABA (CORREGIDO):
             const snapshot = await db.collection('pagos')
                 .where('idCredito', '==', historicalIdCredito)
-                .where('curpCliente', '==', curpCliente.toUpperCase()) // <-- EL FILTRO CLAVE
+                .where('office', '==', office) // <-- EL FILTRO CLAVE
                 .get();
 
             return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         } catch (error) {
-            console.error(`Error obteniendo pagos por historicalIdCredito (${historicalIdCredito}) y CURP (${curpCliente}):`, error);
+            console.error(`Error obteniendo pagos por historicalIdCredito (${historicalIdCredito}) y Office (${office}):`, error);
+            return [];
+        }
+    },
+
+    /**
+     * (NUEVA FUNCIÓN PARA DIAGNÓSTICO)
+     * Obtiene TODOS los pagos de un ID histórico, sin importar la sucursal.
+     * Usar solo para la herramienta de diagnóstico.
+     * @param {string} historicalIdCredito El ID histórico del crédito.
+     * @returns {Array<object>} Un array de objetos de pago.
+     */
+    getAllPagosPorHistoricalId: async (historicalIdCredito) => {
+        try {
+            const snapshot = await db.collection('pagos')
+                .where('idCredito', '==', historicalIdCredito)
+                .get();
+            return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        } catch (error) {
+            console.error("Error getting all payments for diagnostic:", error);
             return [];
         }
     },
     // =============================================
-    // *** FIN DE LA CORRECCIÓN ***
+    // *** FIN DE LA CORRECCIÓN (REVISIÓN 2) ***
     // =============================================
 
     agregarPago: async (pagoData, userEmail, firestoreCreditoId) => {
@@ -832,13 +856,29 @@ const database = {
 
                     let curpClientePago = '';
                     let officePago = office;
+                    // *** CORRECCIÓN: Usar el nombre del cliente (columna 0) para encontrar el CURP si es posible ***
+                    // Esto es más robusto si los IDs están duplicados pero los nombres no.
+                    // Sin embargo, la lógica original de buscar por ID y sucursal es más simple y debería ser suficiente.
                     const creditosAsoc = await database.buscarCreditosPorHistoricalId(historicalIdCredito, { office: office });
+                    
                     if (creditosAsoc.length > 0) {
-                        creditosAsoc.sort((a, b) => (parsearFecha(b.fechaCreacion)?.getTime() || 0) - (parsearFecha(a.fechaCreacion)?.getTime() || 0));
-                        curpClientePago = creditosAsoc[0].curpCliente;
-                        officePago = creditosAsoc[0].office;
+                        // Si hay varios, intentamos coincidir por nombre
+                        const nombreClientePago = campos[0] || '';
+                        let creditoEncontrado = creditosAsoc[0]; // Default al primero (más reciente)
+                        if (creditosAsoc.length > 1 && nombreClientePago) {
+                            const matchPorNombre = creditosAsoc.find(c => c.nombreCliente === nombreClientePago);
+                            if (matchPorNombre) {
+                                creditoEncontrado = matchPorNombre;
+                            }
+                        }
+                        curpClientePago = creditoEncontrado.curpCliente;
+                        officePago = creditoEncontrado.office; // Debería ser == office
                     } else {
                         errores.push(`L${lineaNum}: No se encontró crédito asociado (${historicalIdCredito}, ${office}) para obtener CURP/Office.`);
+                        // Aún si no se encuentra, guardamos el pago con la sucursal de importación
+                        // y el curpCliente vacío, pero marcamos el 'office'
+                        curpClientePago = ''; // No se pudo determinar
+                        officePago = office;
                     }
 
                     const pago = {
@@ -853,8 +893,8 @@ const database = {
                         nombreCliente: campos[0] || '',
                         registradoPor: 'importacion_csv',
                         fechaImportacion: fechaImportacion,
-                        curpCliente: curpClientePago,
-                        office: officePago
+                        curpCliente: curpClientePago, // Guardamos el CURP que encontramos
+                        office: officePago // Guardamos el Office
                     };
 
                     const docRef = db.collection('pagos').doc();
@@ -930,40 +970,23 @@ const database = {
             const totalComisionesMes = pagosDelMes.reduce((sum, p) => sum + (p.comision || 0), 0);
 
             // 3. Créditos Vencidos (usando la lógica de >7 días desde último pago/creación)
-            const pagosMap = new Map();
+            // *** CORRECCIÓN: Usar un Map seguro (ID + Office) para los pagos ***
+            const pagosMapSeguro = new Map(); // clave: 'historicalId_office'
             pagos.forEach(p => {
-                const key = p.idCredito; // idCredito en pago es historicalId
-                if (!pagosMap.has(key)) pagosMap.set(key, []);
-                pagosMap.get(key).push(p);
+                const key = `${p.idCredito}_${p.office}`; // Usar ID y Office
+                if (!pagosMapSeguro.has(key)) pagosMapSeguro.set(key, []);
+                pagosMapSeguro.get(key).push(p);
             });
             // Ordenar pagos en el map
-            for (const [key, pagosCredito] of pagosMap.entries()) {
+            for (const [key, pagosCredito] of pagosMapSeguro.entries()) {
                 pagosCredito.sort((a, b) => (parsearFecha(b.fecha)?.getTime() || 0) - (parsearFecha(a.fecha)?.getTime() || 0));
             }
 
             let totalVencidos = 0;
             creditosActivosPendientes.forEach(credito => {
+                // Usar el map seguro
                 const historicalId = credito.historicalIdCredito || credito.id;
-                // *** CORRECCIÓN: Pasar CURP a esCreditoVencido (aunque la lógica interna no lo usa, es buena práctica) ***
-                // La lógica de esCreditoVencido usa el map que ya está segregado por sucursal (implícitamente)
-                // PERO... el map de pagos NO está segregado por CURP, solo por historicalId.
-                // Aquí es donde la lógica de reportes también falla.
-                // Debemos filtrar los pagos del map no solo por ID, sino también por CURP.
-                
-                // Re-hacer el map de pagos para que sea seguro
-                const pagosMapSeguro = new Map(); // clave: 'historicalId_curp'
-                pagos.forEach(p => {
-                    const key = `${p.idCredito}_${p.curpCliente}`;
-                    if (!pagosMapSeguro.has(key)) pagosMapSeguro.set(key, []);
-                    pagosMapSeguro.get(key).push(p);
-                });
-                // Ordenar
-                for (const [key, pagosCredito] of pagosMapSeguro.entries()) {
-                    pagosCredito.sort((a, b) => (parsearFecha(b.fecha)?.getTime() || 0) - (parsearFecha(a.fecha)?.getTime() || 0));
-                }
-
-                // Ahora usamos el map seguro
-                const claveSegura = `${credito.historicalIdCredito || credito.id}_${credito.curpCliente}`;
+                const claveSegura = `${historicalId}_${credito.office}`;
                 const pagosCreditoSeguro = pagosMapSeguro.get(claveSegura) || [];
                 
                 if (database.esCreditoVencido(credito, pagosCreditoSeguro).vencido) {
