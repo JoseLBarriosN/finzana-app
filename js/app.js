@@ -1222,12 +1222,15 @@ function setupEventListeners() {
     const modalCloseBtn = document.getElementById('modal-close-btn');
     if (modalCloseBtn) modalCloseBtn.addEventListener('click', () => document.getElementById('generic-modal').classList.add('hidden'));
     const modalOverlay = document.getElementById('generic-modal');
-    if (modalOverlay) { /* ... (sin cambios) ... */ }
+    if (modalOverlay) {
+        // El addEventListener DEBE estar DENTRO del bloque if
         modalOverlay.addEventListener('click', (event) => {
+            // Si se hace clic en el fondo oscuro (el overlay mismo)
             if (event.target === modalOverlay) {
-                modalOverlay.classList.add('hidden');
+                modalOverlay.classList.add('hidden'); // Ocultar el modal
             }
         });
+        // La llave de cierre del 'if' va AQUÍ, después del addEventListener
     }
 
 // =============================================
@@ -3651,6 +3654,7 @@ async function handleDiagnosticarPagos() {
 
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
