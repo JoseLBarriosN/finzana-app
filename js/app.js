@@ -3391,20 +3391,45 @@ async function mostrarHistorialPagos(historicalIdCredito, office) { // <-- PARÁ
         if (pagos.length === 0) {
             tablaHTML = '<p class="status-message status-info">Este crédito no tiene pagos registrados.</p>';
         } else {
-            // Reordenar ASC para mostrar en tabla
+            // Reordenar ASC (más antiguo primero) para calcular el saldo secuencialmente
             pagos.sort((a, b) => (parsearFecha(a.fecha)?.getTime() || 0) - (parsearFecha(b.fecha)?.getTime() || 0));
+
+            let saldoActual = credito.montoTotal || 0; // Empezar con el monto total del crédito
             let totalPagado = 0;
             const tableRows = pagos.map(pago => {
-                totalPagado += pago.monto || 0;
-                const saldoDespuesFormateado = (typeof pago.saldoDespues === 'number' && !isNaN(pago.saldoDespues))
-                    ? `$${pago.saldoDespues.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                    : (pago.saldoDespues || 'N/A');
+                const montoPago = pago.monto || 0;
+                totalPagado += montoPago;
+                saldoActual -= montoPago; // Restar el pago al saldo actual
+
+                // Asegurar que el saldo no sea negativo (podría pasar por redondeos mínimos)
+                if (saldoActual < 0.005) {
+                    saldoActual = 0;
+                }
+
+                const saldoDespuesCalculado = `$${saldoActual.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+                // Intentar obtener el saldo guardado para comparación (opcional, para debug)
+                const saldoGuardadoRaw = pago.saldoDespues;
+                let saldoGuardadoFormateado = 'N/A';
+                let discrepanciaClass = '';
+                if (typeof saldoGuardadoRaw === 'number' && !isNaN(saldoGuardadoRaw)) {
+                     saldoGuardadoFormateado = `$${saldoGuardadoRaw.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                     // Comparar calculado vs guardado (con tolerancia)
+                     if (Math.abs(saldoActual - saldoGuardadoRaw) > 0.02) { // Tolerancia de 2 centavos
+                         discrepanciaClass = 'saldo-discrepancy'; // Clase CSS para resaltar
+                     }
+                }
+
+
                 return `
-                    <tr>
+                    <tr class="${discrepanciaClass}">
                         <td>${formatDateForDisplay(parsearFecha(pago.fecha))}</td>
-                        <td>$${(pago.monto || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                        <td>$${montoPago.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                         <td>${pago.tipoPago || 'normal'}</td>
-                        <td>${saldoDespuesFormateado}</td>
+                        <td>
+                            ${saldoDespuesCalculado}
+                            ${saldoGuardadoFormateado !== 'N/A' && discrepanciaClass ? `<br><small class="saldo-guardado">(DB: ${saldoGuardadoFormateado})</small>` : ''}
+                        </td>
                         <td>${pago.registradoPor || 'N/A'}</td>
                     </tr>
                 `;
@@ -3418,7 +3443,7 @@ async function mostrarHistorialPagos(historicalIdCredito, office) { // <-- PARÁ
                             <th>Fecha Pago</th>
                             <th>Monto</th>
                             <th>Tipo</th>
-                            <th>Saldo Después</th>
+                            <th>Saldo Después (Calculado)</th>
                             <th>Registrado Por</th>
                         </tr>
                     </thead>
@@ -3426,6 +3451,7 @@ async function mostrarHistorialPagos(historicalIdCredito, office) { // <-- PARÁ
                         ${tableRows}
                     </tbody>
                  </table>
+                 ${document.querySelector('.saldo-discrepancy') ? '<p style="font-size: 11px; color: var(--danger); margin-top: 10px;">* Filas resaltadas indican discrepancia entre saldo calculado y saldo guardado en el pago (posiblemente por importación o edición manual).</p>' : ''}
             `;
         }
         modalBody.innerHTML = resumenHTML + tablaHTML;
@@ -3433,6 +3459,8 @@ async function mostrarHistorialPagos(historicalIdCredito, office) { // <-- PARÁ
     } catch (error) {
         console.error("Error al mostrar historial de pagos:", error);
         modalBody.innerHTML = `<p class="status-message status-error">Error al cargar el historial: ${error.message}</p>`;
+    }
+}
     }
 }
 
@@ -3524,6 +3552,7 @@ async function handleDiagnosticarPagos() {
 
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
