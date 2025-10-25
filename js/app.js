@@ -536,7 +536,7 @@ async function loadClientesTable() {
             const historicalId = credito.historicalIdCredito || credito.id;
 
             // *** CORRECCIÓN IMPORTANTE: Obtener pagos para el cálculo de estado ***
-            const pagos = await database.getPagosPorCredito(historicalId, credito.curpCliente);
+            const pagos = await database.getPagosPorCredito(historicalId, credito.office);
             // Ordenar pagos DESC (más reciente primero) para _calcularEstadoCredito
             pagos.sort((a, b) => (parsearFecha(b.fecha)?.getTime() || 0) - (parsearFecha(a.fecha)?.getTime() || 0));
             const ultimoPago = pagos.length > 0 ? pagos[0] : null;
@@ -2013,7 +2013,7 @@ async function handleSearchCreditForPayment() {
 
         showFixedProgress(80, 'Calculando historial del crédito...');
         // *** CORRECCIÓN: Obtener pagos para cálculo de estado ***
-        const pagos = await database.getPagosPorCredito(historicalIdCredito, creditoActual.curpCliente);
+        coconst pagos = await database.getPagosPorCredito(historicalIdCredito, creditoActual.office);
         pagos.sort((a, b) => (parsearFecha(b.fecha)?.getTime() || 0) - (parsearFecha(a.fecha)?.getTime() || 0));
 
         const historial = _calcularEstadoCredito(creditoActual, pagos); // <-- Pasa los pagos
@@ -2083,7 +2083,7 @@ async function handlePaymentForm(e) {
 
     // *** CORRECCIÓN: Usar el saldo RECALCULADO (si estuviera disponible) o el de la DB para la validación de sobrepago ***
     // Re-buscamos el estado para tener el saldo más fidedigno posible ANTES de pagar
-    const pagos = await database.getPagosPorCredito(historicalId, creditoActual.curpCliente);
+    const pagos = await database.getPagosPorCredito(historicalId, creditoActual.office);
     pagos.sort((a, b) => (parsearFecha(b.fecha)?.getTime() || 0) - (parsearFecha(a.fecha)?.getTime() || 0));
     const historial = _calcularEstadoCredito(creditoActual, pagos);
     
@@ -2146,7 +2146,7 @@ async function handleMontoPagoChange() {
 
     // *** CORRECCIÓN: Usar el saldo RECALCULADO para la UI ***
     const historicalId = creditoActual.historicalIdCredito || creditoActual.id;
-    const pagos = await database.getPagosPorCredito(historicalId, creditoActual.curpCliente);
+    const pagos = await database.getPagosPorCredito(historicalId, creditoActual.office);
     pagos.sort((a, b) => (parsearFecha(b.fecha)?.getTime() || 0) - (parsearFecha(a.fecha)?.getTime() || 0));
     const historial = _calcularEstadoCredito(creditoActual, pagos);
     
@@ -2216,7 +2216,7 @@ async function handleBuscarGrupoParaPago() {
 
             // *** CORRECCIÓN: Usar la lógica de _calcularEstadoCredito para asegurar que no esté liquidado por pagos ***
             if (creditoActivo) {
-                 const pagos = await database.getPagosPorCredito(creditoActivo.historicalIdCredito || creditoActivo.id, creditoActivo.curpCliente);
+                 const pagos = await database.getPagosPorCredito(creditoActivo.historicalIdCredito || creditoActivo.id, creditoActivo.office);
                  pagos.sort((a, b) => (parsearFecha(b.fecha)?.getTime() || 0) - (parsearFecha(a.fecha)?.getTime() || 0));
                  const estadoCalc = _calcularEstadoCredito(creditoActivo, pagos);
 
@@ -3348,7 +3348,7 @@ async function handleVerificarDuplicados() {
 // ====================================================================
 // ** FUNCIÓN PARA MOSTRAR HISTORIAL DE PAGOS **
 // ====================================================================
-async function mostrarHistorialPagos(historicalIdCredito, curpCliente) {
+async function mostrarHistorialPagos(historicalIdCredito, office) { // <-- PARÁMETRO CAMBIADO
     const modal = document.getElementById('generic-modal');
     const modalTitle = document.getElementById('modal-title');
     const modalBody = document.getElementById('modal-body');
@@ -3358,21 +3358,26 @@ async function mostrarHistorialPagos(historicalIdCredito, curpCliente) {
         return;
     }
 
-    modalTitle.textContent = `Historial de Pagos (Crédito: ${historicalIdCredito})`;
+    modalTitle.textContent = `Historial de Pagos (Crédito: ${historicalIdCredito} - Suc: ${office})`;
     modalBody.innerHTML = '<div class="spinner" style="margin: 20px auto; border-top-color: var(--primary);"></div><p style="text-align: center;">Cargando historial...</p>';
     modal.classList.remove('hidden');
 
     try {
-        const creditos = await database.buscarCreditosPorHistoricalId(historicalIdCredito, { curpCliente: curpCliente });
+        // Buscar el crédito usando el ID y el OFFICE
+        const creditos = await database.buscarCreditosPorHistoricalId(historicalIdCredito, { office: office });
         if (creditos.length === 0) {
-            throw new Error(`No se encontró el crédito con ID histórico ${historicalIdCredito} para el cliente ${curpCliente}.`);
+            throw new Error(`No se encontró el crédito con ID histórico ${historicalIdCredito} en la sucursal ${office}.`);
         }
         creditos.sort((a, b) => (parsearFecha(b.fechaCreacion)?.getTime() || 0) - (parsearFecha(a.fechaCreacion)?.getTime() || 0));
         const credito = creditos[0];
+        
+        // Buscar al cliente
         const cliente = await database.buscarClientePorCURP(credito.curpCliente);
-        const pagos = await database.getPagosPorCredito(historicalIdCredito, curpCliente);
+        
+        // Buscar los pagos usando el ID y el OFFICE
+        const pagos = await database.getPagosPorCredito(historicalIdCredito, office);
 
-        // *** CORRECCIÓN: Calcular estado y saldo REAL aquí también para mostrarlo ***
+        // *** Calcular estado y saldo REAL aquí también para mostrarlo ***
         pagos.sort((a, b) => (parsearFecha(b.fecha)?.getTime() || 0) - (parsearFecha(a.fecha)?.getTime() || 0)); // Ordenar DESC para cálculo
         const estadoCalculado = _calcularEstadoCredito(credito, pagos);
         const saldoReal = estadoCalculado ? estadoCalculado.saldoRestante : (credito.saldo || 0); // Usar calculado si es posible
@@ -3527,4 +3532,5 @@ async function handleDiagnosticarPagos() {
 
 
 console.log('app.js cargado correctamente y listo.');
+
 
