@@ -586,7 +586,7 @@ async function loadClientesTable() {
                         <div class="info-item"><span class="info-label">Nombre Aval:</span><span class="info-value">${credito.nombreAval || 'N/A'}</span></div>
                          <div class="info-item"><span class="info-label">CURP Aval:</span><span class="info-value">${credito.curpAval || 'N/A'}</span></div>
                     </div>
-                    <button class="btn btn-sm btn-info" onclick="mostrarHistorialPagos('${historicalId}', '${credito.curpCliente}')" style="width: 100%; margin-top: 10px;">
+                    <button class="btn btn-sm btn-info" onclick="mostrarHistorialPagos('${historicalId}', '${credito.office}')" style="width: 100%; margin-top: 10px;">
                         <i class="fas fa-receipt"></i> Ver Historial de Pagos (${pagos.length})
                     </button>
                 </div>`;
@@ -3524,6 +3524,7 @@ async function handleDiagnosticarPagos() {
 
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
