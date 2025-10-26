@@ -631,25 +631,25 @@
                         <button id="btn-buscar-grupo-pago" class="btn btn-primary"><i class="fas fa-search"></i> Calcular Cobranza</button>
                     </div>
                 </div>
-                <div id="grupo-pago-details" class="hidden">
-                    <div class="info-grid" style="background: #f8f9fa; padding: 20px; border-radius: var(--border-radius);">
-                        <div class="info-item">
-                            <span class="info-label">Clientes con Crédito Activo:</span>
-                            <span class="info-value" id="total-clientes-grupo">0</span>
-                        </div>
-                        <div class="info-item">
-                            <span class="info-label">Total a Cobrar Esta Semana:</span>
-                            <span class="info-value" id="total-a-cobrar-grupo">$0.00</span>
-                        </div>
+                <div id="grupo-pago-tabla-container" class="hidden" style="margin-top: 20px;">
+                <h4>Detalle de Cobranza Esperada</h4>
+                <table class="report-table" style="margin-bottom: 20px;">
+                    <thead>
+                        <tr>
+                            <th>Nombre Cliente</th>
+                            <th>CURP</th>
+                            <th>ID Crédito (Hist.)</th>
+                            <th>Pago Semanal</th>
+                            <th>Registrar Pago</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tabla-pago-grupal-detalle-body">
+                        </tbody>
+                </table>
+
+                <div id="grupo-pago-resumen">
                     </div>
-                    <div class="form-group" style="margin-top: 20px;">
-                        <label for="monto-recibido-grupo">Monto Total Recibido <span class="required">*</span></label>
-                        <input type="number" id="monto-recibido-grupo" step="0.01" required>
-                    </div>
-                    <div class="form-group">
-                        <button id="btn-registrar-pago-grupal" class="btn btn-success"><i class="fas fa-check-circle"></i> Registrar Pago Grupal</button>
-                    </div>
-                </div>
+            </div>
                 <div id="status_pago_grupo"></div>
             </div>
 
@@ -933,6 +933,7 @@
     <script src="js/app.js"></script>
 </body>
 </html>
+
 
 
 
