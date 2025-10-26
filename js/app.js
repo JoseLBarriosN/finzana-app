@@ -2272,11 +2272,15 @@ async function handleBuscarGrupoParaPago() {
     const grupo = grupoSelect.value;
     const statusPagoGrupo = document.getElementById('status_pago_grupo');
     const btnBuscar = document.getElementById('btn-buscar-grupo-pago');
-    const detailsDiv = document.getElementById('grupo-pago-details');
+    const tablaDetalleBody = document.getElementById('tabla-pago-grupal-detalle-body'); // <-- Elemento para la nueva tabla
+    const resumenDiv = document.getElementById('grupo-pago-resumen'); // <-- Nuevo div para resumen
 
     if (!grupo) {
         showStatus('status_pago_grupo', 'Por favor, selecciona un grupo.', 'warning');
         detailsDiv.classList.add('hidden');
+        return;
+    }
+    if (!tablaDetalleBody || !resumenDiv) {
         return;
     }
 
@@ -2284,23 +2288,34 @@ async function handleBuscarGrupoParaPago() {
     showProcessingOverlay(true, `Buscando créditos activos en el grupo ${grupo}...`);
     statusPagoGrupo.innerHTML = 'Calculando cobranza para el grupo...';
     statusPagoGrupo.className = 'status-message status-info';
-    detailsDiv.classList.add('hidden');
+    tablaDetalleBody.innerHTML = '<tr><td colspan="5">Buscando...</td></tr>'; // <-- Limpiar tabla
+    resumenDiv.innerHTML = ''; // Limpiar resumen
     grupoDePagoActual = null;
 
     try {
+        // *** NUEVO: Determinar si hay que filtrar por ruta ***
+        let filtroRuta = null;
+        if (currentUserData?.role === 'Área comercial' && currentUserData.ruta) {
+            filtroRuta = currentUserData.ruta;
+            console.log(`Filtrando pago grupal por ruta asignada: ${filtroRuta}`);
+        }
+
+        // *** Pasar filtroRuta a buscarClientes ***
         const clientesDelGrupo = await database.buscarClientes({
             grupo: grupo,
-            userSucursal: currentUserData?.sucursal // Aplicar segregación
+            ruta: filtroRuta, // <-- AÑADIR FILTRO RUTA
+            userSucursal: currentUserData?.sucursal // Aplicar segregación de sucursal
         });
 
         if (clientesDelGrupo.length === 0) {
-            throw new Error(`No se encontraron clientes registrados en el grupo '${grupo}' (en tu sucursal).`);
+             throw new Error(`No se encontraron clientes en el grupo '${grupo}' ${filtroRuta ? `y ruta '${filtroRuta}'` : ''} (en tu sucursal).`);
         }
-
-        let totalClientesActivos = 0;
+        
+        let totalClientesConPago = 0;
         let totalACobrarSemanal = 0;
-        let creditosParaPagar = [];
+        let creditosParaPagar = []; // Array para guardar datos detallados
         let clientesConErrores = [];
+        tablaDetalleBody.innerHTML = ''; // Limpiar tabla antes de llenar
 
         for (const cliente of clientesDelGrupo) {
             const creditoActivo = await database.buscarCreditoActivoPorCliente(cliente.curp);
@@ -2311,62 +2326,106 @@ async function handleBuscarGrupoParaPago() {
                  pagos.sort((a, b) => (parsearFecha(b.fecha)?.getTime() || 0) - (parsearFecha(a.fecha)?.getTime() || 0));
                  const estadoCalc = _calcularEstadoCredito(creditoActivo, pagos);
 
-                // Solo incluir si el estado calculado NO es 'liquidado'
-                if (estadoCalc && estadoCalc.estado !== 'liquidado') {
-                    if (estadoCalc.pagoSemanal > 0) {
-                        totalClientesActivos++;
+                // Solo incluir si NO está liquidado y tiene pago semanal > 0
+                if (estadoCalc && estadoCalc.estado !== 'liquidado' && estadoCalc.pagoSemanal > 0.01) {
+                    // *** OPCIONAL: Lógica para "Pago Pendiente" ***
+                     // Comprobar si ya pagó esta semana o si está muy atrasado
+                     // Esta lógica puede ser compleja (definir "esta semana", etc.)
+                     // Por ahora, incluimos a todos los activos con pago > 0
+                     let esPagoPendiente = true; // Simplificación: asumimos pendiente si está activo
+                     // A FUTURO: const diasDesdeUltimoPago = ... calcular ...; if (diasDesdeUltimoPago < 7) esPagoPendiente = false;
+
+                     if (esPagoPendiente) {
+                        totalClientesConPago++;
                         totalACobrarSemanal += estadoCalc.pagoSemanal;
-                        creditosParaPagar.push({
+                        const creditoDetalle = {
                             firestoreId: creditoActivo.id,
                             historicalIdCredito: creditoActivo.historicalIdCredito || creditoActivo.id,
                             curpCliente: cliente.curp,
                             nombreCliente: cliente.nombre,
                             pagoSemanal: estadoCalc.pagoSemanal,
+                            saldoRestante: estadoCalc.saldoRestante, // <-- Guardar saldo restante
                             office: creditoActivo.office // Guardar sucursal para el pago
-                        });
-                    } else {
-                         console.warn(`Crédito ${creditoActivo.historicalIdCredito || creditoActivo.id} de ${cliente.curp} tiene pago semanal 0.`);
-                         clientesConErrores.push(`${cliente.nombre} (${cliente.curp}) - Pago semanal 0`);
-                    }
-                }
-                 else if (!estadoCalc) {
-                    console.warn(`Crédito ${creditoActivo.historicalIdCredito || creditoActivo.id} de ${cliente.curp} tiene datos inconsistentes (monto/plazo).`);
+                        };
+                        creditosParaPagar.push(creditoDetalle);
+
+                        // *** Añadir fila a la tabla ***
+                        const row = tablaDetalleBody.insertRow();
+                        row.innerHTML = `
+                            <td>${cliente.nombre}</td>
+                            <td>${cliente.curp}</td>
+                            <td>${creditoDetalle.historicalIdCredito}</td>
+                            <td class="monto-pago">$${estadoCalc.pagoSemanal.toFixed(2)}</td>
+                            <td>
+                                <input type="checkbox" class="pago-grupal-check" data-firestore-id="${creditoActivo.id}" checked>
+                                <input type="number" class="pago-grupal-monto-individual" value="${estadoCalc.pagoSemanal.toFixed(2)}" step="0.01" style="width: 80px; display: none;">
+                            </td>
+                        `;
+                     }
+
+                } else if (!estadoCalc) {
                     clientesConErrores.push(`${cliente.nombre} (${cliente.curp}) - Datos inconsistentes`);
+                } else if (estadoCalc.pagoSemanal <= 0.01) {
+                     clientesConErrores.push(`${cliente.nombre} (${cliente.curp}) - Pago semanal 0`);
                 }
             }
+        } // Fin del bucle for clientes
+
+        if (totalClientesConPago === 0) {
+             let msg = `No se encontraron créditos activos con pago semanal > 0 en el grupo '${grupo}' ${filtroRuta ? `y ruta '${filtroRuta}'` : ''}.`;
+             if (clientesConErrores.length > 0) msg += ` (${clientesConErrores.length} clientes con datos inconsistentes omitidos).`;
+             throw new Error(msg);
         }
 
-        if (totalClientesActivos === 0) {
-            let msg = `No se encontraron créditos activos con saldo pendiente en el grupo '${grupo}'.`;
-            if (clientesConErrores.length > 0) {
-                msg += ` ${clientesConErrores.length} clientes tuvieron créditos con datos inconsistentes.`
-            }
-            throw new Error(msg);
-        }
-
+        // Guardar datos para el registro
         grupoDePagoActual = {
             grupo: grupo,
-            creditos: creditosParaPagar,
-            totalCalculado: totalACobrarSemanal
+            ruta: filtroRuta, // Guardar la ruta filtrada
+            creditos: creditosParaPagar // Guardar la lista detallada
         };
 
-        document.getElementById('total-clientes-grupo').textContent = totalClientesActivos;
-        document.getElementById('total-a-cobrar-grupo').textContent = `$${totalACobrarSemanal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-        document.getElementById('monto-recibido-grupo').value = totalACobrarSemanal.toFixed(2);
+        // Mostrar resumen
+        resumenDiv.innerHTML = `
+            <div class="info-grid">
+                <div class="info-item">
+                    <span class="info-label">Clientes con Pago Semanal > $0.01:</span>
+                    <span class="info-value">${totalClientesConPago}</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Total Cobranza Esperada:</span>
+                    <span class="info-value" id="total-calculado-grupal">$${totalACobrarSemanal.toFixed(2)}</span>
+                </div>
+            </div>
+            <div class="form-group" style="margin-top: 15px;">
+                 <label for="monto-recibido-grupo">Monto Total Recibido HOY:</label>
+                 <input type="number" id="monto-recibido-grupo" step="0.01" value="${totalACobrarSemanal.toFixed(2)}">
+                 <div class="field-note">Ajusta si el total recibido es diferente. El sistema registrará los pagos individuales marcados.</div>
+            </div>
+            <button id="btn-registrar-pago-grupal" class="btn btn-success"><i class="fas fa-check-circle"></i> Registrar Pagos Marcados</button>
+         `;
+         // Re-asociar listener al botón recién creado
+         const btnRegistrar = document.getElementById('btn-registrar-pago-grupal');
+         if(btnRegistrar) btnRegistrar.addEventListener('click', handleRegistroPagoGrupal);
 
-        detailsDiv.classList.remove('hidden');
-        let successMsg = `Se encontraron ${totalClientesActivos} créditos activos para cobrar esta semana en el grupo '${grupo}'.`;
+
+        // Mostrar tabla y resumen
+        document.getElementById('grupo-pago-tabla-container').classList.remove('hidden'); // <-- Mostrar contenedor de tabla/resumen
+
+        let successMsg = `Se encontraron ${totalClientesConPago} créditos para cobrar en '${grupo}' ${filtroRuta ? ` / ruta '${filtroRuta}'` : ''}. Verifica la lista.`;
         if (clientesConErrores.length > 0) {
-            successMsg += ` (${clientesConErrores.length} con datos inconsistentes omitidos).`;
-            showStatus('status_pago_grupo', successMsg, 'warning');
+             successMsg += ` (${clientesConErrores.length} omitidos).`;
+             showStatus('status_pago_grupo', successMsg, 'warning');
         } else {
-            showStatus('status_pago_grupo', successMsg, 'success');
+             showStatus('status_pago_grupo', successMsg, 'success');
         }
 
     } catch (error) {
         console.error("Error al buscar grupo para pago:", error);
         showStatus('status_pago_grupo', `Error: ${error.message}`, 'error');
-        detailsDiv.classList.add('hidden');
+        // Ocultar tabla y resumen en caso de error
+        document.getElementById('grupo-pago-tabla-container').classList.add('hidden');
+        tablaDetalleBody.innerHTML = `<tr><td colspan="5">Error al buscar: ${error.message}</td></tr>`;
+        resumenDiv.innerHTML = '';
         grupoDePagoActual = null;
     } finally {
         showButtonLoading(btnBuscar, false);
@@ -3654,3 +3713,4 @@ async function handleDiagnosticarPagos() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
