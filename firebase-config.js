@@ -24,9 +24,10 @@ const auth = firebase.auth();
 const db = firebase.firestore();
 
 // ===== INICIO DE LA MODIFICACIÓN (Persistencia de SESIÓN) =====
-auth.setPersistence(firebase.auth.Auth.Persistence.SESSION)
+auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL) // <-- ¡CAMBIO IMPORTANTE!
     .then(() => {
-        console.log("✅ Persistencia de sesión establecida. La sesión se cerrará al cerrar la pestaña.");
+        // Puedes cambiar el mensaje si quieres
+        console.log("✅ Persistencia LOCAL de sesión establecida. La sesión persistirá entre cierres.");
         // Habilitar la persistencia de datos de Firestore DESPUÉS de configurar la de Auth.
         return db.enablePersistence();
     })
@@ -48,3 +49,4 @@ auth.setPersistence(firebase.auth.Auth.Persistence.SESSION)
         }
     });
 // ===== FIN DE LA MODIFICACIÓN =====
+
