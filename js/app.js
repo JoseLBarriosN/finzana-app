@@ -2435,133 +2435,108 @@ async function handleBuscarGrupoParaPago() {
 
 
 async function handleRegistroPagoGrupal() {
-    const btnRegistrar = document.getElementById('btn-registrar-pago-grupal');
     const statusPagoGrupo = document.getElementById('status_pago_grupo');
-    const montoRecibidoInput = document.getElementById('monto-recibido-grupo');
+    const tablaDetalleBody = document.getElementById('tabla-pago-grupal-detalle-body');
+    const checkboxes = tablaDetalleBody.querySelectorAll('.pago-grupal-check:checked');
 
     if (!grupoDePagoActual || !grupoDePagoActual.creditos || grupoDePagoActual.creditos.length === 0) {
-        showStatus('status_pago_grupo', 'Error: No hay un grupo calculado o no hay créditos para registrar.', 'error');
+        showStatus('status_pago_grupo', 'Error: No hay datos de grupo cargados para registrar.', 'error');
+        return;
+    }
+    if (!checkboxes || checkboxes.length === 0) {
+         showStatus('status_pago_grupo', 'No hay pagos seleccionados para registrar.', 'warning');
         return;
     }
 
-    const montoRecibido = parseFloat(montoRecibidoInput.value);
-    const { creditos, totalCalculado, grupo } = grupoDePagoActual;
+    // Obtener el monto total recibido (opcionalmente podrías usarlo para validaciones)
+    // const montoTotalRecibido = parseFloat(document.getElementById('monto-recibido-grupo')?.value) || 0;
 
-    if (isNaN(montoRecibido) || montoRecibido <= 0) {
-        showStatus('status_pago_grupo', 'Error: El monto total recibido debe ser un número positivo.', 'error');
-        montoRecibidoInput.classList.add('input-error');
-        return;
-    } else {
-        montoRecibidoInput.classList.remove('input-error');
-    }
+    const { grupo, ruta } = grupoDePagoActual; // Obtener grupo/ruta para el log
 
-    const tolerancia = 0.015;
-    if (montoRecibido < totalCalculado - tolerancia) {
-        showStatus('status_pago_grupo', `Advertencia: El monto recibido ($${montoRecibido.toFixed(2)}) es menor al total calculado ($${totalCalculado.toFixed(2)}). El pago grupal solo registra el pago semanal completo. Registra faltantes individualmente.`, 'warning');
-        return;
-    }
-    if (montoRecibido > totalCalculado + tolerancia) {
-        showStatus('status_pago_grupo', `Advertencia: El monto recibido ($${montoRecibido.toFixed(2)}) es mayor al total calculado ($${totalCalculado.toFixed(2)}). Solo se registrará el pago semanal ($${totalCalculado.toFixed(2)}). Registra pagos extraordinarios individualmente.`, 'warning');
-    }
-
-    showButtonLoading(btnRegistrar, true, 'Registrando...');
-    showProcessingOverlay(true, `Registrando ${creditos.length} pagos para el grupo ${grupo}...`);
-    statusPagoGrupo.innerHTML = 'Registrando pagos grupales...';
+    showProcessingOverlay(true, `Registrando ${checkboxes.length} pagos para ${grupo}${ruta ? ` / ${ruta}`: ''}...`);
+    statusPagoGrupo.innerHTML = `Registrando ${checkboxes.length} pagos seleccionados...`;
     statusPagoGrupo.className = 'status-message status-info';
 
-    try {
-        let pagosRegistrados = 0;
-        const erroresRegistro = [];
-        const MAX_BATCH_SIZE = 100; // Reducir el tamaño del lote para evitar timeouts de transacción
+    let pagosRegistrados = 0;
+    const erroresRegistro = [];
 
-        for (let i = 0; i < creditos.length; i += MAX_BATCH_SIZE) {
-            const chunk = creditos.slice(i, i + MAX_BATCH_SIZE);
-            showProcessingOverlay(true, `Procesando lote ${Math.floor(i / MAX_BATCH_SIZE) + 1} de ${Math.ceil(creditos.length / MAX_BATCH_SIZE)}...`);
+    // Usar Promise.all para procesar en paralelo (con límites si son muchos)
+    // O un bucle simple si prefieres secuencial
+    const promesasPagos = [];
 
-            // Usar transacciones individuales por lote
-            await db.runTransaction(async (transaction) => {
-                const creditosRefs = chunk.map(c => db.collection('creditos').doc(c.firestoreId));
-                const creditosDocs = await Promise.all(creditosRefs.map(ref => transaction.get(ref)));
+    checkboxes.forEach(checkbox => {
+        const firestoreId = checkbox.getAttribute('data-firestore-id');
+        const fila = checkbox.closest('tr');
+        const montoElement = fila.querySelector('.monto-pago'); // Celda con el monto semanal
+        // Podrías usar un input individual si permites modificar el monto:
+        // const montoInput = fila.querySelector('.pago-grupal-monto-individual');
+        // const montoPago = parseFloat(montoInput.value);
 
-                for (let j = 0; j < chunk.length; j++) {
-                    const creditoInfo = chunk[j];
-                    const creditoDoc = creditosDocs[j];
-                    
-                    if (creditoDoc.exists) {
-                        const creditoActualData = creditoDoc.data();
-                        
-                        // Validar saldo *dentro* de la transacción
-                        // Nota: getPagosPorCredito no puede estar en la transacción,
-                        //       así que confiamos en que el estado calculado en handleBuscarGrupoParaPago
-                        //       sigue siendo mayormente válido. La transacción protege contra concurrencia.
-                        const estadoCalc = _calcularEstadoCredito(creditoActualData, []); // Usamos un array vacío aquí, la validación principal ya se hizo.
-                                                                                       // La transacción se basa en creditoActualData.saldo que sí lee.
-                        
-                        if (creditoActualData.saldo > 0.01) { // Validar con el saldo leído en la transacción
-                            const pagoMonto = creditoInfo.pagoSemanal;
-                            // Asegurarse de no sobrepagar con el saldo de la transacción
-                            const montoAPagar = Math.min(pagoMonto, creditoActualData.saldo);
-                            const nuevoSaldo = creditoActualData.saldo - montoAPagar;
-                            
-                            const creditoRef = creditoDoc.ref;
-                            transaction.update(creditoRef, {
-                                saldo: (nuevoSaldo <= 0.01) ? 0 : nuevoSaldo,
-                                estado: (nuevoSaldo <= 0.01) ? 'liquidado' : creditoActualData.estado, // Marcar liquidado si saldo llega a 0
-                                modificadoPor: currentUser.email,
-                                fechaModificacion: new Date().toISOString()
-                            });
+        // Por ahora, usamos el monto semanal mostrado
+        const montoTexto = montoElement?.textContent.replace('$', '') || '0';
+        const montoPago = parseFloat(montoTexto);
 
-                            const pagoRef = db.collection('pagos').doc();
-                            transaction.set(pagoRef, {
-                                idCredito: creditoInfo.historicalIdCredito,
-                                monto: montoAPagar,
-                                tipoPago: 'grupal',
-                                fecha: new Date().toISOString(),
-                                saldoDespues: (nuevoSaldo <= 0.01) ? 0 : nuevoSaldo,
-                                registradoPor: currentUser.email,
-                                office: creditoInfo.office,
-                                curpCliente: creditoActualData.curpCliente,
-                                grupo: grupo
-                            });
+        // Buscar datos del crédito en la lista guardada (grupoDePagoActual.creditos)
+        const creditoInfo = grupoDePagoActual.creditos.find(c => c.firestoreId === firestoreId);
+
+        if (montoPago > 0 && creditoInfo) {
+            const pagoData = {
+                idCredito: creditoInfo.historicalIdCredito, // Historical ID
+                monto: montoPago,
+                tipoPago: 'grupal' // Marcar como grupal
+            };
+
+            // Añadir la promesa de registro a la lista
+             promesasPagos.push(
+                database.agregarPago(pagoData, currentUser.email, firestoreId)
+                    .then(resultado => {
+                        if (resultado.success) {
                             pagosRegistrados++;
                         } else {
-                            console.log(`Crédito ${creditoInfo.historicalIdCredito} ya liquidado (saldo DB: ${creditoActualData.saldo}), omitiendo pago grupal.`);
+                            erroresRegistro.push(`Cliente ${creditoInfo.nombreCliente}: ${resultado.message}`);
                         }
-                    } else {
-                        erroresRegistro.push(`Crédito Doc ${creditoInfo.firestoreId} no existe.`);
-                    }
-                }
-            }); // Fin de la transacción
+                    })
+                    .catch(error => {
+                         erroresRegistro.push(`Cliente ${creditoInfo.nombreCliente}: ${error.message}`);
+                    })
+             );
 
-            console.log(`Lote de ${chunk.length} pagos grupales procesado.`);
-            if (i + MAX_BATCH_SIZE < creditos.length) {
-                await new Promise(resolve => setTimeout(resolve, 100));
-            }
+        } else if (!creditoInfo) {
+             erroresRegistro.push(`No se encontraron datos internos para el crédito ID: ${firestoreId}`);
+        } else {
+             console.warn(`Monto inválido (${montoPago}) para crédito ID: ${firestoreId}. Omitiendo.`);
         }
+    }); // Fin forEach checkbox
 
+    try {
+        // Esperar a que todas las promesas de pago terminen
+        await Promise.all(promesasPagos);
 
-        let finalMessage = `¡Éxito! Se registraron ${pagosRegistrados} pagos grupales para el grupo '${grupo}'.`;
+        let finalMessage = `Registro completado: ${pagosRegistrados} pagos registrados exitosamente.`;
         let finalStatusType = 'success';
 
         if (erroresRegistro.length > 0) {
-            finalMessage += ` Se encontraron ${erroresRegistro.length} errores: ${erroresRegistro.join(', ')}`;
-            finalStatusType = 'warning';
+            finalMessage += ` ${erroresRegistro.length} pagos fallaron. Detalles:\n - ${erroresRegistro.join('\n - ')}`;
+            finalStatusType = (pagosRegistrados > 0) ? 'warning' : 'error';
             console.error("Errores durante registro de pago grupal:", erroresRegistro);
         }
 
-        showStatus('status_pago_grupo', finalMessage, finalStatusType);
+        showStatus('status_pago_grupo', finalMessage.replace(/\n/g, '<br>'), finalStatusType); // Mostrar saltos de línea en HTML
 
-        document.getElementById('grupo-pago-details').classList.add('hidden');
+        // Limpiar la vista
+        document.getElementById('grupo-pago-tabla-container').classList.add('hidden');
         document.getElementById('grupo_pago_grupal').value = '';
-        montoRecibidoInput.value = '';
+        document.getElementById('tabla-pago-grupal-detalle-body').innerHTML = '';
+        document.getElementById('grupo-pago-resumen').innerHTML = '';
         grupoDePagoActual = null;
 
-    } catch (error) {
-        console.error("Error crítico al registrar pago grupal:", error);
-        showStatus('status_pago_grupo', `Error crítico al registrar los pagos: ${error.message}. Es posible que algunos pagos no se hayan completado.`, 'error');
+
+    } catch (error) { // Error inesperado en Promise.all (poco probable aquí)
+         console.error("Error crítico al procesar pagos grupales:", error);
+         showStatus('status_pago_grupo', `Error crítico durante el registro: ${error.message}`, 'error');
     } finally {
-        showButtonLoading(btnRegistrar, false);
-        showProcessingOverlay(false);
+         showProcessingOverlay(false);
+         // El botón se elimina y recrea, no necesita showButtonLoading(false)
     }
 }
 
