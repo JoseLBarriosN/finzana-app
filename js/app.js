@@ -1637,19 +1637,20 @@ async function loadUsersTable() {
         const filtroEmail = (document.getElementById('filtro-email-usuario')?.value || '').trim().toLowerCase();
         const filtroNombre = (document.getElementById('filtro-nombre-usuario')?.value || '').trim().toLowerCase();
         const filtroRol = document.getElementById('filtro-rol-usuario')?.value || '';
-        const filtroSucursalUsuario = document.getElementById('filtro-sucursal-usuario')?.value || ''; // <-- Filtro de sucursal de la UI
+        const filtroOfficeUsuario = document.getElementById('filtro-sucursal-usuario')?.value || ''; // <-- Variable correcta definida aquí
 
         const usuariosFiltrados = usuarios.filter(usuario => {
-            // Calcular cada condición de match
             const emailMatch = !filtroEmail || (usuario.email && usuario.email.toLowerCase().includes(filtroEmail));
             const nombreMatch = !filtroNombre || (usuario.name && usuario.name.toLowerCase().includes(filtroNombre));
             const rolMatch = !filtroRol || usuario.role === filtroRol;
+
+            // *** CORRECCIÓN AQUÍ ***
+            // Usar la variable 'filtroOfficeUsuario' que definimos arriba
             const officeUiMatch = !filtroOfficeUsuario || usuario.office === filtroOfficeUsuario || (filtroOfficeUsuario === 'AMBAS' && usuario.office === 'AMBAS');
 
             const adminOffice = currentUserData?.office;
             const adminOfficeMatch = !adminOffice || adminOffice === 'AMBAS' || usuario.office === adminOffice || !usuario.office;
 
-            // Devolver true solo si TODAS las condiciones se cumplen
             return emailMatch && nombreMatch && rolMatch && officeUiMatch && adminOfficeMatch;
         });
 
@@ -3870,6 +3871,7 @@ async function handleDiagnosticarPagos() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
