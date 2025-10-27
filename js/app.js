@@ -2342,7 +2342,7 @@ async function handleCalcularCobranzaRuta() {
             // Necesitamos adaptar buscarClientes o hacer la query aquí
             // Haremos la query aquí para claridad, asumiendo índice necesario
             let clientesQuery = db.collection('clientes')
-                                  .where('sucursal', '==', userSucursal) // O 'office' si el campo es diferente
+                                  .where('office', '==', userSucursal) // O 'office' si el campo es diferente
                                   .where('poblacion_grupo', 'in', chunkPoblaciones);
 
             const clientesSnapshot = await clientesQuery.get();
@@ -3892,6 +3892,7 @@ async function handleDiagnosticarPagos() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
