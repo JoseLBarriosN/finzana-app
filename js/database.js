@@ -138,56 +138,54 @@ const database = {
     },
 
     obtenerUsuarioPorId: async (uid) => {
-        try {
-            const docRef = db.collection('users').doc(uid);
-            const doc = await docRef.get();
-            if (!doc.exists) {
-                console.warn(`Usuario ${uid} no encontrado.`);
-                return null;
-            }
-            const userData = doc.data();
-            // Asegurar que tenga rol para evitar problemas de permisos
-            if (!userData.role) {
-                console.error(`Datos incompletos para usuario ${uid}: Falta rol.`);
-                // Devolver con error para que la UI sepa
-                return { id: doc.id, ...userData, error: "Datos incompletos (falta rol)" };
-            }
-            // Asegurar que tenga sucursal definida o asignarle 'AMBAS' por defecto si no la tiene
-            if (!userData.sucursal) {
-                console.warn(`Usuario ${uid} no tiene sucursal definida. Asignando 'AMBAS' por defecto.`);
-                userData.sucursal = 'AMBAS'; // O 'GDL'/'LEON' si prefieres un default específico
-            }
-            return { id: doc.id, ...userData };
-        } catch (error) {
-            console.error("Error obteniendo usuario por ID:", error);
+    try {
+        const docRef = db.collection('users').doc(uid);
+        const doc = await docRef.get();
+        if (!doc.exists) {
+            console.warn(`Usuario ${uid} no encontrado.`);
             return null;
         }
-    },
+        const userData = doc.data();
+        if (!userData.role) {
+            console.error(`Datos incompletos para usuario ${uid}: Falta rol.`);
+            return { id: doc.id, ...userData, error: "Datos incompletos (falta rol)" };
+        }
+        // AHORA USA 'office', ASIGNA 'AMBAS' SI FALTA
+        if (!userData.office) { // <-- CAMBIO DE sucursal A office
+            console.warn(`Usuario ${uid} no tiene 'office' definida. Asignando 'AMBAS' por defecto.`);
+            userData.office = 'AMBAS'; // <-- CAMBIO DE sucursal A office
+        }
+        return { id: doc.id, ...userData };
+    } catch (error) {
+        console.error("Error obteniendo usuario por ID:", error);
+        return null;
+    }
+},
 
 
     actualizarUsuario: async (uid, userData) => {
-        try {
-            const dataToUpdate = { ...userData };
-            delete dataToUpdate.email;
-            delete dataToUpdate.id;
+    try {
+        const dataToUpdate = { ...userData };
+        delete dataToUpdate.email;
+        delete dataToUpdate.id;
 
-            if (!dataToUpdate.role || !dataToUpdate.sucursal) {
-                return { success: false, message: 'Rol y Sucursal son obligatorios.' };
-            }
-            if (!['GDL', 'LEON', 'AMBAS'].includes(dataToUpdate.sucursal)) {
-                return { success: false, message: 'Sucursal no válida.' };
-            }
-
-            dataToUpdate.fechaModificacion = new Date().toISOString();
-            // dataToUpdate.modificadoPor = emailDelAdmin; // Auditoría
-
-            await db.collection('users').doc(uid).update(dataToUpdate);
-            return { success: true, message: 'Usuario actualizado.' };
-        } catch (error) {
-            console.error("Error actualizando usuario:", error);
-            return { success: false, message: `Error al actualizar: ${error.message}` };
+        // AHORA VALIDA 'office'
+        if (!dataToUpdate.role || !dataToUpdate.office) { // <-- CAMBIO DE sucursal A office
+            return { success: false, message: 'Rol y Oficina son obligatorios.' }; // <-- Mensaje actualizado
         }
-    },
+        if (!['GDL', 'LEON', 'AMBAS'].includes(dataToUpdate.office)) { // <-- CAMBIO DE sucursal A office
+            return { success: false, message: 'Oficina no válida.' }; // <-- Mensaje actualizado
+        }
+
+        dataToUpdate.fechaModificacion = new Date().toISOString();
+
+        await db.collection('users').doc(uid).update(dataToUpdate);
+        return { success: true, message: 'Usuario actualizado.' };
+    } catch (error) {
+        console.error("Error actualizando usuario:", error);
+        return { success: false, message: `Error al actualizar: ${error.message}` };
+    }
+},
 
     deshabilitarUsuario: async (uid) => {
         try {
@@ -1065,29 +1063,100 @@ const database = {
         } catch (error) { console.error("Error eliminando duplicados en batch:", error); try { if (count > 0) await batch.commit(); } catch (e) { } return { success: false, message: `Error durante la eliminación: ${error.message}. ${eliminados} pudieron haberse eliminado.` }; }
     },
 
-    obtenerPoblaciones: async (sucursal = null) => {
-        // ... (sin cambios) ...
-        try { let query = db.collection('poblaciones'); if (sucursal && sucursal !== 'AMBAS') query = query.where('sucursal', '==', sucursal); const snapshot = await query.orderBy('nombre').get(); return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })); } catch (error) { console.error("Error obteniendo poblaciones:", error); return []; }
-    },
-    agregarPoblacion: async (nombre, sucursal) => {
-        // ... (sin cambios) ...
-        try { const existeSnap = await db.collection('poblaciones').where('nombre', '==', nombre).where('sucursal', '==', sucursal).limit(1).get(); if (!existeSnap.empty) return { success: false, message: `La población "${nombre}" ya existe en la sucursal ${sucursal}.` }; await db.collection('poblaciones').add({ nombre: nombre.toUpperCase(), sucursal }); return { success: true, message: 'Población agregada.' }; } catch (error) { console.error("Error agregando población:", error); return { success: false, message: `Error: ${error.message}` }; }
-    },
+    obtenerPoblaciones: async (office = null) => { // <-- CAMBIO DE sucursal A office
+    console.log(`>>> obtenerPoblaciones llamada con office: ${office}`); // <-- Log actualizado
+    try {
+        let query = db.collection('poblaciones');
+        // AHORA FILTRA POR 'office'
+        if (office && office !== 'AMBAS') { // <-- CAMBIO DE sucursal A office
+             console.log(`>>> Filtrando poblaciones por office: ${office}`); // <-- Log actualizado
+             query = query.where('office', '==', office); // <-- CAMBIO DE sucursal A office
+        } else {
+             console.log(">>> Obteniendo todas las poblaciones (sin filtro office).");
+        }
+        const snapshot = await query.orderBy('nombre').get();
+        const poblacionesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        console.log(`>>> obtenerPoblaciones encontró ${poblacionesData.length} poblaciones.`);
+        return poblacionesData;
+    } catch (error) {
+        console.error("Error obteniendo poblaciones:", error);
+        console.log(">>> ERROR en obtenerPoblaciones:", error.message);
+        // Sugerir índice si falla
+        if (error.message && error.message.includes("requires an index")) {
+            console.warn(">>> Firestore requiere un índice compuesto en 'poblaciones': office ASC, nombre ASC. Verifica si existe y está habilitado.");
+        }
+        return [];
+    }
+},
+    agregarPoblacion: async (nombre, office) => { // <-- CAMBIO DE sucursal A office
+    try {
+        // AHORA BUSCA POR 'office'
+        const existeSnap = await db.collection('poblaciones')
+            .where('nombre', '==', nombre)
+            .where('office', '==', office) // <-- CAMBIO DE sucursal A office
+            .limit(1).get();
+        if (!existeSnap.empty) {
+            return { success: false, message: `La población "${nombre}" ya existe en la oficina ${office}.` }; // <-- Mensaje actualizado
+        }
+        // AHORA GUARDA 'office'
+        await db.collection('poblaciones').add({ nombre: nombre.toUpperCase(), office }); // <-- CAMBIO DE sucursal A office
+        return { success: true, message: 'Población agregada.' };
+    } catch (error) {
+        console.error("Error agregando población:", error);
+        return { success: false, message: `Error: ${error.message}` };
+    }
+},
     eliminarPoblacion: async (id) => {
         // ... (sin cambios) ...
         try { await db.collection('poblaciones').doc(id).delete(); return { success: true, message: 'Población eliminada.' }; } catch (error) { console.error("Error eliminando población:", error); return { success: false, message: `Error: ${error.message}` }; }
     },
-    obtenerRutas: async (sucursal = null) => {
-        // ... (sin cambios) ...
-        try { let query = db.collection('rutas'); if (sucursal && sucursal !== 'AMBAS') query = query.where('sucursal', '==', sucursal); const snapshot = await query.orderBy('nombre').get(); return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })); } catch (error) { console.error("Error obteniendo rutas:", error); return []; }
-    },
-    agregarRuta: async (nombre, sucursal) => {
-        // ... (sin cambios) ...
-        try { const existeSnap = await db.collection('rutas').where('nombre', '==', nombre).where('sucursal', '==', sucursal).limit(1).get(); if (!existeSnap.empty) return { success: false, message: `La ruta "${nombre}" ya existe en la sucursal ${sucursal}.` }; await db.collection('rutas').add({ nombre: nombre.toUpperCase(), sucursal }); return { success: true, message: 'Ruta agregada.' }; } catch (error) { console.error("Error agregando ruta:", error); return { success: false, message: `Error: ${error.message}` }; }
-    },
+    obtenerRutas: async (office = null) => { // <-- CAMBIO DE sucursal A office
+    console.log(`>>> obtenerRutas llamada con office: ${office}`); // <-- Log actualizado
+    try {
+        let query = db.collection('rutas');
+        // AHORA FILTRA POR 'office'
+        if (office && office !== 'AMBAS') { // <-- CAMBIO DE sucursal A office
+            console.log(`>>> Filtrando rutas por office: ${office}`); // <-- Log actualizado
+            query = query.where('office', '==', office); // <-- CAMBIO DE sucursal A office
+        } else {
+             console.log(">>> Obteniendo todas las rutas.");
+        }
+        const snapshot = await query.orderBy('nombre').get();
+        const rutasData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        console.log(`>>> obtenerRutas encontró ${rutasData.length} rutas.`);
+        return rutasData;
+    } catch (error) {
+        console.error("Error obteniendo rutas:", error);
+        console.log(">>> ERROR en obtenerRutas:", error.message);
+        // Sugerir índice si falla
+        if (error.message && error.message.includes("requires an index")) {
+            console.warn(">>> Firestore requiere un índice compuesto en 'rutas': office ASC, nombre ASC. Verifica si existe y está habilitado.");
+        }
+        return [];
+    }
+},
+    agregarRuta: async (nombre, office) => { // <-- CAMBIO DE sucursal A office
+    try {
+        // AHORA BUSCA POR 'office'
+        const existeSnap = await db.collection('rutas')
+            .where('nombre', '==', nombre)
+            .where('office', '==', office) // <-- CAMBIO DE sucursal A office
+            .limit(1).get();
+        if (!existeSnap.empty) {
+            return { success: false, message: `La ruta "${nombre}" ya existe en la oficina ${office}.` }; // <-- Mensaje actualizado
+        }
+        // AHORA GUARDA 'office'
+        await db.collection('rutas').add({ nombre: nombre.toUpperCase(), office }); // <-- CAMBIO DE sucursal A office
+        return { success: true, message: 'Ruta agregada.' };
+    } catch (error) {
+        console.error("Error agregando ruta:", error);
+        return { success: false, message: `Error: ${error.message}` };
+    }
+},
     eliminarRuta: async (id) => {
         // ... (sin cambios) ...
         try { await db.collection('rutas').doc(id).delete(); return { success: true, message: 'Ruta eliminada.' }; } catch (error) { console.error("Error eliminando ruta:", error); return { success: false, message: `Error: ${error.message}` }; }
     }
 
 }; // Fin del objeto database
+
