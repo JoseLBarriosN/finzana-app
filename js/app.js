@@ -997,7 +997,7 @@ function exportToPDF() {
 
 document.addEventListener('DOMContentLoaded', function () {
     console.log('DOM cargado, inicializando aplicación...');
-    inicializarDropdowns();
+    // NO llamar inicializarDropdowns aquí
     setupEventListeners();
     setupSecurityListeners();
 
@@ -1014,17 +1014,22 @@ document.addEventListener('DOMContentLoaded', function () {
             try {
                 currentUserData = await database.obtenerUsuarioPorId(user.uid);
 
-                if (currentUserData) {
+                if (currentUserData && !currentUserData.error) { // Asegurarse que no hubo error al cargar
                     document.getElementById('user-name').textContent = currentUserData.name || user.email;
                     document.getElementById('user-role-display').textContent = currentUserData.role || 'Rol Desconocido';
-                    // Aplicar permisos y filtros de sucursal
+
+                    // *** LLAMAR A inicializarDropdowns AQUÍ ***
+                    await inicializarDropdowns(); // Esperar a que terminen de cargarse
+
+                    // Aplicar permisos y filtros DESPUÉS de inicializar dropdowns
                     aplicarPermisosUI(currentUserData.role);
+
                 } else {
-                    console.warn(`No se encontraron datos en Firestore para el usuario ${user.uid}`);
+                    console.warn(`No se encontraron datos válidos en Firestore para el usuario ${user.uid} o faltan campos requeridos.`);
                     document.getElementById('user-name').textContent = user.email;
-                    document.getElementById('user-role-display').textContent = 'Datos no encontrados';
-                    // Aplicar permisos por defecto (ninguno)
-                    aplicarPermisosUI('default');
+                    document.getElementById('user-role-display').textContent = 'Datos Incompletos';
+                    aplicarPermisosUI('default'); // Aplicar permisos por defecto
+                    // No llamar a inicializarDropdowns si los datos del usuario fallaron
                 }
 
                 loginScreen.classList.add('hidden');
@@ -1034,9 +1039,10 @@ document.addEventListener('DOMContentLoaded', function () {
                 resetInactivityTimer();
 
             } catch (error) {
-                console.error("Error al obtener datos del usuario:", error);
+                console.error("Error crítico al obtener datos del usuario:", error);
                 document.getElementById('user-name').textContent = user.email;
                 document.getElementById('user-role-display').textContent = 'Error al cargar datos';
+                // Quizás mostrar vista de error o intentar logout
             }
 
         } else {
@@ -1634,15 +1640,16 @@ async function loadUsersTable() {
         const filtroSucursalUsuario = document.getElementById('filtro-sucursal-usuario')?.value || ''; // <-- Filtro de sucursal de la UI
 
         const usuariosFiltrados = usuarios.filter(usuario => {
+            // Calcular cada condición de match
             const emailMatch = !filtroEmail || (usuario.email && usuario.email.toLowerCase().includes(filtroEmail));
             const nombreMatch = !filtroNombre || (usuario.name && usuario.name.toLowerCase().includes(filtroNombre));
             const rolMatch = !filtroRol || usuario.role === filtroRol;
-            const filtroOfficeUsuario = document.getElementById('filtro-sucursal-usuario')?.value || ''; // <-- CAMBIO DE filtroSucursalUsuario A filtroOfficeUsuario
+            const officeUiMatch = !filtroOfficeUsuario || usuario.office === filtroOfficeUsuario || (filtroOfficeUsuario === 'AMBAS' && usuario.office === 'AMBAS');
 
-            // Filtrar por sucursal del admin logueado (seguridad)
-            const adminOffice = currentUserData?.office; // <-- CAMBIO DE sucursalAdmin A adminOffice
-            const adminOfficeMatch = !adminOffice || adminOffice === 'AMBAS' || usuario.office === adminOffice || !usuario.office; // <-- CAMBIO DE sucursal A office
+            const adminOffice = currentUserData?.office;
+            const adminOfficeMatch = !adminOffice || adminOffice === 'AMBAS' || usuario.office === adminOffice || !usuario.office;
 
+            // Devolver true solo si TODAS las condiciones se cumplen
             return emailMatch && nombreMatch && rolMatch && officeUiMatch && adminOfficeMatch;
         });
 
@@ -3441,7 +3448,7 @@ async function inicializarDropdowns() {
     // Customer Management Filters
     await _actualizarDropdownGrupo('grupo_filtro', filtroOfficeInicial, 'Todos');
     // Group Payment
-    await _actualizarDropdownGrupo('grupo_pago_grupal', filtroOfficeInicial, 'Selecciona un Grupo');
+    //await _actualizarDropdownGrupo('grupo_pago_grupal', filtroOfficeInicial, 'Selecciona un Grupo');//**
     // Advanced Reports Filters
     await _actualizarDropdownGrupo('grupo_filtro_reporte', filtroOfficeInicial, 'Todos');
     // Graphic Reports Filters
@@ -3863,6 +3870,7 @@ async function handleDiagnosticarPagos() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
