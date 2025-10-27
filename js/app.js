@@ -2333,7 +2333,7 @@ async function handleCalcularCobranzaRuta() {
         // 2. Buscar clientes que pertenezcan a CUALQUIERA de esas poblaciones
         statusPagoGrupo.textContent = `Buscando clientes en ${nombresPoblacionesDeLaRuta.length} poblaciones...`;
         const clientesDeLasPoblaciones = [];
-        const MAX_IN_VALUES = 30; // Límite de Firestore para el operador 'in'
+        const MAX_IN_VALUES = 10; // Límite CORRECTO de Firestore para el operador 'in'
 
         // Dividir en chunks si hay más de 30 poblaciones (Firestore 'in' limit)
         for (let i = 0; i < nombresPoblacionesDeLaRuta.length; i += MAX_IN_VALUES) {
@@ -3892,6 +3892,7 @@ async function handleDiagnosticarPagos() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
