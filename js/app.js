@@ -2303,7 +2303,7 @@ async function handleCalcularCobranzaRuta() {
 
         if (nombresPoblacionesDeLaRuta.length === 0) { 
             throw new Error(`No se encontraron poblaciones asignadas a tu ruta... en la oficina '${userOffice}'...`); } // <-- Mensaje actualizado
-        }
+        
         console.log(`Poblaciones encontradas para la ruta ${userRuta}:`, nombresPoblacionesDeLaRuta);
 
         // 2. Buscar clientes que pertenezcan a CUALQUIERA de esas poblaciones
@@ -3863,6 +3863,7 @@ async function handleDiagnosticarPagos() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
