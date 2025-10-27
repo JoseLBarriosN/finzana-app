@@ -362,16 +362,18 @@ function aplicarPermisosUI(role) {
         '#nuevo-sucursal' // Añadir selector de sucursal en form usuario
     ];
 
-    if (userOffice && userOffice !== 'AMBAS') { // <-- CAMBIO DE sucursalUsuario A userOffice
+    const esAdminConAccesoTotal = (userRoleKey === 'Super Admin' || userRoleKey === 'Gerencia');
+
+    if (userOffice && userOffice !== 'AMBAS' && !esAdminConAccesoTotal) { // <-- AÑADIDO '!esAdminConAccesoTotal'
         filtrosOffice.forEach(selector => {
             const el = document.querySelector(selector);
             if (el) {
-                el.value = userOffice; // <-- CAMBIO DE sucursalUsuario A userOffice
+                el.value = userOffice;
                 el.disabled = true;
 
                 // Disparar 'change' para dependientes
                 if (selector === '#office_cliente') handleOfficeChangeForClientForm.call(el);
-                if (selector === '#grafico_sucursal') _actualizarDropdownGrupo('grafico_grupo', el.value, 'Todos'); // Llamar directamente
+                if (selector === '#grafico_sucursal') _actualizarDropdownGrupo('grafico_grupo', el.value, 'Todos');
                 if (selector === '#sucursal_filtro') _actualizarDropdownGrupo('grupo_filtro', el.value, 'Todos');
                 if (selector === '#sucursal_filtro_reporte') _actualizarDropdownGrupo('grupo_filtro_reporte', el.value, 'Todos');
                 if (selector === '#nuevo-sucursal') _cargarRutasParaUsuario(el.value); // Actualizar rutas si se bloquea sucursal
@@ -382,7 +384,33 @@ function aplicarPermisosUI(role) {
         filtrosOffice.forEach(selector => {
             const el = document.querySelector(selector);
             if (el) {
+                // Asegurar que no quede deshabilitado de una carga anterior
                 el.disabled = false;
+                // Si es Super Admin/Gerencia y tiene oficina asignada, establecerla como default pero permitir cambiar
+                if (esAdminConAccesoTotal && userOffice && userOffice !== 'AMBAS') {
+                     // Solo establecer el valor si no está ya puesto (para evitar disparar 'change' innecesariamente al inicio)
+                     if (el.value !== userOffice) {
+                        el.value = userOffice;
+                        // Disparar 'change' manualmente si establecemos el valor por defecto
+                        if (el.id === 'sucursal_filtro') _actualizarDropdownGrupo('grupo_filtro', userOffice, 'Todos');
+                        if (el.id === 'sucursal_filtro_reporte') _actualizarDropdownGrupo('grupo_filtro_reporte', userOffice, 'Todos');
+                        if (el.id === 'grafico_sucursal') _actualizarDropdownGrupo('grafico_grupo', userOffice, 'Todos');
+                        if (el.id === 'office_cliente') handleOfficeChangeForClientForm.call(el);
+                        if (el.id === 'nuevo-sucursal') _cargarRutasParaUsuario(userOffice);
+                     }
+                } else if (!userOffice || userOffice === 'AMBAS') {
+                    // Si el usuario es AMBAS o no tiene oficina, asegurarse que el selector no tenga valor pre-seleccionado
+                    // excepto si es el selector del form de cliente/configuración que pueden tener default GDL
+                    if (!['office_cliente', 'nueva-poblacion-sucursal', 'nueva-ruta-sucursal', 'nuevo-sucursal'].includes(el.id)) {
+                         if (el.value !== '') { // Evitar disparar change si ya está vacío
+                             el.value = '';
+                             // Disparar change para limpiar dependientes
+                             if (el.id === 'sucursal_filtro') _actualizarDropdownGrupo('grupo_filtro', '', 'Todos');
+                             if (el.id === 'sucursal_filtro_reporte') _actualizarDropdownGrupo('grupo_filtro_reporte', '', 'Todos');
+                             if (el.id === 'grafico_sucursal') _actualizarDropdownGrupo('grafico_grupo', '', 'Todos');
+                         }
+                    }
+                }
             }
         });
     }
@@ -3849,6 +3877,7 @@ async function handleDiagnosticarPagos() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
