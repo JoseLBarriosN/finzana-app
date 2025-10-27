@@ -1675,10 +1675,15 @@ async function loadUsersTable() {
                     <td>${usuario.email || 'N/A'}</td>
                     <td>${usuario.name || 'N/A'}</td>
                     <td><span class="role-badge ${roleBadgeClass}">${usuario.role || 'Sin Rol'}</span></td>
-                    <td>${usuario.office || 'N/A'}</td> <td>${usuario.ruta || '--'}</td>
+                    <td>${usuario.office || 'N/A'}</td>
+                    <td>${usuario.ruta || '--'}</td>
                     <td>${usuario.status === 'disabled' ? 'Deshabilitado' : 'Activo'}</td>
                     <td class="action-buttons">
-                       </td>
+                        /* --- BOTONES REINSERTADOS --- */
+                        <button class="btn btn-sm btn-info" onclick='mostrarFormularioUsuario(${usuarioJsonString})' title="Editar"><i class="fas fa-edit"></i></button>
+                        ${usuario.status !== 'disabled' ? `<button class="btn btn-sm btn-warning" onclick="disableUsuario('${usuario.id}', '${usuario.name || usuario.email}')" title="Deshabilitar"><i class="fas fa-user-slash"></i></button>` : ''}
+                        /* --- FIN BOTONES REINSERTADOS --- */
+                    </td>
                 `;
                 tbody.appendChild(tr);
             });
@@ -3871,6 +3876,7 @@ async function handleDiagnosticarPagos() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
