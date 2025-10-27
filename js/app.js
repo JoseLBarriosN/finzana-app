@@ -1707,10 +1707,8 @@ async function loadUsersTable() {
                     <td>${usuario.ruta || '--'}</td>
                     <td>${usuario.status === 'disabled' ? 'Deshabilitado' : 'Activo'}</td>
                     <td class="action-buttons">
-                        /* --- BOTONES REINSERTADOS --- */
                         <button class="btn btn-sm btn-info" onclick='mostrarFormularioUsuario(${usuarioJsonString})' title="Editar"><i class="fas fa-edit"></i></button>
-                        ${usuario.status !== 'disabled' ? `<button class="btn btn-sm btn-warning" onclick="disableUsuario('${usuario.id}', '${usuario.name || usuario.email}')" title="Deshabilitar"><i class="fas fa-user-slash"></i></button>` : ''}
-                        /* --- FIN BOTONES REINSERTADOS --- */
+                        ${usuario.status !== 'disabled' ? `<button class="btn btn-sm btn-warning" onclick="disableUsuario('${usuario.id}', '${usuario.name || usuario.email}')" title="Deshabilitar"><i class="fas fa-user-slash"></i></button>` : ''}                       
                     </td>
                 `;
                 tbody.appendChild(tr);
@@ -3877,6 +3875,7 @@ async function handleDiagnosticarPagos() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
