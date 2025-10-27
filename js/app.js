@@ -1174,10 +1174,17 @@ function setupEventListeners() {
     if (montoCobranza) montoCobranza.addEventListener('input', handleMontoPagoChange);
 
     // Pago Grupal
-    const btnBuscarGrupoPago = document.getElementById('btn-buscar-grupo-pago');
-    if (btnBuscarGrupoPago) btnBuscarGrupoPago.addEventListener('click', handleBuscarGrupoParaPago);
-    const btnRegistrarPagoGrupal = document.getElementById('btn-registrar-pago-grupal');
-    if (btnRegistrarPagoGrupal) btnRegistrarPagoGrupal.addEventListener('click', handleRegistroPagoGrupal);
+    // *** NUEVOS LISTENERS PARA COBRANZA RUTA ***
+    const btnCalcularRuta = document.getElementById('btn-calcular-cobranza-ruta');
+    if (btnCalcularRuta) btnCalcularRuta.addEventListener('click', handleCalcularCobranzaRuta);
+
+    const btnGuardarOffline = document.getElementById('btn-guardar-cobranza-offline');
+    if (btnGuardarOffline) btnGuardarOffline.addEventListener('click', handleGuardarCobranzaOffline);
+
+    const btnRegistrarOffline = document.getElementById('btn-registrar-pagos-offline');
+     // Nota: El listener para este botón se añade dinámicamente en renderizarCobranzaRuta
+     // O se podría añadir aquí y llamar a handleRegistroPagoGrupal directamente
+     if (btnRegistrarOffline) btnRegistrarOffline.addEventListener('click', handleRegistroPagoGrupal); // Llamar a la función existente
 
     // Reportes Básicos
     const btnActualizarReportes = document.getElementById('btn-actualizar-reportes');
@@ -2267,276 +2274,242 @@ async function handleMontoPagoChange() {
 // =============================================
 // SECCIÓN DE PAGO GRUPAL
 // =============================================
-async function handleBuscarGrupoParaPago() {
-    const grupoSelect = document.getElementById('grupo_pago_grupal');
-    const grupo = grupoSelect.value;
+/**
+ * Calcula la cobranza pendiente para TODAS las poblaciones
+ * de la RUTA asignada al usuario actual. Requiere conexión.
+ */
+async function handleCalcularCobranzaRuta() {
     const statusPagoGrupo = document.getElementById('status_pago_grupo');
-    const btnBuscar = document.getElementById('btn-buscar-grupo-pago');
-    const tablaDetalleBody = document.getElementById('tabla-pago-grupal-detalle-body'); // <-- Elemento para la nueva tabla
-    const resumenDiv = document.getElementById('grupo-pago-resumen'); // <-- Nuevo div para resumen
+    const btnCalcular = document.getElementById('btn-calcular-cobranza-ruta');
+    const btnGuardar = document.getElementById('btn-guardar-cobranza-offline');
+    const btnRegistrar = document.getElementById('btn-registrar-pagos-offline');
+    const container = document.getElementById('cobranza-ruta-container');
+    const placeholder = document.getElementById('cobranza-ruta-placeholder');
 
-    if (!grupo) {
-        showStatus('status_pago_grupo', 'Por favor, selecciona un grupo.', 'warning');
-        detailsDiv.classList.add('hidden');
+    // Verificar datos del usuario y conexión
+    if (!currentUserData || !currentUserData.ruta || !currentUserData.sucursal || currentUserData.sucursal === 'AMBAS') {
+        showStatus('status_pago_grupo', 'Error: Debes tener una ruta y sucursal única asignada para usar esta función.', 'error');
         return;
     }
-    if (!tablaDetalleBody || !resumenDiv) {
+    if (!navigator.onLine) {
+        showStatus('status_pago_grupo', 'Error: Se necesita conexión a internet para calcular la cobranza de la ruta.', 'error');
         return;
     }
 
-    showButtonLoading(btnBuscar, true, 'Calculando...');
-    showProcessingOverlay(true, `Buscando créditos activos en el grupo ${grupo}...`);
-    statusPagoGrupo.innerHTML = 'Calculando cobranza para el grupo...';
+    const userRuta = currentUserData.ruta;
+    const userSucursal = currentUserData.sucursal;
+
+    showButtonLoading(btnCalcular, true, 'Calculando...');
+    showProcessingOverlay(true, `Calculando cobranza para ruta ${userRuta}...`);
+    statusPagoGrupo.innerHTML = `Buscando clientes y créditos para la ruta ${userRuta}...`;
     statusPagoGrupo.className = 'status-message status-info';
-    tablaDetalleBody.innerHTML = '<tr><td colspan="5">Buscando...</td></tr>'; // <-- Limpiar tabla
-    resumenDiv.innerHTML = ''; // Limpiar resumen
-    grupoDePagoActual = null;
+    container.innerHTML = ''; // Limpiar contenedor
+    placeholder.classList.add('hidden');
+    cobranzaRutaData = {}; // Resetear datos globales
+    btnGuardar.classList.add('hidden');
+    btnRegistrar.classList.add('hidden');
 
     try {
-        // *** NUEVO: Determinar si hay que filtrar por ruta ***
-        let filtroRuta = null;
-        if (currentUserData?.role === 'Área comercial' && currentUserData.ruta) {
-            filtroRuta = currentUserData.ruta;
-            console.log(`Filtrando pago grupal por ruta asignada: ${filtroRuta}`);
-        }
-
-        // *** Pasar filtroRuta a buscarClientes ***
-        const clientesDelGrupo = await database.buscarClientes({
-            grupo: grupo,
-            ruta: filtroRuta, // <-- AÑADIR FILTRO RUTA
-            userSucursal: currentUserData?.sucursal // Aplicar segregación de sucursal
+        // 1. Obtener TODOS los clientes de la ruta y sucursal
+        statusPagoGrupo.textContent = `Buscando clientes en ruta ${userRuta}, sucursal ${userSucursal}...`;
+        const clientesDeLaRuta = await database.buscarClientes({
+            ruta: userRuta,
+            userSucursal: userSucursal // Ya incluye filtro de sucursal
         });
 
-        if (clientesDelGrupo.length === 0) {
-             throw new Error(`No se encontraron clientes en el grupo '${grupo}' ${filtroRuta ? `y ruta '${filtroRuta}'` : ''} (en tu sucursal).`);
+        if (clientesDeLaRuta.length === 0) {
+            throw new Error(`No se encontraron clientes asignados a la ruta '${userRuta}' en tu sucursal.`);
         }
-        
-        let totalClientesConPago = 0;
-        let totalACobrarSemanal = 0;
-        let creditosParaPagar = []; // Array para guardar datos detallados
-        let clientesConErrores = [];
-        tablaDetalleBody.innerHTML = ''; // Limpiar tabla antes de llenar
 
-        for (const cliente of clientesDelGrupo) {
+        statusPagoGrupo.textContent = `Procesando ${clientesDeLaRuta.length} clientes... buscando créditos activos...`;
+
+        // 2. Procesar cada cliente para encontrar pagos pendientes y agrupar por población
+        let creditosPendientes = []; // Lista temporal plana
+        let poblacionesEncontradas = new Set();
+        let totalGeneralACobrar = 0;
+        let clientesConErrores = 0;
+
+        for (const cliente of clientesDeLaRuta) {
             const creditoActivo = await database.buscarCreditoActivoPorCliente(cliente.curp);
-
-            // *** CORRECCIÓN: Usar la lógica de _calcularEstadoCredito para asegurar que no esté liquidado por pagos ***
             if (creditoActivo) {
-                 const pagos = await database.getPagosPorCredito(creditoActivo.historicalIdCredito || creditoActivo.id, creditoActivo.office);
-                 pagos.sort((a, b) => (parsearFecha(b.fecha)?.getTime() || 0) - (parsearFecha(a.fecha)?.getTime() || 0));
-                 const estadoCalc = _calcularEstadoCredito(creditoActivo, pagos);
+                // Verificar que el crédito pertenezca a la misma sucursal (doble chequeo)
+                if (creditoActivo.office !== userSucursal) continue;
 
-                // Solo incluir si NO está liquidado y tiene pago semanal > 0
+                const pagos = await database.getPagosPorCredito(creditoActivo.historicalIdCredito || creditoActivo.id, creditoActivo.office);
+                pagos.sort((a, b) => (parsearFecha(b.fecha)?.getTime() || 0) - (parsearFecha(a.fecha)?.getTime() || 0));
+                const estadoCalc = _calcularEstadoCredito(creditoActivo, pagos);
+
                 if (estadoCalc && estadoCalc.estado !== 'liquidado' && estadoCalc.pagoSemanal > 0.01) {
-                    // *** OPCIONAL: Lógica para "Pago Pendiente" ***
-                     // Comprobar si ya pagó esta semana o si está muy atrasado
-                     // Esta lógica puede ser compleja (definir "esta semana", etc.)
-                     // Por ahora, incluimos a todos los activos con pago > 0
-                     let esPagoPendiente = true; // Simplificación: asumimos pendiente si está activo
-                     // A FUTURO: const diasDesdeUltimoPago = ... calcular ...; if (diasDesdeUltimoPago < 7) esPagoPendiente = false;
+                    const poblacion = cliente.poblacion_grupo || 'SIN POBLACION';
+                    poblacionesEncontradas.add(poblacion);
+                    totalGeneralACobrar += estadoCalc.pagoSemanal;
 
-                     if (esPagoPendiente) {
-                        totalClientesConPago++;
-                        totalACobrarSemanal += estadoCalc.pagoSemanal;
-                        const creditoDetalle = {
-                            firestoreId: creditoActivo.id,
-                            historicalIdCredito: creditoActivo.historicalIdCredito || creditoActivo.id,
-                            curpCliente: cliente.curp,
-                            nombreCliente: cliente.nombre,
-                            pagoSemanal: estadoCalc.pagoSemanal,
-                            saldoRestante: estadoCalc.saldoRestante, // <-- Guardar saldo restante
-                            office: creditoActivo.office // Guardar sucursal para el pago
-                        };
-                        creditosParaPagar.push(creditoDetalle);
-
-                        // *** Añadir fila a la tabla ***
-                        const row = tablaDetalleBody.insertRow();
-                        row.innerHTML = `
-                            <td>${cliente.nombre}</td>
-                            <td>${cliente.curp}</td>
-                            <td>${creditoDetalle.historicalIdCredito}</td>
-                            <td class="monto-pago">$${estadoCalc.pagoSemanal.toFixed(2)}</td>
-                            <td>
-                                <input type="checkbox" class="pago-grupal-check" data-firestore-id="${creditoActivo.id}" checked>
-                                <input type="number" class="pago-grupal-monto-individual" value="${estadoCalc.pagoSemanal.toFixed(2)}" step="0.01" style="width: 80px; display: none;">
-                            </td>
-                        `;
-                     }
-
+                    creditosPendientes.push({
+                        poblacion: poblacion,
+                        firestoreId: creditoActivo.id,
+                        historicalIdCredito: creditoActivo.historicalIdCredito || creditoActivo.id,
+                        curpCliente: cliente.curp,
+                        nombreCliente: cliente.nombre,
+                        pagoSemanal: estadoCalc.pagoSemanal,
+                        saldoRestante: estadoCalc.saldoRestante,
+                        office: creditoActivo.office // Guardar sucursal
+                    });
                 } else if (!estadoCalc) {
-                    clientesConErrores.push(`${cliente.nombre} (${cliente.curp}) - Datos inconsistentes`);
-                } else if (estadoCalc.pagoSemanal <= 0.01) {
-                     clientesConErrores.push(`${cliente.nombre} (${cliente.curp}) - Pago semanal 0`);
+                     clientesConErrores++;
+                     console.warn(`Datos inconsistentes para crédito de ${cliente.curp}`);
                 }
             }
-        } // Fin del bucle for clientes
+        } // Fin for clientes
 
-        if (totalClientesConPago === 0) {
-             let msg = `No se encontraron créditos activos con pago semanal > 0 en el grupo '${grupo}' ${filtroRuta ? `y ruta '${filtroRuta}'` : ''}.`;
-             if (clientesConErrores.length > 0) msg += ` (${clientesConErrores.length} clientes con datos inconsistentes omitidos).`;
+        if (creditosPendientes.length === 0) {
+            let msg = `No se encontraron créditos con pagos semanales pendientes en la ruta '${userRuta}'.`;
+            if (clientesConErrores > 0) msg += ` (${clientesConErrores} clientes con datos inconsistentes omitidos).`;
              throw new Error(msg);
         }
 
-        // Guardar datos para el registro
-        grupoDePagoActual = {
-            grupo: grupo,
-            ruta: filtroRuta, // Guardar la ruta filtrada
-            creditos: creditosParaPagar // Guardar la lista detallada
-        };
+        // 3. Agrupar los resultados por población
+        statusPagoGrupo.textContent = 'Agrupando resultados por población...';
+        cobranzaRutaData = {};
+        const poblacionesOrdenadas = Array.from(poblacionesEncontradas).sort();
 
-        // Mostrar resumen
-        resumenDiv.innerHTML = `
-            <div class="info-grid">
-                <div class="info-item">
-                    <span class="info-label">Clientes con Pago Semanal > $0.01:</span>
-                    <span class="info-value">${totalClientesConPago}</span>
-                </div>
-                <div class="info-item">
-                    <span class="info-label">Total Cobranza Esperada:</span>
-                    <span class="info-value" id="total-calculado-grupal">$${totalACobrarSemanal.toFixed(2)}</span>
-                </div>
-            </div>
-            <div class="form-group" style="margin-top: 15px;">
-                 <label for="monto-recibido-grupo">Monto Total Recibido HOY:</label>
-                 <input type="number" id="monto-recibido-grupo" step="0.01" value="${totalACobrarSemanal.toFixed(2)}">
-                 <div class="field-note">Ajusta si el total recibido es diferente. El sistema registrará los pagos individuales marcados.</div>
-            </div>
-            <button id="btn-registrar-pago-grupal" class="btn btn-success"><i class="fas fa-check-circle"></i> Registrar Pagos Marcados</button>
-         `;
-         // Re-asociar listener al botón recién creado
-         const btnRegistrar = document.getElementById('btn-registrar-pago-grupal');
-         if(btnRegistrar) btnRegistrar.addEventListener('click', handleRegistroPagoGrupal);
+        poblacionesOrdenadas.forEach(pob => {
+            cobranzaRutaData[pob] = creditosPendientes
+                .filter(cred => cred.poblacion === pob)
+                .sort((a, b) => a.nombreCliente.localeCompare(b.nombreCliente)); // Ordenar por nombre dentro de la población
+        });
 
+        // 4. Renderizar la lista agrupada
+        renderizarCobranzaRuta(cobranzaRutaData, container);
+        btnGuardar.classList.remove('hidden'); // Mostrar botón para guardar
+        btnRegistrar.classList.remove('hidden'); // Mostrar botón para registrar
 
-        // Mostrar tabla y resumen
-        document.getElementById('grupo-pago-tabla-container').classList.remove('hidden'); // <-- Mostrar contenedor de tabla/resumen
-
-        let successMsg = `Se encontraron ${totalClientesConPago} créditos para cobrar en '${grupo}' ${filtroRuta ? ` / ruta '${filtroRuta}'` : ''}. Verifica la lista.`;
-        if (clientesConErrores.length > 0) {
-             successMsg += ` (${clientesConErrores.length} omitidos).`;
-             showStatus('status_pago_grupo', successMsg, 'warning');
-        } else {
-             showStatus('status_pago_grupo', successMsg, 'success');
-        }
+        let successMsg = `Cálculo completo para ruta ${userRuta}: ${creditosPendientes.length} pagos pendientes encontrados en ${poblacionesOrdenadas.length} poblaciones. Total: $${totalGeneralACobrar.toFixed(2)}.`;
+         if (clientesConErrores > 0) successMsg += ` (${clientesConErrores} clientes con errores omitidos).`;
+        showStatus('status_pago_grupo', successMsg, 'success');
 
     } catch (error) {
-        console.error("Error al buscar grupo para pago:", error);
+        console.error("Error al calcular cobranza de ruta:", error);
         showStatus('status_pago_grupo', `Error: ${error.message}`, 'error');
-        // Ocultar tabla y resumen en caso de error
-        document.getElementById('grupo-pago-tabla-container').classList.add('hidden');
-        tablaDetalleBody.innerHTML = `<tr><td colspan="5">Error al buscar: ${error.message}</td></tr>`;
-        resumenDiv.innerHTML = '';
-        grupoDePagoActual = null;
+        placeholder.textContent = `Error al calcular: ${error.message}`;
+        placeholder.classList.remove('hidden');
+        container.innerHTML = ''; // Asegurar que el contenedor esté vacío
+        cobranzaRutaData = null; // Resetear datos
+        btnGuardar.classList.add('hidden');
+        btnRegistrar.classList.add('hidden');
     } finally {
-        showButtonLoading(btnBuscar, false);
+        showButtonLoading(btnCalcular, false);
         showProcessingOverlay(false);
     }
 }
 
 
+/**
+ * Registra los pagos individuales marcados en la lista de cobranza por ruta
+ * (ya sea calculada online o cargada offline). Funciona offline.
+ */
 async function handleRegistroPagoGrupal() {
     const statusPagoGrupo = document.getElementById('status_pago_grupo');
-    const tablaDetalleBody = document.getElementById('tabla-pago-grupal-detalle-body');
-    const checkboxes = tablaDetalleBody.querySelectorAll('.pago-grupal-check:checked');
+    const container = document.getElementById('cobranza-ruta-container');
+    const checkboxes = container.querySelectorAll('.pago-grupal-check:checked'); // Buscar checkboxes DENTRO del contenedor
 
-    if (!grupoDePagoActual || !grupoDePagoActual.creditos || grupoDePagoActual.creditos.length === 0) {
-        showStatus('status_pago_grupo', 'Error: No hay datos de grupo cargados para registrar.', 'error');
+    if (!cobranzaRutaData || Object.keys(cobranzaRutaData).length === 0) {
+        showStatus('status_pago_grupo', 'Error: No hay datos de cobranza cargados (calculados o de offline) para registrar.', 'error');
         return;
     }
     if (!checkboxes || checkboxes.length === 0) {
-         showStatus('status_pago_grupo', 'No hay pagos seleccionados para registrar.', 'warning');
+        showStatus('status_pago_grupo', 'No hay pagos seleccionados para registrar.', 'warning');
         return;
     }
 
-    // Obtener el monto total recibido (opcionalmente podrías usarlo para validaciones)
-    // const montoTotalRecibido = parseFloat(document.getElementById('monto-recibido-grupo')?.value) || 0;
-
-    const { grupo, ruta } = grupoDePagoActual; // Obtener grupo/ruta para el log
-
-    showProcessingOverlay(true, `Registrando ${checkboxes.length} pagos para ${grupo}${ruta ? ` / ${ruta}`: ''}...`);
+    showProcessingOverlay(true, `Registrando ${checkboxes.length} pagos...`);
     statusPagoGrupo.innerHTML = `Registrando ${checkboxes.length} pagos seleccionados...`;
     statusPagoGrupo.className = 'status-message status-info';
 
     let pagosRegistrados = 0;
     const erroresRegistro = [];
-
-    // Usar Promise.all para procesar en paralelo (con límites si son muchos)
-    // O un bucle simple si prefieres secuencial
     const promesasPagos = [];
 
     checkboxes.forEach(checkbox => {
         const firestoreId = checkbox.getAttribute('data-firestore-id');
-        const fila = checkbox.closest('tr');
-        const montoElement = fila.querySelector('.monto-pago'); // Celda con el monto semanal
-        // Podrías usar un input individual si permites modificar el monto:
-        // const montoInput = fila.querySelector('.pago-grupal-monto-individual');
-        // const montoPago = parseFloat(montoInput.value);
+        const montoPago = parseFloat(checkbox.getAttribute('data-monto'));
+        const histId = checkbox.getAttribute('data-hist-id'); // Necesario para database.agregarPago
+        const nombreCliente = checkbox.getAttribute('data-nombre');
 
-        // Por ahora, usamos el monto semanal mostrado
-        const montoTexto = montoElement?.textContent.replace('$', '') || '0';
-        const montoPago = parseFloat(montoTexto);
+        // Encontrar la oficina (la necesitamos para agregarPago, aunque no esté directo en el checkbox)
+        // Buscamos en la data guardada
+        let office = null;
+        for (const pob in cobranzaRutaData) {
+            const cred = cobranzaRutaData[pob].find(c => c.firestoreId === firestoreId);
+            if (cred) {
+                office = cred.office;
+                break;
+            }
+        }
 
-        // Buscar datos del crédito en la lista guardada (grupoDePagoActual.creditos)
-        const creditoInfo = grupoDePagoActual.creditos.find(c => c.firestoreId === firestoreId);
-
-        if (montoPago > 0 && creditoInfo) {
+        if (montoPago > 0 && firestoreId && histId && office) {
             const pagoData = {
-                idCredito: creditoInfo.historicalIdCredito, // Historical ID
+                idCredito: histId, // Historical ID
                 monto: montoPago,
-                tipoPago: 'grupal' // Marcar como grupal
+                tipoPago: 'grupal' // O podrías poner 'ruta'
             };
 
-            // Añadir la promesa de registro a la lista
-             promesasPagos.push(
+            promesasPagos.push(
                 database.agregarPago(pagoData, currentUser.email, firestoreId)
                     .then(resultado => {
                         if (resultado.success) {
                             pagosRegistrados++;
+                            // Desmarcar y deshabilitar visualmente el checkbox/fila (opcional)
+                             checkbox.checked = false;
+                             checkbox.disabled = true;
+                             checkbox.closest('tr')?.classList.add('pago-registrado-exito');
                         } else {
-                            erroresRegistro.push(`Cliente ${creditoInfo.nombreCliente}: ${resultado.message}`);
+                             erroresRegistro.push(`Cliente ${nombreCliente}: ${resultado.message}`);
+                             checkbox.closest('tr')?.classList.add('pago-registrado-error');
                         }
                     })
                     .catch(error => {
-                         erroresRegistro.push(`Cliente ${creditoInfo.nombreCliente}: ${error.message}`);
+                        erroresRegistro.push(`Cliente ${nombreCliente}: ${error.message}`);
+                         checkbox.closest('tr')?.classList.add('pago-registrado-error');
                     })
-             );
-
-        } else if (!creditoInfo) {
-             erroresRegistro.push(`No se encontraron datos internos para el crédito ID: ${firestoreId}`);
+            );
         } else {
-             console.warn(`Monto inválido (${montoPago}) para crédito ID: ${firestoreId}. Omitiendo.`);
+            erroresRegistro.push(`Datos incompletos para registrar pago del cliente ${nombreCliente || firestoreId}. Monto: ${montoPago}, ID: ${firestoreId}, HistID: ${histId}, Office: ${office}`);
+             checkbox.closest('tr')?.classList.add('pago-registrado-error');
         }
-    }); // Fin forEach checkbox
+    }); // Fin forEach
 
     try {
-        // Esperar a que todas las promesas de pago terminen
         await Promise.all(promesasPagos);
 
         let finalMessage = `Registro completado: ${pagosRegistrados} pagos registrados exitosamente.`;
         let finalStatusType = 'success';
 
         if (erroresRegistro.length > 0) {
-            finalMessage += ` ${erroresRegistro.length} pagos fallaron. Detalles:\n - ${erroresRegistro.join('\n - ')}`;
+            finalMessage += ` ${erroresRegistro.length} pagos fallaron. Revisa la lista y la consola para detalles.`;
             finalStatusType = (pagosRegistrados > 0) ? 'warning' : 'error';
-            console.error("Errores durante registro de pago grupal:", erroresRegistro);
+            console.error("Errores durante registro de pagos:", erroresRegistro);
         }
 
-        showStatus('status_pago_grupo', finalMessage.replace(/\n/g, '<br>'), finalStatusType); // Mostrar saltos de línea en HTML
+         showStatus('status_pago_grupo', finalMessage, finalStatusType);
+         // No limpiamos la vista aquí, solo actualizamos los checkboxes/filas
 
-        // Limpiar la vista
-        document.getElementById('grupo-pago-tabla-container').classList.add('hidden');
-        document.getElementById('grupo_pago_grupal').value = '';
-        document.getElementById('tabla-pago-grupal-detalle-body').innerHTML = '';
-        document.getElementById('grupo-pago-resumen').innerHTML = '';
-        grupoDePagoActual = null;
+         // Añadir estilos CSS para filas registradas (puedes poner esto en styles.css)
+         const style = document.createElement('style');
+         style.textContent = `
+            tr.pago-registrado-exito { opacity: 0.5; background-color: #d4edda !important; }
+            tr.pago-registrado-error { background-color: #f8d7da !important; }
+            tr.pago-registrado-exito td, tr.pago-registrado-error td { text-decoration: line-through; }
+         `;
+         document.head.appendChild(style);
 
 
-    } catch (error) { // Error inesperado en Promise.all (poco probable aquí)
-         console.error("Error crítico al procesar pagos grupales:", error);
-         showStatus('status_pago_grupo', `Error crítico durante el registro: ${error.message}`, 'error');
+    } catch (error) {
+        console.error("Error crítico al procesar pagos:", error);
+        showStatus('status_pago_grupo', `Error crítico durante el registro: ${error.message}`, 'error');
     } finally {
-         showProcessingOverlay(false);
-         // El botón se elimina y recrea, no necesita showButtonLoading(false)
+        showProcessingOverlay(false);
+        // El botón sigue visible, solo lo rehabilitamos si es necesario
+        // showButtonLoading('#btn-registrar-pagos-offline', false); // Podría ser necesario si lo deshabilitas al inicio
     }
 }
 
@@ -2586,6 +2559,143 @@ async function loadBasicReports(userSucursal = null) {
         document.getElementById('total-comisiones').textContent = 'Error';
     } finally {
         showButtonLoading(btnActualizar, false);
+    }
+}
+
+/**
+ * Renderiza la lista de cobranza agrupada por población en el contenedor especificado.
+ * @param {object} data Objeto con poblaciones como claves y arrays de créditos como valores.
+ * @param {HTMLElement} container Elemento HTML donde se renderizará la lista.
+ */
+function renderizarCobranzaRuta(data, container) {
+    if (!data || Object.keys(data).length === 0) {
+        container.innerHTML = '<p>No hay datos de cobranza para mostrar.</p>';
+        return;
+    }
+
+    let html = '';
+    let totalGeneralCalculado = 0;
+
+    // Ordenar poblaciones alfabéticamente
+    const poblacionesOrdenadas = Object.keys(data).sort();
+
+    poblacionesOrdenadas.forEach(poblacion => {
+        const creditos = data[poblacion];
+        let totalPoblacion = 0;
+
+        html += `<div class="poblacion-group card">`;
+        html += `<h3>Población: ${poblacion} (${creditos.length} clientes)</h3>`;
+        html += `<table class="cobranza-ruta-table">
+                    <thead>
+                        <tr>
+                            <th>Cliente</th>
+                            <th>ID Crédito</th>
+                            <th>Pago Sem.</th>
+                            <th>Saldo Rest.</th>
+                            <th>Registrar</th>
+                        </tr>
+                    </thead>
+                    <tbody>`;
+
+        creditos.forEach(cred => {
+            totalPoblacion += cred.pagoSemanal;
+            html += `<tr>
+                        <td>${cred.nombreCliente}<br><small>${cred.curpCliente}</small></td>
+                        <td>${cred.historicalIdCredito}</td>
+                        <td class="monto-pago">$${cred.pagoSemanal.toFixed(2)}</td>
+                        <td>$${cred.saldoRestante.toFixed(2)}</td>
+                        <td><input type="checkbox" class="pago-grupal-check" data-firestore-id="${cred.firestoreId}" data-monto="${cred.pagoSemanal.toFixed(2)}" data-hist-id="${cred.historicalIdCredito}" data-nombre="${cred.nombreCliente}"></td>
+                     </tr>`;
+        });
+
+        totalGeneralCalculado += totalPoblacion;
+        html += `</tbody>
+                 <tfoot>
+                     <tr>
+                         <td colspan="2"><b>Total Población:</b></td>
+                         <td><b>$${totalPoblacion.toFixed(2)}</b></td>
+                         <td colspan="2"></td>
+                     </tr>
+                 </tfoot>
+                 </table>`;
+        html += `</div>`; // Fin poblacion-group
+    });
+
+    // Añadir resumen general al principio
+    const resumenGeneral = `
+        <div class="info-grid card" style="background: #eef; padding: 15px; margin-bottom: 20px;">
+            <div class="info-item">
+                <span class="info-label">Ruta:</span>
+                <span class="info-value">${currentUserData?.ruta || 'N/A'}</span>
+            </div>
+             <div class="info-item">
+                <span class="info-label">Total Poblaciones:</span>
+                <span class="info-value">${poblacionesOrdenadas.length}</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">Total Clientes Pendientes:</span>
+                <span class="info-value">${poblacionesOrdenadas.reduce((sum, pob) => sum + data[pob].length, 0)}</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">Total General Esperado:</span>
+                <span class="info-value" style="font-size: 1.1em; font-weight: bold;">$${totalGeneralCalculado.toFixed(2)}</span>
+            </div>
+        </div>
+    `;
+
+    container.innerHTML = resumenGeneral + html;
+
+    // Añadir estilo CSS para la tabla (puedes poner esto en styles.css)
+    const style = document.createElement('style');
+    style.textContent = `
+        .poblacion-group { margin-bottom: 20px; padding: 15px; background: #fff; border: 1px solid #eee; }
+        .poblacion-group h3 { margin-bottom: 10px; font-size: 1.1em; color: var(--primary); border-bottom: 1px solid #eee; padding-bottom: 5px;}
+        .cobranza-ruta-table { width: 100%; border-collapse: collapse; font-size: 0.9em; }
+        .cobranza-ruta-table th, .cobranza-ruta-table td { padding: 6px 4px; border: 1px solid #ddd; text-align: left; vertical-align: middle; }
+        .cobranza-ruta-table thead th { background: #f8f9fa; font-weight: bold; }
+        .cobranza-ruta-table tbody tr:nth-child(even) { background: #f8f9fa; }
+        .cobranza-ruta-table tfoot td { font-weight: bold; background: #e9ecef; }
+        .cobranza-ruta-table td:nth-child(3), .cobranza-ruta-table td:nth-child(4), .cobranza-ruta-table th:nth-child(3), .cobranza-ruta-table th:nth-child(4) { text-align: right; }
+        .cobranza-ruta-table td:last-child, .cobranza-ruta-table th:last-child { text-align: center; }
+        .cobranza-ruta-table input[type="checkbox"] { width: 18px; height: 18px; }
+    `;
+    document.head.appendChild(style);
+}
+
+
+/**
+ * Guarda la lista de cobranza calculada (cobranzaRutaData) en localStorage.
+ */
+function handleGuardarCobranzaOffline() {
+    const statusPagoGrupo = document.getElementById('status_pago_grupo');
+    const btnGuardar = document.getElementById('btn-guardar-cobranza-offline');
+
+    if (!cobranzaRutaData || Object.keys(cobranzaRutaData).length === 0) {
+        showStatus('status_pago_grupo', 'No hay datos de cobranza calculados para guardar.', 'warning');
+        return;
+    }
+    if (!currentUserData || !currentUserData.ruta) {
+         showStatus('status_pago_grupo', 'Error: No se puede identificar la ruta del usuario para guardar los datos.', 'error');
+        return;
+    }
+
+    showButtonLoading(btnGuardar, true, 'Guardando...');
+    try {
+        const key = OFFLINE_STORAGE_KEY + currentUserData.ruta;
+        const dataToSave = {
+            ruta: currentUserData.ruta,
+            sucursal: currentUserData.sucursal,
+            timestamp: new Date().toISOString(),
+            data: cobranzaRutaData
+        };
+        localStorage.setItem(key, JSON.stringify(dataToSave));
+        showStatus('status_pago_grupo', `Lista de cobranza para ruta ${currentUserData.ruta} guardada localmente para uso offline.`, 'success');
+    } catch (error) {
+        console.error("Error guardando cobranza offline:", error);
+        // Podría ser error por JSON grande o localStorage lleno
+        showStatus('status_pago_grupo', `Error al guardar localmente: ${error.message}. Es posible que no haya suficiente espacio.`, 'error');
+    } finally {
+        showButtonLoading(btnGuardar, false);
     }
 }
 
@@ -3398,15 +3508,63 @@ document.addEventListener('viewshown', async function (e) {
             creditoActual = null;
             break;
         case 'view-pago-grupo':
-            document.getElementById('grupo_pago_grupal').value = '';
-            document.getElementById('grupo-pago-details').classList.add('hidden');
-            document.getElementById('monto-recibido-grupo').value = '';
-            showStatus('status_pago_grupo', 'Selecciona un grupo para calcular la cobranza.', 'info');
-            grupoDePagoActual = null;
-            // Actualizar dropdown de grupos según sucursal del usuario
-            const userSucursalPago = (currentUserData?.sucursal && currentUserData.sucursal !== 'AMBAS') ? currentUserData.sucursal : '';
-            await _actualizarDropdownGrupo('grupo_pago_grupal', userSucursalPago, 'Selecciona un Grupo');
-            break;
+            const statusPagoGrupo = document.getElementById('status_pago_grupo');
+            const btnCalcular = document.getElementById('btn-calcular-cobranza-ruta');
+            const btnGuardar = document.getElementById('btn-guardar-cobranza-offline');
+            const btnRegistrar = document.getElementById('btn-registrar-pagos-offline');
+            const container = document.getElementById('cobranza-ruta-container');
+            const placeholder = document.getElementById('cobranza-ruta-placeholder');
+
+            // Resetear UI
+            container.innerHTML = '';
+            placeholder.classList.remove('hidden');
+            placeholder.textContent = 'Presiona "Calcular Cobranza" (requiere conexión) o carga una lista guardada si estás offline.';
+            btnGuardar.classList.add('hidden');
+            btnRegistrar.classList.add('hidden');
+            cobranzaRutaData = null; // Limpiar datos globales al entrar
+
+            if (!currentUserData || !currentUserData.ruta || !currentUserData.sucursal || currentUserData.sucursal === 'AMBAS') {
+                 showStatus('status_pago_grupo', 'Debes tener una ruta y sucursal única asignada.', 'warning');
+                 btnCalcular.disabled = true;
+                 placeholder.textContent = 'Función no disponible: Ruta/Sucursal no asignada.';
+                 break; // Salir del case
+            }
+
+            if (navigator.onLine) {
+                 showStatus('status_pago_grupo', `Listo para calcular cobranza de ruta ${currentUserData.ruta}.`, 'info');
+                 btnCalcular.disabled = false;
+            } else {
+                 // Modo Offline: Intentar cargar datos guardados
+                 showStatus('status_pago_grupo', `Modo Offline. Buscando lista guardada para ruta ${currentUserData.ruta}...`, 'info');
+                 btnCalcular.disabled = true;
+                 const key = OFFLINE_STORAGE_KEY + currentUserData.ruta;
+                 const savedDataString = localStorage.getItem(key);
+
+                 if (savedDataString) {
+                     try {
+                         const savedData = JSON.parse(savedDataString);
+                         // Validar si los datos son razonables (opcional)
+                         if (savedData.ruta === currentUserData.ruta && savedData.data) {
+                             cobranzaRutaData = savedData.data;
+                             renderizarCobranzaRuta(cobranzaRutaData, container);
+                             btnRegistrar.classList.remove('hidden'); // Habilitar registro
+                             placeholder.classList.add('hidden');
+                             const timestamp = savedData.timestamp ? new Date(savedData.timestamp).toLocaleString() : 'desconocida';
+                             showStatus('status_pago_grupo', `Lista offline cargada (guardada el ${timestamp}). Puedes registrar pagos.`, 'success');
+                         } else {
+                              throw new Error("Datos guardados inválidos.");
+                         }
+                     } catch (error) {
+                         console.error("Error cargando datos offline:", error);
+                         showStatus('status_pago_grupo', `Error al cargar datos guardados: ${error.message}. Intenta conectarte y generar una nueva lista.`, 'error');
+                         placeholder.textContent = 'Error al cargar lista guardada.';
+                     }
+                 } else {
+                     showStatus('status_pago_grupo', `No se encontró lista guardada para ruta ${currentUserData.ruta}. Conéctate para generar una.`, 'warning');
+                     placeholder.textContent = 'No hay lista guardada para uso offline.';
+                 }
+            }
+            break; // Fin case 'view-pago-grupo'
         case 'view-reportes-graficos':
             const hoyGraf = new Date();
             const haceUnAnio = new Date(hoyGraf.getFullYear() - 1, hoyGraf.getMonth(), hoyGraf.getDate() + 1);
@@ -3688,4 +3846,5 @@ async function handleDiagnosticarPagos() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
