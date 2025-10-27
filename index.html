@@ -621,35 +621,28 @@
 
             <div id="view-pago-grupo" class="view hidden">
                 <div class="view-header">
-                    <h2>Registro de Pago Grupal</h2>
+                    <h2>Cobranza por Ruta Asignada</h2>
                     <button class="btn btn-secondary" data-view="view-main-menu"><i class="fas fa-arrow-left"></i> Volver al Menú</button>
                 </div>
-                <div class="form-group">
-                    <label for="grupo_pago_grupal">Selecciona la Población/Grupo <span class="required">*</span></label>
-                    <div class="search-group">
-                        <select id="grupo_pago_grupal" required></select>
-                        <button id="btn-buscar-grupo-pago" class="btn btn-primary"><i class="fas fa-search"></i> Calcular Cobranza</button>
-                    </div>
-                </div>
-                <div id="grupo-pago-tabla-container" class="hidden" style="margin-top: 20px;">
-                <h4>Detalle de Cobranza Esperada</h4>
-                <table class="report-table" style="margin-bottom: 20px;">
-                    <thead>
-                        <tr>
-                            <th>Nombre Cliente</th>
-                            <th>CURP</th>
-                            <th>ID Crédito (Hist.)</th>
-                            <th>Pago Semanal</th>
-                            <th>Registrar Pago</th>
-                        </tr>
-                    </thead>
-                    <tbody id="tabla-pago-grupal-detalle-body">
-                        </tbody>
-                </table>
 
-                <div id="grupo-pago-resumen">
+                <div class="pago-grupal-actions">
+                    <button id="btn-calcular-cobranza-ruta" class="btn btn-primary">
+                        <i class="fas fa-calculator"></i> Calcular Cobranza de Mi Ruta (Online)
+                    </button>
+                    <button id="btn-guardar-cobranza-offline" class="btn btn-info hidden">
+                        <i class="fas fa-save"></i> Guardar Lista para Usar Offline
+                    </button>
+                    <button id="btn-registrar-pagos-offline" class="btn btn-success hidden">
+                        <i class="fas fa-check-circle"></i> Registrar Pagos Marcados (Offline)
+                    </button>
+                </div>
+
+                <div id="status_pago_grupo" class="status-message" style="margin-top: 15px;">
                     </div>
-            </div>
+
+                <div id="cobranza-ruta-container" style="margin-top: 20px;">
+                    <p id="cobranza-ruta-placeholder">Presiona "Calcular Cobranza" (requiere conexión) o carga una lista guardada si estás offline.</p>
+                </div>
                 <div id="status_pago_grupo"></div>
             </div>
 
@@ -933,6 +926,7 @@
     <script src="js/app.js"></script>
 </body>
 </html>
+
 
 
 
