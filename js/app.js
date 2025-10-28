@@ -1255,6 +1255,19 @@ function setupEventListeners() {
         sucursalGrafico.addEventListener('change', (e) => _actualizarDropdownGrupo('grafico_grupo', e.target.value, 'Todos'));
     }
 
+    // ---- Configuración ----
+    const btnAgregarPoblacion = /*...*/; if (btnAgregarPoblacion) /*...*/;
+    const btnAgregarRuta = /*...*/; if (btnAgregarRuta) /*...*/;
+
+    // Listener Delegado para Listas (Eliminar y Editar)
+    const listaPoblaciones = document.getElementById('lista-poblaciones');
+    if (listaPoblaciones) listaPoblaciones.addEventListener('click', handleConfigListClick); // <-- NUEVA FUNCIÓN GENÉRICA
+
+    const listaRutas = document.getElementById('lista-rutas');
+    if (listaRutas) listaRutas.addEventListener('click', handleConfigListClick); // <-- NUEVA FUNCIÓN GENÉRICA
+
+    }
+
    // Configuración
     const btnAgregarPoblacion = document.getElementById('btn-agregar-poblacion');
     if (btnAgregarPoblacion) btnAgregarPoblacion.addEventListener('click', () => handleAgregarConfig('poblacion'));
@@ -1368,6 +1381,138 @@ function handleTabClick() {
     document.getElementById('estado-importacion').innerHTML = '';
     document.getElementById('detalle-importacion').innerHTML = '';
 }
+
+// EN app.js - AÑADIR NUEVA FUNCIÓN
+
+/**
+ * Maneja los clics en los botones dentro de las listas de configuración.
+ */
+async function handleConfigListClick(e) {
+    const button = e.target.closest('button'); // Encuentra el botón clickeado
+    if (!button) return; // No se hizo clic en un botón
+
+    const id = button.getAttribute('data-id');
+    const nombre = button.getAttribute('data-nombre'); // Para confirmación/logs
+    const tipo = button.getAttribute('data-tipo'); // 'poblacion' o 'ruta' (solo en eliminar)
+    const listItem = button.closest('.config-list-item');
+    const inputNombreRuta = listItem?.querySelector('.ruta-nombre-editable');
+
+    // --- Botón Eliminar ---
+    if (button.classList.contains('btn-eliminar-config')) {
+        const tipoItem = button.getAttribute('data-tipo'); // 'poblacion' o 'ruta'
+        const nombreItem = button.getAttribute('data-nombre');
+        handleEliminarConfig(tipoItem, id, nombreItem); // Llama a la función existente
+    }
+    // --- Botón Editar Ruta (Nombre) ---
+    else if (button.classList.contains('btn-editar-ruta')) {
+         if (!inputNombreRuta) return;
+         inputNombreRuta.readOnly = false;
+         inputNombreRuta.style.border = '1px solid #ccc';
+         inputNombreRuta.style.background = '#fff';
+         inputNombreRuta.focus();
+         // Ocultar Editar, Mostrar Guardar/Cancelar
+         button.classList.add('hidden');
+         listItem.querySelector('.btn-guardar-ruta')?.classList.remove('hidden');
+         listItem.querySelector('.btn-cancelar-ruta')?.classList.remove('hidden');
+    }
+    // --- Botón Cancelar Ruta (Nombre) ---
+    else if (button.classList.contains('btn-cancelar-ruta')) {
+        if (!inputNombreRuta) return;
+        inputNombreRuta.value = button.getAttribute('data-original-nombre'); // Restaurar valor
+        inputNombreRuta.readOnly = true;
+        inputNombreRuta.style.border = 'none';
+        inputNombreRuta.style.background = 'transparent';
+        // Ocultar Guardar/Cancelar, Mostrar Editar
+        button.classList.add('hidden');
+        listItem.querySelector('.btn-guardar-ruta')?.classList.add('hidden');
+        listItem.querySelector('.btn-editar-ruta')?.classList.remove('hidden');
+    }
+    // --- Botón Guardar Ruta (Nombre) ---
+    else if (button.classList.contains('btn-guardar-ruta')) {
+        if (!inputNombreRuta) return;
+        const nuevoNombre = inputNombreRuta.value.trim();
+        const originalNombre = listItem.querySelector('.btn-cancelar-ruta')?.getAttribute('data-original-nombre');
+
+        if (!nuevoNombre) {
+            showStatus('status_configuracion', 'El nombre de la ruta no puede estar vacío.', 'warning');
+            return;
+        }
+        if (nuevoNombre.toUpperCase() === originalNombre.toUpperCase()) {
+             // Si no cambió, solo cancelar la edición
+             listItem.querySelector('.btn-cancelar-ruta')?.click(); // Simular clic en cancelar
+             return;
+        }
+
+        showProcessingOverlay(true, 'Actualizando nombre de ruta...');
+        const resultado = await database.actualizarNombreRuta(id, nuevoNombre);
+        showProcessingOverlay(false);
+
+        if (resultado.success) {
+             showStatus('status_configuracion', resultado.message, 'success');
+             // Actualizar UI sin recargar todo (mejor experiencia)
+             inputNombreRuta.readOnly = true;
+             inputNombreRuta.style.border = 'none';
+             inputNombreRuta.style.background = 'transparent';
+             listItem.querySelector('.btn-cancelar-ruta')?.setAttribute('data-original-nombre', nuevoNombre.toUpperCase()); // Actualizar original
+             button.classList.add('hidden'); // Ocultar Guardar
+             listItem.querySelector('.btn-cancelar-ruta')?.classList.add('hidden');
+             listItem.querySelector('.btn-editar-ruta')?.classList.remove('hidden');
+             // Podríamos necesitar actualizar dropdowns en otras partes si el nombre cambió
+             await inicializarDropdowns(); // Recargar todos los dropdowns
+        } else {
+             showStatus('status_configuracion', `Error: ${resultado.message}`, 'error');
+        }
+    }
+    // --- Botón Editar Población (Asignar Ruta) ---
+    else if (button.classList.contains('btn-editar-poblacion')) {
+        const poblacionId = id;
+        const poblacionNombre = button.getAttribute('data-nombre');
+        const poblacionOffice = button.getAttribute('data-office');
+        const rutaActual = button.getAttribute('data-ruta') || '';
+
+        // Obtener rutas disponibles para ESA oficina
+        const rutasDisponibles = await database.obtenerRutas(poblacionOffice);
+        const opcionesRutas = rutasDisponibles.map(r => r.nombre).sort();
+
+        // Crear HTML para el modal o prompt
+        let selectHTML = `<label for="ruta-poblacion-select">Selecciona la nueva ruta para <strong>${poblacionNombre}</strong> (${poblacionOffice}):</label><br>`;
+        selectHTML += `<select id="ruta-poblacion-select" style="width: 100%; margin-top: 10px;">`;
+        selectHTML += `<option value="">-- Sin asignar --</option>`; // Opción para quitar ruta
+        opcionesRutas.forEach(rutaNombre => {
+            selectHTML += `<option value="${rutaNombre}" ${rutaNombre === rutaActual ? 'selected' : ''}>${rutaNombre}</option>`;
+        });
+        selectHTML += `</select>`;
+        selectHTML += `<br><br><button id="btn-confirmar-ruta-poblacion" class="btn btn-success">Guardar Cambio</button>`;
+
+        // Mostrar en un modal (Asumiendo que tienes un modal genérico)
+        document.getElementById('modal-title').textContent = 'Asignar Ruta a Población';
+        document.getElementById('modal-body').innerHTML = selectHTML;
+        document.getElementById('generic-modal').classList.remove('hidden');
+
+        // Añadir listener al botón dentro del modal
+         const btnConfirmar = document.getElementById('btn-confirmar-ruta-poblacion');
+         if (btnConfirmar) {
+            // Remover listener previo si existe
+             btnConfirmar.replaceWith(btnConfirmar.cloneNode(true));
+             document.getElementById('btn-confirmar-ruta-poblacion').addEventListener('click', async () => {
+                 const nuevaRuta = document.getElementById('ruta-poblacion-select').value || null; // null si es '-- Sin asignar --'
+
+                 showProcessingOverlay(true, 'Asignando ruta...');
+                 const resultado = await database.asignarRutaAPoblacion(poblacionId, nuevaRuta);
+                 showProcessingOverlay(false);
+                 document.getElementById('generic-modal').classList.add('hidden'); // Cerrar modal
+
+                 if (resultado.success) {
+                     showStatus('status_configuracion', resultado.message, 'success');
+                     await loadConfiguracion(); // Recargar la lista para ver el cambio
+                 } else {
+                     showStatus('status_configuracion', `Error: ${resultado.message}`, 'error');
+                 }
+             });
+         }
+    }
+}
+
 
 
 async function handleImport() {
@@ -3160,8 +3305,9 @@ async function handleAgregarConfig(tipo) {
     }
 }
 
-async function handleEliminarConfig(tipo, id, nombre) {
-    if (!id) return;
+
+async function handleEliminarConfig(tipo, id, nombre) { // Los parámetros ya son correctos
+    if (!id || !tipo) return;
 
     if (confirm(`¿Estás seguro de que deseas eliminar ${tipo} "${nombre}"?\nEsta acción no se puede deshacer.`)) {
         showProcessingOverlay(true, `Eliminando ${tipo}...`);
@@ -3171,14 +3317,16 @@ async function handleEliminarConfig(tipo, id, nombre) {
             let resultado;
             if (tipo === 'poblacion') {
                 resultado = await database.eliminarPoblacion(id);
-            } else {
+            } else if (tipo === 'ruta'){ // Asegurar que sea 'ruta'
                 resultado = await database.eliminarRuta(id);
+            } else {
+                 throw new Error(`Tipo desconocido para eliminar: ${tipo}`);
             }
 
             if (resultado.success) {
                 showStatus('status_configuracion', `${tipo.charAt(0).toUpperCase() + tipo.slice(1)} "${nombre}" eliminada.`, 'success');
                 await loadConfiguracion(); // Recargar listas
-                await inicializarDropdowns(); // Actualizar todos los dropdowns de la app
+                await inicializarDropdowns(); // Actualizar todos los dropdowns
             } else {
                 throw new Error(resultado.message);
             }
@@ -3943,6 +4091,7 @@ async function handleDiagnosticarPagos() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
