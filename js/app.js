@@ -337,99 +337,130 @@ function setupSecurityListeners() {
 }
 
 /**
- * Muestra/oculta elementos del menú y ajusta filtros según el rol y sucursal del usuario.
- * @param {string} role El rol del usuario (ej. 'admin', 'Gerencia', 'Área comercial').
+ * Muestra/oculta elementos del menú y ajusta filtros según el rol y oficina del usuario.
+ * @param {string} role El rol del usuario (ej. 'Administrador', 'Gerencia', 'Área comercial').
  */
 function aplicarPermisosUI(role) {
-    if (!currentUserData) return;
+    if (!currentUserData) {
+        console.warn("aplicarPermisosUI llamada sin currentUserData");
+        // Ocultar todo el menú si no hay datos de usuario
+        document.querySelectorAll('.menu-card').forEach(card => card.style.display = 'none');
+        return;
+    }
 
-    // ... (Definición de permisosMenu SIN CAMBIOS) ...
-    const permisosMenu = { /* ... */ };
+    // 1. Definir permisos del menú
+    const permisosMenu = {
+        'Super Admin': ['all'],
+        'Gerencia': ['all'],
+        'Administrador': [ // TODO MENOS Gráficos
+            'view-gestion-clientes', 'view-cliente', 'view-colocacion', 'view-cobranza',
+            'view-pago-grupo', 'view-reportes', 'view-reportes-avanzados',
+            'view-usuarios', 'view-importar', 'view-configuracion'
+        ],
+        'Área comercial': [ // SOLO Vistas especificadas
+            'view-gestion-clientes', // Permitido para buscar clientes propios? Reconsiderar si no debe estar
+            'view-cliente',          // Permitido
+            'view-colocacion',       // Permitido
+            'view-cobranza',         // Permitido
+            'view-pago-grupo'        // Permitido (Cobranza por Ruta)
+            // Añadir 'view-registrar-gasto' cuando se implemente
+        ],
+        'default': [] // Roles sin permisos definidos
+    };
 
-    // ... (Obtención de userRoleKey y userPerms SIN CAMBIOS) ...
+    // Mapeo (admin -> Administrador)
     const userRoleKey = role === 'admin' ? 'Administrador' : role;
     const userPerms = permisosMenu[userRoleKey] || permisosMenu['default'];
 
-    // ... (Bucle forEach para ocultar/mostrar .menu-card SIN CAMBIOS) ...
-    document.querySelectorAll('.menu-card').forEach(card => { /* ... */ });
+    // Ocultar/Mostrar ítems del Menú Principal
+    document.querySelectorAll('.menu-card').forEach(card => {
+        const view = card.getAttribute('data-view');
+        // Mostrar si tiene 'all' o la vista específica está en sus permisos
+        if (userPerms.includes('all') || userPerms.includes(view)) {
+            card.style.display = 'block';
+        } else {
+            card.style.display = 'none';
+        }
+    });
 
-    // --- AJUSTE DE FILTROS BASADO EN 'office' DEL USUARIO ---
-    const userOffice = currentUserData.office; // <-- CAMBIO DE sucursal A office
-    const filtrosOffice = [ // <-- Renombrar variable si quieres
+    // 2. Ajustar filtros y UI basados en la OFICINA del usuario
+    const userOffice = currentUserData.office;
+    const filtrosOffice = [
         '#sucursal_filtro', '#sucursal_filtro_reporte', '#grafico_sucursal',
         '#office_cliente', '#nueva-poblacion-sucursal', '#nueva-ruta-sucursal',
-        '#filtro-sucursal-usuario', // Añadir filtro de sucursal en gestión usuarios
-        '#nuevo-sucursal' // Añadir selector de sucursal en form usuario
+        '#filtro-sucursal-usuario',
+        '#nuevo-sucursal'
     ];
 
     const esAdminConAccesoTotal = (userRoleKey === 'Super Admin' || userRoleKey === 'Gerencia');
 
-    if (userOffice && userOffice !== 'AMBAS' && !esAdminConAccesoTotal) { // <-- AÑADIDO '!esAdminConAccesoTotal'
+    if (userOffice && userOffice !== 'AMBAS' && !esAdminConAccesoTotal) {
+        // Deshabilitar filtros para roles restringidos con oficina específica
         filtrosOffice.forEach(selector => {
             const el = document.querySelector(selector);
             if (el) {
                 el.value = userOffice;
                 el.disabled = true;
-
-                // Disparar 'change' para dependientes
-                if (selector === '#office_cliente') handleOfficeChangeForClientForm.call(el);
-                if (selector === '#grafico_sucursal') _actualizarDropdownGrupo('grafico_grupo', el.value, 'Todos');
-                if (selector === '#sucursal_filtro') _actualizarDropdownGrupo('grupo_filtro', el.value, 'Todos');
-                if (selector === '#sucursal_filtro_reporte') _actualizarDropdownGrupo('grupo_filtro_reporte', el.value, 'Todos');
-                if (selector === '#nuevo-sucursal') _cargarRutasParaUsuario(el.value); // Actualizar rutas si se bloquea sucursal
+                // Disparar change SOLO si el valor realmente cambió al asignarlo
+                // (Evita bucles infinitos al inicio)
+                // Esto se maneja mejor llamando a las funciones de actualización DESPUÉS
             }
         });
+        // Actualizar dropdowns dependientes DESPUÉS de deshabilitar
+        _actualizarDropdownGrupo('grupo_filtro', userOffice, 'Todos');
+        _actualizarDropdownGrupo('grupo_filtro_reporte', userOffice, 'Todos');
+        _actualizarDropdownGrupo('grafico_grupo', userOffice, 'Todos');
+        // Para form cliente y usuario, las funciones de cambio ya se llaman o no son necesarias aquí
     } else {
-        // Habilitar filtros si es AMBAS o no tiene oficina definida
+        // Habilitar filtros si es AMBAS, no tiene oficina, O ES SUPER ADMIN/GERENCIA
         filtrosOffice.forEach(selector => {
             const el = document.querySelector(selector);
             if (el) {
-                // Asegurar que no quede deshabilitado de una carga anterior
                 el.disabled = false;
-                // Si es Super Admin/Gerencia y tiene oficina asignada, establecerla como default pero permitir cambiar
+                // Si es Admin Total y tiene oficina asignada, ponerla por defecto pero permitir cambio
                 if (esAdminConAccesoTotal && userOffice && userOffice !== 'AMBAS') {
-                     // Solo establecer el valor si no está ya puesto (para evitar disparar 'change' innecesariamente al inicio)
-                     if (el.value !== userOffice) {
+                    if (el.value !== userOffice) {
                         el.value = userOffice;
-                        // Disparar 'change' manualmente si establecemos el valor por defecto
+                        // Disparar change para cargar dependientes
                         if (el.id === 'sucursal_filtro') _actualizarDropdownGrupo('grupo_filtro', userOffice, 'Todos');
                         if (el.id === 'sucursal_filtro_reporte') _actualizarDropdownGrupo('grupo_filtro_reporte', userOffice, 'Todos');
                         if (el.id === 'grafico_sucursal') _actualizarDropdownGrupo('grafico_grupo', userOffice, 'Todos');
                         if (el.id === 'office_cliente') handleOfficeChangeForClientForm.call(el);
                         if (el.id === 'nuevo-sucursal') _cargarRutasParaUsuario(userOffice);
-                     }
-                } else if (!userOffice || userOffice === 'AMBAS') {
-                    // Si el usuario es AMBAS o no tiene oficina, asegurarse que el selector no tenga valor pre-seleccionado
-                    // excepto si es el selector del form de cliente/configuración que pueden tener default GDL
-                    if (!['office_cliente', 'nueva-poblacion-sucursal', 'nueva-ruta-sucursal', 'nuevo-sucursal'].includes(el.id)) {
-                         if (el.value !== '') { // Evitar disparar change si ya está vacío
-                             el.value = '';
-                             // Disparar change para limpiar dependientes
-                             if (el.id === 'sucursal_filtro') _actualizarDropdownGrupo('grupo_filtro', '', 'Todos');
-                             if (el.id === 'sucursal_filtro_reporte') _actualizarDropdownGrupo('grupo_filtro_reporte', '', 'Todos');
-                             if (el.id === 'grafico_sucursal') _actualizarDropdownGrupo('grafico_grupo', '', 'Todos');
-                         }
                     }
+                } else if (!userOffice || userOffice === 'AMBAS') {
+                     // Si el usuario es AMBAS o no tiene oficina, resetear filtros a 'Todos'
+                     if (!['office_cliente', 'nueva-poblacion-sucursal', 'nueva-ruta-sucursal', 'nuevo-sucursal'].includes(el.id)) {
+                          if (el.value !== '') {
+                              el.value = '';
+                              // Disparar change para limpiar dependientes
+                              if (el.id === 'sucursal_filtro') _actualizarDropdownGrupo('grupo_filtro', '', 'Todos');
+                              if (el.id === 'sucursal_filtro_reporte') _actualizarDropdownGrupo('grupo_filtro_reporte', '', 'Todos');
+                              if (el.id === 'grafico_sucursal') _actualizarDropdownGrupo('grafico_grupo', '', 'Todos');
+                          }
+                     }
                 }
             }
         });
-    }
+         // Asegurar que los dropdowns se actualicen si el usuario es AMBAS/Sin oficina al inicio
+         if (!userOffice || userOffice === 'AMBAS') {
+            _actualizarDropdownGrupo('grupo_filtro', '', 'Todos');
+            _actualizarDropdownGrupo('grupo_filtro_reporte', '', 'Todos');
+            _actualizarDropdownGrupo('grafico_grupo', '', 'Todos');
+         }
+    } // Fin else (habilitar filtros)
 
     // 3. Ajustar UI específica (ej. CURP editable)
     const curpInput = document.getElementById('curp_cliente');
     if (curpInput) {
-        // Permitir edición de CURP a Super Admin, Gerencia y Administrador
         const puedeEditarCURP = ['Super Admin', 'Gerencia', 'Administrador'].includes(userRoleKey);
         curpInput.readOnly = !puedeEditarCURP;
-
-        // --- Corrección del Selector ---
-        const curpFieldNote = curpInput.closest('.form-group')?.querySelector('.field-note'); // Busca el div.field-note dentro del .form-group padre
+        const curpFieldNote = curpInput.closest('.form-group')?.querySelector('.field-note');
         if (curpFieldNote) {
             curpFieldNote.style.display = puedeEditarCURP ? 'block' : 'none';
         }
-        // --- Fin Corrección ---
     }
-}
+} // Fin aplicarPermisosUI
 
 
 // =============================================
@@ -2997,55 +3028,92 @@ async function handleGenerarGrafico() {
 // SECCIÓN DE CONFIGURACIÓN (NUEVA)
 // =============================================
 
+// EN app.js - REEMPLAZAR loadConfiguracion
 async function loadConfiguracion() {
     const statusEl = document.getElementById('status_configuracion');
     const listaPob = document.getElementById('lista-poblaciones');
     const listaRut = document.getElementById('lista-rutas');
 
-    if (!listaPob || !listaRut) return;
+    if (!listaPob || !listaRut) {
+        console.error("Elementos #lista-poblaciones o #lista-rutas no encontrados.");
+        showStatus('status_configuracion', 'Error interno: Faltan elementos HTML.', 'error');
+        return;
+    }
 
-    listaPob.innerHTML = '<div class="spinner-small"></div>';
-    listaRut.innerHTML = '<div class="spinner-small"></div>';
+    // Usar spinners más pequeños y centrados dentro del LI si es posible, o texto
+    listaPob.innerHTML = '<li class="config-list-item">Cargando poblaciones...</li>';
+    listaRut.innerHTML = '<li class="config-list-item">Cargando rutas...</li>';
     showStatus('status_configuracion', 'Cargando listas...', 'info');
 
     try {
-        // database.js ya devuelve filtrado por 'office' si es necesario
+        // Llamar a las funciones de database.js (que ya usan 'office')
         const [poblaciones, rutas] = await Promise.all([
             database.obtenerPoblaciones(), // Obtener todas para admin/gerencia
             database.obtenerRutas()        // Obtener todas para admin/gerencia
         ]);
 
-        // Renderizar Poblaciones
+        // ---- Renderizar Poblaciones ----
         if (poblaciones.length === 0) {
             listaPob.innerHTML = '<li class="config-list-item">No hay poblaciones registradas.</li>';
         } else {
             listaPob.innerHTML = poblaciones
-                .sort((a, b) => `${a.office}-${a.nombre}`.localeCompare(`${b.office}-${b.nombre}`)) // <-- CAMBIO DE sucursal A office
+                // Ordenar por oficina y luego por nombre
+                .sort((a, b) => `${a.office}-${a.nombre}`.localeCompare(`${b.office}-${b.nombre}`))
                 .map(p => `
                 <li class="config-list-item">
-                    <span><strong>${p.nombre}</strong> (${p.office})</span> <button class="btn btn-sm btn-danger btn-eliminar-config" data-id="${p.id}" data-nombre="${p.nombre}">...</button>
-                </li>
-            `).join('');
-        }
-        // Renderizar Rutas
-        if (rutas.length === 0) {
-            listaRut.innerHTML = '<li class="config-list-item">No hay rutas registradas.</li>';
-        } else {
-            listaRut.innerHTML = rutas
-                .sort((a, b) => `${a.office}-${a.nombre}`.localeCompare(`${b.office}-${b.nombre}`)) // <-- CAMBIO DE sucursal A office
-                .map(r => `
-                <li class="config-list-item">
-                    <span><strong>${r.nombre}</strong> (${r.office})</span> <button class="btn btn-sm btn-danger btn-eliminar-config" data-id="${r.id}" data-nombre="${r.nombre}">...</button>
+                    <span><strong>${p.nombre}</strong> (${p.office}) - Ruta: ${p.ruta || 'N/A'}</span>
+                    <span>
+                        <button class="btn btn-sm btn-info btn-editar-poblacion" data-id="${p.id}" data-nombre="${p.nombre}" data-office="${p.office}" data-ruta="${p.ruta || ''}" title="Asignar/Cambiar Ruta">
+                            <i class="fas fa-route"></i>
+                        </button>
+                        <button class="btn btn-sm btn-danger btn-eliminar-config" data-id="${p.id}" data-nombre="${p.nombre}" data-tipo="poblacion" title="Eliminar Población">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </span>
                 </li>
             `).join('');
         }
 
-        showStatus('status_configuracion', 'Listas cargadas.', 'success');
+        // ---- Renderizar Rutas ----
+        if (rutas.length === 0) {
+            listaRut.innerHTML = '<li class="config-list-item">No hay rutas registradas.</li>';
+        } else {
+            listaRut.innerHTML = rutas
+                // Ordenar por oficina y luego por nombre
+                .sort((a, b) => `${a.office}-${a.nombre}`.localeCompare(`${b.office}-${b.nombre}`))
+                .map(r => `
+                <li class="config-list-item">
+                    <span>
+                        <input type="text" value="${r.nombre}" class="ruta-nombre-editable" data-id="${r.id}" readonly style="border:none; background:transparent;">
+                        (${r.office})
+                    </span>
+                    <span>
+                         <button class="btn btn-sm btn-info btn-editar-ruta" data-id="${r.id}" title="Editar Nombre">
+                            <i class="fas fa-edit"></i>
+                         </button>
+                         <button class="btn btn-sm btn-success btn-guardar-ruta hidden" data-id="${r.id}" title="Guardar Nombre">
+                             <i class="fas fa-save"></i>
+                         </button>
+                         <button class="btn btn-sm btn-secondary btn-cancelar-ruta hidden" data-id="${r.id}" data-original-nombre="${r.nombre}" title="Cancelar Edición">
+                             <i class="fas fa-times"></i>
+                         </button>
+                        <button class="btn btn-sm btn-danger btn-eliminar-config" data-id="${r.id}" data-nombre="${r.nombre}" data-tipo="ruta" title="Eliminar Ruta">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </span>
+                </li>
+            `).join('');
+        }
+
+        // Si todo cargó bien, limpiar mensaje de status
+        showStatus('status_configuracion', '', 'info'); // Limpiar mensaje si no hubo error
+
     } catch (error) {
         console.error("Error cargando configuración:", error);
-        showStatus('status_configuracion', `Error al cargar: ${error.message}`, 'error');
-        listaPob.innerHTML = '<li class="config-list-item error">Error al cargar</li>';
-        listaRut.innerHTML = '<li class="config-list-item error">Error al cargar</li>';
+        showStatus('status_configuracion', `Error al cargar listas: ${error.message}`, 'error');
+        // Mostrar error en ambas listas si falla una
+        if (listaPob.innerHTML.includes('Cargando')) listaPob.innerHTML = '<li class="config-list-item error">Error al cargar poblaciones</li>';
+        if (listaRut.innerHTML.includes('Cargando')) listaRut.innerHTML = '<li class="config-list-item error">Error al cargar rutas</li>';
     }
 }
 
@@ -3875,6 +3943,7 @@ async function handleDiagnosticarPagos() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
