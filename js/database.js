@@ -1176,7 +1176,7 @@ const database = {
             // Si rutaNombre es null, '', o undefined, eliminar el campo ruta.
             // Si tiene valor, lo asigna/actualiza.
             const updateData = {
-                ruta: rutaNombre ? rutaNombre.toUpperCase() : admin.firestore.FieldValue.delete()
+                ruta: rutaNombre ? rutaNombre.toUpperCase() : null
             };
             await poblacionRef.update(updateData);
             return { success: true, message: `Ruta ${rutaNombre ? 'asignada/actualizada' : 'eliminada'} para la población.` };
@@ -1211,5 +1211,6 @@ const database = {
     }
 
 }; // Fin del objeto database
+
 
 
