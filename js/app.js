@@ -3177,34 +3177,35 @@ async function handleGenerarGrafico() {
 
 // EN app.js - REEMPLAZAR loadConfiguracion
 async function loadConfiguracion() {
+    console.log("--- Ejecutando loadConfiguracion ---"); // Log inicial
     const statusEl = document.getElementById('status_configuracion');
     const listaPob = document.getElementById('lista-poblaciones');
     const listaRut = document.getElementById('lista-rutas');
 
     if (!listaPob || !listaRut) {
-        console.error("Elementos #lista-poblaciones o #lista-rutas no encontrados.");
+        console.error("loadConfiguracion: Elementos #lista-poblaciones o #lista-rutas no encontrados.");
         showStatus('status_configuracion', 'Error interno: Faltan elementos HTML.', 'error');
         return;
     }
 
-    // Usar spinners más pequeños y centrados dentro del LI si es posible, o texto
     listaPob.innerHTML = '<li class="config-list-item">Cargando poblaciones...</li>';
     listaRut.innerHTML = '<li class="config-list-item">Cargando rutas...</li>';
     showStatus('status_configuracion', 'Cargando listas...', 'info');
 
     try {
-        // Llamar a las funciones de database.js (que ya usan 'office')
+        console.log("   Intentando obtener poblaciones y rutas...");
         const [poblaciones, rutas] = await Promise.all([
             database.obtenerPoblaciones(), // Obtener todas para admin/gerencia
             database.obtenerRutas()        // Obtener todas para admin/gerencia
         ]);
+        console.log(`   Poblaciones obtenidas: ${poblaciones.length}, Rutas obtenidas: ${rutas.length}`);
 
         // ---- Renderizar Poblaciones ----
+        console.log("   Renderizando poblaciones...");
         if (poblaciones.length === 0) {
             listaPob.innerHTML = '<li class="config-list-item">No hay poblaciones registradas.</li>';
         } else {
             listaPob.innerHTML = poblaciones
-                // Ordenar por oficina y luego por nombre
                 .sort((a, b) => `${a.office}-${a.nombre}`.localeCompare(`${b.office}-${b.nombre}`))
                 .map(p => `
                 <li class="config-list-item">
@@ -3220,22 +3221,21 @@ async function loadConfiguracion() {
                 </li>
             `).join('');
         }
+        console.log("   Poblaciones renderizadas.");
 
         // ---- Renderizar Rutas ----
+         console.log("   Renderizando rutas...");
         if (rutas.length === 0) {
             listaRut.innerHTML = '<li class="config-list-item">No hay rutas registradas.</li>';
         } else {
             listaRut.innerHTML = rutas
-                // Ordenar por oficina y luego por nombre
                 .sort((a, b) => `${a.office}-${a.nombre}`.localeCompare(`${b.office}-${b.nombre}`))
                 .map(r => `
                 <li class="config-list-item">
                     <span>
-                        <input type="text" value="${r.nombre}" class="ruta-nombre-editable" data-id="${r.id}" readonly style="border:none; background:transparent;">
-                        (${r.office})
+                        <input type="text" value="${r.nombre}" class="ruta-nombre-editable" data-id="${r.id}" readonly style="border:none; background:transparent; width: calc(100% - 10px);"> (${r.office})
                     </span>
-                    <span>
-                         <button class="btn btn-sm btn-info btn-editar-ruta" data-id="${r.id}" title="Editar Nombre">
+                    <span style="white-space: nowrap;"> <button class="btn btn-sm btn-info btn-editar-ruta" data-id="${r.id}" title="Editar Nombre">
                             <i class="fas fa-edit"></i>
                          </button>
                          <button class="btn btn-sm btn-success btn-guardar-ruta hidden" data-id="${r.id}" title="Guardar Nombre">
@@ -3251,14 +3251,20 @@ async function loadConfiguracion() {
                 </li>
             `).join('');
         }
+         console.log("   Rutas renderizadas.");
 
-        // Si todo cargó bien, limpiar mensaje de status
-        showStatus('status_configuracion', '', 'info'); // Limpiar mensaje si no hubo error
+        // Limpiar mensaje si todo OK
+        showStatus('status_configuracion', 'Listas cargadas.', 'success'); // Mostrar éxito brevemente
+        setTimeout(() => { // Ocultar mensaje de éxito después de un tiempo
+            if (statusEl.classList.contains('status-success')) {
+                 showStatus('status_configuracion', '', 'info'); // Limpiar status
+            }
+        }, 3000);
+
 
     } catch (error) {
         console.error("Error cargando configuración:", error);
         showStatus('status_configuracion', `Error al cargar listas: ${error.message}`, 'error');
-        // Mostrar error en ambas listas si falla una
         if (listaPob.innerHTML.includes('Cargando')) listaPob.innerHTML = '<li class="config-list-item error">Error al cargar poblaciones</li>';
         if (listaRut.innerHTML.includes('Cargando')) listaRut.innerHTML = '<li class="config-list-item error">Error al cargar rutas</li>';
     }
@@ -4093,6 +4099,7 @@ async function handleDiagnosticarPagos() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
