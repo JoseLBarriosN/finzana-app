@@ -1135,6 +1135,58 @@ const database = {
         return [];
     }
 },
+
+// EN database.js - AÑADIR NUEVAS FUNCIONES
+
+    // Actualiza el nombre de una ruta específica
+    actualizarNombreRuta: async (id, nuevoNombre) => {
+        if (!id || !nuevoNombre || !nuevoNombre.trim()) {
+            return { success: false, message: 'ID o nombre inválido.' };
+        }
+        try {
+            const rutaRef = db.collection('rutas').doc(id);
+            const rutaDoc = await rutaRef.get();
+            if (!rutaDoc.exists) throw new Error("Ruta no encontrada.");
+            const rutaData = rutaDoc.data();
+
+            // Opcional: Verificar si el nuevo nombre ya existe en la misma oficina
+            const existeSnap = await db.collection('rutas')
+                .where('nombre', '==', nuevoNombre.toUpperCase())
+                .where('office', '==', rutaData.office)
+                .limit(1).get();
+            if (!existeSnap.empty && existeSnap.docs[0].id !== id) {
+                 return { success: false, message: `El nombre "${nuevoNombre}" ya existe en la oficina ${rutaData.office}.` };
+            }
+
+            await rutaRef.update({ nombre: nuevoNombre.toUpperCase() });
+            return { success: true, message: 'Nombre de ruta actualizado.' };
+        } catch (error) {
+            console.error("Error actualizando nombre de ruta:", error);
+            return { success: false, message: `Error: ${error.message}` };
+        }
+    },
+
+    // Asigna o cambia la ruta de una población específica
+    asignarRutaAPoblacion: async (poblacionId, rutaNombre) => {
+        if (!poblacionId) {
+            return { success: false, message: 'ID de población inválido.' };
+        }
+        try {
+            const poblacionRef = db.collection('poblaciones').doc(poblacionId);
+            // Si rutaNombre es null, '', o undefined, eliminar el campo ruta.
+            // Si tiene valor, lo asigna/actualiza.
+            const updateData = {
+                ruta: rutaNombre ? rutaNombre.toUpperCase() : admin.firestore.FieldValue.delete()
+            };
+            await poblacionRef.update(updateData);
+            return { success: true, message: `Ruta ${rutaNombre ? 'asignada/actualizada' : 'eliminada'} para la población.` };
+        } catch (error) {
+            console.error("Error asignando ruta a población:", error);
+            return { success: false, message: `Error: ${error.message}` };
+        }
+    },
+
+    
     agregarRuta: async (nombre, office) => { // <-- CAMBIO DE sucursal A office
     try {
         // AHORA BUSCA POR 'office'
@@ -1159,4 +1211,5 @@ const database = {
     }
 
 }; // Fin del objeto database
+
 
