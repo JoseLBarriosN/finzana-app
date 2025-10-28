@@ -1264,9 +1264,6 @@ function setupEventListeners() {
 
     // Listener Delegado para Listas (Eliminar y Editar)
     const listaPoblaciones = document.getElementById('lista-poblaciones');
-
-    // Listener Delegado para Listas (Eliminar y Editar)
-    const listaPoblaciones = document.getElementById('lista-poblaciones');
     if (listaPoblaciones) listaPoblaciones.addEventListener('click', handleConfigListClick); // <-- NUEVA FUNCIÓN GENÉRICA
 
     const listaRutas = document.getElementById('lista-rutas');
@@ -4097,6 +4094,7 @@ async function handleDiagnosticarPagos() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
