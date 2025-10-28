@@ -1256,8 +1256,14 @@ function setupEventListeners() {
     }
 
     // ---- Configuración ----
-    const btnAgregarPoblacion = /*...*/; if (btnAgregarPoblacion) /*...*/;
-    const btnAgregarRuta = /*...*/; if (btnAgregarRuta) /*...*/;
+    const btnAgregarPoblacion = document.getElementById('btn-agregar-poblacion');
+    if (btnAgregarPoblacion) btnAgregarPoblacion.addEventListener('click', () => handleAgregarConfig('poblacion')); // <-- CÓDIGO COMPLETO
+
+    const btnAgregarRuta = document.getElementById('btn-agregar-ruta');
+    if (btnAgregarRuta) btnAgregarRuta.addEventListener('click', () => handleAgregarConfig('ruta')); // <-- CÓDIGO COMPLETO
+
+    // Listener Delegado para Listas (Eliminar y Editar)
+    const listaPoblaciones = document.getElementById('lista-poblaciones');
 
     // Listener Delegado para Listas (Eliminar y Editar)
     const listaPoblaciones = document.getElementById('lista-poblaciones');
@@ -4091,6 +4097,7 @@ async function handleDiagnosticarPagos() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
