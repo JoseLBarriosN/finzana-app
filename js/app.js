@@ -393,7 +393,6 @@ function aplicarPermisosUI(role) {
     ];
 
     const esAdminConAccesoTotal = (userRoleKey === 'Super Admin' || userRoleKey === 'Gerencia');
-
     if (userOffice && userOffice !== 'AMBAS' && !esAdminConAccesoTotal) {
         // Deshabilitar filtros para roles restringidos con oficina específica
         filtrosOffice.forEach(selector => {
@@ -492,7 +491,7 @@ async function loadClientesTable() {
             curpAval: document.getElementById('curp_aval_filtro')?.value?.trim() || '',
             plazo: document.getElementById('plazo_filtro')?.value || '',
             grupo: document.getElementById('grupo_filtro')?.value || '',
-            userSucursal: currentUserData?.sucursal // <-- APLICAR SEGREGACIÓN
+            userOffice: esAdminConAccesoTotal ? null : currentUserData?.office // <-- APLICAR SEGREGACIÓN
         };
 
         const hayFiltros = Object.values(filtros).some((val, key) => val && val.trim() !== '' && key !== 'userSucursal');
@@ -4099,6 +4098,7 @@ async function handleDiagnosticarPagos() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
