@@ -2575,7 +2575,7 @@ async function handleCalcularCobranzaRuta() {
             if (creditoActivo) {
                 if (creditoActivo.office !== userOffice) continue;
                 const pagos = await database.getPagosPorCredito(creditoActivo.historicalIdCredito || creditoActivo.id, creditoActivo.office);
-                pagos.sort((a, b) => (parsearFecha(b).fecha?.getTime() || 0) - (parsearFecha(a.fecha)?.getTime() || 0));
+                pagos.sort((a, b) => (parsearFecha(b.fecha)?.getTime() || 0) - (parsearFecha(a.fecha)?.getTime() || 0));
                 const estadoCalc = _calcularEstadoCredito(creditoActivo, pagos);
 
                 if (estadoCalc && estadoCalc.estado !== 'liquidado' && estadoCalc.pagoSemanal > 0.01) {
@@ -4120,6 +4120,7 @@ async function handleDiagnosticarPagos() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
