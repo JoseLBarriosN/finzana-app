@@ -232,13 +232,13 @@ const database = {
         }
     },
 
-    buscarClientePorCURP: async (curp, userSucursal = null) => {
+    buscarClientePorCURP: async (curp, userOffice = null) => {
         try {
             let query = db.collection('clientes').where('curp', '==', curp.toUpperCase());
 
             // *** CORRECCIÓN: Aplicar filtro de sucursal ***
-            if (userSucursal && userSucursal !== 'AMBAS') {
-                query = query.where('office', '==', userSucursal);
+            if (userOffice && userOffice !== 'AMBAS') {
+                query = query.where('office', '==', userOffice);
             }
 
             const snapshot = await query.limit(1).get();
@@ -251,7 +251,7 @@ const database = {
         }
     },
 
-    buscarClientesPorCURPs: async (curps, userSucursal = null) => {
+    buscarClientesPorCURPs: async (curps, userOffice = null) => {
         if (!curps || curps.length === 0) return [];
         const upperCaseCurps = curps.map(c => String(c).toUpperCase());
         try {
@@ -264,8 +264,8 @@ const database = {
             const promises = chunks.map(chunk => {
                 let query = db.collection('clientes').where('curp', 'in', chunk);
                 // *** CORRECCIÓN: Aplicar filtro de sucursal ***
-                if (userSucursal && userSucursal !== 'AMBAS') {
-                    query = query.where('office', '==', userSucursal);
+                if (userOffice && userOffice !== 'AMBAS') {
+                    query = query.where('office', '==', userOffice);
                 }
                 return query.get();
             });
@@ -310,10 +310,10 @@ const database = {
             let query = db.collection('clientes');
 
             // *** CORRECCIÓN: Priorizar filtro de sucursal del usuario ***
-            if (filtros.userSucursal && filtros.userSucursal !== 'AMBAS') {
-                query = query.where('office', '==', filtros.userSucursal);
-            } else if (filtros.sucursal) {
-                query = query.where('office', '==', filtros.sucursal);
+            if (filtros.userOffice && filtros.userOffice !== 'AMBAS') {
+                query = query.where('office', '==', filtros.userOffice);
+            } else if (filtros.office) {
+                query = query.where('office', '==', filtros.office);
             }
 
             if (filtros.grupo) query = query.where('poblacion_grupo', '==', filtros.grupo);
@@ -374,8 +374,8 @@ const database = {
             let query = db.collection('creditos').where('historicalIdCredito', '==', historicalId);
 
             // *** CORRECCIÓN: Aplicar filtro de sucursal del usuario ***
-            if (options.userSucursal && options.userSucursal !== 'AMBAS') {
-                query = query.where('office', '==', options.userSucursal);
+            if (options.userOffice && options.userOffice !== 'AMBAS') {
+                query = query.where('office', '==', options.userOffice);
             } else if (options.office) {
                 query = query.where('office', '==', options.office);
             }
@@ -405,10 +405,10 @@ const database = {
             let query = db.collection('creditos');
 
             // *** CORRECCIÓN: Priorizar filtro de sucursal del usuario ***
-            if (filtros.userSucursal && filtros.userSucursal !== 'AMBAS') {
-                query = query.where('office', '==', filtros.userSucursal);
-            } else if (filtros.sucursal) {
-                query = query.where('office', '==', filtros.sucursal);
+            if (filtros.userOffice && filtros.userOffice !== 'AMBAS') {
+                query = query.where('office', '==', filtros.userOffice);
+            } else if (filtros.office) {
+                query = query.where('office', '==', filtros.office);
             }
 
             // Estado se filtra mejor en app.js con _calcularEstadoCredito
@@ -854,16 +854,16 @@ const database = {
 
 
     // --- FUNCIONES DE REPORTES Y MANTENIMIENTO ---
-    generarReportes: async (userSucursal = null) => {
+    generarReportes: async (userOffice = null) => {
         try {
             let clientesQuery = db.collection('clientes');
             let creditosQuery = db.collection('creditos');
             let pagosQuery = db.collection('pagos');
 
-            if (userSucursal && userSucursal !== 'AMBAS') {
-                clientesQuery = clientesQuery.where('office', '==', userSucursal);
-                creditosQuery = creditosQuery.where('office', '==', userSucursal);
-                pagosQuery = pagosQuery.where('office', '==', userSucursal);
+            if (userOffice && userOffice !== 'AMBAS') {
+                clientesQuery = clientesQuery.where('office', '==', userOffice);
+                creditosQuery = creditosQuery.where('office', '==', userOffice);
+                pagosQuery = pagosQuery.where('office', '==', userOffice);
             }
 
             const [clientesSnap, creditosSnap, pagosSnap] = await Promise.all([
@@ -934,14 +934,14 @@ const database = {
 
     generarReporteAvanzado: async (filtros) => {
         // ... (sin cambios en la lógica de generación de reporte avanzado, ya usa 'office') ...
-        if (filtros.userSucursal && filtros.userSucursal !== 'AMBAS') filtros.sucursal = filtros.userSucursal;
+        if (filtros.userOffice && filtros.userOffice !== 'AMBAS') filtros.office = filtros.userOffice;
         console.log("Generando reporte avanzado con filtros:", filtros);
         try {
             const resultados = []; const clientesMap = new Map();
             let clientesFiltrados = null; let filtrarCreditosPagosPorCurps = false; let curpsClientes = [];
-            if (filtros.sucursal || filtros.grupo || filtros.ruta || filtros.curpCliente || filtros.nombre) {
+            if (filtros.office || filtros.grupo || filtros.ruta || filtros.curpCliente || filtros.nombre) {
                 clientesFiltrados = await database.buscarClientes({
-                    sucursal: filtros.sucursal, grupo: filtros.grupo, ruta: filtros.ruta,
+                    office: filtros.office, grupo: filtros.grupo, ruta: filtros.ruta,
                     curp: filtros.curpCliente, nombre: filtros.nombre
                 });
                 clientesFiltrados.forEach(c => clientesMap.set(c.curp, c));
@@ -950,7 +950,7 @@ const database = {
                 filtrarCreditosPagosPorCurps = true;
             }
             let queryCreditos = db.collection('creditos');
-            if (filtros.sucursal) queryCreditos = queryCreditos.where('office', '==', filtros.sucursal);
+            if (filtros.office) queryCreditos = queryCreditos.where('office', '==', filtros.office);
             if (filtros.tipoCredito) queryCreditos = queryCreditos.where('tipo', '==', filtros.tipoCredito);
             if (filtros.estadoCredito) queryCreditos = queryCreditos.where('estado', '==', filtros.estadoCredito);
             if (filtros.idCredito) queryCreditos = queryCreditos.where('historicalIdCredito', '==', filtros.idCredito);
@@ -972,7 +972,7 @@ const database = {
                 resultados.push({ tipo: 'credito', ...credito, nombreCliente: cliente?.nombre || 'N/A' });
             }
             let queryPagos = db.collection('pagos');
-            if (filtros.sucursal) queryPagos = queryPagos.where('office', '==', filtros.sucursal);
+            if (filtros.office) queryPagos = queryPagos.where('office', '==', filtros.office);
             if (filtros.tipoPago) queryPagos = queryPagos.where('tipoPago', '==', filtros.tipoPago);
             if (filtros.idCredito) queryPagos = queryPagos.where('idCredito', '==', filtros.idCredito);
             if (filtros.grupo) queryPagos = queryPagos.where('grupo', '==', filtros.grupo);
@@ -994,7 +994,7 @@ const database = {
             }
             if (!filtros.idCredito && !filtros.tipoPago && filtros.fechaInicio && filtros.fechaFin) {
                 let queryNuevosClientes = db.collection('clientes');
-                if (filtros.sucursal) queryNuevosClientes = queryNuevosClientes.where('office', '==', filtros.sucursal);
+                if (filtros.office) queryNuevosClientes = queryNuevosClientes.where('office', '==', filtros.office);
                 if (filtros.grupo) queryNuevosClientes = queryNuevosClientes.where('poblacion_grupo', '==', filtros.grupo);
                 if (filtros.ruta) queryNuevosClientes = queryNuevosClientes.where('ruta', '==', filtros.ruta);
                 queryNuevosClientes = queryNuevosClientes.where('fechaRegistro', '>=', new Date(filtros.fechaInicio + 'T00:00:00Z').toISOString());
@@ -1015,9 +1015,9 @@ const database = {
 
     obtenerDatosParaGraficos: async (filtros) => {
         // ... (sin cambios en la lógica de gráficos, ya usa 'office') ...
-        try { if (filtros.userSucursal && filtros.userSucursal !== 'AMBAS') filtros.sucursal = filtros.userSucursal;
+        try { if (filtros.userOffice && filtros.userOffice !== 'AMBAS') filtros.office = filtros.userOffice;
             let creditosQuery = db.collection('creditos'); let pagosQuery = db.collection('pagos');
-            if (filtros.sucursal) { creditosQuery = creditosQuery.where('office', '==', filtros.sucursal); pagosQuery = pagosQuery.where('office', '==', filtros.sucursal); }
+            if (filtros.office) { creditosQuery = creditosQuery.where('office', '==', filtros.office); pagosQuery = pagosQuery.where('office', '==', filtros.office); }
             if (filtros.grupo) { creditosQuery = creditosQuery.where('poblacion_grupo', '==', filtros.grupo); pagosQuery = pagosQuery.where('grupo', '==', filtros.grupo); }
             const fechaInicioISO = filtros.fechaInicio ? new Date(filtros.fechaInicio + 'T00:00:00Z').toISOString() : null;
             let fechaFinISOExclusive = null; if (filtros.fechaFin) { const fechaFinSiguiente = new Date(filtros.fechaFin); fechaFinSiguiente.setUTCDate(fechaFinSiguiente.getUTCDate() + 1); fechaFinISOExclusive = fechaFinSiguiente.toISOString(); }
@@ -1211,6 +1211,3 @@ const database = {
     }
 
 }; // Fin del objeto database
-
-
-
