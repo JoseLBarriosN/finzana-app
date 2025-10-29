@@ -483,7 +483,7 @@ async function loadClientesTable() {
 
     try {
         const filtros = {
-            sucursal: document.getElementById('sucursal_filtro')?.value || '',
+            office: oficinaSeleccionada,
             curp: document.getElementById('curp_filtro')?.value?.trim() || '',
             nombre: document.getElementById('nombre_filtro')?.value?.trim() || '',
             idCredito: document.getElementById('id_credito_filtro')?.value?.trim() || '',
@@ -494,7 +494,7 @@ async function loadClientesTable() {
             userOffice: esAdminConAccesoTotal ? null : currentUserData?.office // <-- APLICAR SEGREGACIÓN
         };
 
-        const hayFiltros = Object.values(filtros).some((val, key) => val && val.trim() !== '' && key !== 'userSucursal');
+        const hayFiltros = Object.values(filtros).some((val, key) => val && val.trim() !== '' && key !== 'userOffice');
         if (!hayFiltros) {
             tbody.innerHTML = '<tr><td colspan="6">Por favor, especifica al menos un criterio de búsqueda.</td></tr>';
             throw new Error("Búsqueda vacía");
@@ -507,8 +507,8 @@ async function loadClientesTable() {
 
         if (filtros.idCredito) {
             // --- PATH 1: Search by Credit ID (Historical ID) ---
-            creditosAMostrar = await database.buscarCreditosPorHistoricalId(filtros.idCredito, { userSucursal: filtros.userSucursal });
-        } else if (filtros.curp || filtros.nombre || filtros.grupo || filtros.sucursal) {
+            creditosAMostrar = await database.buscarCreditosPorHistoricalId(filtros.idCredito, { userOffice: filtros.userOffice, office: filtros.office });
+        } else if (filtros.curp || filtros.nombre || filtros.grupo || filtros.office) {
             // --- PATH 2: Search by Client Filters ---
             const clientesIniciales = await database.buscarClientes(filtros); // filtros ya incluye userSucursal
 
@@ -557,7 +557,7 @@ async function loadClientesTable() {
             // 1. Get Client Data
             let cliente = clientesMap.get(credito.curpCliente);
             if (!cliente) {
-                cliente = await database.buscarClientePorCURP(credito.curpCliente, filtros.userSucursal); // Aplicar filtro sucursal aquí también
+                cliente = await database.buscarClientePorCURP(credito.curpCliente, filtros.userOffice); // Aplicar filtro sucursal aquí también
                 if (cliente) {
                     clientesMap.set(cliente.curp, cliente);
                 } else {
@@ -587,7 +587,7 @@ async function loadClientesTable() {
             if (filtros.plazo && credito.plazo != filtros.plazo) continue;
             if (filtros.curpAval && (!credito.curpAval || !credito.curpAval.toUpperCase().includes(filtros.curpAval.toUpperCase()))) continue;
             // Filtros de cliente (nombre, curp, grupo, sucursal) ya se aplicaron en la búsqueda inicial (PATH 2) o se verifican aquí
-            if (filtros.sucursal && cliente.office !== filtros.sucursal) continue; // Doble chequeo
+            if (filtros.office && cliente.office !== filtros.office) continue; // Doble chequeo
             if (filtros.grupo && cliente.poblacion_grupo !== filtros.grupo) continue;
             if (filtros.curp && !filtros.curp.includes(',') && cliente.curp !== filtros.curp.toUpperCase()) continue;
             if (filtros.nombre && !(cliente.nombre || '').toLowerCase().includes(filtros.nombre.toLowerCase())) continue;
@@ -759,7 +759,7 @@ async function loadAdvancedReports() {
 
     try {
         const filtros = {
-            sucursal: document.getElementById('sucursal_filtro_reporte')?.value || '',
+            office: document.getElementById('sucursal_filtro_reporte')?.value || '',
             grupo: document.getElementById('grupo_filtro_reporte')?.value || '',
             ruta: document.getElementById('ruta_filtro_reporte')?.value || '',
             tipoCredito: document.getElementById('tipo_credito_filtro_reporte')?.value || '',
@@ -769,7 +769,7 @@ async function loadAdvancedReports() {
             fechaFin: document.getElementById('fecha_fin_reporte')?.value || '',
             curpCliente: document.getElementById('curp_filtro_reporte')?.value.trim().toUpperCase() || '',
             idCredito: document.getElementById('id_credito_filtro_reporte')?.value.trim() || '',
-            userSucursal: currentUserData?.sucursal // <-- APLICAR SEGREGACIÓN
+            userOffice: currentUserData?.office // <-- APLICAR SEGREGACIÓN
         };
 
         if (filtros.fechaInicio && filtros.fechaFin && new Date(filtros.fechaInicio) > new Date(filtros.fechaFin)) {
@@ -1228,7 +1228,7 @@ function setupEventListeners() {
 
     // Reportes Básicos
     const btnActualizarReportes = document.getElementById('btn-actualizar-reportes');
-    if (btnActualizarReportes) btnActualizarReportes.addEventListener('click', () => loadBasicReports(currentUserData?.sucursal));
+    if (btnActualizarReportes) btnActualizarReportes.addEventListener('click', () => loadBasicReports(currentUserData?.office));
 
     // Reportes Avanzados
     const btnAplicarFiltrosReportes = document.getElementById('btn-aplicar-filtros-reportes');
@@ -2102,7 +2102,7 @@ async function handleSearchClientForCredit() {
     formColocacion.classList.add('hidden');
 
     try {
-        const cliente = await database.buscarClientePorCURP(curp, currentUserData?.sucursal); // Aplicar segregación
+        const cliente = await database.buscarClientePorCURP(curp, currentUserData?.office); // Aplicar segregación
 
         if (!cliente) {
             showFixedProgress(100, 'Cliente no encontrado');
@@ -2281,7 +2281,7 @@ async function handleSearchCreditForPayment() {
     formCobranza.classList.add('hidden');
 
     try {
-        const creditosEncontrados = await database.buscarCreditosPorHistoricalId(historicalIdCredito, { userSucursal: currentUserData?.sucursal }); // Aplicar segregación
+        const creditosEncontrados = await database.buscarCreditosPorHistoricalId(historicalIdCredito, { userOffice: currentUserData?.office }); // Aplicar segregación
 
         if (creditosEncontrados.length === 0) {
             showFixedProgress(100, 'Crédito no encontrado');
@@ -2297,7 +2297,7 @@ async function handleSearchCreditForPayment() {
         creditoActual = creditosEncontrados[0];
 
         showFixedProgress(60, 'Obteniendo datos del cliente...');
-        const cliente = await database.buscarClientePorCURP(creditoActual.curpCliente, currentUserData?.sucursal); // Aplicar segregación
+        const cliente = await database.buscarClientePorCURP(creditoActual.curpCliente, currentUserData?.office); // Aplicar segregación
         if (!cliente) {
             console.warn(`No se encontró cliente para CURP ${creditoActual.curpCliente} del crédito ${historicalIdCredito}`);
         }
@@ -2725,8 +2725,8 @@ async function handleRegistroPagoGrupal() {
  * Carga y muestra las estadísticas básicas del sistema.
  * @param {string} userSucursal La sucursal del usuario (opcional).
  */
-async function loadBasicReports(userSucursal = null) {
-    console.log(`Cargando reportes básicos para sucursal: ${userSucursal || 'Todas'}...`);
+async function loadBasicReports(userOffice = null) {
+    console.log(`Cargando reportes básicos para sucursal: ${userOffice || 'Todas'}...`);
     const btnActualizar = document.getElementById('btn-actualizar-reportes');
     showButtonLoading(btnActualizar, true, 'Actualizando...');
     showStatus('status_reportes', 'Calculando estadísticas...', 'info');
@@ -2741,7 +2741,7 @@ async function loadBasicReports(userSucursal = null) {
     document.getElementById('total-comisiones').textContent = '$...';
 
     try {
-        const reportes = await database.generarReportes(userSucursal); // Aplicar segregación
+        const reportes = await database.generarReportes(userOffice); // Aplicar segregación
 
         document.getElementById('total-clientes').textContent = reportes.totalClientes?.toLocaleString() ?? 'Error';
         document.getElementById('total-creditos').textContent = reportes.totalCreditos?.toLocaleString() ?? 'Error';
@@ -2943,11 +2943,11 @@ async function handleGenerarGrafico() {
         statusGraficos.className = 'status-message status-info';
 
         const { creditos, pagos } = await database.obtenerDatosParaGraficos({
-            sucursal,
+            office,
             grupo,
             fechaInicio,
             fechaFin,
-            userSucursal: currentUserData?.sucursal // Aplicar segregación
+            userOffice: currentUserData?.office // Aplicar segregación
         });
 
         statusGraficos.textContent = 'Procesando datos para el gráfico...';
@@ -2965,7 +2965,7 @@ async function handleGenerarGrafico() {
             default_border: 'rgba(46, 139, 87, 1)'
         };
 
-        const agruparDatos = (data, campoFecha, campoValor, filtroSucursal = null) => {
+        const agruparDatos = (data, campoFecha, campoValor, filtroOffice = null) => {
             const agrupados = {};
             const datosFiltrados = filtroSucursal ? data.filter(item => item.office === filtroSucursal) : data;
 
@@ -3024,7 +3024,7 @@ async function handleGenerarGrafico() {
             let datosAgrupados = {};
 
             sucursalesAProcesar.forEach(suc => {
-                const pagosSucursal = (sucursal === '') ? pagos.filter(p => p.office === suc) : pagos;
+                const pagosSucursal = (office === '') ? pagos.filter(p => p.office === suc) : pagos;
                 pagosSucursal.forEach(pago => {
                     const tipo = (pago.tipoPago || 'normal').toLowerCase();
                     const clave = tipo.charAt(0).toUpperCase() + tipo.slice(1);
@@ -3048,7 +3048,7 @@ async function handleGenerarGrafico() {
 
         } else {
             // Lógica para Colocación y Recuperación (agrupados por fecha)
-            if (sucursal === '') { // AMBAS SUCURSALES
+            if (office === '') { // AMBAS SUCURSALES
                 const datosGDL = agruparDatos(dataToProcess, campoFecha, campoValor, 'GDL');
                 const datosLEON = agruparDatos(dataToProcess, campoFecha, campoValor, 'LEON');
                 labels = [...new Set([...Object.keys(datosGDL), ...Object.keys(datosLEON)])].sort();
@@ -3730,7 +3730,7 @@ document.addEventListener('viewshown', async function (e) {
 
     switch (viewId) {
         case 'view-reportes':
-            loadBasicReports(currentUserData?.sucursal); // Cargar al entrar con filtro
+            loadBasicReports(currentUserData?.office); // Cargar al entrar con filtro
             break;
         case 'view-reportes-avanzados':
             inicializarVistaReportesAvanzados();
@@ -4038,7 +4038,7 @@ async function handleDiagnosticarPagos() {
 
     try {
         // 1. Buscar TODOS los créditos con ese ID (sin filtro de sucursal/curp)
-        const creditosAsociados = await database.buscarCreditosPorHistoricalId(historicalIdCredito, { userSucursal: null }); // Buscar en todas las sucursales
+        const creditosAsociados = await database.buscarCreditosPorHistoricalId(historicalIdCredito, { userOffice: null }); // Buscar en todas las sucursales
 
         if (creditosAsociados.length === 0) {
             statusEl.textContent = `Diagnóstico: No se encontró NINGÚN crédito con el ID Histórico ${historicalIdCredito}.`;
@@ -4098,6 +4098,7 @@ async function handleDiagnosticarPagos() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
