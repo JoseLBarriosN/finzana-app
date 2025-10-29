@@ -2603,26 +2603,30 @@ async function handleCalcularCobranzaRuta() {
         showFixedProgress(100, 'Cálculo completado'); // Indicar 100%
         
     } catch (error) {
-        console.error("Error al calcular cobranza de ruta:", error);
-        if (error.message === "Operación cancelada") {
-            showStatus('status_pago_grupo', 'Cálculo cancelado por el usuario.', 'warning');
-        } else {
-            showStatus('status_pago_grupo', `Error: ${error.message}`, 'error');
-        }
-        if (placeholder) { /* ... */ }
-            placeholder.textContent = `Error al calcular: ${error.message}`;
-            placeholder.classList.remove('hidden');
-         }
-        container.innerHTML = '';
-        cobranzaRutaData = null;
-        if (btnGuardar) btnGuardar.classList.add('hidden');
-        if (btnRegistrar) btnRegistrar.classList.add('hidden');
-
-    } finally {
-        cargaEnProgreso = false;
-        showButtonLoading(btnCalcular, false);
-        setTimeout(hideFixedProgress, 2000);
+    console.error("Error al calcular cobranza de ruta:", error);
+    if (error.message === "Operación cancelada") {
+        showStatus('status_pago_grupo', 'Cálculo cancelado por el usuario.', 'warning');
+    } else {
+        showStatus('status_pago_grupo', `Error: ${error.message}`, 'error');
     }
+
+    // CORRECCIÓN: El código para el placeholder debe estar DENTRO del 'if'
+    if (placeholder) {
+        placeholder.textContent = `Error al calcular: ${error.message}`;
+        placeholder.classList.remove('hidden');
+    }
+    
+    // Estas líneas también deben estar DENTRO del 'catch'
+    container.innerHTML = '';
+    cobranzaRutaData = null;
+    if (btnGuardar) btnGuardar.classList.add('hidden');
+    if (btnRegistrar) btnRegistrar.classList.add('hidden');
+
+} finally { // <-- CORRECCIÓN: La llave '}' del 'catch' ahora está ANTES de 'finally'
+    cargaEnProgreso = false;
+    showButtonLoading(btnCalcular, false);
+    setTimeout(hideFixedProgress, 2000);
+}
 }
 
 /**
@@ -4116,6 +4120,7 @@ async function handleDiagnosticarPagos() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
