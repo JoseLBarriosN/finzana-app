@@ -2487,6 +2487,7 @@ async function handleCalcularCobranzaRuta() {
     const btnGuardar = document.getElementById('btn-guardar-cobranza-offline');
     const btnRegistrar = document.getElementById('btn-registrar-pagos-offline');
     const container = document.getElementById('cobranza-ruta-container');
+    const placeholder = document.getElementById('cobranza-ruta-placeholder');
     // *** CORRECCIÓN: Obtener placeholder DENTRO de la función si es necesario ***
     // const placeholder = document.getElementById('cobranza-ruta-placeholder'); // Lo buscaremos cuando lo necesitemos
 
@@ -2503,16 +2504,19 @@ async function handleCalcularCobranzaRuta() {
     const userRuta = currentUserData.ruta;
     const userOffice = currentUserData.office; // *** Variable userOffice definida aquí ***
 
+    // --- CAMBIOS: Usar showFixedProgress ---
+    cargaEnProgreso = true; // Habilitar cancelación
+    currentSearchOperation = Date.now(); // Habilitar cancelación
+    const operationId = currentSearchOperation;
+
     showButtonLoading(btnCalcular, true, 'Calculando...');
-    showProcessingOverlay(true, `Calculando cobranza para ruta ${userRuta}...`);
+    showFixedProgress(5, `Calculando cobranza para ruta ${userRuta}...`);
     statusPagoGrupo.innerHTML = `Buscando poblaciones para la ruta ${userRuta}...`;
     statusPagoGrupo.className = 'status-message status-info';
     container.innerHTML = ''; // Limpiar contenedor
-
+    
     // Ocultar placeholder si existe
-    const placeholder = document.getElementById('cobranza-ruta-placeholder'); // *** Buscar placeholder aquí ***
     if (placeholder) placeholder.classList.add('hidden'); // *** Usar if para evitar error si no existe ***
-
     cobranzaRutaData = {}; // Resetear datos globales
     if (btnGuardar) btnGuardar.classList.add('hidden'); // Usar if
     if (btnRegistrar) btnRegistrar.classList.add('hidden'); // Usar if
@@ -2531,7 +2535,7 @@ async function handleCalcularCobranzaRuta() {
 
 
         // 2. Buscar clientes (Usa userOffice correctamente)
-        statusPagoGrupo.textContent = `Buscando clientes en ${nombresPoblacionesDeLaRuta.length} poblaciones...`;
+        showFixedProgress(20, `Buscando clientes en ${nombresPoblacionesDeLaRuta.length} poblaciones...`);
         const clientesDeLasPoblaciones = [];
         const MAX_IN_VALUES = 10; // Límite correcto
 
@@ -2550,21 +2554,28 @@ async function handleCalcularCobranzaRuta() {
 
 
         // 3. Procesar clientes (Usa userOffice correctamente)
-        statusPagoGrupo.textContent = `Procesando ${clientesDeLasPoblaciones.length} clientes...`;
-        let creditosPendientes = []; /*...*/
+        showFixedProgress(40, `Procesando ${clientesDeLasPoblaciones.length} clientes...`);
+        let creditosPendientes = [];
         let poblacionesEncontradasSet = new Set();
         let totalGeneralACobrar = 0;
         let clientesConErrores = 0;
+        const totalClientes = clientesDeLasPoblaciones.length;
 
-        for (const cliente of clientesDeLasPoblaciones) {
-            if (!nombresPoblacionesDeLaRuta.includes(cliente.poblacion_grupo)) { /* ... sin cambios ... */ continue; }
+        for (const [index, cliente] of clientesDeLasPoblaciones.entries()) {
+            if (operationId !== currentSearchOperation) throw new Error("Operación cancelada");
+            
+            // --- AÑADIDO: Actualizar progreso real ---
+            // Actualiza el progreso entre 40% y 90% durante este bucle
+            const progress = 40 + Math.round(((index + 1) / totalClientes) * 50);
+            showFixedProgress(progress, `Procesando cliente ${index + 1} de ${totalClientes}...`);
+            // --- FIN AÑADIDO ---
 
+            if (!nombresPoblacionesDeLaRuta.includes(cliente.poblacion_grupo)) { /*...*/ continue; }
             const creditoActivo = await database.buscarCreditoActivoPorCliente(cliente.curp);
             if (creditoActivo) {
-                if (creditoActivo.office !== userOffice) continue; // Correcto
-
-                const pagos = await database.getPagosPorCredito(creditoActivo.historicalIdCredito || creditoActivo.id, creditoActivo.office); // Correcto
-                // ... (resto cálculo estado SIN CAMBIOS) ...
+                if (creditoActivo.office !== userOffice) continue;
+                const pagos = await database.getPagosPorCredito(creditoActivo.historicalIdCredito || creditoActivo.id, creditoActivo.office);
+                pagos.sort((a, b) => (parsearFecha(b).fecha?.getTime() || 0) - (parsearFecha(a.fecha)?.getTime() || 0));
                 const estadoCalc = _calcularEstadoCredito(creditoActivo, pagos);
 
                 if (estadoCalc && estadoCalc.estado !== 'liquidado' && estadoCalc.pagoSemanal > 0.01) {
@@ -2578,12 +2589,10 @@ async function handleCalcularCobranzaRuta() {
 
         if (creditosPendientes.length === 0) { /* ... sin cambios ... */ throw new Error(/*...*/); }
 
-
         // 4. Agrupar y Renderizar (Usa userOffice correctamente)
-        statusPagoGrupo.textContent = 'Agrupando resultados por población...';
+        showFixedProgress(95, 'Agrupando y renderizando resultados...');
         cobranzaRutaData = {};
         const poblacionesOrdenadas = Array.from(poblacionesEncontradasSet).sort();
-
         poblacionesOrdenadas.forEach(pob => { /* ... sin cambios ... */ });
 
         renderizarCobranzaRuta(cobranzaRutaData, container);
@@ -2591,25 +2600,30 @@ async function handleCalcularCobranzaRuta() {
         if (btnRegistrar) btnRegistrar.classList.remove('hidden'); // Usar if
 
         // ... (mensaje éxito sin cambios) ...
-
+        showFixedProgress(100, 'Cálculo completado'); // Indicar 100%
+        
     } catch (error) {
         console.error("Error al calcular cobranza de ruta:", error);
-        // ... (manejo errores sin cambios, ya menciona índice si es necesario) ...
-         if (placeholder) { // *** Usar if para placeholder ***
+        if (error.message === "Operación cancelada") {
+            showStatus('status_pago_grupo', 'Cálculo cancelado por el usuario.', 'warning');
+        } else {
+            showStatus('status_pago_grupo', `Error: ${error.message}`, 'error');
+        }
+        if (placeholder) { /* ... */ }
             placeholder.textContent = `Error al calcular: ${error.message}`;
             placeholder.classList.remove('hidden');
          }
         container.innerHTML = '';
         cobranzaRutaData = null;
-        if (btnGuardar) btnGuardar.classList.add('hidden'); // Usar if
-        if (btnRegistrar) btnRegistrar.classList.add('hidden'); // Usar if
+        if (btnGuardar) btnGuardar.classList.add('hidden');
+        if (btnRegistrar) btnRegistrar.classList.add('hidden');
 
     } finally {
+        cargaEnProgreso = false;
         showButtonLoading(btnCalcular, false);
-        showProcessingOverlay(false);
+        setTimeout(hideFixedProgress, 2000);
     }
 }
-
 
 /**
  * Registra los pagos individuales marcados en la lista de cobranza por ruta
@@ -3391,6 +3405,9 @@ function showStatus(elementId, message, type) {
 
 
 function showProcessingOverlay(show, message = 'Procesando...') {
+    if (show && typeof resetInactivityTimer === 'function') {
+        resetInactivityTimer();
+    }
     let overlay = document.getElementById('processing-overlay');
     if (!overlay) {
         overlay = document.createElement('div');
@@ -3439,6 +3456,9 @@ function showButtonLoading(selector, show, loadingText = '') {
 // =============================================
 
 function showFixedProgress(percentage, message = '') {
+    if (typeof resetInactivityTimer === 'function') {
+        resetInactivityTimer();
+    }
     let progressContainer = document.getElementById('progress-container-fixed');
     if (!progressContainer) {
         progressContainer = document.createElement('div');
@@ -3461,11 +3481,9 @@ function showFixedProgress(percentage, message = '') {
     const validPercentage = Math.max(0, Math.min(100, percentage));
 
     if (progressBar) progressBar.style.width = validPercentage + '%';
-    if (progressText) progressText.textContent = message;
-
-    progressContainer.classList.remove('hidden');
-    progressContainer.style.display = 'flex';
-    document.body.classList.add('has-progress');
+    if (progressText) progressText.textContent = `${message} (${validPercentage.toFixed(0)}%)`;
+    progressContainer.classList.add('visible'); // Usar clase 'visible' para mostrar
+    document.body.classList.add('has-progress'); // Añadir clase al body para padding
 }
 
 function hideFixedProgress() {
@@ -4098,6 +4116,7 @@ async function handleDiagnosticarPagos() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
