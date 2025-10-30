@@ -466,7 +466,7 @@ function aplicarPermisosUI(role) {
 // FUNCIONES MOVIDAS ANTES DE DOMContentLoaded
 // =============================================
 
-// --- Funciones de Gestión de Clientes ---
+// --- Funciones de Gestión de Clientes --- //
 async function loadClientesTable() {
     if (cargaEnProgreso) {
         showStatus('status_gestion_clientes', 'Ya hay una búsqueda en progreso. Por favor, espera.', 'warning');
@@ -482,6 +482,8 @@ async function loadClientesTable() {
     showFixedProgress(10, 'Iniciando búsqueda...');
 
     try {
+        const esAdminConAccesoTotal = (currentUserData?.role === 'Super Admin' || currentUserData?.role === 'Gerencia');
+        const oficinaSeleccionada = document.getElementById('sucursal_filtro')?.value || '';
         const filtros = {
             office: oficinaSeleccionada,
             curp: document.getElementById('curp_filtro')?.value?.trim() || '',
@@ -502,7 +504,6 @@ async function loadClientesTable() {
 
         let creditosAMostrar = [];
         const clientesMap = new Map(); // Cache para client data
-
         showFixedProgress(25, 'Obteniendo datos base...');
 
         if (filtros.idCredito) {
@@ -597,17 +598,13 @@ async function loadClientesTable() {
             // --- Build the Row ---
             const fechaInicioCredito = formatDateForDisplay(parsearFecha(credito.fechaCreacion));
             const fechaUltimoPago = formatDateForDisplay(ultimoPago ? parsearFecha(ultimoPago.fecha) : null);
-
             const comisionistaBadge = cliente.isComisionista ? '<span class="comisionista-badge-cliente" title="Comisionista">★</span>' : '';
             const estadoClase = `status-${estadoCalculado.estado.replace(/\s/g, '-')}`;
             const estadoHTML = `<span class="info-value ${estadoClase}">${estadoCalculado.estado.toUpperCase()}</span>`;
-
             // Usar semanasPagadas del objeto estadoCalculado
             const semanasPagadas = estadoCalculado.semanasPagadas || 0;
-
             // Usar saldoRestante del objeto estadoCalculado
             const saldoRestante = estadoCalculado.saldoRestante;
-
             const infoCreditoHTML = `
                 <div class="credito-info">
                     <div class="info-grid">
@@ -676,6 +673,7 @@ async function loadClientesTable() {
     }
 }
 
+//**INICIALIZAR VISTA GESTION DE CLIENTES**//
 function inicializarVistaGestionClientes() {
     const tbody = document.getElementById('tabla-clientes');
     if (tbody) {
@@ -690,7 +688,7 @@ function limpiarFiltrosClientes() {
     const filtrosGrid = document.getElementById('filtros-grid');
     if (filtrosGrid) {
         filtrosGrid.querySelectorAll('input, select').forEach(el => {
-            if (!el.disabled) { // No limpiar filtros deshabilitados (como sucursal)
+            if (!el.disabled) {
                 el.value = '';
             }
         });
@@ -699,7 +697,7 @@ function limpiarFiltrosClientes() {
     showStatus('status_gestion_clientes', 'Filtros limpiados. Ingresa nuevos criterios para buscar.', 'info');
 }
 
-// --- Funciones de Reportes Avanzados ---
+// --- Inicializar Reportes Avanzados ---
 function inicializarVistaReportesAvanzados() {
     const tbody = document.getElementById('tabla-reportes_avanzados');
     if (tbody) {
@@ -4120,6 +4118,7 @@ async function handleDiagnosticarPagos() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
