@@ -907,6 +907,7 @@
                     <h2>Registrar Gasto</h2>
                     <button class="btn btn-secondary" data-view="view-main-menu"><i class="fas fa-arrow-left"></i> Volver al Menú</button>
                 </div>
+                
                 <div class="card form-container" style="max-width: 600px;">
                     <form id="form-registrar-gasto">
                         <div class="form-group">
@@ -926,11 +927,12 @@
                     <div id="status_registrar_gasto" class="status-message hidden"></div>
                 </div>
             </div>
-            <div id="view-gestion-efectivo" class="view hidden">
+    <div id="view-gestion-efectivo" class="view hidden">
                 <div class="view-header">
                     <h2>Gestión de Efectivo de Agentes</h2>
                     <button class="btn btn-secondary" data-view="view-main-menu"><i class="fas fa-arrow-left"></i> Volver al Menú</button>
                 </div>
+
                 <div class="card form-container" style="margin-bottom: 20px;">
                     <h3>Registrar Entrega de Efectivo</h3>
                     <form id="form-registrar-entrega" class="form-inline">
@@ -952,7 +954,8 @@
                     </form>
                     <div id="status_registrar_entrega" class="status-message hidden"></div>
                 </div>
-                <div class="card" style="margin-bottom: 20px;">
+
+                <div class="card form-container" style="margin-bottom: 20px;">
                      <h3>Buscar Movimientos de Agente</h3>
                      <div id="filtros-gestion-efectivo" class="filtros-grid form-inline">
                         <div class="form-group" style="flex: 2;">
@@ -972,7 +975,8 @@
                         <button id="btn-buscar-movimientos" class="btn btn-primary"><i class="fas fa-search"></i> Buscar Movimientos</button>
                      </div>
                 </div>
-                <div id="resultados-gestion-efectivo" class="hidden">
+                
+                <div id="resultados-gestion-efectivo" class="form-container hidden">
                     <div id="balance-container" class="card info-grid" style="background: #f8f9fa; padding: 15px; margin-bottom: 20px;">
                         <div class="info-item"><span class="info-label">Agente:</span><span id="balance-agente" class="info-value">...</span></div>
                         <div class="info-item"><span class="info-label">Total Entregado:</span><span id="balance-entregado" class="info-value" style="color: var(--success);">...</span></div>
@@ -999,6 +1003,8 @@
                         </table>
                     </div>
                 </div>
+
+            </div>
             </div>
     <div id="processing-overlay" class="processing-overlay hidden">
         <div class="processing-spinner"></div>
@@ -1033,6 +1039,7 @@
     <script src="js/app.js"></script>
 </body>
 </html>
+
 
 
 
