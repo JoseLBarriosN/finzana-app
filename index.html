@@ -118,7 +118,7 @@
                         <button class="btn btn-primary" data-view="view-usuarios"><i class="fas fa-arrow-right"></i> Acceder</button>
                     </div>
                     <div class="menu-card" data-view="view-importar">
-                    <div class="menu-icon icon-importar"><i class="fas fa-file-import"></i></div>
+                        <div class="menu-icon icon-importar"><i class="fas fa-file-import"></i></div>
                         <h3>Importar Datos</h3>
                         <p>Carga información desde CSV</p>
                         <button class="btn btn-primary" data-view="view-importar"><i class="fas fa-arrow-right"></i> Acceder</button>
@@ -133,10 +133,10 @@
                         <i class="fas fa-receipt menu-icon" style="color: #FF6347;"></i>
                         <h3>Registrar Gasto</h3>
                         <p>Registra gastos de operación (gasolina, viáticos, etc.)</p>
-               </div>
+                    </div>
                     <div class="menu-card" data-view="view-gestion-efectivo">
                         <i class="fas fa-cash-register menu-icon" style="color: #3CB371;"></i>
-                        <h3>Gestión de Efectivo</h3>
+                    D   <h3>Gestión de Efectivo</h3>
                         <p>Revisar balances y registrar entregas de efectivo a agentes.</p>
                     </div>   
                 </div>
@@ -177,7 +177,7 @@
                         <div class="form-group">
                             <label for="fecha_registro_filtro">Fecha de Registro</label>
                             <input type="date" id="fecha_registro_filtro">
-                        </div>
+                        </div>
                         <div class="form-group">
                             <label for="fecha_credito_filtro">Fecha de Crédito</label>
                             <input type="date" id="fecha_credito_filtro">
@@ -202,27 +202,23 @@
                     <div class="filtros-actions">
                         <button id="btn-aplicar-filtros" class="btn btn-primary"><i class="fas fa-search"></i> Filtrar</button>
                         <button id="btn-limpiar-filtros" class="btn btn-secondary"><i class="fas fa-times"></i> Limpiar</button>
-              source_id: 11
-            </div>
+                    </div>
                 </div>
                 <div id="status_gestion_clientes"></div>
                 <table class="client-table">
                     <thead>
                         <tr>
- 
                             <th>Sucursal / Inicio Crédito</th>
                             <th>CURP</th>
                             <th>Nombre</th>
- 
                             <th>Grupo</th>
                             <th>Información de Crédito</th>
                             <th>Acciones</th>
                         </tr>
                     </thead>
                     <tbody id="tabla-clientes">
-                       <tr>
+                        <tr>
                             <td colspan="6">Utiliza los filtros para buscar y mostrar clientes.</td>
-  
                         </tr>
                     </tbody>
                 </table>
@@ -233,26 +229,26 @@
                     <h2>Gestión de Usuarios</h2>
                     <button class="btn btn-secondary" data-view="view-main-menu"><i class="fas fa-arrow-left"></i> Volver al Menú</button>
                 </div>
+
                 <div class="filtros-usuarios">
                     <h3>Filtros de Búsqueda</h3>
-                    <div class="filtros-usuarios-grid">
+                    <div class="filtros-usuarios-grid">
                         <div class="form-group">
                             <label for="filtro-email-usuario">Email</label>
                             <input type="text" id="filtro-email-usuario" placeholder="Buscar por email...">
                         </div>
                         <div class="form-group">
-                         <label for="filtro-nombre-usuario">Nombre</label>
+                            <label for="filtro-nombre-usuario">Nombre</label>
                             <input type="text" id="filtro-nombre-usuario" placeholder="Buscar por nombre...">
                         </div>
                         <div class="form-group">
- 
                             <label for="filtro-rol-usuario">Rol</label>
                             <select id="filtro-rol-usuario"></select>
                         </div>
                         <div class="form-group">
                             <label for="filtro-sucursal-usuario">Sucursal</label>
                             <select id="filtro-sucursal-usuario">
-                            <option value="">Todas</option>
+                                <option value="">Todas</option>
                                 <option value="GDL">Guadalajara</option>
                                 <option value="LEON">León</option>
                                 <option value="AMBAS">Ambas</option>
@@ -260,14 +256,13 @@
                         </div>
                     </div>
                     <div class="filtros-usuarios-actions">
-                         <button id="btn-aplicar-filtros-usuarios" class="btn btn-primary">
+                        <button id="btn-aplicar-filtros-usuarios" class="btn btn-primary">
                             <i class="fas fa-search"></i> Buscar
                         </button>
                         <button id="btn-limpiar-filtros-usuarios" class="btn btn-secondary">
- 
                             <i class="fas fa-times"></i> Limpiar Filtros
                         </button>
-                  </div>
+                    </div>
                 </div>
 
                 <div class="user-actions">
@@ -290,47 +285,43 @@
                         <div class="form-group">
                             <label for="nuevo-nombre">Nombre Completo <span class="required">*</span></label>
                             <input type="text" id="nuevo-nombre" required>
-                      </div>
+                        </div>
                         <div class="form-group">
-                     <label for="nuevo-rol">Rol <span class="required">*</span></label>
+                            <label for="nuevo-rol">Rol <span class="required">*</span></label>
                             <select id="nuevo-rol" required></select>
                         </div>
                          <div class="form-group">
-  
                             <label for="nuevo-sucursal">Sucursal <span class="required">*</span></label>
                             <select id="nuevo-sucursal" required>
-                            <option value="" disabled selected>Selecciona...</option>
+                                <option value="" disabled selected>Selecciona...</option>
                                 <option value="GDL">Guadalajara</option>
                                 <option value="LEON">León</option>
-  
                                 <option value="AMBAS">Ambas (Solo Gerencia/Super Admin)</option>
-                          </select>
+                            </select>
                         </div>
                     <div class="form-group">
                         <label for="nuevo-ruta">Ruta Asignada</label>
                         <select id="nuevo-ruta">
                             <option value="">-- Sin asignar --</option>
-                       </select>
-                     <div class="field-note">La ruta depende de la sucursal seleccionada.</div>
+                            </select>
+                        <div class="field-note">La ruta depende de la sucursal seleccionada.</div>
                     </div>
                     <div class="form-group">
-                <button type="submit" class="btn btn-success"><i class="fas fa-save"></i> Guardar</button>
+                        <button type="submit" class="btn btn-success"><i class="fas fa-save"></i> Guardar</button>
                             <button type="button" id="btn-cancelar-usuario" class="btn btn-secondary"><i class="fas fa-times"></i> Cancelar</button>
                         </div>
                     </form>
                 </div>
                 <table class="user-table">
-  
                     <thead>
                         <tr>
                             <th>Email</th>
-                          Yes <th>Nombre</th>
+                            <th>Nombre</th>
                             <th>Rol</th>
                             <th>Sucursal</th>
-  
                             <th>Ruta</th><th>Estado</th>
                             <th>Acciones</th>
-                   </tr>
+                        </tr>
                     </thead>
                     <tbody id="tabla-usuarios">
                         <tr>
@@ -348,17 +339,17 @@
                 </div>
                 <div class="form-group">
                     <label for="office-select">Selecciona la Sucursal para Importar</label>
-                     <select id="office-select">
+                    <select id="office-select">
                         <option value="GDL">Guadalajara</option>
                         <option value="LEON">León</option>
-                  </select>
+                    </select>
                 </div>
 
                 <div id="import-gdl-section">
-                    <div class="import-tabs">
+    _             <div class="import-tabs">
                         <div class="import-tab active" data-tab="clientes">Clientes</div>
                         <div class="import-tab" data-tab="colocacion">Colocación</div>
-                      <div class="import-tab" data-tab="cobranza">Cobranza</div>
+                        <div class="import-tab" data-tab="cobranza">Cobranza</div>
                     </div>
                     <div id="tab-gdl-clientes" class="import-tab-content">
                         <div class="import-section">
@@ -368,12 +359,11 @@
                         <textarea id="datos-importar-gdl-clientes" rows="8" placeholder="Pega aquí los datos CSV..."></textarea>
                     </div>
                     <div id="tab-gdl-colocacion" class="import-tab-content hidden">
-  
                         <div class="import-section">
-                            <h4>Formato Guadalajara - Colocación (13 columnas)</h4>
+                    D       <h4>Formato Guadalajara - Colocación (13 columnas)</h4>
                             <p>CURP, NOMBRE, ID (Histórico), FECHA (dd-mm-yyyy), TIPO, MONTO, PLAZO, MONTO A PAGAR, CURP AVAL, NOMBRE AVAL, GRUPO, RUTA, SALDO</p>
                         </div>
-                      <textarea id="datos-importar-gdl-colocacion" rows="8" placeholder="Pega aquí los datos CSV..."></textarea>
+                        <textarea id="datos-importar-gdl-colocacion" rows="8" placeholder="Pega aquí los datos CSV..."></textarea>
                     </div>
                     <div id="tab-gdl-cobranza" class="import-tab-content hidden">
                         <div class="import-section">
@@ -382,50 +372,52 @@
                         </div>
                         <textarea id="datos-importar-gdl-cobranza" rows="8" placeholder="Pega aquí los datos CSV con 8 columnas..."></textarea>
                     </div>
-                </div>
+                </div>
+
                 <div id="import-leon-section" class="hidden">
                     <div class="import-tabs">
                         <div class="import-tab active" data-tab="clientes">Clientas</div>
                         <div class="import-tab" data-tab="colocacion">Colocación</div>
-                    <div class="import-tab" data-tab="cobranza">Cobranza</div>
+                        <div class="import-tab" data-tab="cobranza">Cobranza</div>
                     </div>
                     <div id="tab-leon-clientes" class="import-tab-content">
                         <div class="import-section">
                             <h4>Formato León - Clientas (7 columnas)</h4>
                             <p>CURP, NOMBRE, DOMICILIO, CP, TELEFONO, FECHA REGISTRO (dd-mm-yyyy), GRUPO</p>
-                        </div>
+    DA              </div>
                         <textarea id="datos-importar-leon-clientes" rows="8" placeholder="Pega aquí los datos CSV..."></textarea>
-                    </div>
+                    </div>
                     <div id="tab-leon-colocacion" class="import-tab-content hidden">
                         <div class="import-section">
-                            <h4>Formato León - Colocación (20 columnas)</h4>
-               <p>CURP, NOMBRE, ID (Histórico), FECHA (dd-mm-yyyy), TIPO, MONTO, PLAZO, MONTO A PAGAR, CURP AVAL, NOMBRE AVAL, GRUPO, RUTA, INTERES, SALDO, ULTIMO PAGO, SALDO VENCIDO, STATUS, SALDO CAPITAL, SALDO INTERES, STJ150</p>
+              s         <h4>Formato León - Colocación (20 columnas)</h4>
+                            <p>CURP, NOMBRE, ID (Histórico), FECHA (dd-mm-yyyy), TIPO, MONTO, PLAZO, MONTO A PAGAR, CURP AVAL, NOMBRE AVAL, GRUPO, RUTA, INTERES, SALDO, ULTIMO PAGO, SALDO VENCIDO, STATUS, SALDO CAPITAL, SALDO INTERES, STJ150</p>
                         </div>
                         <textarea id="datos-importar-leon-colocacion" rows="8" placeholder="Pega aquí los datos CSV..."></textarea>
                     </div>
                     <div id="tab-leon-cobranza" class="import-tab-content hidden">
                         <div class="import-section">
                             <h4>Formato León - Cobranza (8 columnas)</h4>
-                         <p>NOMBRE, ID CREDITO (Histórico), FECHA (dd-mm-yyyy), MONTO PAGO, TIPO PAGO, GRUPO, RUTA, OFICINA (LEON)</p>
+source_id: 11
+                            <p>NOMBRE, ID CREDITO (Histórico), FECHA (dd-mm-yyyy), MONTO PAGO, TIPO PAGO, GRUPO, RUTA, OFICINA (LEON)</p>
                         </div>
-                      <textarea id="datos-importar-leon-cobranza" rows="8" placeholder="Pega aquí los datos CSV con 8 columnas..."></textarea>
+                s     <textarea id="datos-importar-leon-cobranza" rows="8" placeholder="Pega aquí los datos CSV con 8 columnas..."></textarea>
                     </div>
                 </div>
 
                 <div class="form-group" style="margin-top: 20px;">
                     <button id="btn-procesar-importacion" class="btn btn-primary"><i class="fas fa-file-import"></i> Procesar</button>
-                    <button id="btn-limpiar-datos" class="btn btn-danger"><i class="fas fa-trash"></i> Limpiar BD (Deshabilitado)</button>
+M               <button id="btn-limpiar-datos" class="btn btn-danger"><i class="fas fa-trash"></i> Limpiar BD (Deshabilitado)</button>
                 </div>
                 <div id="resultado-importacion" class="hidden">
-                 <div id="estado-importacion"></div>
+                    <div id="estado-importacion"></div>
                     <div id="detalle-importacion"></div>
-                </div>
+s            </div>
             </div>
 
             <div id="view-configuracion" class="view hidden">
                 <div class="view-header">
                     <h2>Configuración del Sistema</h2>
-                 <button class="btn btn-secondary" data-view="view-main-menu"><i class="fas fa-arrow-left"></i> Volver al Menú</button>
+                    <button class="btn btn-secondary" data-view="view-main-menu"><i class="fas fa-arrow-left"></i> Volver al Menú</button>
                 </div>
                 <div id="status_configuracion"></div>
 
@@ -440,48 +432,50 @@
                             </select>
                             <button id="btn-agregar-poblacion" class="btn btn-success btn-sm"><i class="fas fa-plus"></i> Agregar</button>
                         </div>
-                      <ul id="lista-poblaciones" class="config-list">
+                        <ul id="lista-poblaciones" class="config-list">
                             <li>Cargando...</li>
                         </ul>
                     </div>
 
                     <div class="config-section card">
                         <h3><i class="fas fa-route"></i> Gestionar Rutas</h3>
-                        <div class="form-inline">
-                            <input type="text" id="nueva-ruta-nombre" placeholder="Nombre nueva ruta">
+                        <div class="form-inline">
+                  s       <input type="text" id="nueva-ruta-nombre" placeholder="Nombre nueva ruta">
                              <select id="nueva-ruta-sucursal">
                                 <option value="GDL">Guadalajara</option>
- 
                                 <option value="LEON">León</option>
                             </select>
                             <button id="btn-agregar-ruta" class="btn btn-success btn-sm"><i class="fas fa-plus"></i> Agregar</button>
-                     </div>
+                        </div>
                          <ul id="lista-rutas" class="config-list">
                             <li>Cargando...</li>
                         </ul>
                     </div>
                 </div>
+end_of_utterance
             </div>
 
 
             <div id="view-cliente" class="view hidden">
                 <div class="view-header">
                     <h2>Registrar Cliente</h2>
+source_id: 11
                     <button class="btn btn-secondary" data-view="view-main-menu"><i class="fas fa-arrow-left"></i> Volver al Menú</button>
                 </div>
                 <form id="form-cliente">
                     <div class="form-group">
-                    <label for="office_cliente">Oficina <span class="required">*</span></label>
+                        <label for="office_cliente">Oficina <span class="required">*</span></label>
                         <select id="office_cliente" required>
                             <option value="GDL" selected>Guadalajara</option>
+source_id: 11
                             <option value="LEON">León</option>
                         </select>
                     </div>
                     <div class="form-group">
-                        <label for="curp_cliente">CURP <span class="required">*</span></label>
+s                    <label for="curp_cliente">CURP <span class="required">*</span></label>
                         <input type="text" id="curp_cliente" placeholder="18 caracteres" required maxlength="18">
                         <div class="field-note" style="display: none;">Solo Admins/Gerencia/SuperAdmin pueden editar una CURP existente.</div>
-                 </div>
+                    </div>
                     <div class="form-group">
                         <label for="nombre_cliente">Nombre Completo <span class="required">*</span></label>
                         <input type="text" id="nombre_cliente" required>
@@ -491,11 +485,11 @@
                         <input type="text" id="domicilio_cliente" required>
                     </div>
                     <div class="form-group">
-                     <label for="cp_cliente">Código Postal</label>
+s                    <label for="cp_cliente">Código Postal</label>
                         <input type="text" id="cp_cliente">
                     </div>
                     <div class="form-group">
-                     <label for="telefono_cliente">Teléfono</label>
+                        <label for="telefono_cliente">Teléfono</label>
                         <input type="text" id="telefono_cliente">
                     </div>
                     <div class="form-group">
@@ -507,13 +501,13 @@
                         <select id="ruta_cliente" required></select>
                     </div>
                     <div class="form-group">
-                     <label for="comisionista_cliente" style="display: flex; align-items: center;">
+s                    <label for="comisionista_cliente" style="display: flex; align-items: center;">
                             <input type="checkbox" id="comisionista_cliente" style="width: auto; height: auto; margin-right: 10px;">
                             Es Comisionista (Acceso a crédito de 10 semanas)
                         </label>
                     </div>
                     <div class="form-group">
-                     <button type="submit" class="btn btn-success"><i class="fas fa-save"></i> Guardar Cliente</button>
+                        <button type="submit" class="btn btn-success"><i class="fas fa-save"></i> Guardar Cliente</button>
                         <button type="button" class="btn btn-secondary" data-view="view-main-menu"><i class="fas fa-times"></i> Cancelar</button>
                     </div>
                 </form>
@@ -540,7 +534,7 @@
                         </div>
                         <div class="form-group">
                             <label>ID del Crédito</label>
-                      <input type="text" id="idCredito_colocacion" readonly>
+                            <input type="text" id="idCredito_colocacion" readonly>
                         </div>
                         <div class="form-group">
                             <label for="tipo_colocacion">Tipo <span class="required">*</span></label>
@@ -549,7 +543,7 @@
                         <div class="form-group">
                             <label for="monto_colocacion">Monto <span class="required">*</span></label>
                             <select id="monto_colocacion" required></select>
-                        </div>
+                        </div>
                         <div class="form-group">
                             <label for="plazo_colocacion">Plazo (semanas) <span class="required">*</span></label>
                             <select id="plazo_colocacion" required></select>
@@ -558,18 +552,19 @@
                             <label>Monto Total a Pagar</label>
                             <input type="text" id="montoTotal_colocacion" readonly>
                             <div class="field-note">Calculado según plazo (0%, 30% o 40%)</div> </div>
-                        <div class="form-group">
+section              <div class="form-group">
                             <label for="curpAval_colocacion">CURP Aval <span class="required">*</span></label>
-                            <input type="text" id="curpAval_colocacion" placeholder="18 caracteres" required maxlength="18">
+              S         <input type="text" id="curpAval_colocacion" placeholder="18 caracteres" required maxlength="18">
                             <div class="field-note">18 caracteres</div>
                         </div>
                         <div class="form-group">
                             <label for="nombreAval_colocacion">Nombre Aval <span class="required">*</span></label>
                             <input type="text" id="nombreAval_colocacion" required>
-                     </div>
-                    <div class="form-group">
+source_id: 11
+                        </div>
+                        <div class="form-group">
                             <button type="submit" class="btn btn-success"><i class="fas fa-hand-holding-usd"></i> Generar Crédito</button>
-                            <button type="button" class="btn btn-secondary" data-view="view-main-menu"><i class="fas fa-times"></i> Cancelar</button>
+s                      <button type="button" class="btn btn-secondary" data-view="view-main-menu"><i class="fas fa-times"></i> Cancelar</button>
                         </div>
                     </form>
                 </div>
@@ -606,7 +601,7 @@
                             <label>Semanas de Atraso (informativo)</label>
                             <input type="text" id="semanas_atraso_cobranza" readonly>
                         </div>
-                        <div class="form-group">
+                        <div class="form-group">
                             <label for="pago_semanal_cobranza">Monto de Pago Semanal</label>
                             <input type="text" id="pago_semanal_cobranza" readonly>
                         </div>
@@ -615,25 +610,25 @@
                             <input type="text" id="fecha_proximo_pago_cobranza" readonly>
                         </div>
                         <div class="form-group">
-                         <label for="monto_cobranza">Monto del Pago <span class="required">*</span></label>
+                            <label for="monto_cobranza">Monto del Pago <span class="required">*</span></label>
                             <input type="number" id="monto_cobranza" min="0.01" step="0.01" required>
                         </div>
                         <div class="form-group">
-                            <label for="tipo_cobranza">Tipo de Pago <span class="required">*</span></label>
-                           <select id="tipo_cobranza" required>
+s                    <label for="tipo_cobranza">Tipo de Pago <span class="required">*</span></label>
+                            <select id="tipo_cobranza" required>
                                 <option value="normal">Normal</option>
+source_id: 11
                                 <option value="extraordinario">Extraordinario</option>
                                 <option value="actualizado">Actualizado</option>
- 
                             </select>
                         </div>
                         <div class="form-group">
-                            <label>Saldo Después del Pago</label>
-                          s <input type="text" id="saldoDespues_cobranza" readonly>
+s                      <label>Saldo Después del Pago</label>
+                            <input type="text" id="saldoDespues_cobranza" readonly>
                         </div>
-                        <div class="form-group">
+                    s <div class="form-group">
                             <button type="submit" class="btn btn-success"><i class="fas fa-cash-register"></i> Registrar Pago</button>
-                          <button type="button" class="btn btn-secondary" data-view="view-main-menu"><i class="fas fa-times"></i> Cancelar</button>
+                            <button type="button" class="btn btn-secondary" data-view="view-main-menu"><i class="fas fa-times"></i> Cancelar</button>
                         </div>
                     </form>
                 </div>
@@ -648,7 +643,7 @@
 
                 <div class="pago-grupal-actions">
                     <button id="btn-calcular-cobranza-ruta" class="btn btn-primary">
-                     <i class="fas fa-calculator"></i> Calcular Cobranza de Mi Ruta (Online)
+s                    <i class="fas fa-calculator"></i> Calcular Cobranza de Mi Ruta (Online)
                     </button>
                     <button id="btn-guardar-cobranza-offline" class="btn btn-info hidden">
                         <i class="fas fa-save"></i> Guardar Lista para Usar Offline
@@ -683,7 +678,7 @@
                         <div class="report-icon"><i class="fas fa-file-invoice-dollar"></i></div>
                         <div class="report-value" id="total-creditos">0</div>
                         <div class="report-label">Créditos Activos</div>
-                    </div>
+                  </div>
                     <div class="report-card">
                         <div class="report-icon"><i class="fas fa-money-bill-wave"></i></div>
                         <div class="report-value" id="total-cartera">$0</div>
@@ -694,7 +689,7 @@
                         <div class="report-value" id="total-vencidos">0</div>
                         <div class="report-label">Créditos Vencidos (>7 días)</div>
                     </div>
-                  <div class="report-card">
+                    <div class="report-card">
                         <div class="report-icon"><i class="fas fa-receipt"></i></div>
                         <div class="report-value" id="pagos-registrados">0</div>
                         <div class="report-label">Pagos del Mes</div>
@@ -702,7 +697,7 @@
                     <div class="report-card">
                         <div class="report-icon"><i class="fas fa-coins"></i></div>
                         <div class="report-value" id="cobrado-mes">$0</div>
-                        <div class="report-label">Cobrado Este Mes</div>
+                  <div class="report-label">Cobrado Este Mes</div>
                     </div>
                     <div class="report-card">
                         <div class="report-icon"><i class="fas fa-percentage"></i></div>
@@ -738,7 +733,7 @@
                         <div class="form-group">
                             <label for="grupo_filtro_reporte">Grupo/Población</label>
                             <select id="grupo_filtro_reporte">
-                                <option value="">Todos</option>
+                          <option value="">Todos</option>
                             </select>
                         </div>
                         <div class="form-group">
@@ -750,20 +745,19 @@
                         <div class="form-group">
                             <label for="tipo_credito_filtro_reporte">Tipo de Crédito</label>
                             <select id="tipo_credito_filtro_reporte">
-                                <option value="">Todos</option>
+                              s <option value="">Todos</option>
                             </select>
                         </div>
                         <div class="form-group">
                             <label for="estado_credito_filtro_reporte">Estado de Crédito (DB)</label>
-                        <select id="estado_credito_filtro_reporte">
+                            <select id="estado_credito_filtro_reporte">
                                 <option value="">Todos</option>
                             </select>
                         </div>
                         <div class="form-group">
-                            <label for="tipo_pago_filtro_reporte">Tipo de Pago</label>
+                      <label for="tipo_pago_filtro_reporte">Tipo de Pago</label>
                             <select id="tipo_pago_filtro_reporte">
                                 <option value="">Todos</option>
- 
                             </select>
                         </div>
                         <div class="form-group">
@@ -772,13 +766,13 @@
                         </div>
                         <div class="form-group">
                             <label for="id_credito_filtro_reporte">ID Crédito (Histórico)</label>
-                        <input type="text" id="id_credito_filtro_reporte" placeholder="Filtrar por ID histórico...">
+                            <input type="text" id="id_credito_filtro_reporte" placeholder="Filtrar por ID histórico...">
                         </div>
                     </div>
 
                     <div class="filter-section">
                         <div class="filter-section-title">Rango de Fechas</div>
-                        <div class="date-range">
+                       <div class="date-range">
                             <div class="form-group">
                                 <label for="fecha_inicio_reporte">Fecha Inicio</label>
                                 <input type="date" id="fecha_inicio_reporte">
@@ -786,13 +780,13 @@
                             <div class="form-group">
                                 <label for="fecha_fin_reporte">Fecha Fin</label>
                                 <input type="date" id="fecha_fin_reporte">
-                             </div>
+                  </div>
                         </div>
                     </div>
 
                     <div class="filtros-actions">
                         <button id="btn-aplicar-filtros-reportes" class="btn btn-primary">
-                            <i class="fas fa-search"></i> Generar Reporte
+                            <i class="fas fa-search"></i> Generar Reporte
                         </button>
                         <button id="btn-limpiar-filtros-reportes" class="btn btn-secondary">
                             <i class="fas fa-times"></i> Limpiar Filtros
@@ -800,7 +794,7 @@
                     </div>
                 </div>
 
-             <div id="estadisticas-reporte"></div>
+                <div id="estadisticas-reporte"></div>
 
                 <div class="export-buttons">
                     <button id="btn-exportar-csv" class="btn btn-success">
@@ -808,38 +802,38 @@
                     </button>
                     <button id="btn-exportar-pdf" class="btn btn-danger">
                         <i class="fas fa-file-pdf"></i> Exportar PDF
-                  </button>
+                    </button>
                 </div>
 
                 <div id="status_reportes_avanzados"></div>
 
-         <table class="report-table">
+        <table class="report-table">
                     <thead>
                         <tr>
                             <th>Tipo</th>
                             <th>CURP</th>
                             <th>Nombre</th>
-                            <th>Grupo/Población</th>
+                      <th>Grupo/Población</th>
                             <th>Ruta</th>
                             <th>Sucursal</th>
                             <th>Fecha</th>
-                            <th>Tipo Operación</th>
+      <th>Tipo Operación</th>
                             <th>Monto</th>
                             <th>Saldo</th>
                         </tr>
                     </thead>
                     <tbody id="tabla-reportes_avanzados">
-                       <tr>
+                      <tr>
                             <td colspan="10">Aplica los filtros para generar el reporte.</td>
                         </tr>
                     </tbody>
                 </table>
             </div>
 
-            <div id="view-reportes-graficos" class="view hidden">
-                <div class="view-header">
+           <div id="view-reportes-graficos" class="view hidden">
+            <div class="view-header">
                     <h2>Reportes con Gráficos</h2>
-                  <button class="btn btn-secondary" data-view="view-main-menu"><i class="fas fa-arrow-left"></i> Volver al Menú</button>
+                    <button class="btn btn-secondary" data-view="view-main-menu"><i class="fas fa-arrow-left"></i> Volver al Menú</button>
                 </div>
 
                 <div class="advanced-filters">
@@ -852,98 +846,96 @@
                         <div class="form-group">
                             <label for="grafico_tipo_grafico">Tipo de Gráfico</label>
                             <select id="grafico_tipo_grafico">
-                           <option value="bar">Barras</option>
+                                <option value="bar">Barras</option>
                                 <option value="pie">Pastel (Pie)</option>
                                 <option value="doughnut">Dona (Doughnut)</option>
+
                                 <option value="line">Líneas</option>
                             </select>
                         </div>
                         <div class="form-group">
                             <label for="grafico_agrupar_por">Agrupar Por</label>
                             <select id="grafico_agrupar_por">
-                                <option value="semana">Semana</option>
-                                 <option value="mes">Mes</option>
+                           <option value="semana">Semana</option>
+                                <option value="mes">Mes</option>
                                 <option value="anio">Año</option>
                             </select>
                         </div>
-                      s <div class="form-group">
+                       <div class="form-group">
                             <label for="grafico_sucursal">Sucursal</label>
                             <select id="grafico_sucursal">
                                 <option value="">Ambas</option>
-                         <option value="GDL">Guadalajara</option>
+                 <option value="GDL">Guadalajara</option>
                                 <option value="LEON">León</option>
-                            </select>
+                    </select>
                         </div>
                         <div class="form-group">
-                         <label for="grafico_grupo">Grupo / Población</label>
+                            <label for="grafico_grupo">Grupo / Población</label>
                             <select id="grafico_grupo">
                                 <option value="">Todos</option>
-                     </select>
+                </select>
                         </div>
                     </div>
                     <div class="filter-section">
                         <div class="filter-section-title">Rango de Fechas del Reporte</div>
-                   <div class="date-range">
+                        <div class="date-range">
                             <div class="form-group">
-  
+
                                 <label for="grafico_fecha_inicio">Fecha Inicio</label>
-                                <input type="date" id="grafico_fecha_inicio">
-                      </div>
+                         <input type="date" id="grafico_fecha_inicio">
+                            </div>
                             <div class="form-group">
-                                <label for="grafico_fecha_fin">Fecha Fin</label>
+                          <label for="grafico_fecha_fin">Fecha Fin</label>
                                 <input type="date" id="grafico_fecha_fin">
-                   </div>
+                  </div>
                         </div>
                     </div>
                     <div class="filtros-actions">
-                        <button id="btn-generar-grafico" class="btn btn-primary">
-                            <i class="fas fa-chart-area"></i> Generar Gráfico
+                    <button id="btn-generar-grafico" class="btn btn-primary">
+                            <i class="fas fa-chart-area">Generar Gráfico</i> 
                         </button>
-                  </div>
+                    </div>
                 </div>
 
-                <div class="card" style="margin-top: 20px;">
+             <div class="card" style="margin-top: 20px;">
                     <div class="card-header">
-                    Source_id: 11
-                      Resultado del Gráfico
+                        <h2></h2>Resultado del Gráfico</h2>
                     </div>
                     <div class="card-body">
-                    <div id="grafico-container">
+                    <div id="grafico-container">
                         </div>
                         <div id="status_graficos" class="status-message">Selecciona los filtros para generar un gráfico.</div>
-                 </div>
+              </div>
                 </div>
             </div>
-    </div>
-    <div id="view-registrar-gasto" class="view hidden">
+                 <div id="view-registrar-gasto" class="view hidden">
                 <div class="view-header">
                     <h2>Registrar Gasto</h2>
                     <button class="btn btn-secondary" data-view="view-main-menu"><i class="fas fa-arrow-left"></i> Volver al Menú</button>
                 </div>
-
-                <div class="view-content-wrapper" style="width: 100%; display: flex; flex-direction: column; align-items: center;">
-                    
-                    <div class="card form-container" style="max-width: 600px; width: 100%; margin: 20px 0;"> <form id="form-registrar-gasto">
+                                <div class="view-content-wrapper" style="width: 100%; display: flex; flex-direction: column; align-items: center;">
+                    <div class="card form-container" style="max-width: 600px; width: 100%; margin: 20px 0;">
+                        <form id="form-registrar-gasto">
                             <div class="form-group">
                                 <label for="gasto-monto">Monto del Gasto (*)</label>
- 
                                 <input type="number" id="gasto-monto" step="0.01" placeholder="Ej: 150.50" required>
                             </div>
                             <div class="form-group">
                                 <label for="gasto-descripcion">Descripción (*)</label>
                                 <input type="text" id="gasto-descripcion" placeholder="Ej: Gasolina, Viáticos, etc." required>
                             </div>
-                             <div class="form-group">
+                            <div class="form-group">
                                 <label for="gasto-fecha">Fecha del Gasto (*)</label>
-                       <input type="date" id="gasto-fecha" required>
+                                <input type="date" id="gasto-fecha" required>
                             </div>
                             <button type="submit" class="btn btn-success"><i class="fas fa-save"></i> Guardar Gasto</button>
                         </form>
                         <div id="status_registrar_gasto" class="status-message hidden"></div>
-               </div>
+                    </div>
+                </div>
+            </div>
 
-                </div> </div>
-    <div id="view-gestion-efectivo" class="view hidden">
+            <div id="view-gestion-efectivo" class="view hidden">
                 <div class="view-header">
                     <h2>Gestión de Efectivo de Agentes</h2>
                     <button class="btn btn-secondary" data-view="view-main-menu"><i class="fas fa-arrow-left"></i> Volver al Menú</button>
@@ -951,15 +943,15 @@
 
                 <div class="view-content-wrapper" style="width: 100%; display: flex; flex-direction: column; align-items: center;">
 
-               <div class="form-container" style="max-width: 1000px; width: 100%; margin: 20px 0;">
+                    <div class="form-container" style="max-width: 1000px; width: 100%; margin: 20px 0;">
                         <div class="card" style="margin-bottom: 20px;">
                             <h3>Registrar Entrega de Efectivo</h3>
                             <form id="form-registrar-entrega" class="form-inline">
                                 <div class="form-group" style="flex: 2;">
-                            <label for="entrega-agente">Agente (Área Comercial)</label>
+                                    <label for="entrega-agente">Agente (Área Comercial)</label>
                                     <select id="entrega-agente" required>
                                         <option value="">Cargando agentes...</option>
-                             </select>
+                                    </select>
                                 </div>
                                 <div class="form-group" style="flex: 1;">
                                     <label for="entrega-monto">Monto Entregado</label>
@@ -967,7 +959,7 @@
                                 </div>
                                 <div class="form-group" style="flex: 2;">
                                     <label for="entrega-descripcion">Descripción</label>
-                                    <input type="text" id="entrega-descripcion" placeholder="Ej: Efectivo semana 42">
+                             <input type="text" id="entrega-descripcion" placeholder="Ej: Efectivo semana 42">
                                 </div>
                                 <button type="submit" class="btn btn-success"><i class="fas fa-plus-circle"></i> Registrar Entrega</button>
                             </form>
@@ -976,25 +968,26 @@
 
                         <div class="card" style="margin-bottom: 20px;">
                             <h3>Buscar Movimientos de Agente</h3>
-                        s <div id="filtros-gestion-efectivo" class="filtros-grid form-inline">
-                                <div class="form-group" style="flex: 2;">
+                            <div id="filtros-gestion-efectivo" class="filtros-grid form-inline">
+                        <div class="form-group" style="flex: 2;">
                                     <label for="filtro-agente">Agente (Área Comercial)</label>
-                                    <select id="filtro-agente">
+                                    <select id="filtro-agente" required>
                                         <option value="">Cargando agentes...</option>
                                     </select>
-                         </div>
-                          <div class="form-group" style="flex: 1;">
+                                </div>
+                                <div class="form-group" style="flex: 1;">
                                     <label for="filtro-fecha-inicio-efectivo">Fecha Inicio</label>
                                     <input type="date" id="filtro-fecha-inicio-efectivo">
                                 </div>
-                                <div class="form-group" style="flex: 1;">
+                               <div class="form-group" style="flex: 1;">
                                     <label for="filtro-fecha-fin-efectivo">Fecha Fin</label>
-                             <input type="date" id="filtro-fecha-fin-efectivo">
-                                </div>
+                                    <input type="date" id="filtro-fecha-fin-efectivo">
+                        </div>
                                 <button id="btn-buscar-movimientos" class="btn btn-primary"><i class="fas fa-search"></i> Buscar Movimientos</button>
                             </div>
-                        </div>
-                    </div> <div id="resultados-gestion-efectivo" class="hidden" style="max-width: 1200px; width: 100%;">
+                     </div>
+                    </div>
+                    <div id="resultados-gestion-efectivo" class="hidden" style="max-width: 1200px; width: 100%;">
                         <div id="balance-container" class="card info-grid" style="background: #f8f9fa; padding: 15px; margin-bottom: 20px;">
                             <div class="info-item"><span class="info-label">Agente:</span><span id="balance-agente" class="info-value">...</span></div>
                             <div class="info-item"><span class="info-label">Total Entregado:</span><span id="balance-entregado" class="info-value" style="color: var(--success);">...</span></div>
@@ -1004,35 +997,34 @@
                         </div>
                         
                         <h4>Historial de Movimientos</h4>
-                        <div class="table-responsive">
-                          <table class="report-table">
+                   <div class="table-responsive">
+                            <table class="report-table">
                                 <thead>
                                     <tr>
                                         <th>Fecha</th>
                                         <th>Tipo</th>
-                                 <th>Monto</th>
+                              <th>Monto</th>
                                         <th>Descripción</th>
                                         <th>Registrado Por</th>
 
                                     </tr>
                                 </thead>
-                                <tbody id="tabla-movimientos-efectivo">
-                              <tr><td colspan="5">Selecciona un agente y rango de fechas.</td></tr>
+                        <tbody id="tabla-movimientos-efectivo">
+                                    <tr><td colspan="5">Selecciona un agente y rango de fechas.</td></tr>
                                 </tbody>
                             </table>
-                    </div>
-                </div>
+                        </div>
+                    </div>
+            </div>             </div>
 
-            </div>
-
-    </main> </div> s   <div id="processing-overlay" class="processing-overlay hidden">
+        </main>     </div>     <div id="processing-overlay" class="processing-overlay hidden">
         <div class="processing-spinner"></div>
         <div id="processing-message" class="processing-message">Procesando...</div>
     </div>
 
     <div id="progress-container-fixed" class="progress-container-fixed hidden">
         <div id="progress-text-fixed" class="progress-text-fixed"></div>
-      <div id="progress-bar-fixed" class="progress-bar-fixed" style="width: 0%;"></div>
+        <div id="progress-bar-fixed" class="progress-bar-fixed" style="width: 0%;"></div>
         <button id="btn-cancelar-carga-fixed" class="btn-cancelar-carga-fixed" title="Cancelar operación">
             <i class="fas fa-times"></i>
         </button>
@@ -1042,7 +1034,7 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h2 id="modal-title">Detalle</h2>
-           <button id="modal-close-btn" class="modal-close-btn">&times;</button>
+                <button id="modal-close-btn" class="modal-close-btn">&times;</button>
             </div>
             <div id="modal-body" class="modal-body">
                 <p>Cargando...</p>
