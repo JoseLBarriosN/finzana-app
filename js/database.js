@@ -1265,7 +1265,7 @@ const database = {
     eliminarRuta: async (id) => {
         // ... (sin cambios) ...
         try { await db.collection('rutas').doc(id).delete(); return { success: true, message: 'Ruta eliminada.' }; } catch (error) { console.error("Error eliminando ruta:", error); return { success: false, message: `Error: ${error.message}` }; }
-    }
+    },
 
 // =============================================
     // *** NUEVAS FUNCIONES: EFECTIVO Y COMISIONES ***
@@ -1344,4 +1344,5 @@ const database = {
     },
     
 }; // Fin del objeto database
+
 
