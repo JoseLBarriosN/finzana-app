@@ -49,7 +49,6 @@ function _parsearFechaImportacion(fechaStr) {
         }
     }
 
-
     // Si el parseo directo falló o fue ambiguo, intentar formatos específicos DD-MM-YYYY, YYYY-MM-DD, MM-DD-YYYY
     const separador = fechaTrimmed.includes('/') ? '/' : '-';
     const partes = fechaTrimmed.split(separador);
@@ -68,7 +67,6 @@ function _parsearFechaImportacion(fechaStr) {
     else if (p3 > 1000 && p1 <= 12 && p2 <= 31) { anio = p3; mes = p1; dia = p2; }
     else { return null; }
 
-
     if (mes < 1 || mes > 12 || dia < 1 || dia > 31) return null;
 
     fecha = new Date(Date.UTC(anio, mes - 1, dia));
@@ -80,7 +78,6 @@ function _parsearFechaImportacion(fechaStr) {
 
     return fecha.toISOString();
 }
-
 
 // Función auxiliar para parsear fechas de forma segura (usada internamente por database.js)
 function parsearFecha(fechaInput) {
@@ -112,7 +109,6 @@ function parsearFecha(fechaInput) {
     return null;
 }
 
-
 const database = {
     // --- MÉTODOS GENERALES ---
     getAll: async (collection) => {
@@ -138,54 +134,53 @@ const database = {
     },
 
     obtenerUsuarioPorId: async (uid) => {
-    try {
-        const docRef = db.collection('users').doc(uid);
-        const doc = await docRef.get();
-        if (!doc.exists) {
-            console.warn(`Usuario ${uid} no encontrado.`);
+        try {
+            const docRef = db.collection('users').doc(uid);
+            const doc = await docRef.get();
+            if (!doc.exists) {
+                console.warn(`Usuario ${uid} no encontrado.`);
+                return null;
+            }
+            const userData = doc.data();
+            if (!userData.role) {
+                console.error(`Datos incompletos para usuario ${uid}: Falta rol.`);
+                return { id: doc.id, ...userData, error: "Datos incompletos (falta rol)" };
+            }
+            // AHORA USA 'office', ASIGNA 'AMBAS' SI FALTA
+            if (!userData.office) {
+                console.warn(`Usuario ${uid} no tiene 'office' definida. Asignando 'AMBAS' por defecto.`);
+                userData.office = 'AMBAS';
+            }
+            return { id: doc.id, ...userData };
+        } catch (error) {
+            console.error("Error obteniendo usuario por ID:", error);
             return null;
         }
-        const userData = doc.data();
-        if (!userData.role) {
-            console.error(`Datos incompletos para usuario ${uid}: Falta rol.`);
-            return { id: doc.id, ...userData, error: "Datos incompletos (falta rol)" };
-        }
-        // AHORA USA 'office', ASIGNA 'AMBAS' SI FALTA
-        if (!userData.office) { // <-- CAMBIO DE sucursal A office
-            console.warn(`Usuario ${uid} no tiene 'office' definida. Asignando 'AMBAS' por defecto.`);
-            userData.office = 'AMBAS'; // <-- CAMBIO DE sucursal A office
-        }
-        return { id: doc.id, ...userData };
-    } catch (error) {
-        console.error("Error obteniendo usuario por ID:", error);
-        return null;
-    }
-},
-
+    },
 
     actualizarUsuario: async (uid, userData) => {
-    try {
-        const dataToUpdate = { ...userData };
-        delete dataToUpdate.email;
-        delete dataToUpdate.id;
+        try {
+            const dataToUpdate = { ...userData };
+            delete dataToUpdate.email;
+            delete dataToUpdate.id;
 
-        // AHORA VALIDA 'office'
-        if (!dataToUpdate.role || !dataToUpdate.office) { // <-- CAMBIO DE sucursal A office
-            return { success: false, message: 'Rol y Oficina son obligatorios.' }; // <-- Mensaje actualizado
+            // AHORA VALIDA 'office'
+            if (!dataToUpdate.role || !dataToUpdate.office) {
+                return { success: false, message: 'Rol y Oficina son obligatorios.' };
+            }
+            if (!['GDL', 'LEON', 'AMBAS'].includes(dataToUpdate.office)) {
+                return { success: false, message: 'Oficina no válida.' };
+            }
+
+            dataToUpdate.fechaModificacion = new Date().toISOString();
+
+            await db.collection('users').doc(uid).update(dataToUpdate);
+            return { success: true, message: 'Usuario actualizado.' };
+        } catch (error) {
+            console.error("Error actualizando usuario:", error);
+            return { success: false, message: `Error al actualizar: ${error.message}` };
         }
-        if (!['GDL', 'LEON', 'AMBAS'].includes(dataToUpdate.office)) { // <-- CAMBIO DE sucursal A office
-            return { success: false, message: 'Oficina no válida.' }; // <-- Mensaje actualizado
-        }
-
-        dataToUpdate.fechaModificacion = new Date().toISOString();
-
-        await db.collection('users').doc(uid).update(dataToUpdate);
-        return { success: true, message: 'Usuario actualizado.' };
-    } catch (error) {
-        console.error("Error actualizando usuario:", error);
-        return { success: false, message: `Error al actualizar: ${error.message}` };
-    }
-},
+    },
 
     deshabilitarUsuario: async (uid) => {
         try {
@@ -356,7 +351,6 @@ const database = {
         }
     },
 
-
     // --- MÉTODOS DE CRÉDITOS ---
     buscarCreditosPorCliente: async (curp) => {
         try {
@@ -426,7 +420,6 @@ const database = {
             return [];
         }
     },
-
 
     buscarCreditoActivoPorCliente: async (curp) => {
         try {
@@ -508,18 +501,25 @@ const database = {
     // EN database.js - REEMPLAZA ESTA FUNCIÓN
     agregarCredito: async (creditoData, userEmail) => {
         try {
-            // ... (Validaciones de renovación y elegibilidad - SIN CAMBIOS) ...
-            if ((creditoData.tipo === 'renovacion' || creditoData.tipo === 'reingreso') && creditoData.plazo !== 14) {/*...*/}
+            // Validaciones de renovación y elegibilidad
+            if ((creditoData.tipo === 'renovacion' || creditoData.tipo === 'reingreso') && creditoData.plazo !== 14) {
+                return { success: false, message: 'Créditos de renovación/reingreso deben ser a 14 semanas.' };
+            }
+            
             const elegibilidadCliente = await database.verificarElegibilidadCliente(creditoData.curpCliente);
             if (!elegibilidadCliente.elegible) return { success: false, message: elegibilidadCliente.message };
+            
             const elegibilidadAval = await database.verificarElegibilidadAval(creditoData.curpAval);
             if (!elegibilidadAval.elegible) return { success: false, message: elegibilidadAval.message };
 
             const cliente = await database.buscarClientePorCURP(creditoData.curpCliente);
             if (!cliente) return { success: false, message: "Cliente no encontrado." };
-            if (creditoData.plazo === 10 && !cliente.isComisionista) {/*...*/}
+            
+            if (creditoData.plazo === 10 && !cliente.isComisionista) {
+                return { success: false, message: "Solo comisionistas pueden acceder a créditos de 10 semanas." };
+            }
 
-            // Preparar datos (SIN CAMBIOS)
+            // Preparar datos
             const nuevoCredito = {
                 monto: creditoData.monto,
                 plazo: creditoData.plazo,
@@ -540,8 +540,17 @@ const database = {
             const docRef = await db.collection('creditos').add(nuevoCredito);
             const creditoAgregado = { id: docRef.id, ...nuevoCredito }; // Datos completos del crédito
 
-            // ... (Lógica de marcar anterior como liquidado - SIN CAMBIOS) ...
-            if (creditoData.tipo === 'renovacion' || creditoData.tipo === 'reingreso') { /* ... */ }
+            // Lógica de marcar anterior como liquidado
+            if (creditoData.tipo === 'renovacion' || creditoData.tipo === 'reingreso') {
+                const creditoAnterior = await database.buscarCreditoActivoPorCliente(creditoData.curpCliente);
+                if (creditoAnterior && creditoAnterior.id !== creditoAgregado.id) {
+                    await db.collection('creditos').doc(creditoAnterior.id).update({
+                        estado: 'liquidado',
+                        fechaModificacion: new Date().toISOString(),
+                        modificadoPor: userEmail
+                    });
+                }
+            }
 
             // =============================================
             // *** INICIO: NUEVA LÓGICA DE EFECTIVO Y COMISIÓN ***
@@ -590,8 +599,7 @@ const database = {
         }
     },
 
-
-    // --- MÉTODOS DE PAGOS --- (Se mantienen las funciones de la Revisión 2)
+    // --- MÉTODOS DE PAGOS ---
     /**
      * Obtiene los pagos de un crédito específico, desambiguando por SUCURSAL (office).
      * @param {string} historicalIdCredito El ID histórico del crédito.
@@ -652,7 +660,7 @@ const database = {
                 if (nuevoSaldo < 0.01) nuevoSaldo = 0;
                 const nuevoEstadoDB = (nuevoSaldo === 0) ? 'liquidado' : 'activo';
 
-                // 1. Actualizar el crédito (SIN CAMBIOS)
+                // 1. Actualizar el crédito
                 transaction.update(creditoRef, {
                     saldo: nuevoSaldo,
                     estado: nuevoEstadoDB,
@@ -660,7 +668,7 @@ const database = {
                     fechaModificacion: new Date().toISOString()
                 });
 
-                // 2. Crear el documento de pago (SIN CAMBIOS)
+                // 2. Crear el documento de pago
                 const pagoRef = db.collection('pagos').doc();
                 transaction.set(pagoRef, {
                     idCredito: pagoData.idCredito, // Historical ID
@@ -743,12 +751,20 @@ const database = {
                 const campos = linea.split(',').map(c => c.trim().replace(/^"|"$/g, ''));
 
                 if (tipo === 'clientes') {
-                    // ... (sin cambios en la importación de clientes) ...
-                    if (campos.length < 7) { errores.push(`L${lineaNum}: Faltan columnas (Esperadas 7+, encontradas ${campos.length})`); continue; }
+                    if (campos.length < 7) { 
+                        errores.push(`L${lineaNum}: Faltan columnas (Esperadas 7+, encontradas ${campos.length})`); 
+                        continue; 
+                    }
                     const curp = campos[0].toUpperCase();
-                    if (!curp || curp.length !== 18) { errores.push(`L${lineaNum}: CURP inválido '${campos[0]}'`); continue; }
+                    if (!curp || curp.length !== 18) { 
+                        errores.push(`L${lineaNum}: CURP inválido '${campos[0]}'`); 
+                        continue; 
+                    }
                     const cacheKey = `${curp}_${office}`;
-                    if (cacheClientes.has(cacheKey)) { errores.push(`L${lineaNum}: Cliente ${curp} ya procesado o existente.`); continue; }
+                    if (cacheClientes.has(cacheKey)) { 
+                        errores.push(`L${lineaNum}: Cliente ${curp} ya procesado o existente.`); 
+                        continue; 
+                    }
                     if (!cacheClientes.size) {
                         const existe = await database.buscarClientePorCURP(curp);
                         if (existe && existe.office === office) {
@@ -758,57 +774,114 @@ const database = {
                         }
                     }
                     const fechaRegistroISO = _parsearFechaImportacion(campos[5]);
-                    if (!fechaRegistroISO) { errores.push(`L${lineaNum}: Fecha registro inválida '${campos[5]}'`); continue; }
+                    if (!fechaRegistroISO) { 
+                        errores.push(`L${lineaNum}: Fecha registro inválida '${campos[5]}'`); 
+                        continue; 
+                    }
                     const docRef = db.collection('clientes').doc();
                     batch.set(docRef, {
-                        curp: curp, nombre: campos[1] || 'SIN NOMBRE', domicilio: campos[2] || 'SIN DOMICILIO',
-                        cp: campos[3] || '', telefono: campos[4] || '', fechaRegistro: fechaRegistroISO,
-                        poblacion_grupo: campos[6] || 'SIN GRUPO', office: office, ruta: campos[7] || '',
-                        fechaCreacion: fechaImportacion, creadoPor: 'importacion_csv'
+                        curp: curp, 
+                        nombre: campos[1] || 'SIN NOMBRE', 
+                        domicilio: campos[2] || 'SIN DOMICILIO',
+                        cp: campos[3] || '', 
+                        telefono: campos[4] || '', 
+                        fechaRegistro: fechaRegistroISO,
+                        poblacion_grupo: campos[6] || 'SIN GRUPO', 
+                        office: office, 
+                        ruta: campos[7] || '',
+                        fechaCreacion: fechaImportacion, 
+                        creadoPor: 'importacion_csv'
                     });
                     cacheClientes.set(cacheKey, true);
                     importados++;
 
                 } else if (tipo === 'colocacion') {
-                    // ... (sin cambios en la importación de colocación) ...
                     const minCols = 13; // Ajustar si el formato cambia
-                    if (campos.length < minCols) { errores.push(`L${lineaNum}: Faltan columnas (Esperadas ${minCols}+, encontradas ${campos.length})`); continue; }
-                    const curpCliente = campos[0].toUpperCase(); const historicalIdCredito = campos[2].trim();
-                    if (!curpCliente || curpCliente.length !== 18) { errores.push(`L${lineaNum}: CURP cliente inválido '${campos[0]}'`); continue; }
-                    if (!historicalIdCredito) { errores.push(`L${lineaNum}: ID Crédito (histórico) vacío.`); continue; }
+                    if (campos.length < minCols) { 
+                        errores.push(`L${lineaNum}: Faltan columnas (Esperadas ${minCols}+, encontradas ${campos.length})`); 
+                        continue; 
+                    }
+                    const curpCliente = campos[0].toUpperCase(); 
+                    const historicalIdCredito = campos[2].trim();
+                    if (!curpCliente || curpCliente.length !== 18) { 
+                        errores.push(`L${lineaNum}: CURP cliente inválido '${campos[0]}'`); 
+                        continue; 
+                    }
+                    if (!historicalIdCredito) { 
+                        errores.push(`L${lineaNum}: ID Crédito (histórico) vacío.`); 
+                        continue; 
+                    }
                     const cacheKey = `${historicalIdCredito}_${office}_${curpCliente}`;
-                    if (cacheCreditos.has(cacheKey)) { errores.push(`L${lineaNum}: Crédito ${historicalIdCredito} ya procesado o existente.`); continue; }
+                    if (cacheCreditos.has(cacheKey)) { 
+                        errores.push(`L${lineaNum}: Crédito ${historicalIdCredito} ya procesado o existente.`); 
+                        continue; 
+                    }
                     if (!cacheCreditos.size) {
                         const existingCredits = await database.buscarCreditosPorHistoricalId(historicalIdCredito, { office: office, curpCliente: curpCliente });
                         if (existingCredits.length > 0) {
                             errores.push(`L${lineaNum}: Crédito ${historicalIdCredito} para ${curpCliente} en ${office} ya existe.`);
-                            cacheCreditos.set(cacheKey, true); continue;
+                            cacheCreditos.set(cacheKey, true); 
+                            continue;
                         }
                     }
                     const fechaCreacionISO = _parsearFechaImportacion(campos[3]);
-                    if (!fechaCreacionISO) { errores.push(`L${lineaNum}: Fecha creación inválida '${campos[3]}'`); continue; }
-                    const montoIndex = 5; const plazoIndex = 6; const montoTotalIndex = 7;
+                    if (!fechaCreacionISO) { 
+                        errores.push(`L${lineaNum}: Fecha creación inválida '${campos[3]}'`); 
+                        continue; 
+                    }
+                    const montoIndex = 5; 
+                    const plazoIndex = 6; 
+                    const montoTotalIndex = 7;
                     const saldoIndex = (office === 'LEON' && campos.length > 13) ? 13 : 12; // Ajustar si cambia
-                    const monto = parseFloat(campos[montoIndex] || 0); const plazo = parseInt(campos[plazoIndex] || 0);
-                    let montoTotal = parseFloat(campos[montoTotalIndex] || 0); let saldo = parseFloat(campos[saldoIndex] || 0);
-                    if (monto <= 0 || plazo <= 0) { errores.push(`L${lineaNum}: Monto o Plazo inválido.`); continue; }
-                    let interesRate = 0; if (plazo === 14) interesRate = 0.40; else if (plazo === 13) interesRate = 0.30; else if (plazo === 10) interesRate = 0.00;
+                    const monto = parseFloat(campos[montoIndex] || 0); 
+                    const plazo = parseInt(campos[plazoIndex] || 0);
+                    let montoTotal = parseFloat(campos[montoTotalIndex] || 0); 
+                    let saldo = parseFloat(campos[saldoIndex] || 0);
+                    if (monto <= 0 || plazo <= 0) { 
+                        errores.push(`L${lineaNum}: Monto o Plazo inválido.`); 
+                        continue; 
+                    }
+                    let interesRate = 0; 
+                    if (plazo === 14) interesRate = 0.40; 
+                    else if (plazo === 13) interesRate = 0.30; 
+                    else if (plazo === 10) interesRate = 0.00;
                     const montoTotalCalculado = parseFloat((monto * (1 + interesRate)).toFixed(2));
                     if (montoTotal <= 0 || Math.abs(montoTotal - montoTotalCalculado) > 0.05) {
                         if (montoTotal > 0) errores.push(`L${lineaNum}: Monto Total ${montoTotal} no coincide con ${monto} @ ${plazo}sem (Calc: ${montoTotalCalculado}). Usando calculado.`);
                         montoTotal = montoTotalCalculado;
                     }
-                    if (isNaN(saldo)) saldo = montoTotal; if (saldo > montoTotal + 0.01) { errores.push(`L${lineaNum}: Saldo ($${saldo}) > Monto Total ($${montoTotal}). Ajustado a Monto Total.`); saldo = montoTotal; } if (saldo < 0) saldo = 0;
+                    if (isNaN(saldo)) saldo = montoTotal; 
+                    if (saldo > montoTotal + 0.01) { 
+                        errores.push(`L${lineaNum}: Saldo ($${saldo}) > Monto Total ($${montoTotal}). Ajustado a Monto Total.`); 
+                        saldo = montoTotal; 
+                    } 
+                    if (saldo < 0) saldo = 0;
                     const estadoCredito = (saldo <= 0.01) ? 'liquidado' : 'activo';
                     const credito = {
-                        historicalIdCredito: historicalIdCredito, office: office, curpCliente: curpCliente, nombreCliente: campos[1] || '',
-                        fechaCreacion: fechaCreacionISO, tipo: campos[4] || 'NUEVO', monto: monto, plazo: plazo, montoTotal: montoTotal,
-                        curpAval: (campos[8] || '').toUpperCase(), nombreAval: campos[9] || '', poblacion_grupo: campos[10] || '',
-                        ruta: campos[11] || '', saldo: saldo, estado: estadoCredito, fechaImportacion: fechaImportacion, importadoPor: 'importacion_csv'
+                        historicalIdCredito: historicalIdCredito, 
+                        office: office, 
+                        curpCliente: curpCliente, 
+                        nombreCliente: campos[1] || '',
+                        fechaCreacion: fechaCreacionISO, 
+                        tipo: campos[4] || 'NUEVO', 
+                        monto: monto, 
+                        plazo: plazo, 
+                        montoTotal: montoTotal,
+                        curpAval: (campos[8] || '').toUpperCase(), 
+                        nombreAval: campos[9] || '', 
+                        poblacion_grupo: campos[10] || '',
+                        ruta: campos[11] || '', 
+                        saldo: saldo, 
+                        estado: estadoCredito, 
+                        fechaImportacion: fechaImportacion, 
+                        importadoPor: 'importacion_csv'
                     };
                     if (office === 'LEON' && campos.length > 14) credito.ultimoPagoFecha = _parsearFechaImportacion(campos[14]);
                     if (office === 'LEON' && campos.length > 15) credito.saldoVencido = parseFloat(campos[15] || 0);
-                    const docRef = db.collection('creditos').doc(); batch.set(docRef, credito); cacheCreditos.set(cacheKey, true); importados++;
+                    const docRef = db.collection('creditos').doc(); 
+                    batch.set(docRef, credito); 
+                    cacheCreditos.set(cacheKey, true); 
+                    importados++;
 
                 } else if (tipo === 'cobranza') {
                     // =============================================
@@ -828,9 +901,18 @@ const database = {
                     const ruta = campos[6] || ''; // Índice 6
                     const officePagoCSV = campos[7] ? campos[7].toUpperCase() : ''; // Índice 7, NUEVA COLUMNA
 
-                    if (!historicalIdCredito) { errores.push(`L${lineaNum}: ID Crédito (histórico) vacío.`); continue; }
-                    if (!fechaPagoISO) { errores.push(`L${lineaNum}: Fecha pago inválida '${campos[2]}'`); continue; }
-                    if (isNaN(montoPago) || montoPago <= 0) { errores.push(`L${lineaNum}: Monto pago inválido '${campos[3]}'`); continue; }
+                    if (!historicalIdCredito) { 
+                        errores.push(`L${lineaNum}: ID Crédito (histórico) vacío.`); 
+                        continue; 
+                    }
+                    if (!fechaPagoISO) { 
+                        errores.push(`L${lineaNum}: Fecha pago inválida '${campos[2]}'`); 
+                        continue; 
+                    }
+                    if (isNaN(montoPago) || montoPago <= 0) { 
+                        errores.push(`L${lineaNum}: Monto pago inválido '${campos[3]}'`); 
+                        continue; 
+                    }
 
                     // Validar la oficina del CSV
                     let officePagoFinal = '';
@@ -872,7 +954,6 @@ const database = {
                         fechaImportacion: fechaImportacion,
                         curpCliente: curpClientePago, // CURP encontrado (o vacío)
                         office: officePagoFinal, // Oficina determinada (CSV o fallback)
-                        // Campos antiguos como comision, saldoDespues ya no vienen en este formato
                     };
 
                     const docRef = db.collection('pagos').doc();
@@ -904,11 +985,14 @@ const database = {
         } catch (error) {
             console.error("Error CRÍTICO en importación masiva: ", error);
             errores.push(`Error crítico durante batch: ${error.message}. Algunos datos podrían no haberse guardado.`);
-            try { if (batchCounter > 0) await batch.commit(); } catch (commitError) { console.error("Error en commit final:", commitError); }
+            try { 
+                if (batchCounter > 0) await batch.commit(); 
+            } catch (commitError) { 
+                console.error("Error en commit final:", commitError); 
+            }
             return { success: false, message: `Error crítico: ${error.message}`, total: lineas.length, importados: importados, errores: errores };
         }
     },
-
 
     // --- FUNCIONES DE REPORTES Y MANTENIMIENTO ---
     generarReportes: async (userOffice = null) => {
@@ -942,9 +1026,7 @@ const database = {
                 return fechaPago && fechaPago >= primerDiaMes && fechaPago < primerDiaMesSiguiente;
             });
             const cobradoMes = pagosDelMes.reduce((sum, p) => sum + (p.monto || 0), 0);
-            // La comisión ya no se importa ni se calcula aquí, se omite
-            // const totalComisionesMes = pagosDelMes.reduce((sum, p) => sum + (p.comision || 0), 0);
-             const totalComisionesMes = 0; // O eliminar esta línea y la métrica
+            const totalComisionesMes = 0; // O eliminar esta línea y la métrica
 
             // Usar Map seguro (ID + Office) para pagos
             const pagosMapSeguro = new Map();
@@ -976,36 +1058,54 @@ const database = {
             const tasaRecuperacion = cobroEsperadoMes > 0 ? Math.min(100, (cobradoMes / cobroEsperadoMes * 100)) : 0;
 
             return {
-                totalClientes: clientes.length, totalCreditos: creditosActivosPendientes.length, totalCartera: totalCartera,
-                totalVencidos: totalVencidos, pagosRegistrados: pagosDelMes.length, cobradoMes: cobradoMes,
-                totalComisiones: totalComisionesMes, // Considerar eliminar si ya no aplica
+                totalClientes: clientes.length, 
+                totalCreditos: creditosActivosPendientes.length, 
+                totalCartera: totalCartera,
+                totalVencidos: totalVencidos, 
+                pagosRegistrados: pagosDelMes.length, 
+                cobradoMes: cobradoMes,
+                totalComisiones: totalComisionesMes,
                 tasaRecuperacion: tasaRecuperacion
             };
         } catch (error) {
             console.error("Error generando reportes:", error);
-            // Ajustar valores de error si se eliminó comisiones
-            return { totalClientes: 'Error', totalCreditos: 'Error', totalCartera: 'Error', totalVencidos: 'Error', pagosRegistrados: 'Error', cobradoMes: 'Error', totalComisiones: 'Error', tasaRecuperacion: 0 };
+            return { 
+                totalClientes: 'Error', 
+                totalCreditos: 'Error', 
+                totalCartera: 'Error', 
+                totalVencidos: 'Error', 
+                pagosRegistrados: 'Error', 
+                cobradoMes: 'Error', 
+                totalComisiones: 'Error', 
+                tasaRecuperacion: 0 
+            };
         }
     },
 
-
     generarReporteAvanzado: async (filtros) => {
-        // ... (sin cambios en la lógica de generación de reporte avanzado, ya usa 'office') ...
         if (filtros.userOffice && filtros.userOffice !== 'AMBAS') filtros.office = filtros.userOffice;
         console.log("Generando reporte avanzado con filtros:", filtros);
         try {
-            const resultados = []; const clientesMap = new Map();
-            let clientesFiltrados = null; let filtrarCreditosPagosPorCurps = false; let curpsClientes = [];
+            const resultados = []; 
+            const clientesMap = new Map();
+            let clientesFiltrados = null; 
+            let filtrarCreditosPagosPorCurps = false; 
+            let curpsClientes = [];
+            
             if (filtros.office || filtros.grupo || filtros.ruta || filtros.curpCliente || filtros.nombre) {
                 clientesFiltrados = await database.buscarClientes({
-                    office: filtros.office, grupo: filtros.grupo, ruta: filtros.ruta,
-                    curp: filtros.curpCliente, nombre: filtros.nombre
+                    office: filtros.office, 
+                    grupo: filtros.grupo, 
+                    ruta: filtros.ruta,
+                    curp: filtros.curpCliente, 
+                    nombre: filtros.nombre
                 });
                 clientesFiltrados.forEach(c => clientesMap.set(c.curp, c));
                 curpsClientes = clientesFiltrados.map(c => c.curp);
                 if (curpsClientes.length === 0 && (filtros.curpCliente || filtros.nombre)) return [];
                 filtrarCreditosPagosPorCurps = true;
             }
+            
             let queryCreditos = db.collection('creditos');
             if (filtros.office) queryCreditos = queryCreditos.where('office', '==', filtros.office);
             if (filtros.tipoCredito) queryCreditos = queryCreditos.where('tipo', '==', filtros.tipoCredito);
@@ -1013,185 +1113,329 @@ const database = {
             if (filtros.idCredito) queryCreditos = queryCreditos.where('historicalIdCredito', '==', filtros.idCredito);
             if (filtros.grupo) queryCreditos = queryCreditos.where('poblacion_grupo', '==', filtros.grupo);
             if (filtros.ruta) queryCreditos = queryCreditos.where('ruta', '==', filtros.ruta);
+            
             const MAX_IN_VALUES = 30;
             if (filtrarCreditosPagosPorCurps && curpsClientes.length > 0) {
                 if (curpsClientes.length <= MAX_IN_VALUES) queryCreditos = queryCreditos.where('curpCliente', 'in', curpsClientes);
                 else console.warn("Demasiados clientes, créditos se filtrarán en memoria.");
             } else if (filtrarCreditosPagosPorCurps && curpsClientes.length === 0) return [];
+            
             if (filtros.fechaInicio) queryCreditos = queryCreditos.where('fechaCreacion', '>=', new Date(filtros.fechaInicio + 'T00:00:00Z').toISOString());
-            if (filtros.fechaFin) { const fechaFinSiguiente = new Date(filtros.fechaFin); fechaFinSiguiente.setUTCDate(fechaFinSiguiente.getUTCDate() + 1); queryCreditos = queryCreditos.where('fechaCreacion', '<', fechaFinSiguiente.toISOString()); }
+            if (filtros.fechaFin) { 
+                const fechaFinSiguiente = new Date(filtros.fechaFin); 
+                fechaFinSiguiente.setUTCDate(fechaFinSiguiente.getUTCDate() + 1); 
+                queryCreditos = queryCreditos.where('fechaCreacion', '<', fechaFinSiguiente.toISOString()); 
+            }
+            
             const creditosSnap = await queryCreditos.get();
             for (const doc of creditosSnap.docs) {
                 const credito = { id: doc.id, ...doc.data() };
                 if (filtrarCreditosPagosPorCurps && curpsClientes.length > MAX_IN_VALUES && !clientesMap.has(credito.curpCliente)) continue;
                 let cliente = clientesMap.get(credito.curpCliente);
-                if (!cliente) { cliente = await database.buscarClientePorCURP(credito.curpCliente); if (cliente) clientesMap.set(cliente.curp, cliente); }
+                if (!cliente) { 
+                    cliente = await database.buscarClientePorCURP(credito.curpCliente); 
+                    if (cliente) clientesMap.set(cliente.curp, cliente); 
+                }
                 resultados.push({ tipo: 'credito', ...credito, nombreCliente: cliente?.nombre || 'N/A' });
             }
+            
             let queryPagos = db.collection('pagos');
             if (filtros.office) queryPagos = queryPagos.where('office', '==', filtros.office);
             if (filtros.tipoPago) queryPagos = queryPagos.where('tipoPago', '==', filtros.tipoPago);
             if (filtros.idCredito) queryPagos = queryPagos.where('idCredito', '==', filtros.idCredito);
             if (filtros.grupo) queryPagos = queryPagos.where('grupo', '==', filtros.grupo);
+            
             if (filtrarCreditosPagosPorCurps && curpsClientes.length > 0) {
                 if (curpsClientes.length <= MAX_IN_VALUES) queryPagos = queryPagos.where('curpCliente', 'in', curpsClientes);
                 else console.warn("Demasiados clientes, pagos se filtrarán en memoria.");
             } else if (filtrarCreditosPagosPorCurps && curpsClientes.length === 0) queryPagos = null;
+            
             if (queryPagos && filtros.fechaInicio) queryPagos = queryPagos.where('fecha', '>=', new Date(filtros.fechaInicio + 'T00:00:00Z').toISOString());
-            if (queryPagos && filtros.fechaFin) { const fechaFinSiguientePago = new Date(filtros.fechaFin); fechaFinSiguientePago.setUTCDate(fechaFinSiguientePago.getUTCDate() + 1); queryPagos = queryPagos.where('fecha', '<', fechaFinSiguientePago.toISOString()); }
+            if (queryPagos && filtros.fechaFin) { 
+                const fechaFinSiguientePago = new Date(filtros.fechaFin); 
+                fechaFinSiguientePago.setUTCDate(fechaFinSiguientePago.getUTCDate() + 1); 
+                queryPagos = queryPagos.where('fecha', '<', fechaFinSiguientePago.toISOString()); 
+            }
+            
             if (queryPagos) {
                 const pagosSnap = await queryPagos.get();
                 for (const doc of pagosSnap.docs) {
                     const pago = { id: doc.id, ...doc.data() };
                     if (filtrarCreditosPagosPorCurps && curpsClientes.length > MAX_IN_VALUES && !clientesMap.has(pago.curpCliente)) continue;
                     let cliente = clientesMap.get(pago.curpCliente);
-                    if (!cliente) { cliente = await database.buscarClientePorCURP(pago.curpCliente); if (cliente) clientesMap.set(cliente.curp, cliente); }
+                    if (!cliente) { 
+                        cliente = await database.buscarClientePorCURP(pago.curpCliente); 
+                        if (cliente) clientesMap.set(cliente.curp, cliente); 
+                    }
                     resultados.push({ tipo: 'pago', ...pago, nombreCliente: cliente?.nombre || pago.nombreCliente || 'N/A' });
                 }
             }
+            
             if (!filtros.idCredito && !filtros.tipoPago && filtros.fechaInicio && filtros.fechaFin) {
                 let queryNuevosClientes = db.collection('clientes');
                 if (filtros.office) queryNuevosClientes = queryNuevosClientes.where('office', '==', filtros.office);
                 if (filtros.grupo) queryNuevosClientes = queryNuevosClientes.where('poblacion_grupo', '==', filtros.grupo);
                 if (filtros.ruta) queryNuevosClientes = queryNuevosClientes.where('ruta', '==', filtros.ruta);
                 queryNuevosClientes = queryNuevosClientes.where('fechaRegistro', '>=', new Date(filtros.fechaInicio + 'T00:00:00Z').toISOString());
-                const fechaFinSiguienteCliente = new Date(filtros.fechaFin); fechaFinSiguienteCliente.setUTCDate(fechaFinSiguienteCliente.getUTCDate() + 1);
+                const fechaFinSiguienteCliente = new Date(filtros.fechaFin); 
+                fechaFinSiguienteCliente.setUTCDate(fechaFinSiguienteCliente.getUTCDate() + 1);
                 queryNuevosClientes = queryNuevosClientes.where('fechaRegistro', '<', fechaFinSiguienteCliente.toISOString());
                 const nuevosClientesSnap = await queryNuevosClientes.get();
                 nuevosClientesSnap.forEach(doc => {
-                    const clienteNuevo = { id: doc.id, ...doc.data() }; let coincide = true;
+                    const clienteNuevo = { id: doc.id, ...doc.data() }; 
+                    let coincide = true;
                     if (filtros.nombre && !(clienteNuevo.nombre || '').toLowerCase().includes(filtros.nombre.toLowerCase())) coincide = false;
                     if (filtros.curpCliente && !filtros.curpCliente.split(',').map(c => c.trim().toUpperCase()).includes(clienteNuevo.curp)) coincide = false;
                     if (coincide) resultados.push({ tipo: 'cliente', ...clienteNuevo });
                 });
             }
-            resultados.sort((a, b) => { const fechaA = parsearFecha(a.fecha || a.fechaCreacion || a.fechaRegistro)?.getTime() || 0; const fechaB = parsearFecha(b.fecha || b.fechaCreacion || b.fechaRegistro)?.getTime() || 0; return fechaB - fechaA; });
+            
+            resultados.sort((a, b) => { 
+                const fechaA = parsearFecha(a.fecha || a.fechaCreacion || a.fechaRegistro)?.getTime() || 0; 
+                const fechaB = parsearFecha(b.fecha || b.fechaCreacion || b.fechaRegistro)?.getTime() || 0; 
+                return fechaB - fechaA; 
+            });
+            
             return resultados;
-        } catch (error) { console.error("Error generando reporte avanzado:", error); return []; }
+        } catch (error) { 
+            console.error("Error generando reporte avanzado:", error); 
+            return []; 
+        }
     },
 
     obtenerDatosParaGraficos: async (filtros) => {
-        // ... (sin cambios en la lógica de gráficos, ya usa 'office') ...
-        try { if (filtros.userOffice && filtros.userOffice !== 'AMBAS') filtros.office = filtros.userOffice;
-            let creditosQuery = db.collection('creditos'); let pagosQuery = db.collection('pagos');
-            if (filtros.office) { creditosQuery = creditosQuery.where('office', '==', filtros.office); pagosQuery = pagosQuery.where('office', '==', filtros.office); }
-            if (filtros.grupo) { creditosQuery = creditosQuery.where('poblacion_grupo', '==', filtros.grupo); pagosQuery = pagosQuery.where('grupo', '==', filtros.grupo); }
+        try { 
+            if (filtros.userOffice && filtros.userOffice !== 'AMBAS') filtros.office = filtros.userOffice;
+            let creditosQuery = db.collection('creditos'); 
+            let pagosQuery = db.collection('pagos');
+            
+            if (filtros.office) { 
+                creditosQuery = creditosQuery.where('office', '==', filtros.office); 
+                pagosQuery = pagosQuery.where('office', '==', filtros.office); 
+            }
+            if (filtros.grupo) { 
+                creditosQuery = creditosQuery.where('poblacion_grupo', '==', filtros.grupo); 
+                pagosQuery = pagosQuery.where('grupo', '==', filtros.grupo); 
+            }
+            
             const fechaInicioISO = filtros.fechaInicio ? new Date(filtros.fechaInicio + 'T00:00:00Z').toISOString() : null;
-            let fechaFinISOExclusive = null; if (filtros.fechaFin) { const fechaFinSiguiente = new Date(filtros.fechaFin); fechaFinSiguiente.setUTCDate(fechaFinSiguiente.getUTCDate() + 1); fechaFinISOExclusive = fechaFinSiguiente.toISOString(); }
-            if (fechaInicioISO) { creditosQuery = creditosQuery.where('fechaCreacion', '>=', fechaInicioISO); pagosQuery = pagosQuery.where('fecha', '>=', fechaInicioISO); }
-            if (fechaFinISOExclusive) { creditosQuery = creditosQuery.where('fechaCreacion', '<', fechaFinISOExclusive); pagosQuery = pagosQuery.where('fecha', '<', fechaFinISOExclusive); }
+            let fechaFinISOExclusive = null; 
+            if (filtros.fechaFin) { 
+                const fechaFinSiguiente = new Date(filtros.fechaFin); 
+                fechaFinSiguiente.setUTCDate(fechaFinSiguiente.getUTCDate() + 1); 
+                fechaFinISOExclusive = fechaFinSiguiente.toISOString(); 
+            }
+            
+            if (fechaInicioISO) { 
+                creditosQuery = creditosQuery.where('fechaCreacion', '>=', fechaInicioISO); 
+                pagosQuery = pagosQuery.where('fecha', '>=', fechaInicioISO); 
+            }
+            if (fechaFinISOExclusive) { 
+                creditosQuery = creditosQuery.where('fechaCreacion', '<', fechaFinISOExclusive); 
+                pagosQuery = pagosQuery.where('fecha', '<', fechaFinISOExclusive); 
+            }
+            
             const [creditosSnap, pagosSnap] = await Promise.all([ creditosQuery.get(), pagosQuery.get() ]);
-            const creditos = creditosSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })); const pagos = pagosSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            const creditos = creditosSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })); 
+            const pagos = pagosSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             return { creditos, pagos };
-        } catch (error) { console.error("Error obteniendo datos para gráficos:", error); return { creditos: [], pagos: [] }; }
+        } catch (error) { 
+            console.error("Error obteniendo datos para gráficos:", error); 
+            return { creditos: [], pagos: [] }; 
+        }
     },
 
     _cumpleFiltroFecha: (fecha, fechaInicio, fechaFin) => {
-        // ... (sin cambios) ...
-        if (!fechaInicio && !fechaFin) return true; const fechaObj = parsearFecha(fecha); if (!fechaObj) return false;
-        if (fechaInicio) { const inicio = new Date(fechaInicio + 'T00:00:00Z'); if (fechaObj < inicio) return false; }
-        if (fechaFin) { const fin = new Date(fechaFin + 'T23:59:59Z'); if (fechaObj > fin) return false; } return true;
+        if (!fechaInicio && !fechaFin) return true; 
+        const fechaObj = parsearFecha(fecha); 
+        if (!fechaObj) return false;
+        if (fechaInicio) { 
+            const inicio = new Date(fechaInicio + 'T00:00:00Z'); 
+            if (fechaObj < inicio) return false; 
+        }
+        if (fechaFin) { 
+            const fin = new Date(fechaFin + 'T23:59:59Z'); 
+            if (fechaObj > fin) return false; 
+        } 
+        return true;
     },
 
     esCreditoVencido: (credito, pagos) => {
-        // ... (sin cambios) ...
         if (!credito || credito.estado === 'liquidado' || (credito.saldo !== undefined && credito.saldo <= 0.01)) return { vencido: false };
-        const hoy = new Date(); let fechaReferencia = null;
-        if (pagos && pagos.length > 0) fechaReferencia = parsearFecha(pagos[0].fecha); else fechaReferencia = parsearFecha(credito.fechaCreacion);
-        if (!fechaReferencia) { console.warn("Vencimiento no determinable (fecha ref inválida):", credito.id); return { vencido: false }; }
-        const msDesdeReferencia = hoy.getTime() - fechaReferencia.getTime(); const diasDesdeReferencia = Math.floor(msDesdeReferencia / (1000 * 60 * 60 * 24));
+        const hoy = new Date(); 
+        let fechaReferencia = null;
+        if (pagos && pagos.length > 0) fechaReferencia = parsearFecha(pagos[0].fecha); 
+        else fechaReferencia = parsearFecha(credito.fechaCreacion);
+        if (!fechaReferencia) { 
+            console.warn("Vencimiento no determinable (fecha ref inválida):", credito.id); 
+            return { vencido: false }; 
+        }
+        const msDesdeReferencia = hoy.getTime() - fechaReferencia.getTime(); 
+        const diasDesdeReferencia = Math.floor(msDesdeReferencia / (1000 * 60 * 60 * 24));
         return { vencido: diasDesdeReferencia > 7 };
     },
 
     encontrarClientesDuplicados: async () => {
-        // ... (sin cambios) ...
-        try { const clientesSnapshot = await db.collection('clientes').orderBy('fechaCreacion', 'desc').get(); const clientes = clientesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            const seen = new Map(); const idsParaEliminar = []; let duplicadosEncontrados = 0; const curpsAfectadas = new Set();
-            for (const cliente of clientes) { const clave = `${cliente.curp}_${cliente.office}`; if (seen.has(clave)) { idsParaEliminar.push(cliente.id); duplicadosEncontrados++; curpsAfectadas.add(cliente.curp); } else { seen.set(clave, cliente.id); } }
-            return { success: true, idsParaEliminar, duplicadosEncontrados, curpsAfectadas: Array.from(curpsAfectadas) };
-        } catch (error) { console.error("Error encontrando duplicados:", error); return { success: false, message: `Error: ${error.message}`, idsParaEliminar: [], duplicadosEncontrados: 0, curpsAfectadas: [] }; }
-    },
-    ejecutarEliminacionDuplicados: async (ids) => {
-        // ... (sin cambios) ...
-        if (!ids || ids.length === 0) return { success: true, message: 'No hay IDs para eliminar.' }; let batch = db.batch(); let count = 0; const MAX_BATCH_SIZE = 490; let eliminados = 0;
-        try { for (const id of ids) { const docRef = db.collection('clientes').doc(id); batch.delete(docRef); count++; if (count >= MAX_BATCH_SIZE) { await batch.commit(); console.log(`Lote de ${count} eliminaciones completado.`); eliminados += count; batch = db.batch(); count = 0; await new Promise(resolve => setTimeout(resolve, 50)); } }
-            if (count > 0) { await batch.commit(); eliminados += count; console.log(`Lote final de ${count} eliminaciones completado.`); }
-            return { success: true, message: `Se eliminaron ${eliminados} registros duplicados.` };
-        } catch (error) { console.error("Error eliminando duplicados en batch:", error); try { if (count > 0) await batch.commit(); } catch (e) { } return { success: false, message: `Error durante la eliminación: ${error.message}. ${eliminados} pudieron haberse eliminado.` }; }
+        try { 
+            const clientesSnapshot = await db.collection('clientes').orderBy('fechaCreacion', 'desc').get(); 
+            const clientes = clientesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            const seen = new Map(); 
+            const idsParaEliminar = []; 
+            let duplicadosEncontrados = 0; 
+            const curpsAfectadas = new Set();
+            
+            for (const cliente of clientes) { 
+                const clave = `${cliente.curp}_${cliente.office}`; 
+                if (seen.has(clave)) { 
+                    idsParaEliminar.push(cliente.id); 
+                    duplicadosEncontrados++; 
+                    curpsAfectadas.add(cliente.curp); 
+                } else { 
+                    seen.set(clave, cliente.id); 
+                } 
+            }
+            
+            return { 
+                success: true, 
+                idsParaEliminar, 
+                duplicadosEncontrados, 
+                curpsAfectadas: Array.from(curpsAfectadas) 
+            };
+        } catch (error) { 
+            console.error("Error encontrando duplicados:", error); 
+            return { 
+                success: false, 
+                message: `Error: ${error.message}`, 
+                idsParaEliminar: [], 
+                duplicadosEncontrados: 0, 
+                curpsAfectadas: [] 
+            }; 
+        }
     },
 
-    obtenerPoblaciones: async (office = null) => { // <-- CAMBIO DE sucursal A office
-    console.log(`>>> obtenerPoblaciones llamada con office: ${office}`); // <-- Log actualizado
-    try {
-        let query = db.collection('poblaciones');
-        // AHORA FILTRA POR 'office'
-        if (office && office !== 'AMBAS') { // <-- CAMBIO DE sucursal A office
-             console.log(`>>> Filtrando poblaciones por office: ${office}`); // <-- Log actualizado
-             query = query.where('office', '==', office); // <-- CAMBIO DE sucursal A office
-        } else {
-             console.log(">>> Obteniendo todas las poblaciones (sin filtro office).");
+    ejecutarEliminacionDuplicados: async (ids) => {
+        if (!ids || ids.length === 0) return { success: true, message: 'No hay IDs para eliminar.' }; 
+        let batch = db.batch(); 
+        let count = 0; 
+        const MAX_BATCH_SIZE = 490; 
+        let eliminados = 0;
+        
+        try { 
+            for (const id of ids) { 
+                const docRef = db.collection('clientes').doc(id); 
+                batch.delete(docRef); 
+                count++; 
+                if (count >= MAX_BATCH_SIZE) { 
+                    await batch.commit(); 
+                    console.log(`Lote de ${count} eliminaciones completado.`); 
+                    eliminados += count; 
+                    batch = db.batch(); 
+                    count = 0; 
+                    await new Promise(resolve => setTimeout(resolve, 50)); 
+                } 
+            }
+            
+            if (count > 0) { 
+                await batch.commit(); 
+                eliminados += count; 
+                console.log(`Lote final de ${count} eliminaciones completado.`); 
+            }
+            
+            return { success: true, message: `Se eliminaron ${eliminados} registros duplicados.` };
+        } catch (error) { 
+            console.error("Error eliminando duplicados en batch:", error); 
+            try { 
+                if (count > 0) await batch.commit(); 
+            } catch (e) { 
+                console.error("Error en commit final:", e);
+            } 
+            return { 
+                success: false, 
+                message: `Error durante la eliminación: ${error.message}. ${eliminados} pudieron haberse eliminado.` 
+            }; 
         }
-        const snapshot = await query.orderBy('nombre').get();
-        const poblacionesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        console.log(`>>> obtenerPoblaciones encontró ${poblacionesData.length} poblaciones.`);
-        return poblacionesData;
-    } catch (error) {
-        console.error("Error obteniendo poblaciones:", error);
-        console.log(">>> ERROR en obtenerPoblaciones:", error.message);
-        // Sugerir índice si falla
-        if (error.message && error.message.includes("requires an index")) {
-            console.warn(">>> Firestore requiere un índice compuesto en 'poblaciones': office ASC, nombre ASC. Verifica si existe y está habilitado.");
-        }
-        return [];
-    }
-},
-    agregarPoblacion: async (nombre, office) => { // <-- CAMBIO DE sucursal A office
-    try {
-        // AHORA BUSCA POR 'office'
-        const existeSnap = await db.collection('poblaciones')
-            .where('nombre', '==', nombre)
-            .where('office', '==', office) // <-- CAMBIO DE sucursal A office
-            .limit(1).get();
-        if (!existeSnap.empty) {
-            return { success: false, message: `La población "${nombre}" ya existe en la oficina ${office}.` }; // <-- Mensaje actualizado
-        }
-        // AHORA GUARDA 'office'
-        await db.collection('poblaciones').add({ nombre: nombre.toUpperCase(), office }); // <-- CAMBIO DE sucursal A office
-        return { success: true, message: 'Población agregada.' };
-    } catch (error) {
-        console.error("Error agregando población:", error);
-        return { success: false, message: `Error: ${error.message}` };
-    }
-},
-    eliminarPoblacion: async (id) => {
-        // ... (sin cambios) ...
-        try { await db.collection('poblaciones').doc(id).delete(); return { success: true, message: 'Población eliminada.' }; } catch (error) { console.error("Error eliminando población:", error); return { success: false, message: `Error: ${error.message}` }; }
     },
-    obtenerRutas: async (office = null) => { // <-- CAMBIO DE sucursal A office
-    console.log(`>>> obtenerRutas llamada con office: ${office}`); // <-- Log actualizado
-    try {
-        let query = db.collection('rutas');
-        // AHORA FILTRA POR 'office'
-        if (office && office !== 'AMBAS') { // <-- CAMBIO DE sucursal A office
-            console.log(`>>> Filtrando rutas por office: ${office}`); // <-- Log actualizado
-            query = query.where('office', '==', office); // <-- CAMBIO DE sucursal A office
-        } else {
-             console.log(">>> Obteniendo todas las rutas.");
+
+    obtenerPoblaciones: async (office = null) => {
+        console.log(`>>> obtenerPoblaciones llamada con office: ${office}`);
+        try {
+            let query = db.collection('poblaciones');
+            // AHORA FILTRA POR 'office'
+            if (office && office !== 'AMBAS') {
+                 console.log(`>>> Filtrando poblaciones por office: ${office}`);
+                 query = query.where('office', '==', office);
+            } else {
+                 console.log(">>> Obteniendo todas las poblaciones (sin filtro office).");
+            }
+            const snapshot = await query.orderBy('nombre').get();
+            const poblacionesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            console.log(`>>> obtenerPoblaciones encontró ${poblacionesData.length} poblaciones.`);
+            return poblacionesData;
+        } catch (error) {
+            console.error("Error obteniendo poblaciones:", error);
+            console.log(">>> ERROR en obtenerPoblaciones:", error.message);
+            // Sugerir índice si falla
+            if (error.message && error.message.includes("requires an index")) {
+                console.warn(">>> Firestore requiere un índice compuesto en 'poblaciones': office ASC, nombre ASC. Verifica si existe y está habilitado.");
+            }
+            return [];
         }
-        const snapshot = await query.orderBy('nombre').get();
-        const rutasData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        console.log(`>>> obtenerRutas encontró ${rutasData.length} rutas.`);
-        return rutasData;
-    } catch (error) {
-        console.error("Error obteniendo rutas:", error);
-        console.log(">>> ERROR en obtenerRutas:", error.message);
-        // Sugerir índice si falla
-        if (error.message && error.message.includes("requires an index")) {
-            console.warn(">>> Firestore requiere un índice compuesto en 'rutas': office ASC, nombre ASC. Verifica si existe y está habilitado.");
+    },
+
+    agregarPoblacion: async (nombre, office) => {
+        try {
+            // AHORA BUSCA POR 'office'
+            const existeSnap = await db.collection('poblaciones')
+                .where('nombre', '==', nombre)
+                .where('office', '==', office)
+                .limit(1).get();
+            if (!existeSnap.empty) {
+                return { success: false, message: `La población "${nombre}" ya existe en la oficina ${office}.` };
+            }
+            // AHORA GUARDA 'office'
+            await db.collection('poblaciones').add({ nombre: nombre.toUpperCase(), office });
+            return { success: true, message: 'Población agregada.' };
+        } catch (error) {
+            console.error("Error agregando población:", error);
+            return { success: false, message: `Error: ${error.message}` };
         }
-        return [];
-    }
-},
+    },
+
+    eliminarPoblacion: async (id) => {
+        try { 
+            await db.collection('poblaciones').doc(id).delete(); 
+            return { success: true, message: 'Población eliminada.' }; 
+        } catch (error) { 
+            console.error("Error eliminando población:", error); 
+            return { success: false, message: `Error: ${error.message}` }; 
+        }
+    },
+
+    obtenerRutas: async (office = null) => {
+        console.log(`>>> obtenerRutas llamada con office: ${office}`);
+        try {
+            let query = db.collection('rutas');
+            // AHORA FILTRA POR 'office'
+            if (office && office !== 'AMBAS') {
+                console.log(`>>> Filtrando rutas por office: ${office}`);
+                query = query.where('office', '==', office);
+            } else {
+                 console.log(">>> Obteniendo todas las rutas.");
+            }
+            const snapshot = await query.orderBy('nombre').get();
+            const rutasData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            console.log(`>>> obtenerRutas encontró ${rutasData.length} rutas.`);
+            return rutasData;
+        } catch (error) {
+            console.error("Error obteniendo rutas:", error);
+            console.log(">>> ERROR en obtenerRutas:", error.message);
+            // Sugerir índice si falla
+            if (error.message && error.message.includes("requires an index")) {
+                console.warn(">>> Firestore requiere un índice compuesto en 'rutas': office ASC, nombre ASC. Verifica si existe y está habilitado.");
+            }
+            return [];
+        }
+    },
 
     // Actualiza el nombre de una ruta específica
     actualizarNombreRuta: async (id, nuevoNombre) => {
@@ -1241,25 +1485,25 @@ const database = {
         }
     },
 
-    
-    agregarRuta: async (nombre, office) => { // <-- CAMBIO DE sucursal A office
-    try {
-        // AHORA BUSCA POR 'office'
-        const existeSnap = await db.collection('rutas')
-            .where('nombre', '==', nombre)
-            .where('office', '==', office) // <-- CAMBIO DE sucursal A office
-            .limit(1).get();
-        if (!existeSnap.empty) {
-            return { success: false, message: `La ruta "${nombre}" ya existe en la oficina ${office}.` }; // <-- Mensaje actualizado
+    agregarRuta: async (nombre, office) => {
+        try {
+            // AHORA BUSCA POR 'office'
+            const existeSnap = await db.collection('rutas')
+                .where('nombre', '==', nombre)
+                .where('office', '==', office)
+                .limit(1).get();
+            if (!existeSnap.empty) {
+                return { success: false, message: `La ruta "${nombre}" ya existe en la oficina ${office}.` };
+            }
+            // AHORA GUARDA 'office'
+            await db.collection('rutas').add({ nombre: nombre.toUpperCase(), office });
+            return { success: true, message: 'Ruta agregada.' };
+        } catch (error) {
+            console.error("Error agregando ruta:", error);
+            return { success: false, message: `Error: ${error.message}` };
         }
-        // AHORA GUARDA 'office'
-        await db.collection('rutas').add({ nombre: nombre.toUpperCase(), office }); // <-- CAMBIO DE sucursal A office
-        return { success: true, message: 'Ruta agregada.' };
-    } catch (error) {
-        console.error("Error agregando ruta:", error);
-        return { success: false, message: `Error: ${error.message}` };
-    }
-},
+    },
+
     eliminarRuta: async (id) => {
         try {
             await db.collection('rutas').doc(id).delete();
@@ -1270,9 +1514,9 @@ const database = {
         }
     },
 
-// =============================================
-// *** NUEVAS FUNCIONES: EFECTIVO Y COMISIONES ***
-// =============================================
+    // =============================================
+    // *** NUEVAS FUNCIONES: EFECTIVO Y COMISIONES ***
+    // =============================================
     agregarMovimientoEfectivo: async (movimientoData) => {
         try {
             // Asegurar que los datos esenciales estén
@@ -1339,10 +1583,5 @@ const database = {
             console.error("Error agregando comisión:", error);
             return { success: false, message: `Error: ${error.message}` };
         }
-    },
-    
+    }
 }; // Fin del objeto database
-
-
-
-
