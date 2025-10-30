@@ -3189,6 +3189,8 @@ function handleGuardarCobranzaOffline() {
 // SECCIÓN DE REPORTES GRÁFICOS (MODIFICADA)
 // =============================================
 
+// EN app.js - REEMPLAZA ESTA FUNCIÓN COMPLETA
+
 async function handleGenerarGrafico() {
     if (cargaEnProgreso) {
         showStatus('status_graficos', 'Ya hay una operación en progreso. Por favor, espera.', 'warning');
@@ -3206,8 +3208,8 @@ async function handleGenerarGrafico() {
         const fechaInicio = document.getElementById('grafico_fecha_inicio').value;
         const fechaFin = document.getElementById('grafico_fecha_fin').value;
 
-        // --- CORRECCIÓN DE VARIABLES ---
-        // 'oficinaSeleccionada' lee el valor del dropdown (cuyo ID HTML puede seguir siendo 'grafico_sucursal')
+        // --- CORRECCIÓN DE NOMBRES DE VARIABLES ---
+        // 'oficinaSeleccionada' lee el valor del dropdown (cuyo ID HTML es 'grafico_sucursal')
         const oficinaSeleccionada = document.getElementById('grafico_sucursal').value;
         const esAdminConAccesoTotal = (currentUserData?.role === 'Super Admin' || currentUserData?.role === 'Gerencia');
         // --- FIN CORRECCIÓN ---
@@ -3464,7 +3466,6 @@ async function handleGenerarGrafico() {
         showButtonLoading('#btn-generar-grafico', false);
     }
 }
-
 
 // =============================================
 // SECCIÓN DE CONFIGURACIÓN (NUEVA)
@@ -4414,6 +4415,7 @@ async function handleDiagnosticarPagos() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
