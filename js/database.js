@@ -1193,8 +1193,6 @@ const database = {
     }
 },
 
-// EN database.js - AÑADIR NUEVAS FUNCIONES
-
     // Actualiza el nombre de una ruta específica
     actualizarNombreRuta: async (id, nuevoNombre) => {
         if (!id || !nuevoNombre || !nuevoNombre.trim()) {
@@ -1263,12 +1261,13 @@ const database = {
     }
 },
     eliminarRuta: async (id) => {
-        // ... (sin cambios) ...
-        try { await db.collection('rutas').doc(id).delete(); 
-             return { success: true, message: 'Ruta eliminada.' }; } 
-        catch (error) { console.error("Error eliminando ruta:", error); 
-             return { success: false, message: `Error: ${error.message}` }; 
-         }
+        try {
+            await db.collection('rutas').doc(id).delete();
+            return { success: true, message: 'Ruta eliminada.' };
+        } catch (error) {
+            console.error("Error eliminando ruta:", error);
+            return { success: false, message: `Error: ${error.message}` };
+        }
     },
 
 // =============================================
@@ -1343,6 +1342,7 @@ const database = {
     },
     
 }; // Fin del objeto database
+
 
 
 
