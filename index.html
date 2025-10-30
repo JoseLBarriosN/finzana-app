@@ -907,24 +907,26 @@
                     <h2>Registrar Gasto</h2>
                     <button class="btn btn-secondary" data-view="view-main-menu"><i class="fas fa-arrow-left"></i> Volver al Menú</button>
                 </div>
-                
-                <div class="card form-container" style="max-width: 600px;">
-                    <form id="form-registrar-gasto">
-                        <div class="form-group">
-                            <label for="gasto-monto">Monto del Gasto (*)</label>
-                            <input type="number" id="gasto-monto" step="0.01" placeholder="Ej: 150.50" required>
-                        </div>
-                        <div class="form-group">
-                            <label for="gasto-descripcion">Descripción (*)</label>
-                            <input type="text" id="gasto-descripcion" placeholder="Ej: Gasolina, Viáticos, etc." required>
-                        </div>
-                         <div class="form-group">
-                            <label for="gasto-fecha">Fecha del Gasto (*)</label>
-                            <input type="date" id="gasto-fecha" required>
-                        </div>
-                        <button type="submit" class="btn btn-success"><i class="fas fa-save"></i> Guardar Gasto</button>
-                    </form>
-                    <div id="status_registrar_gasto" class="status-message hidden"></div>
+
+                <div class="form-container" style="max-width: 600px; margin: 0 auto;">
+                    <div class="card">
+                        <form id="form-registrar-gasto">
+                            <div class="form-group">
+                                <label for="gasto-monto">Monto del Gasto (*)</label>
+                                <input type="number" id="gasto-monto" step="0.01" placeholder="Ej: 150.50" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="gasto-descripcion">Descripción (*)</label>
+                                <input type="text" id="gasto-descripcion" placeholder="Ej: Gasolina, Viáticos, etc." required>
+                            </div>
+                            <div class="form-group">
+                                <label for="gasto-fecha">Fecha del Gasto (*)</label>
+                                <input type="date" id="gasto-fecha" required>
+                            </div>
+                            <button type="submit" class="btn btn-success"><i class="fas fa-save"></i> Guardar Gasto</button>
+                        </form>
+                        <div id="status_registrar_gasto" class="status-message hidden"></div>
+                    </div>
                 </div>
             </div>
     <div id="view-gestion-efectivo" class="view hidden">
@@ -933,50 +935,50 @@
                     <button class="btn btn-secondary" data-view="view-main-menu"><i class="fas fa-arrow-left"></i> Volver al Menú</button>
                 </div>
 
-                <div class="card form-container" style="margin-bottom: 20px;">
-                    <h3>Registrar Entrega de Efectivo</h3>
-                    <form id="form-registrar-entrega" class="form-inline">
-                        <div class="form-group" style="flex: 2;">
-                            <label for="entrega-agente">Agente (Área Comercial)</label>
-                            <select id="entrega-agente" required>
-                                <option value="">Cargando agentes...</option>
-                            </select>
-                        </div>
-                        <div class="form-group" style="flex: 1;">
-                            <label for="entrega-monto">Monto Entregado</label>
-                            <input type="number" id="entrega-monto" step="0.01" placeholder="Ej: 5000" required>
-                        </div>
-                        <div class="form-group" style="flex: 2;">
-                            <label for="entrega-descripcion">Descripción</label>
-                            <input type="text" id="entrega-descripcion" placeholder="Ej: Efectivo semana 42">
-                        </div>
-                        <button type="submit" class="btn btn-success"><i class="fas fa-plus-circle"></i> Registrar Entrega</button>
-                    </form>
-                    <div id="status_registrar_entrega" class="status-message hidden"></div>
-                </div>
+                <div class="form-container" style="max-width: 1000px; margin: 0 auto;">
+                    <div class="card" style="margin-bottom: 20px;">
+                        <h3>Registrar Entrega de Efectivo</h3>
+                        <form id="form-registrar-entrega" class="form-inline">
+                            <div class="form-group" style="flex: 2;">
+                                <label for="entrega-agente">Agente (Área Comercial)</label>
+                                <select id="entrega-agente" required>
+                                    <option value="">Cargando agentes...</option>
+                                </select>
+                            </div>
+                            <div class="form-group" style="flex: 1;">
+                                <label for="entrega-monto">Monto Entregado</label>
+                                <input type="number" id="entrega-monto" step="0.01" placeholder="Ej: 5000" required>
+                            </div>
+                            <div class="form-group" style="flex: 2;">
+                                <label for="entrega-descripcion">Descripción</label>
+                                <input type="text" id="entrega-descripcion" placeholder="Ej: Efectivo semana 42">
+                            </div>
+                            <button type="submit" class="btn btn-success"><i class="fas fa-plus-circle"></i> Registrar Entrega</button>
+                        </form>
+                        <div id="status_registrar_entrega" class="status-message hidden"></div>
+                    </div>
 
-                <div class="card form-container" style="margin-bottom: 20px;">
-                     <h3>Buscar Movimientos de Agente</h3>
-                     <div id="filtros-gestion-efectivo" class="filtros-grid form-inline">
-                        <div class="form-group" style="flex: 2;">
-                            <label for="filtro-agente">Agente (Área Comercial)</label>
-                            <select id="filtro-agente">
-                                <option value="">Cargando agentes...</option>
-                            </select>
+                    <div class="card" style="margin-bottom: 20px;">
+                        <h3>Buscar Movimientos de Agente</h3>
+                        <div id="filtros-gestion-efectivo" class="filtros-grid form-inline">
+                            <div class="form-group" style="flex: 2;">
+                                <label for="filtro-agente">Agente (Área Comercial)</label>
+                                <select id="filtro-agente">
+                                    <option value="">Cargando agentes...</option>
+                                </select>
+                            </div>
+                            <div class="form-group" style="flex: 1;">
+                                <label for="filtro-fecha-inicio-efectivo">Fecha Inicio</label>
+                                <input type="date" id="filtro-fecha-inicio-efectivo">
+                            </div>
+                            <div class="form-group" style="flex: 1;">
+                                <label for="filtro-fecha-fin-efectivo">Fecha Fin</label>
+                                <input type="date" id="filtro-fecha-fin-efectivo">
+                            </div>
+                            <button id="btn-buscar-movimientos" class="btn btn-primary"><i class="fas fa-search"></i> Buscar Movimientos</button>
                         </div>
-                        <div class="form-group" style="flex: 1;">
-                            <label for="filtro-fecha-inicio-efectivo">Fecha Inicio</label>
-                            <input type="date" id="filtro-fecha-inicio-efectivo">
-                        </div>
-                         <div class="form-group" style="flex: 1;">
-                            <label for="filtro-fecha-fin-efectivo">Fecha Fin</label>
-                            <input type="date" id="filtro-fecha-fin-efectivo">
-                        </div>
-                        <button id="btn-buscar-movimientos" class="btn btn-primary"><i class="fas fa-search"></i> Buscar Movimientos</button>
-                     </div>
-                </div>
-                
-                <div id="resultados-gestion-efectivo" class="form-container hidden">
+                    </div>
+                </div> <div id="resultados-gestion-efectivo" class="hidden" style="max-width: 1200px; margin: 0 auto; width: 100%;">
                     <div id="balance-container" class="card info-grid" style="background: #f8f9fa; padding: 15px; margin-bottom: 20px;">
                         <div class="info-item"><span class="info-label">Agente:</span><span id="balance-agente" class="info-value">...</span></div>
                         <div class="info-item"><span class="info-label">Total Entregado:</span><span id="balance-entregado" class="info-value" style="color: var(--success);">...</span></div>
@@ -1004,7 +1006,6 @@
                     </div>
                 </div>
 
-            </div>
             </div>
     <div id="processing-overlay" class="processing-overlay hidden">
         <div class="processing-spinner"></div>
@@ -1039,6 +1040,7 @@
     <script src="js/app.js"></script>
 </body>
 </html>
+
 
 
 
