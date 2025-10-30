@@ -493,7 +493,7 @@ async function loadClientesTable() {
             curpAval: document.getElementById('curp_aval_filtro')?.value?.trim() || '',
             plazo: document.getElementById('plazo_filtro')?.value || '',
             grupo: document.getElementById('grupo_filtro')?.value || '',
-            userOffice: esAdminConAccesoTotal ? null : currentUserData?.office // <-- APLICAR SEGREGACIÓN
+            userOffice: esAdminConAccesoTotal ? null : currentUserData?.office
         };
 
         const hayFiltros = Object.values(filtros).some((val, key) => val && val.trim() !== '' && key !== 'userOffice');
@@ -1267,16 +1267,6 @@ function setupEventListeners() {
     if (listaRutas) listaRutas.addEventListener('click', handleConfigListClick); // <-- NUEVA FUNCIÓN GENÉRICA
 
     }
-
-   // Configuración
-    const btnAgregarPoblacion = document.getElementById('btn-agregar-poblacion');
-    if (btnAgregarPoblacion) btnAgregarPoblacion.addEventListener('click', () => handleAgregarConfig('poblacion'));
-    const btnAgregarRuta = document.getElementById('btn-agregar-ruta');
-    if (btnAgregarRuta) btnAgregarRuta.addEventListener('click', () => handleAgregarConfig('ruta'));
-    const listaPoblaciones = document.getElementById('lista-poblaciones');
-    if (listaPoblaciones) listaPoblaciones.addEventListener('click', (e) => { /* ... (sin cambios) ... */ });
-    const listaRutas = document.getElementById('lista-rutas');
-    if (listaRutas) listaRutas.addEventListener('click', (e) => { /* ... (sin cambios) ... */ });
 
     // Modal
     const modalCloseBtn = document.getElementById('modal-close-btn');
@@ -2943,7 +2933,13 @@ async function handleGenerarGrafico() {
         const tipoReporte = document.getElementById('grafico_tipo_reporte').value;
         const fechaInicio = document.getElementById('grafico_fecha_inicio').value;
         const fechaFin = document.getElementById('grafico_fecha_fin').value;
-        const sucursal = document.getElementById('grafico_sucursal').value;
+
+        // --- CORRECCIÓN DE VARIABLES ---
+        // 'oficinaSeleccionada' lee el valor del dropdown (cuyo ID HTML puede seguir siendo 'grafico_sucursal')
+        const oficinaSeleccionada = document.getElementById('grafico_sucursal').value;
+        const esAdminConAccesoTotal = (currentUserData?.role === 'Super Admin' || currentUserData?.role === 'Gerencia');
+        // --- FIN CORRECCIÓN ---
+
         const grupo = document.getElementById('grafico_grupo').value;
         const agruparPor = document.getElementById('grafico_agrupar_por').value;
         const tipoGrafico = document.getElementById('grafico_tipo_grafico').value;
@@ -2958,13 +2954,16 @@ async function handleGenerarGrafico() {
         statusGraficos.textContent = 'Obteniendo datos...';
         statusGraficos.className = 'status-message status-info';
 
+        // --- CORRECCIÓN AL PASAR FILTROS ---
+        // Pasa 'office' (del dropdown) y 'userOffice' (del usuario)
         const { creditos, pagos } = await database.obtenerDatosParaGraficos({
-            office,
+            office: oficinaSeleccionada,
             grupo,
             fechaInicio,
             fechaFin,
-            userOffice: currentUserData?.office // Aplicar segregación
+            userOffice: esAdminConAccesoTotal ? null : currentUserData?.office
         });
+        // --- FIN CORRECCIÓN ---
 
         statusGraficos.textContent = 'Procesando datos para el gráfico...';
 
@@ -2981,9 +2980,12 @@ async function handleGenerarGrafico() {
             default_border: 'rgba(46, 139, 87, 1)'
         };
 
-        const agruparDatos = (data, campoFecha, campoValor, filtroOffice = null) => {
+        // --- CORRECCIÓN EN PARÁMETRO Y LÓGICA ---
+        const agruparDatos = (data, campoFecha, campoValor, filtroOffice = null) => { // Renombrado a filtroOffice
             const agrupados = {};
-            const datosFiltrados = filtroSucursal ? data.filter(item => item.office === filtroSucursal) : data;
+            // Usar el parámetro 'filtroOffice' consistentemente
+            const datosFiltrados = filtroOffice ? data.filter(item => item.office === filtroOffice) : data;
+            // --- FIN CORRECCIÓN ---
 
             datosFiltrados.forEach(item => {
                 const fecha = parsearFecha(item[campoFecha]);
@@ -3035,12 +3037,14 @@ async function handleGenerarGrafico() {
 
         // *** LÓGICA DE MÚLTIPLES DATASETS ***
         if (tipoReporte === 'comportamiento') {
-            // Agrupar por tipo de pago, separado por sucursal si "Ambas" está seleccionado
-            const sucursalesAProcesar = (sucursal === '') ? ['GDL', 'LEON'] : [sucursal];
+            // --- CORRECCIÓN: Usar 'oficinaSeleccionada' ---
+            const oficinasAProcesar = (oficinaSeleccionada === '') ? ['GDL', 'LEON'] : [oficinaSeleccionada];
             let datosAgrupados = {};
 
-            sucursalesAProcesar.forEach(suc => {
-                const pagosSucursal = (office === '') ? pagos.filter(p => p.office === suc) : pagos;
+            oficinasAProcesar.forEach(suc => {
+                // Usar 'oficinaSeleccionada' para la condición
+                const pagosSucursal = (oficinaSeleccionada === '') ? pagos.filter(p => p.office === suc) : pagos;
+                // --- FIN CORRECCIÓN ---
                 pagosSucursal.forEach(pago => {
                     const tipo = (pago.tipoPago || 'normal').toLowerCase();
                     const clave = tipo.charAt(0).toUpperCase() + tipo.slice(1);
@@ -3052,7 +3056,7 @@ async function handleGenerarGrafico() {
 
             labels = Object.keys(datosAgrupados).sort();
 
-            datasets = sucursalesAProcesar.map(suc => ({
+            datasets = oficinasAProcesar.map(suc => ({
                 label: `${labelPrefix} (${suc})`,
                 data: labels.map(label => datosAgrupados[label][suc] || 0),
                 backgroundColor: colores[suc],
@@ -3064,7 +3068,9 @@ async function handleGenerarGrafico() {
 
         } else {
             // Lógica para Colocación y Recuperación (agrupados por fecha)
-            if (office === '') { // AMBAS SUCURSALES
+            // --- CORRECCIÓN: Usar 'oficinaSeleccionada' ---
+            if (oficinaSeleccionada === '') { // AMBAS OFICINAS
+            // --- FIN CORRECCIÓN ---
                 const datosGDL = agruparDatos(dataToProcess, campoFecha, campoValor, 'GDL');
                 const datosLEON = agruparDatos(dataToProcess, campoFecha, campoValor, 'LEON');
                 labels = [...new Set([...Object.keys(datosGDL), ...Object.keys(datosLEON)])].sort();
@@ -3088,11 +3094,13 @@ async function handleGenerarGrafico() {
                     tension: (tipoGrafico === 'line') ? 0.1 : 0
                 });
 
-            } else { // UNA SOLA SUCURSAL
+            } else { // UNA SOLA OFICINA
                 const datosAgrupados = agruparDatos(dataToProcess, campoFecha, campoValor);
                 labels = Object.keys(datosAgrupados).sort();
                 datasets.push({
-                    label: `${labelPrefix}${sucursal ? ` (${sucursal})` : ''}${grupo ? ` [${grupo}]` : ''}`,
+                    // --- CORRECCIÓN: Usar 'oficinaSeleccionada' ---
+                    label: `${labelPrefix}${oficinaSeleccionada ? ` (${oficinaSeleccionada})` : ''}${grupo ? ` [${grupo}]` : ''}`,
+                    // --- FIN CORRECCIÓN ---
                     data: labels.map(label => datosAgrupados[label]),
                     backgroundColor: colores.default,
                     borderColor: colores.default_border,
@@ -4118,6 +4126,7 @@ async function handleDiagnosticarPagos() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
