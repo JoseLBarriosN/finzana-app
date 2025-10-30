@@ -1264,17 +1264,16 @@ const database = {
 },
     eliminarRuta: async (id) => {
         // ... (sin cambios) ...
-        try { await db.collection('rutas').doc(id).delete(); return { success: true, message: 'Ruta eliminada.' }; } catch (error) { console.error("Error eliminando ruta:", error); return { success: false, message: `Error: ${error.message}` }; }
+        try { await db.collection('rutas').doc(id).delete(); 
+             return { success: true, message: 'Ruta eliminada.' }; } 
+        catch (error) { console.error("Error eliminando ruta:", error); 
+             return { success: false, message: `Error: ${error.message}` }; 
+         }
     },
 
 // =============================================
-    // *** NUEVAS FUNCIONES: EFECTIVO Y COMISIONES ***
-    // =============================================
-
-    /**
-     * Agrega un movimiento a la colección 'movimientos_efectivo'.
-     * @param {object} movimientoData Datos del movimiento (userId, fecha, tipo, monto, descripcion, etc.)
-     */
+// *** NUEVAS FUNCIONES: EFECTIVO Y COMISIONES ***
+// =============================================
     agregarMovimientoEfectivo: async (movimientoData) => {
         try {
             // Asegurar que los datos esenciales estén
@@ -1344,5 +1343,6 @@ const database = {
     },
     
 }; // Fin del objeto database
+
 
 
