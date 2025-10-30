@@ -352,20 +352,21 @@ function aplicarPermisosUI(role) {
     const permisosMenu = {
         'Super Admin': ['all'],
         'Gerencia': ['all'],
-        'Administrador': [ // TODO MENOS Gráficos
+        'Administrador': [
             'view-gestion-clientes', 'view-cliente', 'view-colocacion', 'view-cobranza',
             'view-pago-grupo', 'view-reportes', 'view-reportes-avanzados',
-            'view-usuarios', 'view-importar', 'view-configuracion'
+            'view-usuarios', 'view-importar', 'view-configuracion',
+            'view-gestion-efectivo' // <-- AÑADIDO
         ],
-        'Área comercial': [ // SOLO Vistas especificadas
-            'view-gestion-clientes', // Permitido para buscar clientes propios? Reconsiderar si no debe estar
-            'view-cliente',          // Permitido
-            'view-colocacion',       // Permitido
-            'view-cobranza',         // Permitido
-            'view-pago-grupo'        // Permitido (Cobranza por Ruta)
-            // Añadir 'view-registrar-gasto' cuando se implemente
+        'Área comercial': [
+            'view-gestion-clientes',
+            'view-cliente',
+            'view-colocacion',
+            'view-cobranza',
+            'view-pago-grupo',
+            'view-registrar-gasto' // <-- AÑADIDO
         ],
-        'default': [] // Roles sin permisos definidos
+        'default': []
     };
 
     // Mapeo (admin -> Administrador)
@@ -1283,6 +1284,20 @@ function setupEventListeners() {
         // La llave de cierre del 'if' va AQUÍ, después del addEventListener
     }
 
+    const formRegistrarGasto = document.getElementById('form-registrar-gasto');
+    if (formRegistrarGasto) {
+        formRegistrarGasto.addEventListener('submit', handleRegistrarGasto);
+    }
+
+    const formRegistrarEntrega = document.getElementById('form-registrar-entrega');
+    if (formRegistrarEntrega) {
+        formRegistrarEntrega.addEventListener('submit', handleRegistrarEntregaInicial);
+    }
+
+    const btnBuscarMovimientos = document.getElementById('btn-buscar-movimientos');
+    if (btnBuscarMovimientos) {
+        btnBuscarMovimientos.addEventListener('click', handleBuscarMovimientos);
+}
 // =============================================
 // MANEJADORES DE EVENTOS ESPECÍFICOS
 // =============================================
@@ -1502,8 +1517,265 @@ async function handleConfigListClick(e) {
     }
 }
 
+// =============================================
+// *** NUEVAS FUNCIONES: EFECTIVO Y COMISIONES ***
+// =============================================
+
+/**
+ * Carga la lista de agentes (Área Comercial) en los dropdowns de la vista Gestión Efectivo.
+ * Se llama al mostrar la vista 'view-gestion-efectivo'.
+ */
+async function loadGestionEfectivo() {
+    console.log("Cargando vista Gestión Efectivo...");
+    const selectAgenteEntrega = document.getElementById('entrega-agente');
+    const selectAgenteFiltro = document.getElementById('filtro-agente');
+    const statusEntrega = document.getElementById('status_registrar_entrega');
+
+    if (!selectAgenteEntrega || !selectAgenteFiltro) return;
+    
+    // Resetear vista
+    selectAgenteEntrega.innerHTML = '<option value="">Cargando...</option>';
+    selectAgenteFiltro.innerHTML = '<option value="">Cargando...</option>';
+    document.getElementById('resultados-gestion-efectivo').classList.add('hidden');
+    document.getElementById('tabla-movimientos-efectivo').innerHTML = '<tr><td colspan="5">Selecciona un agente y rango de fechas.</td></tr>';
+    document.getElementById('form-registrar-entrega').reset();
+    
+    // Poner fechas por defecto (ej. último mes)
+    const hoy = new Date();
+    const haceUnMes = new Date(hoy.getFullYear(), hoy.getMonth() - 1, hoy.getDate() + 1);
+    document.getElementById('filtro-fecha-inicio-efectivo').value = haceUnMes.toISOString().split('T')[0];
+    document.getElementById('filtro-fecha-fin-efectivo').value = hoy.toISOString().split('T')[0];
 
 
+    try {
+        const resultado = await database.obtenerUsuarios();
+        if (!resultado.success) throw new Error(resultado.message);
+
+        let agentes = resultado.data || [];
+        
+        // Filtrar solo Área Comercial y por oficina del admin (si aplica)
+        const adminOffice = currentUserData?.office;
+        agentes = agentes.filter(u => 
+            u.role === 'Área comercial' &&
+            (adminOffice === 'AMBAS' || !adminOffice || u.office === adminOffice)
+        );
+
+        agentes.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+
+        // Poblar dropdowns
+        const opciones = agentes.map(a => ({ value: a.id, text: `${a.name} (${a.office})` }));
+        popularDropdown('entrega-agente', opciones, 'Selecciona un agente', true);
+        popularDropdown('filtro-agente', opciones, 'Selecciona un agente', true);
+        
+        if (statusEntrega) showStatus('status_registrar_entrega', '', 'info');
+
+    } catch (error) {
+        console.error("Error cargando agentes para gestión efectivo:", error);
+        if (statusEntrega) showStatus('status_registrar_entrega', `Error cargando agentes: ${error.message}`, 'error');
+        popularDropdown('entrega-agente', [], 'Error al cargar', true);
+        popularDropdown('filtro-agente', [], 'Error al cargar', true);
+    }
+}
+
+/**
+ * Maneja el formulario para registrar una entrega de efectivo a un agente.
+ */
+async function handleRegistrarEntregaInicial(e) {
+    e.preventDefault();
+    const btn = e.target.querySelector('button[type="submit"]');
+    const statusEl = document.getElementById('status_registrar_entrega');
+    
+    const agenteId = document.getElementById('entrega-agente').value;
+    const monto = parseFloat(document.getElementById('entrega-monto').value);
+    const descripcion = document.getElementById('entrega-descripcion').value || 'Entrega inicial de efectivo';
+    
+    // Obtener datos del agente seleccionado para guardar su oficina
+    const agenteSelect = document.getElementById('entrega-agente');
+    const agenteTexto = agenteSelect.options[agenteSelect.selectedIndex].text; // Ej: "Nombre Agente (GDL)"
+    const officeAgente = agenteTexto.includes('(GDL)') ? 'GDL' : (agenteTexto.includes('(LEON)') ? 'LEON' : null);
+
+    if (!agenteId || isNaN(monto) || monto <= 0 || !officeAgente) {
+        showStatus(statusEl.id, 'Selecciona un agente válido, un monto positivo y asegúrate que el agente tenga oficina.', 'error');
+        return;
+    }
+
+    showButtonLoading(btn, true, 'Registrando...');
+    showStatus(statusEl.id, 'Registrando entrega...', 'info');
+
+    try {
+        const movimientoData = {
+            userId: agenteId,
+            fecha: new Date().toISOString(),
+            tipo: 'ENTREGA_INICIAL',
+            monto: monto, // Monto POSITIVO (entrada para el agente)
+            descripcion: descripcion,
+            registradoPor: currentUserData.email,
+            office: officeAgente
+        };
+
+        const resultado = await database.agregarMovimientoEfectivo(movimientoData);
+        if (!resultado.success) throw new Error(resultado.message);
+
+        showStatus(statusEl.id, 'Entrega registrada exitosamente.', 'success');
+        e.target.reset(); // Limpiar formulario de entrega
+        
+        // Si el agente filtrado es el mismo, recargar los movimientos
+        if (document.getElementById('filtro-agente').value === agenteId) {
+            handleBuscarMovimientos();
+        }
+
+    } catch (error) {
+        console.error("Error registrando entrega:", error);
+        showStatus(statusEl.id, `Error: ${error.message}`, 'error');
+    } finally {
+        showButtonLoading(btn, false);
+    }
+}
+
+/**
+ * Busca y muestra los movimientos y el balance del agente seleccionado.
+ */
+async function handleBuscarMovimientos() {
+    const btn = document.getElementById('btn-buscar-movimientos');
+    const statusEl = 'status_registrar_entrega'; // Usar el mismo status por ahora
+    const agenteId = document.getElementById('filtro-agente').value;
+    const fechaInicio = document.getElementById('filtro-fecha-inicio-efectivo').value;
+    const fechaFin = document.getElementById('filtro-fecha-fin-efectivo').value;
+    
+    const resultadosDiv = document.getElementById('resultados-gestion-efectivo');
+    const tbody = document.getElementById('tabla-movimientos-efectivo');
+    const balanceContainer = document.getElementById('balance-container');
+
+    if (!agenteId) {
+        showStatus(statusEl, 'Por favor, selecciona un agente para buscar.', 'warning');
+        return;
+    }
+    
+    showButtonLoading(btn, true, 'Buscando...');
+    showStatus(statusEl, 'Buscando movimientos...', 'info');
+    resultadosDiv.classList.add('hidden');
+    tbody.innerHTML = '<tr><td colspan="5">Buscando...</td></tr>';
+    
+    // Resetear balance
+    document.getElementById('balance-agente').textContent = '...';
+    document.getElementById('balance-entregado').textContent = '...';
+    document.getElementById('balance-gastos').textContent = '...';
+    document.getElementById('balance-colocado').textContent = '...';
+    document.getElementById('balance-final').textContent = '...';
+
+    try {
+        const filtros = {
+            userId: agenteId,
+            fechaInicio: fechaInicio ? (fechaInicio + 'T00:00:00Z') : null,
+            fechaFin: fechaFin ? (fechaFin + 'T23:59:59Z') : null
+            // La oficina ya se filtró al cargar la lista de agentes
+        };
+
+        const movimientos = await database.getMovimientosEfectivo(filtros);
+
+        if (movimientos.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5">No se encontraron movimientos para este agente en este rango de fechas.</td></tr>';
+            showStatus(statusEl, 'No se encontraron movimientos.', 'info');
+        } else {
+            tbody.innerHTML = movimientos.map(mov => `
+                <tr style="color: ${mov.monto > 0 ? 'var(--success)' : 'var(--danger)'};">
+                    <td>${formatDateForDisplay(parsearFecha(mov.fecha))}</td>
+                    <td>${mov.tipo || 'N/A'}</td>
+                    <td>$${(mov.monto || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td>${mov.descripcion || 'N/A'}</td>
+                    <td>${mov.registradoPor || 'N/A'}</td>
+                </tr>
+            `).join('');
+            showStatus(statusEl, `Se encontraron ${movimientos.length} movimientos.`, 'success');
+        }
+        
+        // Calcular Balance
+        let totalEntregado = 0;
+        let totalGastos = 0;
+        let totalColocado = 0;
+        
+        movimientos.forEach(mov => {
+            if (mov.tipo === 'ENTREGA_INICIAL') {
+                totalEntregado += (mov.monto || 0); // Suma (positivo)
+            } else if (mov.tipo === 'GASTO') {
+                totalGastos += (mov.monto || 0); // Suma (ya es negativo)
+            } else if (mov.tipo === 'COLOCACION') {
+                totalColocado += (mov.monto || 0); // Suma (ya es negativo)
+            }
+        });
+        
+        const balanceFinal = totalEntregado + totalGastos + totalColocado;
+
+        const agenteSelect = document.getElementById('filtro-agente');
+        document.getElementById('balance-agente').textContent = agenteSelect.options[agenteSelect.selectedIndex].text;
+        document.getElementById('balance-entregado').textContent = `$${totalEntregado.toFixed(2)}`;
+        document.getElementById('balance-gastos').textContent = `$${totalGastos.toFixed(2)}`;
+        document.getElementById('balance-colocado').textContent = `$${totalColocado.toFixed(2)}`;
+        document.getElementById('balance-final').textContent = `$${balanceFinal.toFixed(2)}`;
+        document.getElementById('balance-final').style.color = balanceFinal >= 0 ? 'var(--success)' : 'var(--danger)';
+
+        resultadosDiv.classList.remove('hidden');
+
+    } catch (error) {
+        console.error("Error buscando movimientos:", error);
+        showStatus(statusEl, `Error: ${error.message}`, 'error');
+        tbody.innerHTML = `<tr><td colspan="5">Error: ${error.message}</td></tr>`;
+    } finally {
+        showButtonLoading(btn, false);
+    }
+}
+
+/**
+ * Maneja el formulario para registrar un gasto (Área Comercial).
+ */
+async function handleRegistrarGasto(e) {
+    e.preventDefault();
+    const btn = e.target.querySelector('button[type="submit"]');
+    const statusEl = document.getElementById('status_registrar_gasto');
+
+    const monto = parseFloat(document.getElementById('gasto-monto').value);
+    const descripcion = document.getElementById('gasto-descripcion').value.trim();
+    const fechaInput = document.getElementById('gasto-fecha').value; // YYYY-MM-DD
+
+    if (isNaN(monto) || monto <= 0 || !descripcion || !fechaInput) {
+        showStatus(statusEl.id, 'Todos los campos son obligatorios y el monto debe ser positivo.', 'error');
+        return;
+    }
+
+    // Convertir fecha YYYY-MM-DD a ISO String con hora
+    const fechaGasto = new Date(fechaInput + 'T12:00:00Z').toISOString(); // Usar mediodía UTC
+
+    showButtonLoading(btn, true, 'Guardando...');
+    showStatus(statusEl.id, 'Registrando gasto...', 'info');
+
+    try {
+        const movimientoData = {
+            userId: currentUserData.id, // ID del agente
+            fecha: fechaGasto,
+            tipo: 'GASTO',
+            monto: -monto, // Monto NEGATIVO (salida)
+            descripcion: descripcion,
+            registradoPor: currentUserData.email,
+            office: currentUserData.office
+        };
+
+        const resultado = await database.agregarMovimientoEfectivo(movimientoData);
+        if (!resultado.success) throw new Error(resultado.message);
+
+        let successMsg = 'Gasto registrado exitosamente.';
+        if (!isOnline) successMsg += ' (Guardado localmente, se sincronizará).';
+        showStatus(statusEl.id, successMsg, 'success');
+        e.target.reset();
+
+    } catch (error) {
+        console.error("Error registrando gasto:", error);
+        showStatus(statusEl.id, `Error: ${error.message}`, 'error');
+    } finally {
+        showButtonLoading(btn, false);
+    }
+}
+
+//** IMPORTACIÓN DE DATOS **//
 async function handleImport() {
     const office = document.getElementById('office-select').value;
     const textareaId = `datos-importar-${office.toLowerCase()}-${currentImportTab}`;
@@ -3756,23 +4028,21 @@ document.addEventListener('viewshown', async function (e) {
         }
     });
 
-    switch (viewId) {
+   switch (viewId) {
         case 'view-reportes':
-            loadBasicReports(currentUserData?.office); // Cargar al entrar con filtro
+            loadBasicReports(currentUserData?.office);
             break;
         case 'view-reportes-avanzados':
             inicializarVistaReportesAvanzados();
             break;
         case 'view-configuracion':
-            loadConfiguracion(); // Cargar al entrar
+            loadConfiguracion();
             break;
         case 'view-gestion-clientes':
             inicializarVistaGestionClientes();
             break;
         case 'view-cliente':
-            if (!editingClientId) {
-                resetClientForm();
-            }
+            if (!editingClientId) { resetClientForm(); }
             break;
         case 'view-colocacion':
             document.getElementById('curp_colocacion').value = '';
@@ -3864,9 +4134,27 @@ document.addEventListener('viewshown', async function (e) {
             break;
         case 'view-main-menu':
             break;
+
+        case 'view-registrar-gasto':
+            // Poner fecha de hoy por defecto
+            const fechaGastoInput = document.getElementById('gasto-fecha');
+            if (fechaGastoInput) {
+                fechaGastoInput.value = new Date().toISOString().split('T')[0];
+            }
+            showStatus('status_registrar_gasto', '', 'info');
+            document.getElementById('form-registrar-gasto').reset();
+            // Poner la fecha de nuevo después de reset
+            if (fechaGastoInput) {
+                 fechaGastoInput.value = new Date().toISOString().split('T')[0];
+            }
+            break;
+
+        case 'view-gestion-efectivo':
+            // Cargar la lista de agentes del área comercial
+            await loadGestionEfectivo();
+            break;  
     }
 });
-
 
 // *** MANEJO DE DUPLICADOS ***
 async function handleVerificarDuplicados() {
@@ -4126,6 +4414,7 @@ async function handleDiagnosticarPagos() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
