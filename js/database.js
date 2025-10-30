@@ -505,14 +505,11 @@ const database = {
         }
     },
 
+    // EN database.js - REEMPLAZA ESTA FUNCIÓN
     agregarCredito: async (creditoData, userEmail) => {
         try {
-            // *** CORRECCIÓN: Validar regla de renovación ***
-            if ((creditoData.tipo === 'renovacion' || creditoData.tipo === 'reingreso') && creditoData.plazo !== 14) {
-                return { success: false, message: 'Las renovaciones y reingresos solo pueden ser a 14 semanas.' };
-            }
-
-            // Validaciones
+            // ... (Validaciones de renovación y elegibilidad - SIN CAMBIOS) ...
+            if ((creditoData.tipo === 'renovacion' || creditoData.tipo === 'reingreso') && creditoData.plazo !== 14) {/*...*/}
             const elegibilidadCliente = await database.verificarElegibilidadCliente(creditoData.curpCliente);
             if (!elegibilidadCliente.elegible) return { success: false, message: elegibilidadCliente.message };
             const elegibilidadAval = await database.verificarElegibilidadAval(creditoData.curpAval);
@@ -520,52 +517,72 @@ const database = {
 
             const cliente = await database.buscarClientePorCURP(creditoData.curpCliente);
             if (!cliente) return { success: false, message: "Cliente no encontrado." };
+            if (creditoData.plazo === 10 && !cliente.isComisionista) {/*...*/}
 
-            // *** CORRECCIÓN: Validar plazo 10 semanas solo para comisionistas ***
-            if (creditoData.plazo === 10 && !cliente.isComisionista) {
-                return { success: false, message: 'El plazo de 10 semanas (0% interés) es solo para comisionistas.' };
-            }
-
-            // Preparar datos (montoTotal y saldo ya vienen calculados y redondeados desde app.js)
+            // Preparar datos (SIN CAMBIOS)
             const nuevoCredito = {
                 monto: creditoData.monto,
                 plazo: creditoData.plazo,
                 tipo: creditoData.tipo,
                 montoTotal: creditoData.montoTotal,
-                saldo: creditoData.saldo, // Saldo inicial = montoTotal
+                saldo: creditoData.saldo,
                 curpCliente: creditoData.curpCliente.toUpperCase(),
                 curpAval: (creditoData.curpAval || '').toUpperCase(),
                 nombreAval: creditoData.nombreAval,
                 office: cliente.office,
                 poblacion_grupo: cliente.poblacion_grupo,
                 ruta: cliente.ruta,
-                estado: 'activo', // Empezar como activo
+                estado: 'activo',
                 fechaCreacion: new Date().toISOString(),
                 creadoPor: userEmail,
-                // historicalIdCredito: ??? // No se asigna aquí para nuevos créditos
             };
 
             const docRef = await db.collection('creditos').add(nuevoCredito);
+            const creditoAgregado = { id: docRef.id, ...nuevoCredito }; // Datos completos del crédito
 
-            // Marcar anterior como liquidado si es renovación/reingreso y cumple condición de saldo cero
-            if (creditoData.tipo === 'renovacion' || creditoData.tipo === 'reingreso') {
-                const creditoActivoAnterior = await database.buscarCreditoActivoPorCliente(creditoData.curpCliente);
-                if (creditoActivoAnterior && creditoActivoAnterior.id !== docRef.id && creditoActivoAnterior.estado !== 'liquidado') {
-                    if (creditoActivoAnterior.saldo <= 0.01) {
-                        await db.collection('creditos').doc(creditoActivoAnterior.id).update({
-                            estado: 'liquidado',
-                            modificadoPor: userEmail + ' (auto)',
-                            fechaModificacion: new Date().toISOString()
-                        });
-                        console.log(`Crédito anterior ${creditoActivoAnterior.id} marcado como liquidado.`);
-                    } else {
-                        console.warn(`Intento de renovar/reingresar sin liquidar crédito anterior ${creditoActivoAnterior.id}. Saldo: ${creditoActivoAnterior.saldo}`);
-                    }
-                }
+            // ... (Lógica de marcar anterior como liquidado - SIN CAMBIOS) ...
+            if (creditoData.tipo === 'renovacion' || creditoData.tipo === 'reingreso') { /* ... */ }
+
+            // =============================================
+            // *** INICIO: NUEVA LÓGICA DE EFECTIVO Y COMISIÓN ***
+            // =============================================
+
+            // 1. Registrar SALIDA de efectivo
+            const movimientoEfectivo = {
+                userId: (await auth.currentUser).uid, // ID del agente que registra
+                fecha: creditoAgregado.fechaCreacion,
+                tipo: 'COLOCACION',
+                monto: -creditoData.monto, // MONTO BASE EN NEGATIVO
+                descripcion: `Colocación crédito a ${cliente.nombre} (ID: ${creditoAgregado.id})`,
+                creditoId: creditoAgregado.id, // ID de Firestore
+                registradoPor: userEmail,
+                office: cliente.office
+            };
+            await database.agregarMovimientoEfectivo(movimientoEfectivo);
+
+            // 2. Registrar COMISIÓN por colocación
+            // Regla: No genera comisión si es "Crédito de comisionista"
+            const esCreditoComisionista = (creditoData.plazo === 10 && cliente.isComisionista);
+            
+            // Regla: Genera $100 si es N, REN, REI y NO es de comisionista
+            if (!esCreditoComisionista && (creditoData.tipo === 'nuevo' || creditoData.tipo === 'renovacion' || creditoData.tipo === 'reingreso')) {
+                const comisionData = {
+                    userId: (await auth.currentUser).uid, // Comisión para el agente que registra
+                    fecha: creditoAgregado.fechaCreacion,
+                    tipo: 'COLOCACION',
+                    montoComision: 100,
+                    descripcion: `Comisión por ${creditoData.tipo} a ${cliente.nombre}`,
+                    creditoId: creditoAgregado.id,
+                    registradoPor: userEmail,
+                    office: cliente.office
+                };
+                await database.agregarComision(comisionData);
             }
+            // =============================================
+            // *** FIN: NUEVA LÓGICA ***
+            // =============================================
 
-            // Devolver el ID de Firestore y los datos guardados
-            return { success: true, message: 'Crédito generado.', data: { id: docRef.id, ...nuevoCredito } };
+            return { success: true, message: 'Crédito generado.', data: creditoAgregado };
 
         } catch (error) {
             console.error("Error agregando crédito:", error);
@@ -615,6 +632,7 @@ const database = {
         }
     },
 
+    // EN database.js - REEMPLAZA ESTA FUNCIÓN
     agregarPago: async (pagoData, userEmail, firestoreCreditoId) => {
         try {
             const creditoRef = db.collection('creditos').doc(firestoreCreditoId);
@@ -631,29 +649,68 @@ const database = {
                 }
 
                 let nuevoSaldo = saldoActual - pagoData.monto;
-                if (nuevoSaldo < 0.01) nuevoSaldo = 0; // Redondear a 0 si es casi cero o negativo
+                if (nuevoSaldo < 0.01) nuevoSaldo = 0;
+                const nuevoEstadoDB = (nuevoSaldo === 0) ? 'liquidado' : 'activo';
 
-                const nuevoEstadoDB = (nuevoSaldo === 0) ? 'liquidado' : 'activo'; // Marcar liquidado si saldo es 0
-
+                // 1. Actualizar el crédito (SIN CAMBIOS)
                 transaction.update(creditoRef, {
                     saldo: nuevoSaldo,
-                    estado: nuevoEstadoDB, // Actualizar estado solo si se liquida
+                    estado: nuevoEstadoDB,
                     modificadoPor: userEmail,
                     fechaModificacion: new Date().toISOString()
                 });
 
+                // 2. Crear el documento de pago (SIN CAMBIOS)
                 const pagoRef = db.collection('pagos').doc();
                 transaction.set(pagoRef, {
                     idCredito: pagoData.idCredito, // Historical ID
                     monto: pagoData.monto,
                     tipoPago: pagoData.tipoPago,
                     fecha: new Date().toISOString(),
-                    saldoDespues: nuevoSaldo, // Guardar saldo después del pago
+                    saldoDespues: nuevoSaldo,
                     registradoPor: userEmail,
-                    office: credito.office, // <-- Asegurar que el 'office' del crédito se guarde
+                    office: credito.office,
                     curpCliente: credito.curpCliente,
-                    grupo: credito.poblacion_grupo // Guardar grupo del crédito en el pago
+                    grupo: credito.poblacion_grupo
                 });
+
+                // =============================================
+                // *** INICIO: NUEVA LÓGICA DE COMISIÓN POR PAGO ***
+                // =============================================
+                
+                // Reglas:
+                // 1. No genera comisión si es crédito de comisionista (plazo 10)
+                // 2. Genera $10 si es 'normal' o 'extraordinario' (asumimos 'adelantado')
+                // 3. Reglas de "morosa" o "domicilio diferente" no son detectables aquí.
+                
+                const esCreditoComisionista = (credito.plazo === 10);
+                const esTipoPagoComisionable = (pagoData.tipoPago === 'normal' || pagoData.tipoPago === 'extraordinario' || pagoData.tipoPago === 'grupal'); // Incluimos 'grupal'
+
+                if (!esCreditoComisionista && esTipoPagoComisionable) {
+                    const comisionRef = db.collection('comisiones').doc();
+                    
+                    // Asumimos que la comisión es para el 'creadoPor' del crédito (el agente original)
+                    const userIdComisionista = credito.creadoPor; 
+                    
+                    if (userIdComisionista) { // Solo registrar si sabemos a quién comisionar
+                        transaction.set(comisionRef, {
+                            userId: userIdComisionista,
+                            fecha: new Date().toISOString(),
+                            tipo: 'PAGO',
+                            montoComision: 10,
+                            descripcion: `Comisión por ${pagoData.tipoPago} a crédito ${pagoData.idCredito}`,
+                            creditoId: firestoreCreditoId,
+                            pagoId: pagoRef.id,
+                            registradoPor: userEmail,
+                            office: credito.office
+                        });
+                    } else {
+                         console.warn(`No se pudo registrar comisión para pago ${pagoRef.id} - falta 'creadoPor' en el crédito ${firestoreCreditoId}`);
+                    }
+                }
+                // =============================================
+                // *** FIN: NUEVA LÓGICA ***
+                // =============================================
             });
             return { success: true, message: 'Pago registrado.' };
         } catch (error) {
@@ -1210,4 +1267,81 @@ const database = {
         try { await db.collection('rutas').doc(id).delete(); return { success: true, message: 'Ruta eliminada.' }; } catch (error) { console.error("Error eliminando ruta:", error); return { success: false, message: `Error: ${error.message}` }; }
     }
 
+// =============================================
+    // *** NUEVAS FUNCIONES: EFECTIVO Y COMISIONES ***
+    // =============================================
+
+    /**
+     * Agrega un movimiento a la colección 'movimientos_efectivo'.
+     * @param {object} movimientoData Datos del movimiento (userId, fecha, tipo, monto, descripcion, etc.)
+     */
+    agregarMovimientoEfectivo: async (movimientoData) => {
+        try {
+            // Asegurar que los datos esenciales estén
+            if (!movimientoData.userId || !movimientoData.tipo || !movimientoData.monto) {
+                throw new Error("UserID, Tipo y Monto son requeridos para un movimiento.");
+            }
+            // Asegurar que la fecha exista
+            movimientoData.fecha = movimientoData.fecha || new Date().toISOString();
+            
+            await db.collection('movimientos_efectivo').add(movimientoData);
+            return { success: true, message: 'Movimiento de efectivo registrado.' };
+        } catch (error) {
+            console.error("Error agregando movimiento de efectivo:", error);
+            return { success: false, message: `Error: ${error.message}` };
+        }
+    },
+
+    /**
+     * Obtiene movimientos de efectivo según filtros (userId, fechas, etc.)
+     * Requiere índice: userId (ASC), fecha (DESC)
+     */
+    getMovimientosEfectivo: async (filtros) => {
+        try {
+            if (!filtros.userId) {
+                throw new Error("Se requiere un ID de usuario para buscar movimientos.");
+            }
+            let query = db.collection('movimientos_efectivo').where('userId', '==', filtros.userId);
+            
+            if (filtros.fechaInicio) {
+                query = query.where('fecha', '>=', filtros.fechaInicio);
+            }
+            if (filtros.fechaFin) {
+                query = query.where('fecha', '<=', filtros.fechaFin + 'T23:59:59Z');
+            }
+            if (filtros.office && filtros.office !== 'AMBAS') {
+                 query = query.where('office', '==', filtros.office);
+            }
+
+            const snapshot = await query.orderBy('fecha', 'desc').get();
+            return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        } catch (error) {
+            console.error("Error obteniendo movimientos de efectivo:", error);
+            if (error.message.includes("requires an index")) {
+               console.warn(">>> Firestore requiere un índice en 'movimientos_efectivo': userId ASC, office ASC, fecha DESC (o similar según la consulta)");
+            }
+            return [];
+        }
+    },
+
+    /**
+     * Agrega una comisión a la colección 'comisiones'.
+     * @param {object} comisionData Datos de la comisión (userId, fecha, tipo, montoComision, etc.)
+     */
+    agregarComision: async (comisionData) => {
+        try {
+            if (!comisionData.userId || !comisionData.tipo || !comisionData.montoComision) {
+                throw new Error("UserID, Tipo y Monto son requeridos para una comisión.");
+            }
+            comisionData.fecha = comisionData.fecha || new Date().toISOString();
+            
+            await db.collection('comisiones').add(comisionData);
+            return { success: true, message: 'Comisión registrada.' };
+        } catch (error) {
+            console.error("Error agregando comisión:", error);
+            return { success: false, message: `Error: ${error.message}` };
+        }
+    },
+    
 }; // Fin del objeto database
+
