@@ -3615,7 +3615,7 @@ async function loadConfiguracion() {
         }, 3000);
 
 
-    } catch (error) {
+    catch (error) {
         console.error("Error cargando configuración:", error);
         showStatus('status_configuracion', `Error al cargar listas: ${error.message}`, 'error');
         if (listaPob.innerHTML.includes('Cargando')) listaPob.innerHTML = '<li class="config-list-item error">Error al cargar poblaciones</li>';
@@ -4726,6 +4726,7 @@ function renderTablaMovimientos(movimientos) {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
