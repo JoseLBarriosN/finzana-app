@@ -1297,6 +1297,16 @@ function setupEventListeners() {
     const btnBuscarMovimientos = document.getElementById('btn-buscar-movimientos');
     if (btnBuscarMovimientos) {
         btnBuscarMovimientos.addEventListener('click', handleBuscarMovimientos);
+
+    const btnGenerarReporteContable = document.getElementById('btn-generar-reporte-contable');
+    if (btnGenerarReporteContable) btnGenerarReporteContable.addEventListener('click', handleGenerarReporteContable);
+
+    const btnImprimirReporteContable = document.getElementById('btn-imprimir-reporte-contable');
+    if (btnImprimirReporteContable) btnImprimirReporteContable.addEventListener('click', () => window.print());
+
+    const sucursalReporteContable = document.getElementById('reporte-contable-sucursal');
+    if (sucursalReporteContable) sucursalReporteContable.addEventListener('change', handleSucursalReporteContableChange);
+        
 }
 // =============================================
 // MANEJADORES DE EVENTOS ESPECÍFICOS
@@ -3487,10 +3497,9 @@ async function handleGenerarGrafico() {
 }
 
 // =============================================
-// SECCIÓN DE CONFIGURACIÓN (NUEVA)
+// SECCIÓN DE CONFIGURACIÓN
 // =============================================
 
-// EN app.js - REEMPLAZAR loadConfiguracion
 async function loadConfiguracion() {
     console.log("--- Ejecutando loadConfiguracion ---"); // Log inicial
     const statusEl = document.getElementById('status_configuracion');
@@ -3509,16 +3518,23 @@ async function loadConfiguracion() {
 
     try {
         console.log("   Intentando obtener poblaciones y rutas...");
+        // *** INICIO DE LA CORRECCIÓN ***
+        // Aplicar filtro de oficina del admin/gerente
+        const userOffice = (currentUserData?.office === 'AMBAS') ? null : currentUserData?.office;
+        console.log(`   Filtrando configuración por oficina: ${userOffice || 'AMBAS (null)'}`);
+
         const [poblaciones, rutas] = await Promise.all([
-            database.obtenerPoblaciones(), // Obtener todas para admin/gerencia
-            database.obtenerRutas()        // Obtener todas para admin/gerencia
+            database.obtenerPoblaciones(userOffice), // <-- PASAR FILTRO
+            database.obtenerRutas(userOffice)        // <-- PASAR FILTRO
         ]);
+        // *** FIN DE LA CORRECCIÓN ***
+        
         console.log(`   Poblaciones obtenidas: ${poblaciones.length}, Rutas obtenidas: ${rutas.length}`);
 
         // ---- Renderizar Poblaciones ----
         console.log("   Renderizando poblaciones...");
         if (poblaciones.length === 0) {
-            listaPob.innerHTML = '<li class="config-list-item">No hay poblaciones registradas.</li>';
+            listaPob.innerHTML = '<li class="config-list-item">No hay poblaciones registradas para tu oficina.</li>';
         } else {
             listaPob.innerHTML = poblaciones
                 .sort((a, b) => `${a.office}-${a.nombre}`.localeCompare(`${b.office}-${b.nombre}`))
@@ -3539,12 +3555,12 @@ async function loadConfiguracion() {
         console.log("   Poblaciones renderizadas.");
 
         // ---- Renderizar Rutas ----
-         console.log("   Renderizando rutas...");
+        console.log("   Renderizando rutas...");
         if (rutas.length === 0) {
-            listaRut.innerHTML = '<li class="config-list-item">No hay rutas registradas.</li>';
+            listaRut.innerHTML = '<li class="config-list-item">No hay rutas registradas para tu oficina.</li>';
         } else {
             listaRut.innerHTML = rutas
-                .sort((a, b) => `${a.office}-${a.nombre}`.localeCompare(`${b.office}-${b.nombre}`))
+                .sort((a, b) => `${a.office}-${a.nombre}`.localeCompare(`${b.office}-${a.nombre}`))
                 .map(r => `
                 <li class="config-list-item">
                     <span>
@@ -3566,13 +3582,13 @@ async function loadConfiguracion() {
                 </li>
             `).join('');
         }
-         console.log("   Rutas renderizadas.");
+        console.log("   Rutas renderizadas.");
 
         // Limpiar mensaje si todo OK
         showStatus('status_configuracion', 'Listas cargadas.', 'success'); // Mostrar éxito brevemente
         setTimeout(() => { // Ocultar mensaje de éxito después de un tiempo
             if (statusEl.classList.contains('status-success')) {
-                 showStatus('status_configuracion', '', 'info'); // Limpiar status
+                showStatus('status_configuracion', '', 'info'); // Limpiar status
             }
         }, 3000);
 
@@ -4169,10 +4185,14 @@ document.addEventListener('viewshown', async function (e) {
             }
             break;
 
+           // Cargar la lista de agentes del área comercial
         case 'view-gestion-efectivo':
-            // Cargar la lista de agentes del área comercial
             await loadGestionEfectivo();
             break;  
+
+        case 'view-reporte-contable':
+            inicializarVistaReporteContable();
+            break;
     }
 });
 
@@ -4433,4 +4453,251 @@ async function handleDiagnosticarPagos() {
     }
 }
 
+// EN app.js - AÑADIR NUEVAS FUNCIONES AL FINAL DEL ARCHIVO
+
+/**
+ * Inicializa la vista de reporte contable, aplicando filtros de oficina y cargando agentes.
+ */
+async function inicializarVistaReporteContable() {
+    const statusEl = 'status_reporte_contable';
+    const selectSucursal = document.getElementById('reporte-contable-sucursal');
+    const selectAgente = document.getElementById('reporte-contable-agente');
+    const btnGenerar = document.getElementById('btn-generar-reporte-contable');
+    const btnImprimir = document.getElementById('btn-imprimir-reporte-contable');
+    const wrapper = document.getElementById('reporte-contable-wrapper');
+
+    // Resetear vista
+    wrapper.classList.add('hidden');
+    btnImprimir.classList.add('hidden');
+    showStatus(statusEl, 'Selecciona los filtros para generar un reporte.', 'info');
+    
+    // Poner fechas por defecto (mes actual)
+    const hoy = new Date();
+    const primerDiaMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+    document.getElementById('reporte-contable-fecha-inicio').value = primerDiaMes.toISOString().split('T')[0];
+    document.getElementById('reporte-contable-fecha-fin').value = hoy.toISOString().split('T')[0];
+
+    // Aplicar segregación de oficina al dropdown de sucursal
+    const userOffice = currentUserData?.office;
+    const esAdminTotal = (currentUserData?.role === 'Super Admin' || currentUserData?.role === 'Gerencia');
+
+    if (esAdminTotal && (!userOffice || userOffice === 'AMBAS')) {
+        selectSucursal.disabled = false;
+        selectSucursal.value = ''; // Permitir seleccionar
+    } else if (userOffice && userOffice !== 'AMBAS') {
+        selectSucursal.value = userOffice;
+        selectSucursal.disabled = true;
+    } else {
+        // Caso raro (ej. Rol bajo sin oficina)
+        selectSucursal.value = '';
+        selectSucursal.disabled = true;
+        showStatus(statusEl, 'No tienes una oficina asignada para generar reportes.', 'error');
+    }
+    
+    // Cargar agentes basado en la sucursal seleccionada (o la forzada)
+    await handleSucursalReporteContableChange();
+}
+
+/**
+ * Carga los agentes en el dropdown de reporte contable según la sucursal seleccionada.
+ */
+async function handleSucursalReporteContableChange() {
+    const statusEl = 'status_reporte_contable';
+    const selectSucursal = document.getElementById('reporte-contable-sucursal');
+    const selectAgente = document.getElementById('reporte-contable-agente');
+    const office = selectSucursal.value;
+
+    selectAgente.innerHTML = '<option value="">Cargando...</option>';
+    selectAgente.disabled = true;
+
+    if (!office) {
+        selectAgente.innerHTML = '<option value="">Selecciona una sucursal</option>';
+        return;
+    }
+
+    try {
+        const resultado = await database.obtenerUsuarios(); // Obtiene todos
+        if (!resultado.success) throw new Error(resultado.message);
+
+        const agentes = resultado.data.filter(u =>
+            u.role === 'Área comercial' && u.office === office
+        ).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+
+        const opciones = agentes.map(a => ({ value: a.id, text: a.name }));
+        popularDropdown('reporte-contable-agente', opciones, 'Todos los Agentes', true);
+        selectAgente.disabled = false;
+        
+    } catch (error) {
+        console.error("Error cargando agentes para reporte:", error);
+        showStatus(statusEl, `Error cargando agentes: ${error.message}`, 'error');
+        selectAgente.innerHTML = '<option value="">Error al cargar</option>';
+    }
+}
+
+/**
+ * Genera el contenido del reporte contable basado en los filtros.
+ */
+async function handleGenerarReporteContable() {
+    const statusEl = 'status_reporte_contable';
+    const btnGenerar = document.getElementById('btn-generar-reporte-contable');
+    const btnImprimir = document.getElementById('btn-imprimir-reporte-contable');
+    const wrapper = document.getElementById('reporte-contable-wrapper');
+    
+    showButtonLoading(btnGenerar, true, 'Generando...');
+    showStatus(statusEl, 'Buscando movimientos de efectivo...', 'info');
+    wrapper.classList.add('hidden');
+    btnImprimir.classList.add('hidden');
+
+    // Cachear selectores de agentes
+    const agenteOptions = Array.from(document.getElementById('reporte-contable-agente').options);
+    const agenteMap = new Map(agenteOptions.map(opt => [opt.value, opt.text]));
+    // Asegurar que el admin/agente actual esté (por si acaso)
+    if(currentUserData) {
+        agenteMap.set(currentUserData.id, currentUserData.name);
+    }
+
+
+    try {
+        const filtros = {
+            office: document.getElementById('reporte-contable-sucursal').value,
+            userId: document.getElementById('reporte-contable-agente').value || null,
+            fechaInicio: document.getElementById('reporte-contable-fecha-inicio').value,
+            fechaFin: document.getElementById('reporte-contable-fecha-fin').value
+        };
+
+        if (!filtros.office) throw new Error("Debes seleccionar una sucursal.");
+        if (!filtros.fechaInicio || !filtros.fechaFin) throw new Error("Debes seleccionar un rango de fechas.");
+
+        // Usar la nueva función de database.js
+        const resultado = await database.getMovimientosParaReporte(filtros);
+        if (!resultado.success) throw new Error(resultado.message);
+
+        const movimientos = resultado.data;
+
+        // --- Procesar y Agrupar Datos ---
+        let totalEntregas = 0; // ENTREGA_INICIAL (+)
+        let totalColocacion = 0; // COLOCACION (-)
+        let totalGastos = 0; // GASTO (-)
+        let totalPagos = 0; // PAGO (Esto no existe en el flujo actual, pero lo dejamos por si acaso)
+        let balanceFinal = 0;
+
+        const movimientosPorAgente = {};
+
+        movimientos.forEach(mov => {
+            const agenteId = mov.userId || 'sin_agente';
+            if (!movimientosPorAgente[agenteId]) {
+                movimientosPorAgente[agenteId] = [];
+            }
+            movimientosPorAgente[agenteId].push(mov);
+
+            const monto = mov.monto || 0;
+            balanceFinal += monto; // Suma directa (positivos suman, negativos restan)
+
+            switch (mov.tipo) {
+                case 'ENTREGA_INICIAL':
+                    totalEntregas += monto;
+                    break;
+                case 'COLOCACION':
+                    totalColocacion += monto; // Es negativo, así que suma
+                    break;
+                case 'GASTO':
+                    totalGastos += monto; // Es negativo, así que suma
+                    break;
+                // case 'PAGO': // Los pagos (entradas) no están en 'movimientos_efectivo'
+                //     totalPagos += monto;
+                //     break;
+            }
+        });
+
+        // --- Renderizar HTML ---
+        
+        // Header
+        const agenteSeleccionado = filtros.userId ? (agenteMap.get(filtros.userId) || filtros.userId) : 'Todos los Agentes';
+        document.getElementById('reporte-contable-titulo').textContent = `Reporte de Flujo de Efectivo - ${filtros.office}`;
+        document.getElementById('reporte-contable-subtitulo').textContent = 
+            `Periodo: ${formatDateForDisplay(parsearFecha(filtros.fechaInicio))} al ${formatDateForDisplay(parsearFecha(filtros.fechaFin))} | Agente: ${agenteSeleccionado}`;
+
+        // Resumen
+        const resumenEl = document.getElementById('reporte-contable-resumen');
+        resumenEl.innerHTML = `
+            <div class="info-item"><span class="info-label">Total Entregado (Admin -> Agente):</span><span class="info-value" style="color: var(--success);">$${totalEntregas.toLocaleString('es-MX', {minimumFractionDigits: 2})}</span></div>
+            <div class="info-item"><span class="info-label">Total Colocado (Agente -> Cliente):</span><span class="info-value" style="color: var(--danger);">$${totalColocacion.toLocaleString('es-MX', {minimumFractionDigits: 2})}</span></div>
+            <div class="info-item"><span class="info-label">Total Gastos (Agente):</span><span class="info-value" style="color: var(--warning);">$${totalGastos.toLocaleString('es-MX', {minimumFractionDigits: 2})}</span></div>
+            <div class="info-item"><span class="info-label">Balance Final (Entregas - Salidas):</span><span class="info-value" style="font-weight: bold; color: ${balanceFinal >= 0 ? 'var(--success)' : 'var(--danger)'};">$${balanceFinal.toLocaleString('es-MX', {minimumFractionDigits: 2})}</span></div>
+        `;
+
+        // Detalle
+        const detalleEl = document.getElementById('reporte-contable-detalle');
+        let detalleHtml = '';
+
+        // Agrupar por Agente si 'Todos' fue seleccionado
+        if (!filtros.userId) {
+            for (const agenteId in movimientosPorAgente) {
+                const nombreAgente = agenteMap.get(agenteId) || agenteId;
+                detalleHtml += `<h5>Agente: ${nombreAgente}</h5>`;
+                detalleHtml += renderTablaMovimientos(movimientosPorAgente[agenteId]);
+            }
+        } else {
+            // Solo mostrar la tabla del agente seleccionado
+            detalleHtml += renderTablaMovimientos(movimientos);
+        }
+
+        detalleEl.innerHTML = detalleHtml;
+
+        wrapper.classList.remove('hidden');
+        btnImprimir.classList.remove('hidden');
+        showStatus(statusEl, `Reporte generado con ${movimientos.length} movimientos. Listo para imprimir.`, 'success');
+
+    } catch (error) {
+        console.error("Error generando reporte contable:", error);
+        showStatus(statusEl, `Error: ${error.message}`, 'error');
+        wrapper.classList.add('hidden');
+        btnImprimir.classList.add('hidden');
+    } finally {
+        showButtonLoading(btnGenerar, false);
+    }
+}
+
+/**
+ * Helper para renderizar la tabla de movimientos del reporte contable.
+ */
+function renderTablaMovimientos(movimientos) {
+    let rows = '';
+    // Ordenar por fecha ASC para el reporte
+    movimientos.sort((a, b) => (parsearFecha(a.fecha)?.getTime() || 0) - (parsearFecha(b.fecha)?.getTime() || 0));
+
+    movimientos.forEach(mov => {
+        const monto = mov.monto || 0;
+        rows += `
+            <tr>
+                <td>${formatDateForDisplay(parsearFecha(mov.fecha))}</td>
+                <td>${mov.tipo || 'N/A'}</td>
+                <td class="monto" style="color: ${monto > 0 ? 'var(--success)' : 'var(--danger)'};">
+                    $${monto.toLocaleString('es-MX', {minimumFractionDigits: 2})}
+                </td>
+                <td>${mov.descripcion || ''}</td>
+                <td>${mov.registradoPor || 'N/A'}</td>
+            </tr>
+        `;
+    });
+
+    return `
+        <table class="reporte-contable-tabla">
+            <thead>
+                <tr>
+                    <th>Fecha</th>
+                    <th>Tipo</th>
+                    <th>Monto</th>
+                    <th>Descripción</th>
+                    <th>Registrado Por (Admin)</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${rows || '<tr><td colspan="5">No se encontraron movimientos.</td></tr>'}
+            </tbody>
+        </table>
+    `;
+}
+
 console.log('app.js cargado correctamente y listo.');
+
