@@ -1588,6 +1588,41 @@ const database = {
     },
 
     /**
+     * Obtiene movimientos de efectivo para un reporte contable, filtrado por oficina y fechas.
+     * Requiere índice: office (ASC), fecha (DESC)
+     * O: office (ASC), userId (ASC), fecha (DESC)
+     */
+    getMovimientosParaReporte: async (filtros) => {
+        try {
+            if (!filtros.office || filtros.office === 'AMBAS') {
+                // Requiere una oficina específica para reportes contables
+                throw new Error("Se requiere una oficina específica (GDL o LEON) para el reporte contable.");
+            }
+            let query = db.collection('movimientos_efectivo').where('office', '==', filtros.office);
+
+            if (filtros.userId) {
+                query = query.where('userId', '==', filtros.userId);
+            }
+            if (filtros.fechaInicio) {
+                query = query.where('fecha', '>=', filtros.fechaInicio + 'T00:00:00Z');
+            }
+            if (filtros.fechaFin) {
+                query = query.where('fecha', '<=', filtros.fechaFin + 'T23:59:59Z');
+            }
+
+            const snapshot = await query.orderBy('fecha', 'desc').get();
+            return { success: true, data: snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) };
+        } catch (error) {
+            console.error("Error obteniendo movimientos para reporte:", error);
+            if (error.message.includes("requires an index")) {
+                console.warn(">>> Firestore requiere un índice en 'movimientos_efectivo': office ASC, userId ASC, fecha DESC (o similar)");
+            }
+            return { success: false, message: error.message, data: [] };
+        }
+    },
+    
+
+    /**
      * Agrega una comisión a la colección 'comisiones'.
      * @param {object} comisionData Datos de la comisión (userId, fecha, tipo, montoComision, etc.)
      */
@@ -1606,4 +1641,5 @@ const database = {
         }
     }
 }; // Fin del objeto database
+
 
