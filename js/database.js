@@ -1383,12 +1383,16 @@ const database = {
             let query = db.collection('poblaciones');
             // AHORA FILTRA POR 'office'
             if (office && office !== 'AMBAS') {
-                 console.log(`>>> Filtrando poblaciones por office: ${office}`);
-                 query = query.where('office', '==', office);
+                console.log(`>>> Filtrando poblaciones por office: ${office}`);
+                query = query.where('office', '==', office);
             } else {
-                 console.log(">>> Obteniendo todas las poblaciones (sin filtro office).");
+                console.log(">>> Obteniendo todas las poblaciones (sin filtro office).");
             }
-            const snapshot = await query.orderBy('nombre').get();
+            
+            // El ordenamiento se hace en app.js
+            const snapshot = await query.get();
+            // *** FIN DE LA CORRECCIÓN ***
+
             const poblacionesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             console.log(`>>> obtenerPoblaciones encontró ${poblacionesData.length} poblaciones.`);
             return poblacionesData;
@@ -1441,16 +1445,17 @@ const database = {
                 console.log(`>>> Filtrando rutas por office: ${office}`);
                 query = query.where('office', '==', office);
             } else {
-                 console.log(">>> Obteniendo todas las rutas.");
+                console.log(">>> Obteniendo todas las rutas."); 
             }
-            const snapshot = await query.orderBy('nombre').get();
+
+            const snapshot = await query.get();
+
             const rutasData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             console.log(`>>> obtenerRutas encontró ${rutasData.length} rutas.`);
             return rutasData;
         } catch (error) {
             console.error("Error obteniendo rutas:", error);
             console.log(">>> ERROR en obtenerRutas:", error.message);
-            // Sugerir índice si falla
             if (error.message && error.message.includes("requires an index")) {
                 console.warn(">>> Firestore requiere un índice compuesto en 'rutas': office ASC, nombre ASC. Verifica si existe y está habilitado.");
             }
@@ -1641,5 +1646,6 @@ const database = {
         }
     }
 }; // Fin del objeto database
+
 
 
