@@ -1540,3 +1540,87 @@ body.has-connection-status .progress-container-fixed {
     font-size: 1.1em;
     cursor: help;
 }
+
+/* Estilos para Impresión del Reporte Contable */
+@media print {
+    body {
+        background: none;
+        padding: 0;
+    }
+
+    .app-container {
+        max-width: 100%;
+        box-shadow: none;
+        border-radius: 0;
+        min-height: auto;
+        margin-top: 0;
+    }
+    
+    .btn-no-print,
+    .app-header,
+    .view-header button,
+    .filtros-actions,
+    #status_reporte_contable,
+    .advanced-filters,
+    #btn-imprimir-reporte-contable,
+    #logout-btn {
+        display: none !important;
+    }
+
+    .app-content {
+        padding: 0;
+    }
+
+    .view {
+        display: none !important; /* Ocultar todas las vistas */
+        animation: none;
+    }
+
+    #view-reporte-contable {
+        display: block !important; /* Mostrar solo la vista del reporte */
+    }
+
+    #reporte-contable-wrapper {
+        display: block !important;
+    }
+
+    #reporte-contable-contenido {
+        box-shadow: none;
+        border: none;
+        padding: 0;
+    }
+
+    .reporte-contable-tabla {
+        font-size: 10px; /* Más pequeño para impresión */
+        width: 100%;
+        border-collapse: collapse;
+        margin-bottom: 15px;
+        page-break-inside: auto; /* Permitir que la tabla se divida entre páginas */
+    }
+    .reporte-contable-tabla th,
+    .reporte-contable-tabla td {
+        border: 1px solid #ccc;
+        padding: 4px;
+        text-align: left;
+    }
+    .reporte-contable-tabla th {
+        background-color: #f4f4f4;
+    }
+    .reporte-contable-tabla tbody tr {
+        page-break-inside: avoid; /* Intentar no cortar filas */
+    }
+    .reporte-contable-tabla .monto {
+        text-align: right;
+        font-family: monospace;
+    }
+    
+    .info-grid {
+        background: #f8f9fa !important; /* Forzar fondo en impresión */
+        border: 1px solid #ccc;
+    }
+
+    #reporte-contable-footer {
+        page-break-before: auto;
+        page-break-inside: avoid;
+    }
+}
