@@ -106,33 +106,27 @@ function updateConnectionStatus() {
     const statusDiv = document.getElementById('connection-status');
     const logoutBtn = document.getElementById('logout-btn');
     if (!statusDiv || !logoutBtn) return;
-
     isOnline = navigator.onLine;
-    // Habilitar/deshabilitar filtros que dependen de queries más complejos online
     const filtrosOnline = document.querySelectorAll('#sucursal_filtro, #estado_credito_filtro, #plazo_filtro, #curp_aval_filtro, #grupo_filtro, #tipo_colocacion_filtro');
     const botonesOnline = document.querySelectorAll('#btn-aplicar-filtros-reportes, #btn-exportar-csv, #btn-exportar-pdf, #btn-generar-grafico, #btn-verificar-duplicados, #btn-diagnosticar-pagos, #btn-agregar-poblacion, #btn-agregar-ruta'); // Añadir más si aplica
 
     if (isOnline) {
         statusDiv.textContent = 'Conexión restablecida. Sincronizando datos...';
         statusDiv.className = 'connection-status online';
-        statusDiv.classList.remove('hidden'); // Asegurar que sea visible
+        statusDiv.classList.remove('hidden');
+        document.body.classList.add('has-connection-status');
         logoutBtn.disabled = false;
         logoutBtn.title = 'Cerrar Sesión';
         filtrosOnline.forEach(el => { if (el) el.disabled = false; });
         botonesOnline.forEach(el => { if (el) el.disabled = false; });
-        // Re-aplicar permisos de sucursal (algunos filtros pueden estar deshabilitados por rol)
         if (currentUserData) aplicarPermisosUI(currentUserData.role);
-
-        // Mensaje temporal de sincronización
         setTimeout(() => {
-            // Verificar si sigue online antes de mostrar "sincronizado"
             if (navigator.onLine) {
-                statusDiv.textContent = 'Datos sincronizados correctamente.';
-                // Ocultar después de un tiempo
-                setTimeout(() => {
-                    // Solo ocultar si sigue online
+                statusDiv.textContent = 'Datos sincronizados correctamente.';             
+                setTimeout(() => {                
                     if (navigator.onLine) {
                         statusDiv.classList.add('hidden');
+                        document.body.classList.remove('has-connection-status');
                     }
                 }, 2500);
             }
@@ -140,7 +134,8 @@ function updateConnectionStatus() {
     } else {
         statusDiv.textContent = 'Modo sin conexión. Búsquedas por CURP, Nombre e ID Crédito habilitadas.';
         statusDiv.className = 'connection-status offline';
-        statusDiv.classList.remove('hidden'); // Asegurar que sea visible
+        statusDiv.classList.remove('hidden');
+        document.body.classList.add('has-connection-status');
         logoutBtn.disabled = true;
         logoutBtn.title = 'No puedes cerrar sesión sin conexión';
         filtrosOnline.forEach(el => { if (el) el.disabled = true; });
@@ -2194,16 +2189,40 @@ async function loadUsersTable() {
     }
 }
 
+/**
+ * Resetea la tabla de usuarios a su estado inicial
+ */
+function inicializarVistaUsuarios() {
+    const tbody = document.getElementById('tabla-usuarios');
+    if (tbody) {
+        tbody.innerHTML = '<tr><td colspan="7">Usa los filtros para buscar usuarios.</td></tr>';
+    }
+    // Ocultar formulario si está visible
+    ocultarFormularioUsuario();
+    // Limpiar filtros de texto
+    const filtroEmail = document.getElementById('filtro-email-usuario');
+    if (filtroEmail) filtroEmail.value = '';
+    
+    const filtroNombre = document.getElementById('filtro-nombre-usuario');
+    if (filtroNombre) filtroNombre.value = '';
+    
+    const filtroRol = document.getElementById('filtro-rol-usuario');
+    if (filtroRol) filtroRol.value = '';
+
+    // No resetear filtro de sucursal si está deshabilitado por permisos
+    const filtroSucursal = document.getElementById('filtro-sucursal-usuario');
+    if (filtroSucursal && !filtroSucursal.disabled) {
+        filtroSucursal.value = '';
+    }
+}
+
 function limpiarFiltrosUsuarios() {
     if (cargaEnProgreso) {
         console.warn("Intento de limpiar filtros mientras carga estaba en progreso. Cancelando carga.");
         cancelarCarga();
     }
-    document.getElementById('filtro-email-usuario').value = '';
-    document.getElementById('filtro-nombre-usuario').value = '';
-    document.getElementById('filtro-rol-usuario').value = '';
-    loadUsersTable();
-    showStatus('status_usuarios', 'Filtros limpiados.', 'info');
+    inicializarVistaUsuarios();
+    showStatus('status_usuarios', 'Filtros limpiados. Ingresa nuevos criterios para buscar.', 'info');
 }
 
 /**
@@ -4196,6 +4215,10 @@ document.addEventListener('viewshown', async function (e) {
         case 'view-reporte-contable':
             inicializarVistaReporteContable();
             break;
+
+        case 'view-usuarios':
+            inicializarVistaUsuarios(); // <-- AÑADIR ESTA LÍNEA
+            break;
     }
 });
 
@@ -4703,5 +4726,6 @@ function renderTablaMovimientos(movimientos) {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
