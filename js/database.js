@@ -498,23 +498,23 @@ const database = {
         }
     },
 
-    // EN database.js - REEMPLAZA ESTA FUNCIÓN
+    // Generar crédito
     agregarCredito: async (creditoData, userEmail) => {
         try {
             // Validaciones de renovación y elegibilidad
             if ((creditoData.tipo === 'renovacion' || creditoData.tipo === 'reingreso') && creditoData.plazo !== 14) {
                 return { success: false, message: 'Créditos de renovación/reingreso deben ser a 14 semanas.' };
             }
-            
+
             const elegibilidadCliente = await database.verificarElegibilidadCliente(creditoData.curpCliente);
             if (!elegibilidadCliente.elegible) return { success: false, message: elegibilidadCliente.message };
-            
+
             const elegibilidadAval = await database.verificarElegibilidadAval(creditoData.curpAval);
             if (!elegibilidadAval.elegible) return { success: false, message: elegibilidadAval.message };
 
             const cliente = await database.buscarClientePorCURP(creditoData.curpCliente);
             if (!cliente) return { success: false, message: "Cliente no encontrado." };
-            
+
             if (creditoData.plazo === 10 && !cliente.isComisionista) {
                 return { success: false, message: "Solo comisionistas pueden acceder a créditos de 10 semanas." };
             }
@@ -540,39 +540,60 @@ const database = {
             const docRef = await db.collection('creditos').add(nuevoCredito);
             const creditoAgregado = { id: docRef.id, ...nuevoCredito }; // Datos completos del crédito
 
+            // Captura de saldo anterior
+            let saldoCreditoAnterior = 0; // Variable para almacenar el saldo a descontar
+
             // Lógica de marcar anterior como liquidado
             if (creditoData.tipo === 'renovacion' || creditoData.tipo === 'reingreso') {
                 const creditoAnterior = await database.buscarCreditoActivoPorCliente(creditoData.curpCliente);
                 if (creditoAnterior && creditoAnterior.id !== creditoAgregado.id) {
+                    
+                    // *** CAPTURAR SALDO ANTERIOR ANTES DE LIQUIDAR ***
+                    // Usar el saldo de la DB, asumiendo que es preciso al momento de renovar
+                    saldoCreditoAnterior = creditoAnterior.saldo || 0; 
+
                     await db.collection('creditos').doc(creditoAnterior.id).update({
                         estado: 'liquidado',
                         fechaModificacion: new Date().toISOString(),
                         modificadoPor: userEmail
+                        // Opcional: Forzar saldo a 0 si se desea
+                        // saldo: 0 
                     });
                 }
             }
+            // =============================================
+            // *** INICIO: MODIFICACIÓN LÓGICA DE EFECTIVO Y COMISIÓN ***
+            // =============================================
 
-            // =============================================
-            // *** INICIO: NUEVA LÓGICA DE EFECTIVO Y COMISIÓN ***
-            // =============================================
+            // Regla: No genera comisión si es "Crédito de comisionista"
+            const esCreditoComisionista = (creditoData.plazo === 10 && cliente.isComisionista);
+
+            // *** LÓGICA DE DEDUCCIÓN DE PÓLIZA ***
+            let montoPolizaDeduccion = 0;
+            if (!esCreditoComisionista) {
+                montoPolizaDeduccion = 100; // $100 de póliza para no comisionistas
+            }
+
+            // *** CÁLCULO DE EFECTIVO REAL ENTREGADO ***
+            // Monto base - Póliza - Saldo de renovación
+            const montoEfectivoEntregado = creditoData.monto - montoPolizaDeduccion - saldoCreditoAnterior;
+
 
             // 1. Registrar SALIDA de efectivo
             const movimientoEfectivo = {
                 userId: (await auth.currentUser).uid, // ID del agente que registra
                 fecha: creditoAgregado.fechaCreacion,
                 tipo: 'COLOCACION',
-                monto: -creditoData.monto, // MONTO BASE EN NEGATIVO
-                descripcion: `Colocación crédito a ${cliente.nombre} (ID: ${creditoAgregado.id})`,
+                monto: -montoEfectivoEntregado, // MONTO NETO ENTREGADO (NEGATIVO)
+                descripcion: `Colocación a ${cliente.nombre} (Monto: $${creditoData.monto} - Póliza: $${montoPolizaDeduccion} - Saldo Ant: $${saldoCreditoAnterior.toFixed(2)})`,
                 creditoId: creditoAgregado.id, // ID de Firestore
                 registradoPor: userEmail,
                 office: cliente.office
             };
             await database.agregarMovimientoEfectivo(movimientoEfectivo);
+            // *** FIN NUEVA LÓGICA DE DEDUCCIÓN ***
 
             // 2. Registrar COMISIÓN por colocación
-            // Regla: No genera comisión si es "Crédito de comisionista"
-            const esCreditoComisionista = (creditoData.plazo === 10 && cliente.isComisionista);
-            
             // Regla: Genera $100 si es N, REN, REI y NO es de comisionista
             if (!esCreditoComisionista && (creditoData.tipo === 'nuevo' || creditoData.tipo === 'renovacion' || creditoData.tipo === 'reingreso')) {
                 const comisionData = {
@@ -588,7 +609,7 @@ const database = {
                 await database.agregarComision(comisionData);
             }
             // =============================================
-            // *** FIN: NUEVA LÓGICA ***
+            // *** FIN: MODIFICACIÓN LÓGICA ***
             // =============================================
 
             return { success: true, message: 'Crédito generado.', data: creditoAgregado };
@@ -1585,3 +1606,4 @@ const database = {
         }
     }
 }; // Fin del objeto database
+
