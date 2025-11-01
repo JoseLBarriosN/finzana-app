@@ -752,7 +752,7 @@ input, select, textarea {
 .role-super-admin { background: #6f42c1; color: white; }
 .role-gerencia { background: #dc3545; color: white; }
 .role-administrador { background: #fd7e14; color: white; }
-.role-area-comercial { background: #20c997; color: white; }
+.role-area-comercial { background: #078f67; color: white; }
 .role-consulta { background: #6c757d; color: white; }
 .role-comisionista { background: #ffc107; color: #000; }
 .role-default { background: #adb5bd; color: #000; }
@@ -1622,4 +1622,5 @@ body.has-connection-status .progress-container-fixed {
         page-break-inside: avoid;
     }
 }
+
 
