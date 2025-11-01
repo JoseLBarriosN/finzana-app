@@ -141,6 +141,12 @@
                         <p>Revisar balances y registrar entregas de efectivo a agentes.</p>
                         <button class="btn btn-primary" data-view="view-gestion-efectivo"><i class="fas fa-arrow-right"></i> Acceder</button>
                     </div>
+                    <div class="menu-card" data-view="view-reporte-contable">
+                        <i class="fas fa-print menu-icon" style="color: #6f42c1;"></i>
+                        <h3>Reporte Contable</h3>
+                        <p>Genera y confirma reportes de flujos de efectivo por oficina.</p>
+                        <button class="btn btn-primary" data-view="view-reporte-contable"><i class="fas fa-arrow-right"></i> Acceder</button>
+                    </div>  
                 </div>
             </div>
 
@@ -1008,6 +1014,80 @@
                     </div>
                 </div>
             </div>
+            <div id="view-reporte-contable" class="view hidden">
+                <div class="view-header">
+                    <h2>Reporte Contable de Efectivo</h2>
+                    <button class="btn btn-secondary btn-no-print" data-view="view-main-menu"><i class="fas fa-arrow-left"></i> Volver al Menú</button>
+                </div>
+
+            <div class="card advanced-filters btn-no-print">
+                <h3>Filtros del Reporte</h3>
+                <div class="filtros-grid">
+                    <div class="form-group">
+                        <label for="reporte-contable-sucursal">Sucursal</label>
+                        <select id="reporte-contable-sucursal">
+                            <option value="">Selecciona...</option>
+                            <option value="GDL">Guadalajara</option>
+                            <option value="LEON">León</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="reporte-contable-agente">Agente (Opcional)</label>
+                        <select id="reporte-contable-agente">
+                            <option value="">Todos los Agentes</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="reporte-contable-fecha-inicio">Fecha Inicio</label>
+                        <input type="date" id="reporte-contable-fecha-inicio">
+                    </div>
+                    <div class="form-group">
+                        <label for="reporte-contable-fecha-fin">Fecha Fin</label>
+                        <input type="date" id="reporte-contable-fecha-fin">
+                    </div>
+                </div>
+                <div class="filtros-actions">
+                    <button id="btn-generar-reporte-contable" class="btn btn-primary">
+                        <i class="fas fa-search"></i> Generar Reporte
+                    </button>
+                    <button id="btn-imprimir-reporte-contable" class="btn btn-success hidden">
+                        <i class="fas fa-print"></i> Confirmar e Imprimir
+                    </button>
+                </div>
+            </div>
+
+            <div id="status_reporte_contable" class="status-message hidden"></div>
+
+            <div id="reporte-contable-wrapper" class="hidden">
+                <div id="reporte-contable-contenido" class="card" style="padding: 20px;">
+                    <div id="reporte-contable-header" style="text-align: center; margin-bottom: 20px;">
+                        <h3 id="reporte-contable-titulo">Reporte de Flujo de Efectivo</h3>
+                        <p id="reporte-contable-subtitulo" style="font-size: 14px; color: #555;">(Selecciona filtros para generar)</p>
+                    </div>
+            
+                    <h4>Resumen de Flujos</h4>
+                    <div id="reporte-contable-resumen" class="info-grid" style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+                        </div>
+
+                    <h4>Detalle de Movimientos</h4>
+                    <div id="reporte-contable-detalle">
+                        </div>
+
+                    <div id="reporte-contable-footer" style="margin-top: 50px; padding-top: 20px; border-top: 1px solid #ccc; display: flex; justify-content: space-around; text-align: center;">
+                        <div>
+                            <p>_________________________</p>
+                            <p><strong>Elaboró</strong></p>
+                            <p>(Administrador)</p>
+                        </div>
+                        <div>
+                            <p>_________________________</p>
+                            <p><strong>Recibió</strong></p>
+                            <p>(Agente / Gerencia)</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>    
         </main>
     </div>
 
@@ -1045,4 +1125,5 @@
     <script src="js/app.js"></script>
 </body>
 </html>
+
 
