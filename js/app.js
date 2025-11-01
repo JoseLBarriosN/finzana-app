@@ -1541,14 +1541,14 @@ async function loadGestionEfectivo() {
         console.error("loadGestionEfectivo: No se encontraron los dropdowns 'entrega-agente' o 'filtro-agente'.");
         return;
     }
-    
+
     // Resetear vista
     selectAgenteEntrega.innerHTML = '<option value="">Cargando...</option>';
     selectAgenteFiltro.innerHTML = '<option value="">Cargando...</option>';
     document.getElementById('resultados-gestion-efectivo').classList.add('hidden');
     document.getElementById('tabla-movimientos-efectivo').innerHTML = '<tr><td colspan="5">Selecciona un agente y rango de fechas.</td></tr>';
     document.getElementById('form-registrar-entrega').reset();
-    
+
     // Poner fechas por defecto
     const hoy = new Date();
     const haceUnMes = new Date(hoy.getFullYear(), hoy.getMonth() - 1, hoy.getDate() + 1);
@@ -1566,11 +1566,11 @@ async function loadGestionEfectivo() {
 
         let agentes = resultado.data || [];
         console.log(`   Usuarios obtenidos: ${agentes.length}`);
-        
+
         // Filtrar solo Área Comercial y por oficina del admin (si aplica)
         const adminOffice = currentUserData?.office;
         console.log(`   Filtrando por rol 'Área comercial' y oficina admin: ${adminOffice || 'AMBAS'}`);
-        agentes = agentes.filter(u => 
+        agentes = agentes.filter(u =>
             u.role === 'Área comercial' &&
             (adminOffice === 'AMBAS' || !adminOffice || u.office === adminOffice)
         );
@@ -1580,7 +1580,7 @@ async function loadGestionEfectivo() {
 
         // Poblar dropdowns
         const opciones = agentes.map(a => ({ value: a.id, text: `${a.name} (${a.office || 'Sin Oficina'})` }));
-        
+
         if (agentes.length === 0) {
             console.warn("   No se encontraron agentes de 'Área comercial' para la oficina del admin.");
             popularDropdown('entrega-agente', [], 'No hay agentes', true);
@@ -1589,18 +1589,18 @@ async function loadGestionEfectivo() {
             popularDropdown('entrega-agente', opciones, 'Selecciona un agente', true);
             popularDropdown('filtro-agente', opciones, 'Selecciona un agente', true);
         }
-        
+
         if (statusEntrega) showStatus(statusEntrega.id, 'Listo.', 'info');
         console.log("   Dropdowns de agentes poblados.");
 
-    } catch (error) {
+    }
+    catch (error) {
         console.error("Error cargando agentes para gestión efectivo:", error);
         if (statusEntrega) showStatus(statusEntrega.id, `Error cargando agentes: ${error.message}`, 'error');
         popularDropdown('entrega-agente', [], 'Error al cargar', true);
         popularDropdown('filtro-agente', [], 'Error al cargar', true);
     }
 }
-
 /**
  * Maneja el formulario para registrar una entrega de efectivo a un agente.
  */
@@ -3606,15 +3606,14 @@ async function loadConfiguracion() {
         }
         console.log("   Rutas renderizadas.");
 
-        // Limpiar mensaje si todo OK
-        showStatus('status_configuracion', 'Listas cargadas.', 'success'); // Mostrar éxito brevemente
-        setTimeout(() => { // Ocultar mensaje de éxito después de un tiempo
+        showStatus('status_configuracion', 'Listas cargadas.', 'success');
+        setTimeout(() => {
             if (statusEl.classList.contains('status-success')) {
-                showStatus('status_configuracion', '', 'info'); // Limpiar status
+                showStatus('status_configuracion', '', 'info');
             }
         }, 3000);
 
-
+    }
     catch (error) {
         console.error("Error cargando configuración:", error);
         showStatus('status_configuracion', `Error al cargar listas: ${error.message}`, 'error');
@@ -4726,6 +4725,7 @@ function renderTablaMovimientos(movimientos) {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
