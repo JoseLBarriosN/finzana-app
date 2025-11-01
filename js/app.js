@@ -2162,7 +2162,10 @@ async function loadUsersTable() {
                     tr.style.opacity = '0.5';
                     tr.title = 'Usuario deshabilitado';
                 }
-                const roleBadgeClass = `role-${(usuario.role || 'default').toLowerCase().replace(/\s/g, '-')}`; // Asegurar clase CSS válida
+                const normalizedRole = (usuario.role || 'default')
+                    .normalize("NFD") // Separa acentos de letras (ej: "á" -> "a" + "´")
+                    .replace(/[\u0300-\u036f]/g, "");
+                const roleBadgeClass = `role-${normalizedRole.toLowerCase().replace(/\s/g, '-')}`;
                 const usuarioJsonString = JSON.stringify(usuario).replace(/'/g, "&apos;").replace(/"/g, "&quot;");
 
                 tr.innerHTML = `
@@ -4700,4 +4703,5 @@ function renderTablaMovimientos(movimientos) {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
