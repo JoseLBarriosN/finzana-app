@@ -4738,7 +4738,9 @@ function renderTablaMovimientos(movimientos) {
         </table>
     `;
 }
-/*** Extrae los números de teléfono de la tabla de clientes visible y los muestra en un modal.***/
+/**
+ * Extrae los números de teléfono de la tabla de clientes visible y los muestra en un modal.
+ */
 function handleExportarTelefonos() {
     const tbody = document.getElementById('tabla-clientes');
     if (!tbody) {
@@ -4756,6 +4758,7 @@ function handleExportarTelefonos() {
         if (editButton) {
             clientesEncontrados++;
             try {
+                // 1. Extraer el string JSON del atributo onclick
                 const onclickAttr = editButton.getAttribute('onclick');
                 const jsonString = onclickAttr.substring(
                     onclickAttr.indexOf('(') + 1, 
@@ -4770,8 +4773,6 @@ function handleExportarTelefonos() {
                 // 3. Obtener y limpiar el teléfono
                 if (cliente && cliente.telefono) {
                     let telefonoLimpio = cliente.telefono.replace(/\D/g, '');
-                    
-                    // Opcional: Estandarizar a 10 dígitos (ajusta según tu país)
                     if (telefonoLimpio.length > 10) {
                         if (telefonoLimpio.startsWith('521')) {
                             telefonoLimpio = telefonoLimpio.substring(3);
@@ -4802,8 +4803,6 @@ function handleExportarTelefonos() {
         return;
     }
 
-    // Mostrar los resultados en el Modal Genérico
-    const telefonosArray = Array.from(telefonos);
     const modal = document.getElementById('generic-modal');
     const modalTitle = document.getElementById('modal-title');
     const modalBody = document.getElementById('modal-body');
@@ -4813,22 +4812,19 @@ function handleExportarTelefonos() {
         <p>Se encontraron <strong>${telefonos.size}</strong> números de teléfono únicos de los <strong>${clientesEncontrados}</strong> clientes en la tabla.</p>
         <p>(${clientesSinTelefono} clientes no tenían un número de teléfono válido registrado).</p>
         <p>Copia esta lista para usarla en una lista de difusión de WhatsApp:</p>
-        <textarea id="telefonos-export-textarea" rows="10" style="width: 100%; font-size: 14px; padding: 10px; margin-top: 15px;" readonly>${telefonosArray.join('\n')}</textarea>
+        <textarea id="telefonos-export-textarea" rows="10" style="width: 100%; font-size: 14px; padding: 10px; margin-top: 15px;" readonly>${Array.from(telefonos).join('\n')}</textarea>
         <button id="btn-copiar-telefonos" class="btn btn-primary" style="margin-top: 15px;"><i class="fas fa-copy"></i> Copiar al Portapapeles</button>
     `;
     modal.classList.remove('hidden');
 
-    // Añadir listener al botón de copiar
     const btnCopiar = document.getElementById('btn-copiar-telefonos');
     if (btnCopiar) {
-        // Remover listener previo para evitar duplicados
         btnCopiar.replaceWith(btnCopiar.cloneNode(true));
         document.getElementById('btn-copiar-telefonos').addEventListener('click', () => {
             const textarea = document.getElementById('telefonos-export-textarea');
             textarea.select();
             
             try {
-                // Usar la API del portapapeles (moderna y segura)
                 navigator.clipboard.writeText(textarea.value).then(() => {
                     const btn = document.getElementById('btn-copiar-telefonos');
                     btn.innerHTML = '<i class="fas fa-check"></i> Copiado';
@@ -4837,7 +4833,6 @@ function handleExportarTelefonos() {
                     }, 2000);
                 }).catch(err => {
                     console.error('Error al copiar (API Clipboard): ', err);
-                    // Fallback a execCommand
                     document.execCommand('copy');
                     const btn = document.getElementById('btn-copiar-telefonos');
                     btn.innerHTML = '<i class="fas fa-check"></i> Copiado (Fallback)';
@@ -4847,12 +4842,14 @@ function handleExportarTelefonos() {
                 });
             } catch (err) {
                 console.error('Error al copiar: ', err);
-                alert('No se pudo copiar automáticamente. Por favor, copia el texto manualmente.'
-            );
-        }           
+                alert('No se pudo copiar automáticamente. Por favor, copia el texto manualmente.');
+            }
+        });
+    }
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
