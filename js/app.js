@@ -1265,8 +1265,24 @@ async function handleCargarPoblaciones() {
         const poblaciones = await database.obtenerPoblaciones(oficinaFiltro);
         const nombresPoblaciones = [...new Set(poblaciones.map(p => p.nombre))].sort();
         
-        showStatus(statusEl, `Se cargaron ${nombresPoblaciones.length} poblaciones.`, 'success');
-        console.log('Poblaciones cargadas:', nombresPoblaciones);
+        if (document.getElementById('poblacion_grupo_cliente')) {
+            popularDropdown('poblacion_grupo_cliente', nombresPoblaciones, 'Selecciona población/grupo');
+        }
+        
+        if (document.getElementById('grupo_filtro')) {
+            popularDropdown('grupo_filtro', nombresPoblaciones, 'Todos');
+        }
+        
+        if (document.getElementById('grupo_filtro_reporte')) {
+            popularDropdown('grupo_filtro_reporte', nombresPoblaciones, 'Todos');
+        }
+        
+        if (document.getElementById('grafico_grupo')) {
+            popularDropdown('grafico_grupo', nombresPoblaciones, 'Todos');
+        }
+        
+        showStatus(statusEl, `Se cargaron ${nombresPoblaciones.length} poblaciones en todos los dropdowns.`, 'success');
+        console.log('Poblaciones cargadas en dropdowns:', nombresPoblaciones);
         
     } catch (error) {
         console.error("Error cargando poblaciones:", error);
@@ -1301,8 +1317,20 @@ async function handleCargarRutas() {
         const rutas = await database.obtenerRutas(oficinaFiltro);
         const nombresRutas = [...new Set(rutas.map(r => r.nombre))].sort();
         
-        showStatus(statusEl, `Se cargaron ${nombresRutas.length} rutas.`, 'success');
-        console.log('Rutas cargadas:', nombresRutas);
+        if (document.getElementById('ruta_cliente')) {
+            popularDropdown('ruta_cliente', nombresRutas, 'Selecciona una ruta');
+        }
+        
+        if (document.getElementById('ruta_filtro_reporte')) {
+            popularDropdown('ruta_filtro_reporte', nombresRutas, 'Todas');
+        }
+        
+        if (document.getElementById('nuevo-ruta')) {
+            popularDropdown('nuevo-ruta', nombresRutas, '-- Sin asignar --');
+        }
+        
+        showStatus(statusEl, `Se cargaron ${nombresRutas.length} rutas en todos los dropdowns.`, 'success');
+        console.log('Rutas cargadas en dropdowns:', nombresRutas);
         
     } catch (error) {
         console.error("Error cargando rutas:", error);
@@ -4970,5 +4998,6 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
