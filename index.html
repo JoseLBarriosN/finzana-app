@@ -206,10 +206,17 @@
                             <label for="grupo_filtro">Grupo o Población</label>
                             <select id="grupo_filtro"></select>
                         </div>
+                        <div class="form-group" style="align-self: center;">
+                            <label for="comisionista_filtro" style="display: flex; align-items: center; margin-top: 20px;">
+                            <input type="checkbox" id="comisionista_filtro" style="width: auto; height: auto; margin-right: 10px;">
+                            Mostrar solo Comisionistas
+                            </label>
+                        </div>
                     </div>
                     <div class="filtros-actions">
                         <button id="btn-aplicar-filtros" class="btn btn-primary"><i class="fas fa-search"></i> Filtrar</button>
                         <button id="btn-limpiar-filtros" class="btn btn-secondary"><i class="fas fa-times"></i> Limpiar</button>
+                        <button id="btn-exportar-telefonos" class="btn btn-success hidden"><i class="fas fa-paper-plane"></i> Exportar Teléfonos (Difusión)</button>
                     </div>
                 </div>
                 <div id="status_gestion_clientes"></div>
@@ -523,7 +530,7 @@
                     <button class="btn btn-secondary" data-view="view-main-menu"><i class="fas fa-arrow-left"></i> Volver al Menú</button>
                 </div>
                 <div class="form-group">
-                    <label for="curp_colocacion">CURP del Cliente <span class="required">*</span></label>
+                    <label for="curp_colocacion" required maxlenght="18">CURP del Cliente <span class="required">*</span></label>
                     <div class="search-group">
                         <input type="text" id="curp_colocacion" required>
                         <button id="btnBuscarCliente_colocacion" class="btn btn-primary"><i class="fas fa-search"></i> Buscar</button>
@@ -1125,5 +1132,6 @@
     <script src="js/app.js"></script>
 </body>
 </html>
+
 
 
