@@ -1255,6 +1255,7 @@ function setupEventListeners() {
     const listaRutas = document.getElementById('lista-rutas');
     if (listaRutas) listaRutas.addEventListener('click', handleConfigListClick); // <-- NUEVA FUNCIÓN GENÉRICA
 
+    });
     }
 
     // Modal
@@ -4853,6 +4854,7 @@ function handleExportarTelefonos() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
