@@ -2767,26 +2767,11 @@ async function handleMontoPagoChange() {
             showStatus('status_cobranza', `Crédito ${historicalId} encontrado (${creditoActual.curpCliente}). Listo para registrar pago.`, 'success');
         }
     }
-}
 
 
 // =============================================
 // SECCIÓN DE PAGO GRUPAL
 // =============================================
-/**
- * Calcula la cobranza pendiente para TODAS las poblaciones
- * de la RUTA asignada al usuario actual. Requiere conexión.
- */
-/**
- * Calcula la cobranza pendiente para TODAS las poblaciones
- * de la RUTA asignada al usuario actual. Requiere conexión.
- * Utiliza la relación población -> ruta en Firestore.
- */
-/**
- * Calcula la cobranza pendiente para TODAS las poblaciones
- * de la RUTA asignada al usuario actual. Requiere conexión.
- * Utiliza la relación población -> ruta en Firestore.
- */
 async function handleCalcularCobranzaRuta() {
     const statusPagoGrupo = document.getElementById('status_pago_grupo');
     const btnCalcular = document.getElementById('btn-calcular-cobranza-ruta');
@@ -2794,9 +2779,6 @@ async function handleCalcularCobranzaRuta() {
     const btnRegistrar = document.getElementById('btn-registrar-pagos-offline');
     const container = document.getElementById('cobranza-ruta-container');
     const placeholder = document.getElementById('cobranza-ruta-placeholder');
-    // *** CORRECCIÓN: Obtener placeholder DENTRO de la función si es necesario ***
-    // const placeholder = document.getElementById('cobranza-ruta-placeholder'); // Lo buscaremos cuando lo necesitemos
-
     // Verificar datos del usuario y conexión
     if (!currentUserData || !currentUserData.ruta || !currentUserData.office || currentUserData.office === 'AMBAS') {
         showStatus('status_pago_grupo', 'Error: Debes tener una ruta y oficina única asignada para usar esta función.', 'error');
@@ -2808,7 +2790,7 @@ async function handleCalcularCobranzaRuta() {
     }
 
     const userRuta = currentUserData.ruta;
-    const userOffice = currentUserData.office; // *** Variable userOffice definida aquí ***
+    const userOffice = currentUserData.office;
 
     // --- CAMBIOS: Usar showFixedProgress ---
     cargaEnProgreso = true; // Habilitar cancelación
@@ -4871,6 +4853,7 @@ function handleExportarTelefonos() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
