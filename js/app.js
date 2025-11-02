@@ -4567,7 +4567,6 @@ function handleExportarTelefonos() {
         });
     }
 }
-}
 
 // =============================================
 // INICIALIZACIÓN Y EVENT LISTENERS PRINCIPALES
@@ -4831,6 +4830,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
