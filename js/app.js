@@ -1274,45 +1274,36 @@ async function loadGestionEfectivo() {
     document.getElementById('filtro-fecha-fin-efectivo').value = hoy.toISOString().split('T')[0];
 
     try {
-        console.log("   Llamando a database.obtenerUsuarios()...");
         const resultado = await database.obtenerUsuarios();
-        console.log("   Resultado de database.obtenerUsuarios():", resultado);
-
+        
         if (!resultado.success) {
             throw new Error(resultado.message || 'Error desconocido al obtener usuarios.');
         }
 
         let agentes = resultado.data || [];
-        console.log(`   Usuarios obtenidos: ${agentes.length}`);
-
+        
         // Filtrar solo Área Comercial y por oficina del admin (si aplica)
         const adminOffice = currentUserData?.office;
-        console.log(`   Filtrando por rol 'Área comercial' y oficina admin: ${adminOffice || 'AMBAS'}`);
         agentes = agentes.filter(u =>
             u.role === 'Área comercial' &&
             (adminOffice === 'AMBAS' || !adminOffice || u.office === adminOffice)
         );
 
-        console.log(`   Agentes filtrados: ${agentes.length}`);
         agentes.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 
-        // Poblar dropdowns
-        const opciones = agentes.map(a => ({ value: a.id, text: `${a.name} (${a.office || 'Sin Oficina'})` }));
-
+        // Poblar dropdowns usando la función popularDropdown correctamente
         if (agentes.length === 0) {
-            console.warn("   No se encontraron agentes de 'Área comercial' para la oficina del admin.");
             popularDropdown('entrega-agente', [], 'No hay agentes', true);
             popularDropdown('filtro-agente', [], 'No hay agentes', true);
         } else {
+            const opciones = agentes.map(a => ({ value: a.id, text: `${a.name} (${a.office || 'Sin Oficina'})` }));
             popularDropdown('entrega-agente', opciones, 'Selecciona un agente', true);
             popularDropdown('filtro-agente', opciones, 'Selecciona un agente', true);
         }
 
         if (statusEntrega) showStatus(statusEntrega.id, 'Listo.', 'info');
-        console.log("   Dropdowns de agentes poblados.");
 
-    }
-    catch (error) {
+    } catch (error) {
         console.error("Error cargando agentes para gestión efectivo:", error);
         if (statusEntrega) showStatus(statusEntrega.id, `Error cargando agentes: ${error.message}`, 'error');
         popularDropdown('entrega-agente', [], 'Error al cargar', true);
@@ -3753,6 +3744,34 @@ async function handleSucursalGraficoChange() {
 }
 
 /**
+ * Carga las rutas en el dropdown del formulario de usuario, filtradas por oficina.
+ */
+async function _cargarRutasParaUsuario(office) {
+    const rutaSelect = document.getElementById('nuevo-ruta');
+    if (!rutaSelect) return;
+
+    rutaSelect.innerHTML = '<option value="">Cargando rutas...</option>';
+    rutaSelect.disabled = true;
+
+    try {
+        if (office === 'AMBAS' || !office) {
+            popularDropdown('nuevo-ruta', [], '-- Sin asignar --');
+            rutaSelect.disabled = true;
+            return;
+        }
+
+        const rutas = await database.obtenerRutas(office);
+        const rutasNombres = rutas.map(r => r.nombre).sort();
+        popularDropdown('nuevo-ruta', rutasNombres, '-- Sin asignar --');
+        rutaSelect.disabled = false;
+
+    } catch (error) {
+        console.error("Error cargando rutas para usuario:", error);
+        popularDropdown('nuevo-ruta', [], 'Error al cargar');
+    }
+}
+
+/**
  * Inicializa todos los dropdowns estáticos y dinámicos al cargar la app.
  */
 async function inicializarDropdowns() {
@@ -4857,3 +4876,4 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
