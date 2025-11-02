@@ -1033,274 +1033,6 @@ function exportToPDF() {
 }
 
 // =============================================
-// INICIALIZACIÓN Y EVENT LISTENERS PRINCIPALES
-// =============================================
-
-document.addEventListener('DOMContentLoaded', function () {
-    console.log('DOM cargado, inicializando aplicación...');
-    // NO llamar inicializarDropdowns aquí
-    setupEventListeners();
-    setupSecurityListeners();
-
-    auth.onAuthStateChanged(async user => {
-        console.log('Estado de autenticación cambiado:', user ? user.uid : 'No user');
-        const loadingOverlay = document.getElementById('loading-overlay');
-        const loginScreen = document.getElementById('login-screen');
-        const mainApp = document.getElementById('main-app');
-
-        loadingOverlay.classList.add('hidden');
-
-        if (user) {
-            currentUser = user;
-            try {
-                currentUserData = await database.obtenerUsuarioPorId(user.uid);
-
-                if (currentUserData && !currentUserData.error) { // Asegurarse que no hubo error al cargar
-                    document.getElementById('user-name').textContent = currentUserData.name || user.email;
-                    document.getElementById('user-role-display').textContent = currentUserData.role || 'Rol Desconocido';
-
-                    // *** LLAMAR A inicializarDropdowns AQUÍ ***
-                    await inicializarDropdowns(); // Esperar a que terminen de cargarse
-
-                    // Aplicar permisos y filtros DESPUÉS de inicializar dropdowns
-                    aplicarPermisosUI(currentUserData.role);
-
-                } else {
-                    console.warn(`No se encontraron datos válidos en Firestore para el usuario ${user.uid} o faltan campos requeridos.`);
-                    document.getElementById('user-name').textContent = user.email;
-                    document.getElementById('user-role-display').textContent = 'Datos Incompletos';
-                    aplicarPermisosUI('default'); // Aplicar permisos por defecto
-                    // No llamar a inicializarDropdowns si los datos del usuario fallaron
-                }
-
-                loginScreen.classList.add('hidden');
-                mainApp.classList.remove('hidden');
-                showView('view-main-menu');
-                updateConnectionStatus();
-                resetInactivityTimer();
-
-            } catch (error) {
-                console.error("Error crítico al obtener datos del usuario:", error);
-                document.getElementById('user-name').textContent = user.email;
-                document.getElementById('user-role-display').textContent = 'Error al cargar datos';
-                // Quizás mostrar vista de error o intentar logout
-            }
-
-        } else {
-            currentUser = null;
-            currentUserData = null;
-            clearTimeout(inactivityTimer);
-            mainApp.classList.add('hidden');
-            loginScreen.classList.remove('hidden');
-
-            // *** CORRECCIÓN: Habilitar botón de login al cerrar sesión ***
-            const loginButton = document.querySelector('#login-form button[type="submit"]');
-            if (loginButton) {
-                showButtonLoading(loginButton, false);
-            }
-
-            const authStatus = document.getElementById('auth-status');
-            if (authStatus) {
-                authStatus.textContent = '';
-                authStatus.classList.add('hidden');
-            }
-        }
-    });
-});
-
-function setupEventListeners() {
-    console.log('Configurando event listeners...');
-    window.addEventListener('online', updateConnectionStatus);
-    window.addEventListener('offline', updateConnectionStatus);
-
-    const loginForm = document.getElementById('login-form');
-    if (loginForm) loginForm.addEventListener('submit', handleLogin);
-    
-    const logoutBtn = document.getElementById('logout-btn');
-    if (logoutBtn) logoutBtn.addEventListener('click', () => {
-        if (confirm('¿Estás seguro de que deseas cerrar la sesión?')) {
-            auth.signOut();
-    }
-
-    document.querySelectorAll('[data-view]').forEach(button => {
-        button.addEventListener('click', function () {
-            if (this.type === 'button' && this.closest('#form-cliente') && !editingClientId) {
-                // No resetear si es un botón 'Cancelar' dentro del form de edición
-            } else if (this.closest('.menu-card')) {
-                if (this.getAttribute('data-view') === 'view-cliente') {
-                    resetClientForm(); // Resetear SIEMPRE al ir a registrar nuevo desde menú
-                }
-            }
-            showView(this.getAttribute('data-view'));
-        });
-    });
-
-    // Gestión Clientes
-    const btnAplicarFiltros = document.getElementById('btn-aplicar-filtros');
-    if (btnAplicarFiltros) btnAplicarFiltros.addEventListener('click', loadClientesTable);
-    const btnLimpiarFiltros = document.getElementById('btn-limpiar-filtros');
-    if (btnLimpiarFiltros) btnLimpiarFiltros.addEventListener('click', limpiarFiltrosClientes);
-    const sucursalFiltroClientes = document.getElementById('sucursal_filtro');
-    if (sucursalFiltroClientes) {
-        sucursalFiltroClientes.addEventListener('change', (e) => _actualizarDropdownGrupo('grupo_filtro', e.target.value, 'Todos'));
-    }
-
-    // Gestión Usuarios
-    const btnAplicarFiltrosUsuarios = document.getElementById('btn-aplicar-filtros-usuarios');
-    if (btnAplicarFiltrosUsuarios) btnAplicarFiltrosUsuarios.addEventListener('click', loadUsersTable);
-    const btnLimpiarFiltrosUsuarios = document.getElementById('btn-limpiar-filtros-usuarios');
-    if (btnLimpiarFiltrosUsuarios) btnLimpiarFiltrosUsuarios.addEventListener('click', limpiarFiltrosUsuarios);
-    const btnNuevoUsuario = document.getElementById('btn-nuevo-usuario');
-    if (btnNuevoUsuario) btnNuevoUsuario.addEventListener('click', () => mostrarFormularioUsuario());
-    const btnVerificarDuplicados = document.getElementById('btn-verificar-duplicados');
-    if (btnVerificarDuplicados) btnVerificarDuplicados.addEventListener('click', handleVerificarDuplicados);
-    const btnCancelarUsuario = document.getElementById('btn-cancelar-usuario');
-    if (btnCancelarUsuario) btnCancelarUsuario.addEventListener('click', ocultarFormularioUsuario);
-    const formUsuario = document.getElementById('form-usuario');
-    if (formUsuario) formUsuario.addEventListener('submit', handleUserForm);
-    const officeUsuarioForm = document.getElementById('nuevo-sucursal'); // <-- CAMBIO DE sucursalUsuarioForm A officeUsuarioForm
-    if (officeUsuarioForm) {
-        officeUsuarioForm.addEventListener('change', (e) => _cargarRutasParaUsuario(e.target.value));
-    }
-    // const btnDiagnosticarPagos = document.getElementById('btn-diagnosticar-pagos'); // Ya eliminado
-
-    // Importar
-    const officeSelect = document.getElementById('office-select');
-    if (officeSelect) officeSelect.addEventListener('change', handleOfficeChange);
-    document.querySelectorAll('.import-tab').forEach(tab => tab.addEventListener('click', handleTabClick));
-    const btnProcesarImportacion = document.getElementById('btn-procesar-importacion');
-    if (btnProcesarImportacion) btnProcesarImportacion.addEventListener('click', handleImport);
-    // const btnLimpiarDatos = document.getElementById('btn-limpiar-datos'); // Sin cambios
-
-    // Registrar Cliente
-    const formCliente = document.getElementById('form-cliente');
-    if (formCliente) formCliente.addEventListener('submit', handleClientForm);
-    const curpCliente = document.getElementById('curp_cliente');
-    if (curpCliente) curpCliente.addEventListener('input', () => validarCURP(curpCliente));
-    const officeCliente = document.getElementById('office_cliente'); // Listener ya existente y correcto
-    if (officeCliente) officeCliente.addEventListener('change', handleOfficeChangeForClientForm);
-
-    // Generar Crédito
-    const btnBuscarClienteColocacion = document.getElementById('btnBuscarCliente_colocacion');
-    if (btnBuscarClienteColocacion) btnBuscarClienteColocacion.addEventListener('click', handleSearchClientForCredit);
-    const formCreditoSubmit = document.getElementById('form-credito-submit');
-    if (formCreditoSubmit) formCreditoSubmit.addEventListener('submit', handleCreditForm);
-    const curpAvalColocacion = document.getElementById('curpAval_colocacion');
-    if (curpAvalColocacion) curpAvalColocacion.addEventListener('input', () => validarCURP(curpAvalColocacion));
-    const montoColocacion = document.getElementById('monto_colocacion');
-    if (montoColocacion) montoColocacion.addEventListener('change', calcularMontoTotalColocacion);
-    const plazoColocacion = document.getElementById('plazo_colocacion');
-    if (plazoColocacion) plazoColocacion.addEventListener('change', calcularMontoTotalColocacion);
-
-    // Registrar Pago
-    const btnBuscarCreditoCobranza = document.getElementById('btnBuscarCredito_cobranza');
-    if (btnBuscarCreditoCobranza) btnBuscarCreditoCobranza.addEventListener('click', handleSearchCreditForPayment);
-    const formPagoSubmit = document.getElementById('form-pago-submit');
-    if (formPagoSubmit) formPagoSubmit.addEventListener('submit', handlePaymentForm);
-    const montoCobranza = document.getElementById('monto_cobranza');
-    if (montoCobranza) montoCobranza.addEventListener('input', handleMontoPagoChange);
-
-    // Pago Grupal
-    // *** NUEVOS LISTENERS PARA COBRANZA RUTA ***
-    const btnCalcularRuta = document.getElementById('btn-calcular-cobranza-ruta');
-    if (btnCalcularRuta) btnCalcularRuta.addEventListener('click', handleCalcularCobranzaRuta);
-
-    const btnGuardarOffline = document.getElementById('btn-guardar-cobranza-offline');
-    if (btnGuardarOffline) btnGuardarOffline.addEventListener('click', handleGuardarCobranzaOffline);
-
-    const btnRegistrarOffline = document.getElementById('btn-registrar-pagos-offline');
-     // Nota: El listener para este botón se añade dinámicamente en renderizarCobranzaRuta
-     // O se podría añadir aquí y llamar a handleRegistroPagoGrupal directamente
-     if (btnRegistrarOffline) btnRegistrarOffline.addEventListener('click', handleRegistroPagoGrupal); // Llamar a la función existente
-
-    // Reportes Básicos
-    const btnActualizarReportes = document.getElementById('btn-actualizar-reportes');
-    if (btnActualizarReportes) btnActualizarReportes.addEventListener('click', () => loadBasicReports(currentUserData?.office));
-
-    // Reportes Avanzados
-    const btnAplicarFiltrosReportes = document.getElementById('btn-aplicar-filtros-reportes');
-    if (btnAplicarFiltrosReportes) btnAplicarFiltrosReportes.addEventListener('click', loadAdvancedReports);
-    const btnExportarCsv = document.getElementById('btn-exportar-csv');
-    if (btnExportarCsv) btnExportarCsv.addEventListener('click', exportToCSV);
-    const btnExportarPdf = document.getElementById('btn-exportar-pdf');
-    if (btnExportarPdf) btnExportarPdf.addEventListener('click', exportToPDF);
-    const btnLimpiarFiltrosReportes = document.getElementById('btn-limpiar-filtros-reportes');
-    if (btnLimpiarFiltrosReportes) btnLimpiarFiltrosReportes.addEventListener('click', limpiarFiltrosReportes);
-    const sucursalFiltroReportes = document.getElementById('sucursal_filtro_reporte');
-    if (sucursalFiltroReportes) {
-        sucursalFiltroReportes.addEventListener('change', (e) => {
-             _actualizarDropdownGrupo('grupo_filtro_reporte', e.target.value, 'Todos');
-        });
-    }
-
-    // Reportes Gráficos
-    const btnGenerarGrafico = document.getElementById('btn-generar-grafico');
-    if (btnGenerarGrafico) btnGenerarGrafico.addEventListener('click', handleGenerarGrafico);
-    const sucursalGrafico = document.getElementById('grafico_sucursal');
-    if (sucursalGrafico) {
-        sucursalGrafico.addEventListener('change', (e) => _actualizarDropdownGrupo('grafico_grupo', e.target.value, 'Todos'));
-    }
-
-    // ---- Configuración ----
-    const btnAgregarPoblacion = document.getElementById('btn-agregar-poblacion');
-    if (btnAgregarPoblacion) btnAgregarPoblacion.addEventListener('click', () => handleAgregarConfig('poblacion')); // <-- CÓDIGO COMPLETO
-
-    const btnAgregarRuta = document.getElementById('btn-agregar-ruta');
-    if (btnAgregarRuta) btnAgregarRuta.addEventListener('click', () => handleAgregarConfig('ruta')); // <-- CÓDIGO COMPLETO
-
-    // Listener Delegado para Listas (Eliminar y Editar)
-    const listaPoblaciones = document.getElementById('lista-poblaciones');
-    if (listaPoblaciones) listaPoblaciones.addEventListener('click', handleConfigListClick); // <-- NUEVA FUNCIÓN GENÉRICA
-
-    const listaRutas = document.getElementById('lista-rutas');
-    if (listaRutas) listaRutas.addEventListener('click', handleConfigListClick); // <-- NUEVA FUNCIÓN GENÉRICA
-
-    });
-    }
-
-    // Modal
-    const modalCloseBtn = document.getElementById('modal-close-btn');
-    if (modalCloseBtn) modalCloseBtn.addEventListener('click', () => document.getElementById('generic-modal').classList.add('hidden'));
-    const modalOverlay = document.getElementById('generic-modal');
-    if (modalOverlay) {
-        // El addEventListener DEBE estar DENTRO del bloque if
-        modalOverlay.addEventListener('click', (event) => {
-            // Si se hace clic en el fondo oscuro (el overlay mismo)
-            if (event.target === modalOverlay) {
-                modalOverlay.classList.add('hidden'); // Ocultar el modal
-            }
-        });
-        // La llave de cierre del 'if' va AQUÍ, después del addEventListener
-    }
-
-    const formRegistrarGasto = document.getElementById('form-registrar-gasto');
-    if (formRegistrarGasto) {
-        formRegistrarGasto.addEventListener('submit', handleRegistrarGasto);
-    }
-
-    const formRegistrarEntrega = document.getElementById('form-registrar-entrega');
-    if (formRegistrarEntrega) {
-        formRegistrarEntrega.addEventListener('submit', handleRegistrarEntregaInicial);
-    }
-
-    const btnBuscarMovimientos = document.getElementById('btn-buscar-movimientos');
-    if (btnBuscarMovimientos) {
-        btnBuscarMovimientos.addEventListener('click', handleBuscarMovimientos);
-
-    const btnGenerarReporteContable = document.getElementById('btn-generar-reporte-contable');
-    if (btnGenerarReporteContable) btnGenerarReporteContable.addEventListener('click', handleGenerarReporteContable);
-
-    const btnImprimirReporteContable = document.getElementById('btn-imprimir-reporte-contable');
-    if (btnImprimirReporteContable) btnImprimirReporteContable.addEventListener('click', () => window.print());
-
-    const sucursalReporteContable = document.getElementById('reporte-contable-sucursal');
-    if (sucursalReporteContable) sucursalReporteContable.addEventListener('change', handleSucursalReporteContableChange);
-
-    const btnExportarTelefonos = document.getElementById('btn-exportar-telefonos');
-    if (btnExportarTelefonos) btnExportarTelefonos.addEventListener('click', handleExportarTelefonos);    
-        
-}
-// =============================================
 // MANEJADORES DE EVENTOS ESPECÍFICOS
 // =============================================
 async function handleLogin(e) {
@@ -4849,6 +4581,277 @@ function handleExportarTelefonos() {
 }
 }
 
+// =============================================
+// INICIALIZACIÓN Y EVENT LISTENERS PRINCIPALES
+// =============================================
+
+document.addEventListener('DOMContentLoaded', function () {
+    console.log('DOM cargado, inicializando aplicación...');
+    // NO llamar inicializarDropdowns aquí
+    setupEventListeners();
+    setupSecurityListeners();
+
+    auth.onAuthStateChanged(async user => {
+        console.log('Estado de autenticación cambiado:', user ? user.uid : 'No user');
+        const loadingOverlay = document.getElementById('loading-overlay');
+        const loginScreen = document.getElementById('login-screen');
+        const mainApp = document.getElementById('main-app');
+
+        loadingOverlay.classList.add('hidden');
+
+        if (user) {
+            currentUser = user;
+            try {
+                currentUserData = await database.obtenerUsuarioPorId(user.uid);
+
+                if (currentUserData && !currentUserData.error) { // Asegurarse que no hubo error al cargar
+                    document.getElementById('user-name').textContent = currentUserData.name || user.email;
+                    document.getElementById('user-role-display').textContent = currentUserData.role || 'Rol Desconocido';
+
+                    // *** LLAMAR A inicializarDropdowns AQUÍ ***
+                    await inicializarDropdowns(); // Esperar a que terminen de cargarse
+
+                    // Aplicar permisos y filtros DESPUÉS de inicializar dropdowns
+                    aplicarPermisosUI(currentUserData.role);
+
+                } else {
+                    console.warn(`No se encontraron datos válidos en Firestore para el usuario ${user.uid} o faltan campos requeridos.`);
+                    document.getElementById('user-name').textContent = user.email;
+                    document.getElementById('user-role-display').textContent = 'Datos Incompletos';
+                    aplicarPermisosUI('default'); // Aplicar permisos por defecto
+                    // No llamar a inicializarDropdowns si los datos del usuario fallaron
+                }
+
+                loginScreen.classList.add('hidden');
+                mainApp.classList.remove('hidden');
+                showView('view-main-menu');
+                updateConnectionStatus();
+                resetInactivityTimer();
+
+            } catch (error) {
+                console.error("Error crítico al obtener datos del usuario:", error);
+                document.getElementById('user-name').textContent = user.email;
+                document.getElementById('user-role-display').textContent = 'Error al cargar datos';
+                // Quizás mostrar vista de error o intentar logout
+            }
+
+        } else {
+            currentUser = null;
+            currentUserData = null;
+            clearTimeout(inactivityTimer);
+            mainApp.classList.add('hidden');
+            loginScreen.classList.remove('hidden');
+
+            // *** CORRECCIÓN: Habilitar botón de login al cerrar sesión ***
+            const loginButton = document.querySelector('#login-form button[type="submit"]');
+            if (loginButton) {
+                showButtonLoading(loginButton, false);
+            }
+
+            const authStatus = document.getElementById('auth-status');
+            if (authStatus) {
+                authStatus.textContent = '';
+                authStatus.classList.add('hidden');
+            }
+        }
+    });
+});
+
+function setupEventListeners() {
+    console.log('Configurando event listeners...');
+    window.addEventListener('online', updateConnectionStatus);
+    window.addEventListener('offline', updateConnectionStatus);
+
+    const loginForm = document.getElementById('login-form');
+    if (loginForm) loginForm.addEventListener('submit', handleLogin);
+    const logoutBtn = document.getElementById('logout-btn');
+    if (logoutBtn) {
+        logoutBtn.addEventListener('click', () => {
+            if (confirm('¿Estás seguro de que deseas cerrar la sesión?')) {
+                auth.signOut();
+            }
+        });
+    }
+
+    document.querySelectorAll('[data-view]').forEach(button => {
+        button.addEventListener('click', function () {
+            if (this.type === 'button' && this.closest('#form-cliente') && !editingClientId) {
+                // No resetear si es un botón 'Cancelar' dentro del form de edición
+            } else if (this.closest('.menu-card')) {
+                if (this.getAttribute('data-view') === 'view-cliente') {
+                    resetClientForm(); // Resetear SIEMPRE al ir a registrar nuevo desde menú
+                }
+            }
+            showView(this.getAttribute('data-view'));
+        });
+    });
+
+    // Gestión Clientes
+    const btnAplicarFiltros = document.getElementById('btn-aplicar-filtros');
+    if (btnAplicarFiltros) btnAplicarFiltros.addEventListener('click', loadClientesTable);
+    const btnLimpiarFiltros = document.getElementById('btn-limpiar-filtros');
+    if (btnLimpiarFiltros) btnLimpiarFiltros.addEventListener('click', limpiarFiltrosClientes);
+    const sucursalFiltroClientes = document.getElementById('sucursal_filtro');
+    if (sucursalFiltroClientes) {
+        sucursalFiltroClientes.addEventListener('change', (e) => _actualizarDropdownGrupo('grupo_filtro', e.target.value, 'Todos'));
+    }
+
+    // Gestión Usuarios
+    const btnAplicarFiltrosUsuarios = document.getElementById('btn-aplicar-filtros-usuarios');
+    if (btnAplicarFiltrosUsuarios) btnAplicarFiltrosUsuarios.addEventListener('click', loadUsersTable);
+    const btnLimpiarFiltrosUsuarios = document.getElementById('btn-limpiar-filtros-usuarios');
+    if (btnLimpiarFiltrosUsuarios) btnLimpiarFiltrosUsuarios.addEventListener('click', limpiarFiltrosUsuarios);
+    const btnNuevoUsuario = document.getElementById('btn-nuevo-usuario');
+    if (btnNuevoUsuario) btnNuevoUsuario.addEventListener('click', () => mostrarFormularioUsuario());
+    const btnVerificarDuplicados = document.getElementById('btn-verificar-duplicados');
+    if (btnVerificarDuplicados) btnVerificarDuplicados.addEventListener('click', handleVerificarDuplicados);
+    const btnCancelarUsuario = document.getElementById('btn-cancelar-usuario');
+    if (btnCancelarUsuario) btnCancelarUsuario.addEventListener('click', ocultarFormularioUsuario);
+    const formUsuario = document.getElementById('form-usuario');
+    if (formUsuario) formUsuario.addEventListener('submit', handleUserForm);
+    const officeUsuarioForm = document.getElementById('nuevo-sucursal'); // <-- CAMBIO DE sucursalUsuarioForm A officeUsuarioForm
+    if (officeUsuarioForm) {
+        officeUsuarioForm.addEventListener('change', (e) => _cargarRutasParaUsuario(e.target.value));
+    }
+    // const btnDiagnosticarPagos = document.getElementById('btn-diagnosticar-pagos'); // Ya eliminado
+
+    // Importar
+    const officeSelect = document.getElementById('office-select');
+    if (officeSelect) officeSelect.addEventListener('change', handleOfficeChange);
+    document.querySelectorAll('.import-tab').forEach(tab => tab.addEventListener('click', handleTabClick));
+    const btnProcesarImportacion = document.getElementById('btn-procesar-importacion');
+    if (btnProcesarImportacion) btnProcesarImportacion.addEventListener('click', handleImport);
+    // const btnLimpiarDatos = document.getElementById('btn-limpiar-datos'); // Sin cambios
+
+    // Registrar Cliente
+    const formCliente = document.getElementById('form-cliente');
+    if (formCliente) formCliente.addEventListener('submit', handleClientForm);
+    const curpCliente = document.getElementById('curp_cliente');
+    if (curpCliente) curpCliente.addEventListener('input', () => validarCURP(curpCliente));
+    const officeCliente = document.getElementById('office_cliente'); // Listener ya existente y correcto
+    if (officeCliente) officeCliente.addEventListener('change', handleOfficeChangeForClientForm);
+
+    // Generar Crédito
+    const btnBuscarClienteColocacion = document.getElementById('btnBuscarCliente_colocacion');
+    if (btnBuscarClienteColocacion) btnBuscarClienteColocacion.addEventListener('click', handleSearchClientForCredit);
+    const formCreditoSubmit = document.getElementById('form-credito-submit');
+    if (formCreditoSubmit) formCreditoSubmit.addEventListener('submit', handleCreditForm);
+    const curpAvalColocacion = document.getElementById('curpAval_colocacion');
+    if (curpAvalColocacion) curpAvalColocacion.addEventListener('input', () => validarCURP(curpAvalColocacion));
+    const montoColocacion = document.getElementById('monto_colocacion');
+    if (montoColocacion) montoColocacion.addEventListener('change', calcularMontoTotalColocacion);
+    const plazoColocacion = document.getElementById('plazo_colocacion');
+    if (plazoColocacion) plazoColocacion.addEventListener('change', calcularMontoTotalColocacion);
+
+    // Registrar Pago
+    const btnBuscarCreditoCobranza = document.getElementById('btnBuscarCredito_cobranza');
+    if (btnBuscarCreditoCobranza) btnBuscarCreditoCobranza.addEventListener('click', handleSearchCreditForPayment);
+    const formPagoSubmit = document.getElementById('form-pago-submit');
+    if (formPagoSubmit) formPagoSubmit.addEventListener('submit', handlePaymentForm);
+    const montoCobranza = document.getElementById('monto_cobranza');
+    if (montoCobranza) montoCobranza.addEventListener('input', handleMontoPagoChange);
+
+    // Pago Grupal
+    // *** NUEVOS LISTENERS PARA COBRANZA RUTA ***
+    const btnCalcularRuta = document.getElementById('btn-calcular-cobranza-ruta');
+    if (btnCalcularRuta) btnCalcularRuta.addEventListener('click', handleCalcularCobranzaRuta);
+
+    const btnGuardarOffline = document.getElementById('btn-guardar-cobranza-offline');
+    if (btnGuardarOffline) btnGuardarOffline.addEventListener('click', handleGuardarCobranzaOffline);
+
+    const btnRegistrarOffline = document.getElementById('btn-registrar-pagos-offline');
+     // O se podría añadir aquí y llamar a handleRegistroPagoGrupal directamente
+     if (btnRegistrarOffline) btnRegistrarOffline.addEventListener('click', handleRegistroPagoGrupal); // Llamar a la función existente
+
+    // Reportes Básicos
+    const btnActualizarReportes = document.getElementById('btn-actualizar-reportes');
+    if (btnActualizarReportes) btnActualizarReportes.addEventListener('click', () => loadBasicReports(currentUserData?.office));
+
+    // Reportes Avanzados
+    const btnAplicarFiltrosReportes = document.getElementById('btn-aplicar-filtros-reportes');
+    if (btnAplicarFiltrosReportes) btnAplicarFiltrosReportes.addEventListener('click', loadAdvancedReports);
+    const btnExportarCsv = document.getElementById('btn-exportar-csv');
+    if (btnExportarCsv) btnExportarCsv.addEventListener('click', exportToCSV);
+    const btnExportarPdf = document.getElementById('btn-exportar-pdf');
+    if (btnExportarPdf) btnExportarPdf.addEventListener('click', exportToPDF);
+    const btnLimpiarFiltrosReportes = document.getElementById('btn-limpiar-filtros-reportes');
+    if (btnLimpiarFiltrosReportes) btnLimpiarFiltrosReportes.addEventListener('click', limpiarFiltrosReportes);
+    const sucursalFiltroReportes = document.getElementById('sucursal_filtro_reporte');
+    if (sucursalFiltroReportes) {
+        sucursalFiltroReportes.addEventListener('change', (e) => {
+             _actualizarDropdownGrupo('grupo_filtro_reporte', e.target.value, 'Todos');
+        });
+    }
+
+    // Reportes Gráficos
+    const btnGenerarGrafico = document.getElementById('btn-generar-grafico');
+    if (btnGenerarGrafico) btnGenerarGrafico.addEventListener('click', handleGenerarGrafico);
+    const sucursalGrafico = document.getElementById('grafico_sucursal');
+    if (sucursalGrafico) {
+        sucursalGrafico.addEventListener('change', (e) => _actualizarDropdownGrupo('grafico_grupo', e.target.value, 'Todos'));
+    }
+
+    // ---- Configuración ----
+    const btnAgregarPoblacion = document.getElementById('btn-agregar-poblacion');
+    if (btnAgregarPoblacion) btnAgregarPoblacion.addEventListener('click', () => handleAgregarConfig('poblacion')); // <-- CÓDIGO COMPLETO
+
+    const btnAgregarRuta = document.getElementById('btn-agregar-ruta');
+    if (btnAgregarRuta) btnAgregarRuta.addEventListener('click', () => handleAgregarConfig('ruta')); // <-- CÓDIGO COMPLETO
+
+    // Listener Delegado para Listas (Eliminar y Editar)
+    const listaPoblaciones = document.getElementById('lista-poblaciones');
+    if (listaPoblaciones) listaPoblaciones.addEventListener('click', handleConfigListClick); // <-- NUEVA FUNCIÓN GENÉRICA
+
+    const listaRutas = document.getElementById('lista-rutas');
+    if (listaRutas) listaRutas.addEventListener('click', handleConfigListClick); // <-- NUEVA FUNCIÓN GENÉRICA
+
+    });
+    }
+
+    // Modal
+    const modalCloseBtn = document.getElementById('modal-close-btn');
+    if (modalCloseBtn) modalCloseBtn.addEventListener('click', () => document.getElementById('generic-modal').classList.add('hidden'));
+    const modalOverlay = document.getElementById('generic-modal');
+    if (modalOverlay) {
+        // El addEventListener DEBE estar DENTRO del bloque if
+        modalOverlay.addEventListener('click', (event) => {
+            // Si se hace clic en el fondo oscuro (el overlay mismo)
+            if (event.target === modalOverlay) {
+                modalOverlay.classList.add('hidden'); // Ocultar el modal
+            }
+        });
+        // La llave de cierre del 'if' va AQUÍ, después del addEventListener
+    }
+
+    const formRegistrarGasto = document.getElementById('form-registrar-gasto');
+    if (formRegistrarGasto) {
+        formRegistrarGasto.addEventListener('submit', handleRegistrarGasto);
+    }
+
+    const formRegistrarEntrega = document.getElementById('form-registrar-entrega');
+    if (formRegistrarEntrega) {
+        formRegistrarEntrega.addEventListener('submit', handleRegistrarEntregaInicial);
+    }
+
+    const btnBuscarMovimientos = document.getElementById('btn-buscar-movimientos');
+    if (btnBuscarMovimientos) {
+        btnBuscarMovimientos.addEventListener('click', handleBuscarMovimientos);
+
+    const btnGenerarReporteContable = document.getElementById('btn-generar-reporte-contable');
+    if (btnGenerarReporteContable) btnGenerarReporteContable.addEventListener('click', handleGenerarReporteContable);
+
+    const btnImprimirReporteContable = document.getElementById('btn-imprimir-reporte-contable');
+    if (btnImprimirReporteContable) btnImprimirReporteContable.addEventListener('click', () => window.print());
+
+    const sucursalReporteContable = document.getElementById('reporte-contable-sucursal');
+    if (sucursalReporteContable) sucursalReporteContable.addEventListener('change', handleSucursalReporteContableChange);
+
+    const btnExportarTelefonos = document.getElementById('btn-exportar-telefonos');
+    if (btnExportarTelefonos) btnExportarTelefonos.addEventListener('click', handleExportarTelefonos);    
+        
+}
+
 console.log('app.js cargado correctamente y listo.');
+
 
 
