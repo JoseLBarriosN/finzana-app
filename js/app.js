@@ -4848,12 +4848,12 @@ function handleExportarTelefonos() {
             } catch (err) {
                 console.error('Error al copiar: ', err);
                 alert('No se pudo copiar automáticamente. Por favor, copia el texto manualmente.');
-            }
         });
     }
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
