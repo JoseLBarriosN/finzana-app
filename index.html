@@ -4,7 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Finzana - Sistema de Gestión de Créditos</title>
-    <link rel="icon" type="image/x-icon" href="{{ https://github.com/JoseLBarriosN/finzana-app/edit/main/index.html }}/favicon.ico">
+    <link rel="icon" type="image/x-icon" href="favicon.ico">
+    <link rel="shortcut icon" type="image/x-icon" href="favicon.ico">
     <link rel="stylesheet" href="css/styles.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
@@ -432,7 +433,7 @@
                 <div class="view-header">
                     <h2>Configuración del Sistema</h2>
                     <button class="btn btn-secondary" data-view="view-main-menu"><i class="fas fa-arrow-left"></i> Volver al Menú</button>
-                </div>
+            </div>
                 <div id="status_configuracion"></div>
 
                 <div class="config-grid">
@@ -445,6 +446,7 @@
                                 <option value="LEON">León</option>
                             </select>
                             <button id="btn-agregar-poblacion" class="btn btn-success btn-sm"><i class="fas fa-plus"></i> Agregar</button>
+                            <button id="btn-cargar-poblaciones" class="btn btn-info btn-sm"><i class="fas fa-sync"></i> Cargar Poblaciones</button>
                         </div>
                         <ul id="lista-poblaciones" class="config-list">
                             <li>Cargando...</li>
@@ -452,21 +454,23 @@
                     </div>
 
                     <div class="config-section card">
-                        <h3><i class="fas fa-route"></i> Gestionar Rutas</h3>
-                        <div class="form-inline">
-                            <input type="text" id="nueva-ruta-nombre" placeholder="Nombre nueva ruta">
-                            <select id="nueva-ruta-sucursal">
-                                <option value="GDL">Guadalajara</option>
-                                <option value="LEON">León</option>
-                            </select>
-                            <button id="btn-agregar-ruta" class="btn btn-success btn-sm"><i class="fas fa-plus"></i> Agregar</button>
-                        </div>
-                        <ul id="lista-rutas" class="config-list">
-                            <li>Cargando...</li>
-                        </ul>
+                    <h3><i class="fas fa-route"></i> Gestionar Rutas</h3>
+                    <div class="form-inline">
+                        <input type="text" id="nueva-ruta-nombre" placeholder="Nombre nueva ruta">
+                        <select id="nueva-ruta-sucursal">
+                            <option value="GDL">Guadalajara</option>
+                            <option value="LEON">León</option>
+                        </select>
+                        <button id="btn-agregar-ruta" class="btn btn-success btn-sm"><i class="fas fa-plus"></i> Agregar</button>
+                <!-- BOTÓN NUEVO -->
+                        <button id="btn-cargar-rutas" class="btn btn-info btn-sm"><i class="fas fa-sync"></i> Cargar Rutas</button>
                     </div>
+                    <ul id="lista-rutas" class="config-list">
+                        <li>Cargando...</li>
+                    </ul>
                 </div>
             </div>
+        </div>
 
             <div id="view-cliente" class="view hidden">
                 <div class="view-header">
@@ -1102,8 +1106,8 @@
                     </div>
                 </div>
             </div>
-        </div>    
-        </main>
+        </div>      
+    </main>
     </div>
 
     <div id="processing-overlay" class="processing-overlay hidden">
@@ -1140,6 +1144,7 @@
     <script src="js/app.js"></script>
 </body>
 </html>
+
 
 
 
