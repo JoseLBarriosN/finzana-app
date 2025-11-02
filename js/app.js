@@ -338,11 +338,9 @@ function setupSecurityListeners() {
 function aplicarPermisosUI(role) {
     if (!currentUserData) {
         console.warn("aplicarPermisosUI llamada sin currentUserData");
-        // Ocultar todo el menú si no hay datos de usuario
         document.querySelectorAll('.menu-card').forEach(card => card.style.display = 'none');
         return;
     }
-
     // 1. Definir permisos del menú
     const permisosMenu = {
         'Super Admin': ['all'],
@@ -351,7 +349,7 @@ function aplicarPermisosUI(role) {
             'view-gestion-clientes', 'view-cliente', 'view-colocacion', 'view-cobranza',
             'view-pago-grupo', 'view-reportes', 'view-reportes-avanzados',
             'view-usuarios', 'view-importar', 'view-configuracion',
-            'view-gestion-efectivo' // <-- AÑADIDO
+            'view-gestion-efectivo'
         ],
         'Área comercial': [
             'view-gestion-clientes',
@@ -390,33 +388,24 @@ function aplicarPermisosUI(role) {
 
     const esAdminConAccesoTotal = (userRoleKey === 'Super Admin' || userRoleKey === 'Gerencia');
     if (userOffice && userOffice !== 'AMBAS' && !esAdminConAccesoTotal) {
-        // Deshabilitar filtros para roles restringidos con oficina específica
         filtrosOffice.forEach(selector => {
             const el = document.querySelector(selector);
             if (el) {
                 el.value = userOffice;
                 el.disabled = true;
-                // Disparar change SOLO si el valor realmente cambió al asignarlo
-                // (Evita bucles infinitos al inicio)
-                // Esto se maneja mejor llamando a las funciones de actualización DESPUÉS
             }
         });
-        // Actualizar dropdowns dependientes DESPUÉS de deshabilitar
         _actualizarDropdownGrupo('grupo_filtro', userOffice, 'Todos');
         _actualizarDropdownGrupo('grupo_filtro_reporte', userOffice, 'Todos');
         _actualizarDropdownGrupo('grafico_grupo', userOffice, 'Todos');
-        // Para form cliente y usuario, las funciones de cambio ya se llaman o no son necesarias aquí
     } else {
-        // Habilitar filtros si es AMBAS, no tiene oficina, O ES SUPER ADMIN/GERENCIA
         filtrosOffice.forEach(selector => {
             const el = document.querySelector(selector);
             if (el) {
                 el.disabled = false;
-                // Si es Admin Total y tiene oficina asignada, ponerla por defecto pero permitir cambio
                 if (esAdminConAccesoTotal && userOffice && userOffice !== 'AMBAS') {
                     if (el.value !== userOffice) {
                         el.value = userOffice;
-                        // Disparar change para cargar dependientes
                         if (el.id === 'sucursal_filtro') _actualizarDropdownGrupo('grupo_filtro', userOffice, 'Todos');
                         if (el.id === 'sucursal_filtro_reporte') _actualizarDropdownGrupo('grupo_filtro_reporte', userOffice, 'Todos');
                         if (el.id === 'grafico_sucursal') _actualizarDropdownGrupo('grafico_grupo', userOffice, 'Todos');
@@ -424,11 +413,9 @@ function aplicarPermisosUI(role) {
                         if (el.id === 'nuevo-sucursal') _cargarRutasParaUsuario(userOffice);
                     }
                 } else if (!userOffice || userOffice === 'AMBAS') {
-                     // Si el usuario es AMBAS o no tiene oficina, resetear filtros a 'Todos'
                      if (!['office_cliente', 'nueva-poblacion-sucursal', 'nueva-ruta-sucursal', 'nuevo-sucursal'].includes(el.id)) {
                           if (el.value !== '') {
                               el.value = '';
-                              // Disparar change para limpiar dependientes
                               if (el.id === 'sucursal_filtro') _actualizarDropdownGrupo('grupo_filtro', '', 'Todos');
                               if (el.id === 'sucursal_filtro_reporte') _actualizarDropdownGrupo('grupo_filtro_reporte', '', 'Todos');
                               if (el.id === 'grafico_sucursal') _actualizarDropdownGrupo('grafico_grupo', '', 'Todos');
@@ -437,13 +424,12 @@ function aplicarPermisosUI(role) {
                 }
             }
         });
-         // Asegurar que los dropdowns se actualicen si el usuario es AMBAS/Sin oficina al inicio
          if (!userOffice || userOffice === 'AMBAS') {
             _actualizarDropdownGrupo('grupo_filtro', '', 'Todos');
             _actualizarDropdownGrupo('grupo_filtro_reporte', '', 'Todos');
             _actualizarDropdownGrupo('grafico_grupo', '', 'Todos');
          }
-    } // Fin else (habilitar filtros)
+    }
 
     // 3. Ajustar UI específica (ej. CURP editable)
     const curpInput = document.getElementById('curp_cliente');
@@ -455,7 +441,13 @@ function aplicarPermisosUI(role) {
             curpFieldNote.style.display = puedeEditarCURP ? 'block' : 'none';
         }
     }
-} // Fin aplicarPermisosUI
+
+    const btnExportarTelefonos = document.getElementById('btn-exportar-telefonos');
+    if (btnExportarTelefonos) {
+        const puedeExportar = ['Super Admin', 'Gerencia'].includes(userRoleKey);
+        btnExportarTelefonos.classList.toggle('hidden', !puedeExportar);
+    }
+}
 
 
 // =============================================
@@ -490,6 +482,7 @@ async function loadClientesTable() {
             plazo: document.getElementById('plazo_filtro')?.value || '',
             grupo: document.getElementById('grupo_filtro')?.value || '',
             userOffice: esAdminConAccesoTotal ? null : currentUserData?.office
+            soloComisionistas: document.getElementById('comisionista_filtro')?.checked || false
         };
 
         const hayFiltros = Object.values(filtros).some((val, key) => val && val.trim() !== '' && key !== 'userOffice');
@@ -508,31 +501,34 @@ async function loadClientesTable() {
         } else if (filtros.curp || filtros.nombre || filtros.grupo || filtros.office) {
             // --- PATH 2: Search by Client Filters ---
             const clientesIniciales = await database.buscarClientes(filtros); // filtros ya incluye userSucursal
+                let clientesFiltrados = clientesIniciales;
+            if (filtros.soloComisionistas) {
+            clientesFiltrados = clientesIniciales.filter(c => c.isComisionista === true);
+        }
 
             if (operationId !== currentSearchOperation) throw new Error("Búsqueda cancelada");
-            if (clientesIniciales.length === 0) throw new Error("No se encontraron clientes.");
+            if (clientesFiltrados.length === 0) throw new Error("No se encontraron clientes.");
 
-            showFixedProgress(40, `Buscando créditos para ${clientesIniciales.length} clientes...`);
+        showFixedProgress(40, `Buscando créditos para ${clientesFiltrados.length} clientes...`);
 
-            let progress = 40;
-            for (const [index, cliente] of clientesIniciales.entries()) {
-                if (operationId !== currentSearchOperation) throw new Error("Búsqueda cancelada");
-                clientesMap.set(cliente.curp, cliente);
-                const creditosDelCliente = await database.buscarCreditosPorCliente(cliente.curp); // No necesita filtro sucursal, es por CURP
+        let progress = 40;
+        for (const [index, cliente] of clientesFiltrados.entries()) {
+            if (operationId !== currentSearchOperation) throw new Error("Búsqueda cancelada");
+            clientesMap.set(cliente.curp, cliente);
+                const creditosDelCliente = await database.buscarCreditosPorCliente(cliente.curp);
                 creditosAMostrar.push(...creditosDelCliente);
-
-                progress = 40 + Math.round((index / clientesIniciales.length) * 30);
-                showFixedProgress(progress, `Revisando cliente ${index + 1} de ${clientesIniciales.length}`);
-            }
+                progress = 40 + Math.round((index / clientesFiltrados.length) * 30);
+            showFixedProgress(progress, `Revisando cliente ${index + 1} de ${clientesFiltrados.length}`);
+        }
+            
         } else if (filtros.curpAval || filtros.plazo || filtros.estado) {
             // --- PATH 3: Search by Credit-Only Filters ---
             showFixedProgress(40, `Buscando créditos por filtros...`);
-            creditosAMostrar = await database.buscarCreditos(filtros); // filtros ya incluye userSucursal
+            creditosAMostrar = await database.buscarCreditos(filtros);
         } else {
             tbody.innerHTML = '<tr><td colspan="6">Combinación de filtros no soportada o vacía.</td></tr>';
             throw new Error("Filtros inválidos");
         }
-
 
         if (operationId !== currentSearchOperation) throw new Error("Búsqueda cancelada");
         if (creditosAMostrar.length === 0) throw new Error("No se encontraron créditos que coincidan con los filtros iniciales.");
@@ -565,14 +561,11 @@ async function loadClientesTable() {
 
             // 2. Get Payments & Calculate Status
             const historicalId = credito.historicalIdCredito || credito.id;
-
-            // *** CORRECCIÓN IMPORTANTE: Obtener pagos para el cálculo de estado ***
             const pagos = await database.getPagosPorCredito(historicalId, credito.office);
-            // Ordenar pagos DESC (más reciente primero) para _calcularEstadoCredito
             pagos.sort((a, b) => (parsearFecha(b.fecha)?.getTime() || 0) - (parsearFecha(a.fecha)?.getTime() || 0));
             const ultimoPago = pagos.length > 0 ? pagos[0] : null;
 
-            const estadoCalculado = _calcularEstadoCredito(credito, pagos); // <-- Pasa los pagos
+            const estadoCalculado = _calcularEstadoCredito(credito, pagos);
 
             if (!estadoCalculado) {
                 console.warn(`No se pudo calcular el estado para el crédito ID Firestore ${credito.id} (Histórico: ${historicalId})`);
@@ -583,8 +576,7 @@ async function loadClientesTable() {
             if (filtros.estado && estadoCalculado.estado !== filtros.estado) continue;
             if (filtros.plazo && credito.plazo != filtros.plazo) continue;
             if (filtros.curpAval && (!credito.curpAval || !credito.curpAval.toUpperCase().includes(filtros.curpAval.toUpperCase()))) continue;
-            // Filtros de cliente (nombre, curp, grupo, sucursal) ya se aplicaron en la búsqueda inicial (PATH 2) o se verifican aquí
-            if (filtros.office && cliente.office !== filtros.office) continue; // Doble chequeo
+            if (filtros.office && cliente.office !== filtros.office) continue;
             if (filtros.grupo && cliente.poblacion_grupo !== filtros.grupo) continue;
             if (filtros.curp && !filtros.curp.includes(',') && cliente.curp !== filtros.curp.toUpperCase()) continue;
             if (filtros.nombre && !(cliente.nombre || '').toLowerCase().includes(filtros.nombre.toLowerCase())) continue;
@@ -597,9 +589,7 @@ async function loadClientesTable() {
             const comisionistaBadge = cliente.isComisionista ? '<span class="comisionista-badge-cliente" title="Comisionista">★</span>' : '';
             const estadoClase = `status-${estadoCalculado.estado.replace(/\s/g, '-')}`;
             const estadoHTML = `<span class="info-value ${estadoClase}">${estadoCalculado.estado.toUpperCase()}</span>`;
-            // Usar semanasPagadas del objeto estadoCalculado
             const semanasPagadas = estadoCalculado.semanasPagadas || 0;
-            // Usar saldoRestante del objeto estadoCalculado
             const saldoRestante = estadoCalculado.saldoRestante;
             const infoCreditoHTML = `
                 <div class="credito-info">
@@ -618,7 +608,6 @@ async function loadClientesTable() {
                     </button>
                 </div>`;
 
-            // Pasar el objeto cliente completo a editCliente
             const clienteJsonString = JSON.stringify(cliente).replace(/'/g, "&apos;").replace(/"/g, "&quot;");
 
             const rowHTML = `
@@ -1126,8 +1115,12 @@ function setupEventListeners() {
 
     const loginForm = document.getElementById('login-form');
     if (loginForm) loginForm.addEventListener('submit', handleLogin);
+    
     const logoutBtn = document.getElementById('logout-btn');
-    if (logoutBtn) logoutBtn.addEventListener('click', () => auth.signOut());
+    if (logoutBtn) logoutBtn.addEventListener('click', () => {
+        if (confirm('¿Estás seguro de que deseas cerrar la sesión?')) {
+            auth.signOut();
+    }
 
     document.querySelectorAll('[data-view]').forEach(button => {
         button.addEventListener('click', function () {
@@ -1301,6 +1294,9 @@ function setupEventListeners() {
 
     const sucursalReporteContable = document.getElementById('reporte-contable-sucursal');
     if (sucursalReporteContable) sucursalReporteContable.addEventListener('change', handleSucursalReporteContableChange);
+
+    const btnExportarTelefonos = document.getElementById('btn-exportar-telefonos');
+    if (btnExportarTelefonos) btnExportarTelefonos.addEventListener('click', handleExportarTelefonos);    
         
 }
 // =============================================
@@ -2413,11 +2409,10 @@ async function handleSearchClientForCredit() {
     formColocacion.classList.add('hidden');
 
     try {
-        const cliente = await database.buscarClientePorCURP(curp, currentUserData?.office); // Aplicar segregación
-
+        const cliente = await database.buscarClientePorCURP(curp, currentUserData?.office);
         if (!cliente) {
             showFixedProgress(100, 'Cliente no encontrado');
-            throw new Error('Cliente no encontrado en la base de datos para tu sucursal. Por favor, regístrelo primero.');
+            throw new Error('CURP aún no registrado. Hay que generar el registro del cliente primero.');
         }
 
         showFixedProgress(70, 'Verificando elegibilidad...');
@@ -3259,11 +3254,8 @@ async function handleGenerarGrafico() {
         const fechaInicio = document.getElementById('grafico_fecha_inicio').value;
         const fechaFin = document.getElementById('grafico_fecha_fin').value;
 
-        // --- CORRECCIÓN DE NOMBRES DE VARIABLES ---
-        // 'oficinaSeleccionada' lee el valor del dropdown (cuyo ID HTML es 'grafico_sucursal')
         const oficinaSeleccionada = document.getElementById('grafico_sucursal').value;
         const esAdminConAccesoTotal = (currentUserData?.role === 'Super Admin' || currentUserData?.role === 'Gerencia');
-        // --- FIN CORRECCIÓN ---
 
         const grupo = document.getElementById('grafico_grupo').value;
         const agruparPor = document.getElementById('grafico_agrupar_por').value;
@@ -3279,8 +3271,6 @@ async function handleGenerarGrafico() {
         statusGraficos.textContent = 'Obteniendo datos...';
         statusGraficos.className = 'status-message status-info';
 
-        // --- CORRECCIÓN AL PASAR FILTROS ---
-        // Pasa 'office' (del dropdown) y 'userOffice' (del usuario)
         const { creditos, pagos } = await database.obtenerDatosParaGraficos({
             office: oficinaSeleccionada,
             grupo,
@@ -3288,7 +3278,6 @@ async function handleGenerarGrafico() {
             fechaFin,
             userOffice: esAdminConAccesoTotal ? null : currentUserData?.office
         });
-        // --- FIN CORRECCIÓN ---
 
         statusGraficos.textContent = 'Procesando datos para el gráfico...';
 
@@ -3297,20 +3286,23 @@ async function handleGenerarGrafico() {
         let labelPrefix = '';
 
         const colores = {
-            GDL: 'rgba(46, 139, 87, 0.7)', // --primary
-            LEON: 'rgba(30, 144, 255, 0.7)', // --secondary
+            GDL: 'rgba(46, 139, 87, 0.7)',
+            LEON: 'rgba(30, 144, 255, 0.7)',
             GDL_border: 'rgba(46, 139, 87, 1)',
             LEON_border: 'rgba(30, 144, 255, 1)',
+            RECUPERADO_GDL: 'rgba(60, 179, 113, 0.7)',
+            RECUPERADO_GDL_border: 'rgba(60, 179, 113, 1)',
+            RECUPERADO_LEON: 'rgba(30, 144, 255, 0.5)',
+            RECUPERADO_LEON_border: 'rgba(30, 144, 255, 1)',
             default: 'rgba(46, 139, 87, 0.7)',
-            default_border: 'rgba(46, 139, 87, 1)'
+            default_border: 'rgba(46, 139, 87, 1)',
+            default_recuperado: 'rgba(60, 179, 113, 0.7)',
+            default_recuperado_border: 'rgba(60, 179, 113, 1)'
         };
 
-        // --- CORRECCIÓN EN PARÁMETRO Y LÓGICA ---
-        const agruparDatos = (data, campoFecha, campoValor, filtroOffice = null) => { // Renombrado a filtroOffice
+        const agruparDatos = (data, campoFecha, campoValor, filtroOffice = null) => {
             const agrupados = {};
-            // Usar el parámetro 'filtroOffice' consistentemente
             const datosFiltrados = filtroOffice ? data.filter(item => item.office === filtroOffice) : data;
-            // --- FIN CORRECCIÓN ---
 
             datosFiltrados.forEach(item => {
                 const fecha = parsearFecha(item[campoFecha]);
@@ -3344,7 +3336,8 @@ async function handleGenerarGrafico() {
         let dataToProcess = [];
         let campoFecha = '';
         let campoValor = '';
-
+        let dataColocacion = [];
+        let dataRecuperacion = [];
         if (tipoReporte === 'colocacion') {
             dataToProcess = creditos;
             campoFecha = 'fechaCreacion';
@@ -3356,20 +3349,18 @@ async function handleGenerarGrafico() {
             campoValor = 'monto';
             labelPrefix = 'Monto Recuperado';
         } else if (tipoReporte === 'comportamiento') {
-            // Comportamiento no se agrupa por fecha, sino por tipo
             labelPrefix = 'Monto por Tipo de Pago';
+        } else if (tipoReporte === 'colocacion_vs_recuperacion') {
+            dataColocacion = creditos;
+            dataRecuperacion = pagos;
+            labelPrefix = 'Monto';
         }
 
-        // *** LÓGICA DE MÚLTIPLES DATASETS ***
         if (tipoReporte === 'comportamiento') {
-            // --- CORRECCIÓN: Usar 'oficinaSeleccionada' ---
             const oficinasAProcesar = (oficinaSeleccionada === '') ? ['GDL', 'LEON'] : [oficinaSeleccionada];
             let datosAgrupados = {};
-
             oficinasAProcesar.forEach(suc => {
-                // Usar 'oficinaSeleccionada' para la condición
                 const pagosSucursal = (oficinaSeleccionada === '') ? pagos.filter(p => p.office === suc) : pagos;
-                // --- FIN CORRECCIÓN ---
                 pagosSucursal.forEach(pago => {
                     const tipo = (pago.tipoPago || 'normal').toLowerCase();
                     const clave = tipo.charAt(0).toUpperCase() + tipo.slice(1);
@@ -3378,9 +3369,7 @@ async function handleGenerarGrafico() {
                     datosAgrupados[clave][suc] += parseFloat(pago.monto || 0);
                 });
             });
-
             labels = Object.keys(datosAgrupados).sort();
-
             datasets = oficinasAProcesar.map(suc => ({
                 label: `${labelPrefix} (${suc})`,
                 data: labels.map(label => datosAgrupados[label][suc] || 0),
@@ -3392,51 +3381,93 @@ async function handleGenerarGrafico() {
             }));
 
         } else {
-            // Lógica para Colocación y Recuperación (agrupados por fecha)
-            // --- CORRECCIÓN: Usar 'oficinaSeleccionada' ---
-            if (oficinaSeleccionada === '') { // AMBAS OFICINAS
-            // --- FIN CORRECCIÓN ---
-                const datosGDL = agruparDatos(dataToProcess, campoFecha, campoValor, 'GDL');
-                const datosLEON = agruparDatos(dataToProcess, campoFecha, campoValor, 'LEON');
-                labels = [...new Set([...Object.keys(datosGDL), ...Object.keys(datosLEON)])].sort();
+            if (oficinaSeleccionada === '') {
+                
+                if (tipoReporte === 'colocacion_vs_recuperacion') {
+                    const colocadosGDL = agruparDatos(dataColocacion, 'fechaCreacion', 'monto', 'GDL');
+                    const colocadosLEON = agruparDatos(dataColocacion, 'fechaCreacion', 'monto', 'LEON');
+                    const recuperadosGDL = agruparDatos(dataRecuperacion, 'fecha', 'monto', 'GDL');
+                    const recuperadosLEON = agruparDatos(dataRecuperacion, 'fecha', 'monto', 'LEON');
+                    
+                    labels = [...new Set([...Object.keys(colocadosGDL), ...Object.keys(colocadosLEON), ...Object.keys(recuperadosGDL), ...Object.keys(recuperadosLEON)])].sort();
 
-                datasets.push({
-                    label: `${labelPrefix} (GDL)`,
-                    data: labels.map(label => datosGDL[label] || 0),
-                    backgroundColor: colores.GDL,
-                    borderColor: colores.GDL_border,
-                    borderWidth: (tipoGrafico === 'line') ? 2 : 1,
-                    fill: (tipoGrafico === 'line') ? false : true,
-                    tension: (tipoGrafico === 'line') ? 0.1 : 0
-                });
-                datasets.push({
-                    label: `${labelPrefix} (LEON)`,
-                    data: labels.map(label => datosLEON[label] || 0),
-                    backgroundColor: colores.LEON,
-                    borderColor: colores.LEON_border,
-                    borderWidth: (tipoGrafico === 'line') ? 2 : 1,
-                    fill: (tipoGrafico === 'line') ? false : true,
-                    tension: (tipoGrafico === 'line') ? 0.1 : 0
-                });
+                    datasets.push({
+                        label: `Colocado (GDL)`,
+                        data: labels.map(label => colocadosGDL[label] || 0),
+                        backgroundColor: colores.GDL, borderColor: colores.GDL_border,
+                        borderWidth: (tipoGrafico === 'line') ? 2 : 1, fill: (tipoGrafico === 'line') ? false : true, tension: (tipoGrafico === 'line') ? 0.1 : 0
+                    });
+                    datasets.push({
+                        label: `Recuperado (GDL)`,
+                        data: labels.map(label => recuperadosGDL[label] || 0),
+                        backgroundColor: colores.RECUPERADO_GDL, borderColor: colores.RECUPERADO_GDL_border,
+                        borderWidth: (tipoGrafico === 'line') ? 2 : 1, fill: (tipoGrafico === 'line') ? false : true, tension: (tipoGrafico === 'line') ? 0.1 : 0
+                    });
+                    datasets.push({
+                        label: `Colocado (LEON)`,
+                        data: labels.map(label => colocadosLEON[label] || 0),
+                        backgroundColor: colores.LEON, borderColor: colores.LEON_border,
+                        borderWidth: (tipoGrafico === 'line') ? 2 : 1, fill: (tipoGrafico === 'line') ? false : true, tension: (tipoGrafico === 'line') ? 0.1 : 0
+                    });
+                    datasets.push({
+                        label: `Recuperado (LEON)`,
+                        data: labels.map(label => recuperadosLEON[label] || 0),
+                        backgroundColor: colores.RECUPERADO_LEON, borderColor: colores.RECUPERADO_LEON_border,
+                        borderWidth: (tipoGrafico === 'line') ? 2 : 1, fill: (tipoGrafico === 'line') ? false : true, tension: (tipoGrafico === 'line') ? 0.1 : 0
+                    });
 
-            } else { // UNA SOLA OFICINA
-                const datosAgrupados = agruparDatos(dataToProcess, campoFecha, campoValor);
-                labels = Object.keys(datosAgrupados).sort();
-                datasets.push({
-                    // --- CORRECCIÓN: Usar 'oficinaSeleccionada' ---
-                    label: `${labelPrefix}${oficinaSeleccionada ? ` (${oficinaSeleccionada})` : ''}${grupo ? ` [${grupo}]` : ''}`,
-                    // --- FIN CORRECCIÓN ---
-                    data: labels.map(label => datosAgrupados[label]),
-                    backgroundColor: colores.default,
-                    borderColor: colores.default_border,
-                    borderWidth: (tipoGrafico === 'line') ? 2 : 1,
-                    fill: (tipoGrafico === 'line') ? false : true,
-                    tension: (tipoGrafico === 'line') ? 0.1 : 0
-                });
+                } else {
+                    const datosGDL = agruparDatos(dataToProcess, campoFecha, campoValor, 'GDL');
+                    const datosLEON = agruparDatos(dataToProcess, campoFecha, campoValor, 'LEON');
+                    labels = [...new Set([...Object.keys(datosGDL), ...Object.keys(datosLEON)])].sort();
+
+                    datasets.push({
+                        label: `${labelPrefix} (GDL)`,
+                        data: labels.map(label => datosGDL[label] || 0),
+                        backgroundColor: colores.GDL, borderColor: colores.GDL_border,
+                        borderWidth: (tipoGrafico === 'line') ? 2 : 1, fill: (tipoGrafico === 'line') ? false : true, tension: (tipoGrafico === 'line') ? 0.1 : 0
+                    });
+                    datasets.push({
+                        label: `${labelPrefix} (LEON)`,
+                        data: labels.map(label => datosLEON[label] || 0),
+                        backgroundColor: colores.LEON, borderColor: colores.LEON_border,
+                        borderWidth: (tipoGrafico === 'line') ? 2 : 1, fill: (tipoGrafico === 'line') ? false : true, tension: (tipoGrafico === 'line') ? 0.1 : 0
+                    });
+                }
+
+            } else {
+                
+                if (tipoReporte === 'colocacion_vs_recuperacion') {
+                    const colocados = agruparDatos(dataColocacion, 'fechaCreacion', 'monto');
+                    const recuperados = agruparDatos(dataRecuperacion, 'fecha', 'monto');
+                    labels = [...new Set([...Object.keys(colocados), ...Object.keys(recuperados)])].sort();
+
+                    datasets.push({
+                        label: `Colocado (${oficinaSeleccionada})`,
+                        data: labels.map(label => colocados[label] || 0),
+                        backgroundColor: colores.default, borderColor: colores.default_border,
+                        borderWidth: (tipoGrafico === 'line') ? 2 : 1, fill: (tipoGrafico === 'line') ? false : true, tension: (tipoGrafico === 'line') ? 0.1 : 0
+                    });
+                    datasets.push({
+                        label: `Recuperado (${oficinaSeleccionada})`,
+                        data: labels.map(label => recuperados[label] || 0),
+                        backgroundColor: colores.default_recuperado, borderColor: colores.default_recuperado_border,
+                        borderWidth: (tipoGrafico === 'line') ? 2 : 1, fill: (tipoGrafico === 'line') ? false : true, tension: (tipoGrafico === 'line') ? 0.1 : 0
+                    });
+
+                } else {
+                    const datosAgrupados = agruparDatos(dataToProcess, campoFecha, campoValor);
+                    labels = Object.keys(datosAgrupados).sort();
+                    datasets.push({
+                        label: `${labelPrefix}${oficinaSeleccionada ? ` (${oficinaSeleccionada})` : ''}${grupo ? ` [${grupo}]` : ''}`,
+                        data: labels.map(label => datosAgrupados[label]),
+                        backgroundColor: colores.default, borderColor: colores.default_border,
+                        borderWidth: (tipoGrafico === 'line') ? 2 : 1, fill: (tipoGrafico === 'line') ? false : true, tension: (tipoGrafico === 'line') ? 0.1 : 0
+                    });
+                }
             }
         }
-
-        // Asignar colores dinámicos para Pie/Doughnut si solo hay un dataset
+       
         if ((tipoGrafico === 'pie' || tipoGrafico === 'doughnut') && datasets.length === 1) {
             datasets[0].backgroundColor = labels.map((_, index) => `hsl(${index * (360 / labels.length)}, 70%, 60%)`);
             datasets[0].borderColor = '#fff';
@@ -4023,6 +4054,7 @@ async function inicializarDropdowns() {
         { value: 'colocacion', text: 'Colocación (Monto)' },
         { value: 'recuperacion', text: 'Recuperación (Pagos)' },
         { value: 'comportamiento', text: 'Comportamiento de Pago (Tipos)' },
+        { value: 'colocacion_vs_recuperacion', text: 'Colocación vs. Recuperación' } // <-- AÑADIR ESTA LÍNEA
     ];
 
     // --- Dropdowns de Grupo/Población (AHORA USAN LA FUNCIÓN AUXILIAR) ---
@@ -4723,8 +4755,123 @@ function renderTablaMovimientos(movimientos) {
         </table>
     `;
 }
+/*** Extrae los números de teléfono de la tabla de clientes visible y los muestra en un modal.***/
+function handleExportarTelefonos() {
+    const tbody = document.getElementById('tabla-clientes');
+    if (!tbody) {
+        alert("Error: No se encontró la tabla de clientes.");
+        return;
+    }
+
+    const rows = tbody.querySelectorAll('tr');
+    const telefonos = new Set();
+    let clientesSinTelefono = 0;
+    let clientesEncontrados = 0;
+
+    rows.forEach(row => {
+        const editButton = row.querySelector('button[onclick^="editCliente"]');
+        if (editButton) {
+            clientesEncontrados++;
+            try {
+                const onclickAttr = editButton.getAttribute('onclick');
+                const jsonString = onclickAttr.substring(
+                    onclickAttr.indexOf('(') + 1, 
+                    onclickAttr.lastIndexOf(')')
+                )
+                .replace(/&quot;/g, '"')
+                .replace(/&apos;/g, "'");
+                
+                // 2. Parsear el JSON
+                const cliente = JSON.parse(jsonString);
+
+                // 3. Obtener y limpiar el teléfono
+                if (cliente && cliente.telefono) {
+                    let telefonoLimpio = cliente.telefono.replace(/\D/g, '');
+                    
+                    // Opcional: Estandarizar a 10 dígitos (ajusta según tu país)
+                    if (telefonoLimpio.length > 10) {
+                        if (telefonoLimpio.startsWith('521')) {
+                            telefonoLimpio = telefonoLimpio.substring(3);
+                        } else if (telefonoLimpio.startsWith('52')) {
+                            telefonoLimpio = telefonoLimpio.substring(2);
+                        }
+                    }
+
+                    if (telefonoLimpio.length === 10) {
+                        telefonos.add(telefonoLimpio);
+                    } else if (telefonoLimpio.length > 0) {
+                        console.warn(`Teléfono no estándar (se omite): ${cliente.telefono} (Limpio: ${telefonoLimpio})`);
+                        clientesSinTelefono++;
+                    } else {
+                        clientesSinTelefono++;
+                    }
+                } else {
+                    clientesSinTelefono++;
+                }
+            } catch (e) {
+                console.error("Error parseando JSON del cliente en la fila:", e, row);
+            }
+        }
+    });
+
+    if (telefonos.size === 0) {
+        alert(`No se encontraron números de teléfono válidos en los ${clientesEncontrados} clientes de la búsqueda actual.`);
+        return;
+    }
+
+    // Mostrar los resultados en el Modal Genérico
+    const telefonosArray = Array.from(telefonos);
+    const modal = document.getElementById('generic-modal');
+    const modalTitle = document.getElementById('modal-title');
+    const modalBody = document.getElementById('modal-body');
+
+    modalTitle.textContent = `Exportar Teléfonos (${telefonos.size} números únicos)`;
+    modalBody.innerHTML = `
+        <p>Se encontraron <strong>${telefonos.size}</strong> números de teléfono únicos de los <strong>${clientesEncontrados}</strong> clientes en la tabla.</p>
+        <p>(${clientesSinTelefono} clientes no tenían un número de teléfono válido registrado).</p>
+        <p>Copia esta lista para usarla en una lista de difusión de WhatsApp:</p>
+        <textarea id="telefonos-export-textarea" rows="10" style="width: 100%; font-size: 14px; padding: 10px; margin-top: 15px;" readonly>${telefonosArray.join('\n')}</textarea>
+        <button id="btn-copiar-telefonos" class="btn btn-primary" style="margin-top: 15px;"><i class="fas fa-copy"></i> Copiar al Portapapeles</button>
+    `;
+    modal.classList.remove('hidden');
+
+    // Añadir listener al botón de copiar
+    const btnCopiar = document.getElementById('btn-copiar-telefonos');
+    if (btnCopiar) {
+        // Remover listener previo para evitar duplicados
+        btnCopiar.replaceWith(btnCopiar.cloneNode(true));
+        document.getElementById('btn-copiar-telefonos').addEventListener('click', () => {
+            const textarea = document.getElementById('telefonos-export-textarea');
+            textarea.select();
+            
+            try {
+                // Usar la API del portapapeles (moderna y segura)
+                navigator.clipboard.writeText(textarea.value).then(() => {
+                    const btn = document.getElementById('btn-copiar-telefonos');
+                    btn.innerHTML = '<i class="fas fa-check"></i> Copiado';
+                    setTimeout(() => {
+                        btn.innerHTML = '<i class="fas fa-copy"></i> Copiar al Portapapeles';
+                    }, 2000);
+                }).catch(err => {
+                    console.error('Error al copiar (API Clipboard): ', err);
+                    // Fallback a execCommand
+                    document.execCommand('copy');
+                    const btn = document.getElementById('btn-copiar-telefonos');
+                    btn.innerHTML = '<i class="fas fa-check"></i> Copiado (Fallback)';
+                    setTimeout(() => {
+                        btn.innerHTML = '<i class="fas fa-copy"></i> Copiar al Portapapeles';
+                    }, 2000);
+                });
+            } catch (err) {
+                console.error('Error al copiar: ', err);
+                alert('No se pudo copiar automáticamente. Por favor, copia el texto manualmente.');
+            }
+        });
+    }
+}
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
