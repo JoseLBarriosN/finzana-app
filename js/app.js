@@ -15,6 +15,7 @@ let isOnline = true;
 let inactivityTimer; // Temporizador para el cierre de sesión por inactividad
 let grupoDePagoActual = null; // Para la nueva función de pago grupal
 let currentChart = null; // Para la nueva función de gráficos
+let cobranzaRutaData = null;
 
 /**
  * Parsea de forma robusta una fecha que puede ser un string (ISO 8601, yyyy-mm-dd, etc.)
@@ -1745,6 +1746,31 @@ function ocultarFormularioUsuario() {
     }
 }
 
+/**
+ * Deshabilita un usuario
+ */
+async function disableUsuario(userId, userName) {
+    if (!confirm(`¿Estás seguro de que deseas deshabilitar al usuario "${userName}"?`)) {
+        return;
+    }
+
+    showProcessingOverlay(true, 'Deshabilitando usuario...');
+    try {
+        const resultado = await database.disableUsuario(userId);
+        if (resultado.success) {
+            showStatus('status_usuarios', `Usuario "${userName}" deshabilitado correctamente.`, 'success');
+            await loadUsersTable();
+        } else {
+            throw new Error(resultado.message);
+        }
+    } catch (error) {
+        console.error("Error deshabilitando usuario:", error);
+        showStatus('status_usuarios', `Error: ${error.message}`, 'error');
+    } finally {
+        showProcessingOverlay(false);
+    }
+}
+
 
 async function handleUserForm(e) {
     e.preventDefault();
@@ -2488,7 +2514,7 @@ async function handleMontoPagoChange() {
             showStatus('status_cobranza', `Crédito ${historicalId} encontrado (${creditoActual.curpCliente}). Listo para registrar pago.`, 'success');
         }
     }
-
+}
 
 // =============================================
 // SECCIÓN DE PAGO GRUPAL
@@ -2631,7 +2657,7 @@ async function handleCalcularCobranzaRuta() {
     if (btnGuardar) btnGuardar.classList.add('hidden');
     if (btnRegistrar) btnRegistrar.classList.add('hidden');
 
-} finally { // <-- CORRECCIÓN: La llave '}' del 'catch' ahora está ANTES de 'finally'
+} finally {
     cargaEnProgreso = false;
     showButtonLoading(btnCalcular, false);
     setTimeout(hideFixedProgress, 2000);
@@ -4830,6 +4856,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
