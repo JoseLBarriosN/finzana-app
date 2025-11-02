@@ -3806,13 +3806,14 @@ const popularDropdown = (elementId, options, placeholder, isObjectValueKey = fal
     } else {
         select.value = "";
     }
+
+    console.log(`Dropdown ${elementId} actualizado con ${options?.length || 0} opciones`);
 };
 
 
 async function handleOfficeChangeForClientForm() {
     const office = this.value || document.getElementById('office_cliente')?.value;
 
-    // Cargar dinámicamente desde la DB
     const [poblaciones, rutas] = await Promise.all([
         database.obtenerPoblaciones(office),
         database.obtenerRutas(office)
@@ -3821,7 +3822,6 @@ async function handleOfficeChangeForClientForm() {
     const poblacionesNombres = poblaciones.map(p => p.nombre).sort();
     const rutasNombres = rutas.map(r => r.nombre).sort();
 
-    // Si estamos editando, las listas deben incluir todas las opciones
     if (editingClientId) {
         const [todasPoblacionesDB, todasRutasDB] = await Promise.all([
             database.obtenerPoblaciones(),
@@ -3842,8 +3842,7 @@ async function handleOfficeChangeForClientForm() {
 async function handleSucursalGraficoChange() {
     const office = this.value;
 
-    // Cargar dinámicamente
-    const poblaciones = await database.obtenerPoblaciones(office || null); // null para "Ambas"
+    const poblaciones = await database.obtenerPoblaciones(office || null);
     const poblacionesNombres = [...new Set(poblaciones.map(p => p.nombre))].sort();
 
     popularDropdown('grafico_grupo', poblacionesNombres, 'Todos');
@@ -4998,6 +4997,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
