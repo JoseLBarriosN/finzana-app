@@ -481,7 +481,7 @@ async function loadClientesTable() {
             curpAval: document.getElementById('curp_aval_filtro')?.value?.trim() || '',
             plazo: document.getElementById('plazo_filtro')?.value || '',
             grupo: document.getElementById('grupo_filtro')?.value || '',
-            userOffice: esAdminConAccesoTotal ? null : currentUserData?.office
+            userOffice: esAdminConAccesoTotal ? null : currentUserData?.office,
             soloComisionistas: document.getElementById('comisionista_filtro')?.checked || false
         };
 
@@ -4871,6 +4871,7 @@ function handleExportarTelefonos() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
