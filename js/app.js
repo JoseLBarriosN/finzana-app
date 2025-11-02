@@ -4697,6 +4697,7 @@ function setupEventListeners() {
             }
             showView(this.getAttribute('data-view'));
         });
+    });
 
     // Gestión Clientes
     const btnAplicarFiltros = document.getElementById('btn-aplicar-filtros');
@@ -4856,10 +4857,3 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
-
-
-
-
-
-
-
