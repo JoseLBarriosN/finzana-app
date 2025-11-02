@@ -163,8 +163,6 @@ function _calcularEstadoCredito(credito, pagos) {
     const montoTotal = credito.montoTotal;
 
     // --- 1.1. RECALCULAR SALDO (La corrección clave) ---
-    // El saldo en la DB (credito.saldo) puede estar desactualizado por importaciones.
-    // Debemos confiar en la suma de los pagos para determinar el estado LIQUIDADO.
     let totalPagado = 0;
     if (pagos && pagos.length > 0) {
         totalPagado = pagos.reduce((sum, p) => sum + (p.monto || 0), 0);
@@ -181,18 +179,16 @@ function _calcularEstadoCredito(credito, pagos) {
     const saldoRestante = parseFloat(saldoCalculado.toFixed(2));
     
     // --- 2. VERIFICACIÓN DE LIQUIDADO (Prioridad #1) ---
-    // Usar el saldo RECALCULADO (saldoRestante), no el de la DB (credito.saldo).
-    if (saldoRestante === 0) { // Chequeo estricto de 0, ya que lo forzamos arriba
+    if (saldoRestante === 0) {
         
         let semanasPagadasCalc = 0;
         if (pagoSemanal > 0.01) {
-            const montoPagadoTotal = totalPagado; // Usar el totalPagado calculado
+            const montoPagadoTotal = totalPagado;
             const epsilon = 0.001;
             semanasPagadasCalc = Math.floor((montoPagadoTotal / pagoSemanal) + epsilon);
             semanasPagadasCalc = Math.min(Math.max(0, semanasPagadasCalc), credito.plazo);
         }
         
-        // Si está liquidado por saldo, forzar al plazo completo
         if (semanasPagadasCalc < credito.plazo) {
             console.warn(`Crédito ${credito.historicalIdCredito || credito.id} liquidado por cálculo de pagos (Saldo: ${saldoRestante}), pero cálculo de semanas (${semanasPagadasCalc}) no coincide con plazo (${credito.plazo}). Forzando a plazo completo.`);
             semanasPagadasCalc = credito.plazo;
@@ -209,19 +205,13 @@ function _calcularEstadoCredito(credito, pagos) {
     }
 
     // --- 3. Calcular Estado según Reglas de Fecha (Si NO está liquidado) ---
-    // Si llegamos aquí, el crédito NO está liquidado y SÍ tiene saldo pendiente.
-    // Ahora aplicamos la Regla #2 (estado por fecha de último pago).
     const fechaCreacion = parsearFecha(credito.fechaCreacion);
     if (!fechaCreacion) {
         console.warn("Fecha de creación de crédito inválida:", credito.fechaCreacion, "ID:", credito.id || credito.historicalIdCredito);
-        return null; // Fecha inválida
+        return null;
     }
-
-    // Encontrar la fecha de referencia (último pago o fecha de creación)
-    // Asume que 'pagos' viene ordenado DESC (el más reciente primero)
     let fechaReferencia;
     if (pagos && pagos.length > 0) {
-        // Ya están ordenados DESC en loadClientesTable, tomamos el primero
         fechaReferencia = parsearFecha(pagos[0].fecha);
     } else {
         fechaReferencia = fechaCreacion;
@@ -241,14 +231,13 @@ function _calcularEstadoCredito(credito, pagos) {
     const diasDesdeReferencia = Math.floor(msDesdeReferencia / (1000 * 60 * 60 * 24));
 
     let estadoDisplay;
-    // Aplicar las reglas del usuario (Regla #2):
     if (diasDesdeReferencia <= 7) {
         estadoDisplay = 'al corriente';
-    } else if (diasDesdeReferencia > 7 && diasDesdeReferencia <= 30) { // > 1 semana y <= 1 mes (aprox)
+    } else if (diasDesdeReferencia > 7 && diasDesdeReferencia <= 30) {
         estadoDisplay = 'atrasado';
-    } else if (diasDesdeReferencia > 30 && diasDesdeReferencia <= 180) { // > 1 mes y <= 6 meses (aprox)
+    } else if (diasDesdeReferencia > 30 && diasDesdeReferencia <= 180) {
         estadoDisplay = 'cobranza';
-    } else { // Más de 180 días (6 meses)
+    } else {
         estadoDisplay = 'juridico';
     }
 
@@ -268,7 +257,6 @@ function _calcularEstadoCredito(credito, pagos) {
     let semanasQueDebieronPagarse = Math.min(semanasTranscurridas + 1, credito.plazo);
     let semanasAtraso = Math.max(0, semanasQueDebieronPagarse - semanasPagadas);
 
-    // Si ya pasó la fecha teórica de finalización y aún hay saldo (ya verificado que no es liquidado)
     if (semanasTranscurridas >= credito.plazo) {
         semanasAtraso = Math.max(0, credito.plazo - semanasPagadas);
     }
@@ -4793,34 +4781,25 @@ function setupEventListeners() {
 
     // ---- Configuración ----
     const btnAgregarPoblacion = document.getElementById('btn-agregar-poblacion');
-    if (btnAgregarPoblacion) btnAgregarPoblacion.addEventListener('click', () => handleAgregarConfig('poblacion')); // <-- CÓDIGO COMPLETO
+    if (btnAgregarPoblacion) btnAgregarPoblacion.addEventListener('click', () => handleAgregarConfig('poblacion'));
 
     const btnAgregarRuta = document.getElementById('btn-agregar-ruta');
-    if (btnAgregarRuta) btnAgregarRuta.addEventListener('click', () => handleAgregarConfig('ruta')); // <-- CÓDIGO COMPLETO
+    if (btnAgregarRuta) btnAgregarRuta.addEventListener('click', () => handleAgregarConfig('ruta'));
 
-    // Listener Delegado para Listas (Eliminar y Editar)
     const listaPoblaciones = document.getElementById('lista-poblaciones');
-    if (listaPoblaciones) listaPoblaciones.addEventListener('click', handleConfigListClick); // <-- NUEVA FUNCIÓN GENÉRICA
+    if (listaPoblaciones) listaPoblaciones.addEventListener('click', handleConfigListClick);
 
     const listaRutas = document.getElementById('lista-rutas');
-    if (listaRutas) listaRutas.addEventListener('click', handleConfigListClick); // <-- NUEVA FUNCIÓN GENÉRICA
-
-    });
-    }
-
-    // Modal
+    if (listaRutas) listaRutas.addEventListener('click', handleConfigListClick);
     const modalCloseBtn = document.getElementById('modal-close-btn');
     if (modalCloseBtn) modalCloseBtn.addEventListener('click', () => document.getElementById('generic-modal').classList.add('hidden'));
     const modalOverlay = document.getElementById('generic-modal');
     if (modalOverlay) {
-        // El addEventListener DEBE estar DENTRO del bloque if
         modalOverlay.addEventListener('click', (event) => {
-            // Si se hace clic en el fondo oscuro (el overlay mismo)
             if (event.target === modalOverlay) {
-                modalOverlay.classList.add('hidden'); // Ocultar el modal
+                modalOverlay.classList.add('hidden');
             }
         });
-        // La llave de cierre del 'if' va AQUÍ, después del addEventListener
     }
 
     const formRegistrarGasto = document.getElementById('form-registrar-gasto');
@@ -4836,6 +4815,7 @@ function setupEventListeners() {
     const btnBuscarMovimientos = document.getElementById('btn-buscar-movimientos');
     if (btnBuscarMovimientos) {
         btnBuscarMovimientos.addEventListener('click', handleBuscarMovimientos);
+    }
 
     const btnGenerarReporteContable = document.getElementById('btn-generar-reporte-contable');
     if (btnGenerarReporteContable) btnGenerarReporteContable.addEventListener('click', handleGenerarReporteContable);
@@ -4852,6 +4832,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
