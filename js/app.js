@@ -1240,6 +1240,78 @@ async function handleConfigListClick(e) {
     }
 }
 
+/**
+ * Carga todas las poblaciones en los dropdowns y los muestra
+ */
+async function handleCargarPoblaciones() {
+    const statusEl = 'status_configuracion';
+    
+    showButtonLoading('#btn-cargar-poblaciones', true, 'Cargando...');
+    
+    try {
+        const userOffice = currentUserData?.office;
+        const esAdminTotal = (currentUserData?.role === 'Super Admin' || currentUserData?.role === 'Gerencia');
+        
+        let oficinaFiltro = '';
+        if (esAdminTotal && (!userOffice || userOffice === 'AMBAS')) {
+            oficinaFiltro = '';
+        } else if (userOffice && userOffice !== 'AMBAS') {
+            oficinaFiltro = userOffice;
+        } else {
+            showStatus(statusEl, 'No tienes permisos para cargar poblaciones.', 'error');
+            return;
+        }
+        
+        const poblaciones = await database.obtenerPoblaciones(oficinaFiltro);
+        const nombresPoblaciones = [...new Set(poblaciones.map(p => p.nombre))].sort();
+        
+        showStatus(statusEl, `Se cargaron ${nombresPoblaciones.length} poblaciones.`, 'success');
+        console.log('Poblaciones cargadas:', nombresPoblaciones);
+        
+    } catch (error) {
+        console.error("Error cargando poblaciones:", error);
+        showStatus(statusEl, `Error al cargar poblaciones: ${error.message}`, 'error');
+    } finally {
+        showButtonLoading('#btn-cargar-poblaciones', false);
+    }
+}
+
+/**
+ * Carga todas las rutas en los dropdowns y los muestra
+ */
+async function handleCargarRutas() {
+    const statusEl = 'status_configuracion';
+    
+    showButtonLoading('#btn-cargar-rutas', true, 'Cargando...');
+    
+    try {
+        const userOffice = currentUserData?.office;
+        const esAdminTotal = (currentUserData?.role === 'Super Admin' || currentUserData?.role === 'Gerencia');
+        
+        let oficinaFiltro = '';
+        if (esAdminTotal && (!userOffice || userOffice === 'AMBAS')) {
+            oficinaFiltro = '';
+        } else if (userOffice && userOffice !== 'AMBAS') {
+            oficinaFiltro = userOffice;
+        } else {
+            showStatus(statusEl, 'No tienes permisos para cargar rutas.', 'error');
+            return;
+        }
+        
+        const rutas = await database.obtenerRutas(oficinaFiltro);
+        const nombresRutas = [...new Set(rutas.map(r => r.nombre))].sort();
+        
+        showStatus(statusEl, `Se cargaron ${nombresRutas.length} rutas.`, 'success');
+        console.log('Rutas cargadas:', nombresRutas);
+        
+    } catch (error) {
+        console.error("Error cargando rutas:", error);
+        showStatus(statusEl, `Error al cargar rutas: ${error.message}`, 'error');
+    } finally {
+        showButtonLoading('#btn-cargar-rutas', false);
+    }
+}
+
 // =============================================
 // *** NUEVAS FUNCIONES: EFECTIVO Y COMISIONES ***
 // =============================================
@@ -4879,7 +4951,24 @@ function setupEventListeners() {
     const btnExportarTelefonos = document.getElementById('btn-exportar-telefonos');
     if (btnExportarTelefonos) btnExportarTelefonos.addEventListener('click', handleExportarTelefonos);    
         
+    }
+
+    const btnCargarPoblaciones = document.getElementById('btn-cargar-poblaciones');
+    if (btnCargarPoblaciones) {
+    btnCargarPoblaciones.addEventListener('click', handleCargarPoblaciones);
+    console.log('Listener añadido para btn-cargar-poblaciones');
+    } else {
+    console.error('No se encontró btn-cargar-poblaciones');
+    }
+
+    const btnCargarRutas = document.getElementById('btn-cargar-rutas');
+    if (btnCargarRutas) {
+    btnCargarRutas.addEventListener('click', handleCargarRutas);
+    console.log('Listener añadido para btn-cargar-rutas');
+    } else {
+    console.error('No se encontró btn-cargar-rutas');
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
