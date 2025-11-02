@@ -2999,6 +2999,12 @@ async function handleGenerarGrafico() {
             userOffice: esAdminConAccesoTotal ? null : currentUserData?.office
         });
 
+        const coloresPersonalizadosInput = document.getElementById('grafico-colores').value;
+            let coloresPersonalizados = [];
+            if (coloresPersonalizadosInput) {
+            coloresPersonalizados = coloresPersonalizadosInput.split(',').map(c => c.trim()).filter(c => c);
+        }
+
         statusGraficos.textContent = 'Procesando datos para el gráfico...';
 
         let datasets = [];
@@ -3006,19 +3012,19 @@ async function handleGenerarGrafico() {
         let labelPrefix = '';
 
         const colores = {
-            GDL: 'rgba(46, 139, 87, 0.7)',
-            LEON: 'rgba(30, 144, 255, 0.7)',
-            GDL_border: 'rgba(46, 139, 87, 1)',
-            LEON_border: 'rgba(30, 144, 255, 1)',
-            RECUPERADO_GDL: 'rgba(60, 179, 113, 0.7)',
-            RECUPERADO_GDL_border: 'rgba(60, 179, 113, 1)',
-            RECUPERADO_LEON: 'rgba(30, 144, 255, 0.5)',
-            RECUPERADO_LEON_border: 'rgba(30, 144, 255, 1)',
-            default: 'rgba(46, 139, 87, 0.7)',
-            default_border: 'rgba(46, 139, 87, 1)',
-            default_recuperado: 'rgba(60, 179, 113, 0.7)',
-            default_recuperado_border: 'rgba(60, 179, 113, 1)'
-        };
+            GDL: coloresPersonalizados[0] || 'rgba(46, 139, 87, 0.7)',
+            LEON: coloresPersonalizados[1] || 'rgba(30, 144, 255, 0.7)',
+            GDL_border: coloresPersonalizados[0] || 'rgba(46, 139, 87, 1)',
+            LEON_border: coloresPersonalizados[1] || 'rgba(30, 144, 255, 1)',
+            RECUPERADO_GDL: coloresPersonalizados[2] || 'rgba(60, 179, 113, 0.7)',
+            RECUPERADO_GDL_border: coloresPersonalizados[2] || 'rgba(60, 179, 113, 1)',
+            RECUPERADO_LEON: coloresPersonalizados[3] || 'rgba(30, 144, 255, 0.5)',
+            RECUPERADO_LEON_border: coloresPersonalizados[3] || 'rgba(30, 144, 255, 1)',
+            default: coloresPersonalizados[0] || 'rgba(46, 139, 87, 0.7)',
+            default_border: coloresPersonalizados[0] || 'rgba(46, 139, 87, 1)',
+            default_recuperado: coloresPersonalizados[1] || 'rgba(60, 179, 113, 0.7)',
+            default_recuperado_border: coloresPersonalizados[1] || 'rgba(60, 179, 113, 1)'
+    };
 
         const agruparDatos = (data, campoFecha, campoValor, filtroOffice = null) => {
             const agrupados = {};
