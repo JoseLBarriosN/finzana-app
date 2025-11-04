@@ -3380,116 +3380,139 @@ async function handleGenerarGrafico() {
 // =============================================
 
 async function loadConfiguracion() {
-    console.log("--- Ejecutando loadConfiguracion ---"); // Log inicial
-    const statusEl = document.getElementById('status_configuracion');
-    const listaPob = document.getElementById('lista-poblaciones');
-    const listaRut = document.getElementById('lista-rutas');
-
-    if (!listaPob || !listaRut) {
-        console.error("loadConfiguracion: Elementos #lista-poblaciones o #lista-rutas no encontrados.");
-        showStatus('status_configuracion', 'Error interno: Faltan elementos HTML.', 'error');
-        return;
-    }
-
-    listaPob.innerHTML = '<li class="config-list-item">Cargando poblaciones...</li>';
-    listaRut.innerHTML = '<li class="config-list-item">Cargando rutas...</li>';
-    showStatus('status_configuracion', 'Cargando listas...', 'info');
+    console.log("--- Cargando configuración con listas visibles ---");
+    const statusEl = 'status_configuracion';
+    
+    showStatus(statusEl, 'Cargando listas...', 'info');
 
     try {
-        console.log("   Intentando obtener poblaciones y rutas...");
-        // *** INICIO DE LA CORRECCIÓN ***
-        // Aplicar filtro de oficina del admin/gerente
-        const userOffice = (currentUserData?.office === 'AMBAS') ? null : currentUserData?.office;
-        console.log(`   Filtrando configuración por oficina: ${userOffice || 'AMBAS (null)'}`);
-
+        // Cargar poblaciones y rutas existentes
         const [poblaciones, rutas] = await Promise.all([
-            database.obtenerPoblaciones(userOffice), // <-- PASAR FILTRO
-            database.obtenerRutas(userOffice)        // <-- PASAR FILTRO
+            database.obtenerPoblaciones(),
+            database.obtenerRutas()
         ]);
-        // *** FIN DE LA CORRECCIÓN ***
+
+        console.log(`Poblaciones obtenidas: ${poblaciones.length}`);
+        console.log(`Rutas obtenidas: ${rutas.length}`);
+
+        // Renderizar poblaciones
+        renderizarListaPoblaciones(poblaciones);
         
-        console.log(`   Poblaciones obtenidas: ${poblaciones.length}, Rutas obtenidas: ${rutas.length}`);
+        // Renderizar rutas  
+        renderizarListaRutas(rutas);
 
-        // ---- Renderizar Poblaciones ----
-        console.log("   Renderizando poblaciones...");
-        if (poblaciones.length === 0) {
-            listaPob.innerHTML = '<li class="config-list-item">No hay poblaciones registradas para tu oficina.</li>';
-        } else {
-            listaPob.innerHTML = poblaciones
-                .sort((a, b) => `${a.office}-${a.nombre}`.localeCompare(`${b.office}-${b.nombre}`))
-                .map(p => `
-                <li class="config-list-item">
-                    <span><strong>${p.nombre}</strong> (${p.office}) - Ruta: ${p.ruta || 'N/A'}</span>
-                    <span>
-                        <button class="btn btn-sm btn-info btn-editar-poblacion" data-id="${p.id}" data-nombre="${p.nombre}" data-office="${p.office}" data-ruta="${p.ruta || ''}" title="Asignar/Cambiar Ruta">
-                            <i class="fas fa-route"></i>
-                        </button>
-                        <button class="btn btn-sm btn-danger btn-eliminar-config" data-id="${p.id}" data-nombre="${p.nombre}" data-tipo="poblacion" title="Eliminar Población">
-                            <i class="fas fa-trash"></i>
-                        </button>
-                    </span>
-                </li>
-            `).join('');
-        }
-        console.log("   Poblaciones renderizadas.");
-
-        // ---- Renderizar Rutas ----
-        console.log("   Renderizando rutas...");
-        if (rutas.length === 0) {
-            listaRut.innerHTML = '<li class="config-list-item">No hay rutas registradas para tu oficina.</li>';
-        } else {
-            listaRut.innerHTML = rutas
-                .sort((a, b) => `${a.office}-${a.nombre}`.localeCompare(`${b.office}-${a.nombre}`))
-                .map(r => `
-                <li class="config-list-item">
-                    <span>
-                        <input type="text" value="${r.nombre}" class="ruta-nombre-editable" data-id="${r.id}" readonly style="border:none; background:transparent; width: calc(100% - 10px);"> (${r.office})
-                    </span>
-                    <span style="white-space: nowrap;"> <button class="btn btn-sm btn-info btn-editar-ruta" data-id="${r.id}" title="Editar Nombre">
-                            <i class="fas fa-edit"></i>
-                         </button>
-                         <button class="btn btn-sm btn-success btn-guardar-ruta hidden" data-id="${r.id}" title="Guardar Nombre">
-                             <i class="fas fa-save"></i>
-                         </button>
-                         <button class="btn btn-sm btn-secondary btn-cancelar-ruta hidden" data-id="${r.id}" data-original-nombre="${r.nombre}" title="Cancelar Edición">
-                             <i class="fas fa-times"></i>
-                         </button>
-                        <button class="btn btn-sm btn-danger btn-eliminar-config" data-id="${r.id}" data-nombre="${r.nombre}" data-tipo="ruta" title="Eliminar Ruta">
-                            <i class="fas fa-trash"></i>
-                        </button>
-                    </span>
-                </li>
-            `).join('');
-        }
-        console.log("   Rutas renderizadas.");
-
-        showStatus('status_configuracion', 'Listas cargadas.', 'success');
-        setTimeout(() => {
-            if (statusEl.classList.contains('status-success')) {
-                showStatus('status_configuracion', '', 'info');
-            }
-        }, 3000);
-
-    }
-    catch (error) {
+        showStatus(statusEl, 'Listas cargadas correctamente', 'success');
+        
+    } catch (error) {
         console.error("Error cargando configuración:", error);
-        showStatus('status_configuracion', `Error al cargar listas: ${error.message}`, 'error');
-        if (listaPob.innerHTML.includes('Cargando')) listaPob.innerHTML = '<li class="config-list-item error">Error al cargar poblaciones</li>';
-        if (listaRut.innerHTML.includes('Cargando')) listaRut.innerHTML = '<li class="config-list-item error">Error al cargar rutas</li>';
+        showStatus(statusEl, `Error al cargar listas: ${error.message}`, 'error');
+        
+        // Mostrar mensajes de error en las listas
+        document.getElementById('lista-poblaciones').innerHTML = '<li class="error">Error al cargar poblaciones</li>';
+        document.getElementById('lista-rutas').innerHTML = '<li class="error">Error al cargar rutas</li>';
     }
 }
 
+/** Renderiza la lista de poblaciones **/
+function renderizarListaPoblaciones(poblaciones) {
+    const listaPoblaciones = document.getElementById('lista-poblaciones');
+    if (!listaPoblaciones) return;
+
+    if (poblaciones.length === 0) {
+        listaPoblaciones.innerHTML = '<li>No hay poblaciones registradas</li>';
+        return;
+    }
+
+    poblaciones.sort((a, b) => {
+        if (a.office !== b.office) return a.office.localeCompare(b.office);
+        return a.nombre.localeCompare(b.nombre);
+    });
+
+    listaPoblaciones.innerHTML = poblaciones.map(p => `
+        <li class="config-list-item">
+            <span>
+                <strong>${p.nombre}</strong> 
+                <span class="badge-sucursal ${p.office}">${p.office}</span>
+                ${p.ruta ? `<br><small class="ruta-asignada">Ruta: ${p.ruta}</small>` : '<br><small class="sin-ruta">Sin ruta asignada</small>'}
+            </span>
+            <span class="action-buttons">
+                <button class="btn btn-sm btn-info btn-editar-poblacion" 
+                        data-id="${p.id}" 
+                        data-nombre="${p.nombre}" 
+                        data-office="${p.office}" 
+                        data-ruta="${p.ruta || ''}"
+                        title="Asignar/Cambiar Ruta">
+                    <i class="fas fa-route"></i>
+                </button>
+                <button class="btn btn-sm btn-danger btn-eliminar-config" 
+                        data-id="${p.id}" 
+                        data-nombre="${p.nombre}" 
+                        data-tipo="poblacion"
+                        title="Eliminar Población">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </span>
+        </li>
+    `).join('');
+}
+
+//** Renderiza las ruttass **//
+function renderizarListaRutas(rutas) {
+    const listaRutas = document.getElementById('lista-rutas');
+    if (!listaRutas) return;
+
+    if (rutas.length === 0) {
+        listaRutas.innerHTML = '<li>No hay rutas registradas</li>';
+        return;
+    }
+
+    // Ordenar por sucursal y nombre
+    rutas.sort((a, b) => {
+        if (a.office !== b.office) return a.office.localeCompare(b.office);
+        return a.nombre.localeCompare(b.nombre);
+    });
+
+    listaRutas.innerHTML = rutas.map(r => `
+        <li class="config-list-item">
+            <span>
+                <input type="text" value="${r.nombre}" class="ruta-nombre-editable" data-id="${r.id}" readonly 
+                       style="border:none; background:transparent; font-weight: bold; width: 120px;">
+                <span class="badge-sucursal ${r.office}">${r.office}</span>
+            </span>
+            <span class="action-buttons">
+                <button class="btn btn-sm btn-info btn-editar-ruta" data-id="${r.id}" title="Editar Nombre">
+                    <i class="fas fa-edit"></i>
+                </button>
+                <button class="btn btn-sm btn-success btn-guardar-ruta hidden" data-id="${r.id}" title="Guardar Nombre">
+                    <i class="fas fa-save"></i>
+                </button>
+                <button class="btn btn-sm btn-secondary btn-cancelar-ruta hidden" data-id="${r.id}" data-original-nombre="${r.nombre}" title="Cancelar Edición">
+                    <i class="fas fa-times"></i>
+                </button>
+                <button class="btn btn-sm btn-danger btn-eliminar-config" 
+                        data-id="${r.id}" 
+                        data-nombre="${r.nombre}" 
+                        data-tipo="ruta"
+                        title="Eliminar Ruta">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </span>
+        </li>
+    `).join('');
+}
+
+//** Configuración para agregar población **//
+
 async function handleAgregarConfig(tipo) {
-    // OBTENER 'office' DESDE EL SELECTOR HTML (ID sigue siendo 'nueva-*-sucursal')
     const nombreInput = document.getElementById(`nueva-${tipo}-nombre`);
-    const officeInput = document.getElementById(`nueva-${tipo}-sucursal`); // <-- CAMBIO DE sucursalInput A officeInput
+    const officeInput = document.getElementById(`nueva-${tipo}-sucursal`);
     const button = document.getElementById(`btn-agregar-${tipo}`);
 
     const nombre = nombreInput.value.trim().toUpperCase();
-    const office = officeInput.value; // <-- CAMBIO DE sucursal A office
+    const office = officeInput.value;
 
-    if (!nombre || !office) { // <-- CAMBIO DE sucursal A office
-        showStatus('status_configuracion', 'El nombre y la oficina son obligatorios.', 'warning'); // <-- Mensaje actualizado
+    if (!nombre || !office) {
+        showStatus('status_configuracion', 'El nombre y la oficina son obligatorios.', 'warning');
         return;
     }
 
@@ -3498,18 +3521,17 @@ async function handleAgregarConfig(tipo) {
 
    try {
         let resultado;
-        // LLAMAR A database.js CON 'office'
         if (tipo === 'poblacion') {
-            resultado = await database.agregarPoblacion(nombre, office); // <-- CAMBIO DE sucursal A office
+            resultado = await database.agregarPoblacion(nombre, office);
         } else {
-            resultado = await database.agregarRuta(nombre, office); // <-- CAMBIO DE sucursal A office
+            resultado = await database.agregarRuta(nombre, office);
         }
 
         if (resultado.success) {
             showStatus('status_configuracion', `${tipo.charAt(0).toUpperCase() + tipo.slice(1)} agregada exitosamente.`, 'success');
             nombreInput.value = '';
-            await loadConfiguracion(); // Recargar listas
-            await inicializarDropdowns(); // Actualizar todos los dropdowns de la app
+            await loadConfiguracion();
+            await inicializarDropdowns();
         } else {
             throw new Error(resultado.message);
         }
@@ -3523,7 +3545,7 @@ async function handleAgregarConfig(tipo) {
 }
 
 
-async function handleEliminarConfig(tipo, id, nombre) { // Los parámetros ya son correctos
+async function handleEliminarConfig(tipo, id, nombre) {
     if (!id || !tipo) return;
 
     if (confirm(`¿Estás seguro de que deseas eliminar ${tipo} "${nombre}"?\nEsta acción no se puede deshacer.`)) {
@@ -4997,6 +5019,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
