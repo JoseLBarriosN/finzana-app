@@ -430,66 +430,67 @@
             </div>
 
             <div id="view-configuracion" class="view hidden">
-            <div class="view-header">
-                <h2>Gestión de Poblaciones y Rutas</h2>
-                <button class="btn btn-secondary" data-view="view-main-menu"><i class="fas fa-arrow-left"></i> Volver al Menú</button>
+                <div class="view-header">
+                    <h2>Administración de Catálogos</h2>
+                    <button class="btn btn-secondary" data-view="view-main-menu"><i class="fas fa-arrow-left"></i> Volver al Menú</button>
             </div>
-            <div id="status_configuracion"></div>
-                
-                <div class="config-grid">
-                <!-- SECCIÓN POBLACIONES -->
-                    <div class="config-section card">
-                        <h3><i class="fas fa-map-marker-alt"></i> Gestionar Poblaciones/Grupos</h3>
-                        <!-- Formulario para agregar nueva población -->
-                    <div class="form-inline">
-                        <input type="text" id="nueva-poblacion-nombre" placeholder="Nombre nueva población">
-                            <select id="nueva-poblacion-sucursal">
-                                <option value="GDL">Guadalajara</option>
-                                <option value="LEON">León</option>
-                            </select>
-                            <button id="btn-agregar-poblacion" class="btn btn-success btn-sm">
-                                <i class="fas fa-plus"></i> Agregar
+            <div id="status_configuracion" class="status-message"></div>
+            <!-- Pestañas -->
+            <div class="tabs" style="margin-bottom: 20px;">
+                <button class="tab-button active" data-tab="poblaciones">Poblaciones</button>
+                <button class="tab-button" data-tab="rutas">Rutas</button>
+            </div>
+            <!-- Contenido de Poblaciones -->
+            <div id="tab-poblaciones" class="tab-content active">
+                <div class="card">
+                    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+                        <h3 style="margin: 0;">Gestión de Poblaciones</h3>
+                            <button class="btn btn-success" onclick="mostrarModalPoblacion()">
+                            <i class="fas fa-plus"></i> Nueva Población
                             </button>
                     </div>
-                    <!-- Lista de poblaciones existentes -->
-                    <div style="margin-top: 20px;">
-                        <h4>Poblaciones Existentes</h4>
-                        <div class="config-list-header">
-                            <span><strong>Nombre (Sucursal)</strong></span>
-                            <span><strong>Acciones</strong></span>
-                    </div>
-                        <ul id="lista-poblaciones" class="config-list">
-                            <li>Cargando poblaciones...</li>
-                        </ul>
+                    <div class="table-container">
+                        <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Nombre</th>
+                            <th>Sucursal</th>
+                            <th>Ruta Asignada</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tabla-poblaciones">
+                        <tr><td colspan="4">Cargando poblaciones...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <!-- Contenido de Rutas -->
+    <div id="tab-rutas" class="tab-content">
+        <div class="card">
+            <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+                <h3 style="margin: 0;">Gestión de Rutas</h3>
+                <button class="btn btn-success" onclick="mostrarModalRuta()">
+                    <i class="fas fa-plus"></i> Nueva Ruta
+                </button>
+            </div>
+            <div class="table-container">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Nombre</th>
+                            <th>Sucursal</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tabla-rutas">
+                        <tr><td colspan="3">Cargando rutas...</td></tr>
+                    </tbody>
+                    </table>
                     </div>
                 </div>
-                <!-- SECCIÓN RUTAS -->
-                <div class="config-section card">
-                    <h3><i class="fas fa-route"></i> Gestionar Rutas</h3>
-                    <!-- Formulario para agregar nueva ruta -->
-                    <div class="form-inline">
-                        <input type="text" id="nueva-ruta-nombre" placeholder="Nombre nueva ruta">
-                        <select id="nueva-ruta-sucursal">
-                            <option value="GDL">Guadalajara</option>
-                            <option value="LEON">León</option>
-                        </select>
-                            <button id="btn-agregar-ruta" class="btn btn-success btn-sm">
-                                <i class="fas fa-plus"></i> Agregar
-                            </button>
-                    </div>
-                    <!-- Lista de rutas existentes -->
-                    <div style="margin-top: 20px;">
-                        <h4>Rutas Existentes</h4>
-                        <div class="config-list-header">
-                            <span><strong>Nombre (Sucursal)</strong></span>
-                            <span><strong>Acciones</strong></span>
-                        </div>
-                            <ul id="lista-rutas" class="config-list">
-                                <li>Cargando rutas...</li>
-                            </ul>
-                        </div>
-                    </div>
-                </div>
+            </div>
             </div>
 
             <div id="view-cliente" class="view hidden">
@@ -1164,6 +1165,7 @@
     <script src="js/app.js"></script>
 </body>
 </html>
+
 
 
 
