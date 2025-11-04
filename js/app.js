@@ -3990,7 +3990,7 @@ function mostrarModalPoblacion() {
                     <option value="LEON">León</option>
                 </select>
             </div>
-            <div class="form-actions">
+            <div class="modal-actions">
                 <button type="submit" class="btn btn-success"><i class="fas fa-save"></i> Guardar</button>
                 <button type="button" class="btn btn-secondary" onclick="document.getElementById('generic-modal').classList.add('hidden')">
                     <i class="fas fa-times"></i> Cancelar
@@ -4028,7 +4028,7 @@ function mostrarModalRuta() {
                     <option value="LEON">León</option>
                 </select>
             </div>
-            <div class="form-actions">
+            <div class="modal-actions">
                 <button type="submit" class="btn btn-success"><i class="fas fa-save"></i> Guardar</button>
                 <button type="button" class="btn btn-secondary" onclick="document.getElementById('generic-modal').classList.add('hidden')">
                     <i class="fas fa-times"></i> Cancelar
@@ -5729,6 +5729,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
