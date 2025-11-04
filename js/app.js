@@ -3380,36 +3380,275 @@ async function handleGenerarGrafico() {
 // =============================================
 
 async function loadConfiguracion() {
-    console.log("--- Cargando configuración con listas visibles ---");
+    console.log("--- Cargando gestión con tablas ---");
     const statusEl = 'status_configuracion';
     
-    showStatus(statusEl, 'Cargando listas...', 'info');
+    // Verificar permisos - Solo administradores
+    if (!currentUserData || !['Super Admin', 'Gerencia', 'Administrador'].includes(currentUserData.role)) {
+        showStatus(statusEl, 'No tienes permisos para acceder a esta sección.', 'error');
+        showView('view-main-menu');
+        return;
+    }
+
+    showStatus(statusEl, 'Cargando catálogos...', 'info');
 
     try {
-        // Cargar poblaciones y rutas existentes
-        const [poblaciones, rutas] = await Promise.all([
-            database.obtenerPoblaciones(),
-            database.obtenerRutas()
-        ]);
-
-        console.log(`Poblaciones obtenidas: ${poblaciones.length}`);
-        console.log(`Rutas obtenidas: ${rutas.length}`);
-
-        // Renderizar poblaciones
-        renderizarListaPoblaciones(poblaciones);
-        
-        // Renderizar rutas  
-        renderizarListaRutas(rutas);
-
-        showStatus(statusEl, 'Listas cargadas correctamente', 'success');
+        await cargarTablaPoblaciones();
+        await cargarTablaRutas();
+        setupTabsConfiguracion();
+        showStatus(statusEl, 'Catálogos cargados correctamente', 'success');
         
     } catch (error) {
         console.error("Error cargando configuración:", error);
-        showStatus(statusEl, `Error al cargar listas: ${error.message}`, 'error');
+        showStatus(statusEl, `Error: ${error.message}`, 'error');
+    }
+}
+
+/**
+ * Configura las pestañas de la vista de configuración
+ */
+function setupTabsConfiguracion() {
+    document.querySelectorAll('.tab-button').forEach(button => {
+        button.addEventListener('click', function() {
+            // Remover active de todos
+            document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+            
+            // Activar actual
+            this.classList.add('active');
+            const tabId = this.getAttribute('data-tab');
+            document.getElementById(`tab-${tabId}`).classList.add('active');
+        });
+    });
+}
+
+/**
+ * Carga y muestra las poblaciones en formato tabla
+ */
+async function cargarTablaPoblaciones() {
+    const tbody = document.getElementById('tabla-poblaciones');
+    if (!tbody) return;
+
+    try {
+        const poblaciones = await database.obtenerPoblaciones();
         
-        // Mostrar mensajes de error en las listas
-        document.getElementById('lista-poblaciones').innerHTML = '<li class="error">Error al cargar poblaciones</li>';
-        document.getElementById('lista-rutas').innerHTML = '<li class="error">Error al cargar rutas</li>';
+        if (poblaciones.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="4" class="text-center">No hay poblaciones registradas</td></tr>';
+            return;
+        }
+
+        // Ordenar por sucursal y nombre
+        poblaciones.sort((a, b) => {
+            if (a.office !== b.office) return a.office.localeCompare(b.office);
+            return a.nombre.localeCompare(b.nombre);
+        });
+
+        tbody.innerHTML = poblaciones.map(p => `
+            <tr>
+                <td><strong>${p.nombre}</strong></td>
+                <td><span class="badge ${p.office === 'GDL' ? 'badge-primary' : 'badge-secondary'}">${p.office}</span></td>
+                <td>${p.ruta ? `<span class="badge badge-info">${p.ruta}</span>` : '<em class="text-muted">Sin asignar</em>'}</td>
+                <td>
+                    <button class="btn btn-sm btn-outline-primary" onclick="asignarRutaPoblacion('${p.id}', '${p.nombre}', '${p.office}')" 
+                            title="Asignar Ruta">
+                        <i class="fas fa-route"></i>
+                    </button>
+                    <button class="btn btn-sm btn-outline-danger" onclick="eliminarPoblacion('${p.id}', '${p.nombre}')" 
+                            title="Eliminar Población">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </td>
+            </tr>
+        `).join('');
+
+    } catch (error) {
+        console.error("Error cargando tabla de poblaciones:", error);
+        tbody.innerHTML = '<tr><td colspan="4" class="text-center error">Error al cargar poblaciones</td></tr>';
+    }
+}
+
+/**
+ * Carga y muestra las rutas en formato tabla
+ */
+async function cargarTablaRutas() {
+    const tbody = document.getElementById('tabla-rutas');
+    if (!tbody) return;
+
+    try {
+        const rutas = await database.obtenerRutas();
+        
+        if (rutas.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="3" class="text-center">No hay rutas registradas</td></tr>';
+            return;
+        }
+
+        // Ordenar por sucursal y nombre
+        rutas.sort((a, b) => {
+            if (a.office !== b.office) return a.office.localeCompare(b.office);
+            return a.nombre.localeCompare(b.nombre);
+        });
+
+        tbody.innerHTML = rutas.map(r => `
+            <tr>
+                <td>
+                    <span class="ruta-nombre">${r.nombre}</span>
+                </td>
+                <td><span class="badge ${r.office === 'GDL' ? 'badge-primary' : 'badge-secondary'}">${r.office}</span></td>
+                <td>
+                    <button class="btn btn-sm btn-outline-info" onclick="editarNombreRuta('${r.id}', '${r.nombre}')" 
+                            title="Editar Nombre">
+                        <i class="fas fa-edit"></i>
+                    </button>
+                    <button class="btn btn-sm btn-outline-danger" onclick="eliminarRuta('${r.id}', '${r.nombre}')" 
+                            title="Eliminar Ruta">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </td>
+            </tr>
+        `).join('');
+
+    } catch (error) {
+        console.error("Error cargando tabla de rutas:", error);
+        tbody.innerHTML = '<tr><td colspan="3" class="text-center error">Error al cargar rutas</td></tr>';
+    }
+}
+
+/**
+ * Muestra modal para agregar nueva población
+ */
+function mostrarModalPoblacion() {
+    document.getElementById('modal-title').textContent = 'Nueva Población';
+    document.getElementById('modal-body').innerHTML = `
+        <form id="form-nueva-poblacion">
+            <div class="form-group">
+                <label for="modal-poblacion-nombre">Nombre de la Población:</label>
+                <input type="text" id="modal-poblacion-nombre" class="form-control" required 
+                       placeholder="Ej: Colonia Centro, Villa Jardín...">
+            </div>
+            <div class="form-group">
+                <label for="modal-poblacion-office">Sucursal:</label>
+                <select id="modal-poblacion-office" class="form-control" required>
+                    <option value="GDL">Guadalajara</option>
+                    <option value="LEON">León</option>
+                </select>
+            </div>
+            <div class="form-actions">
+                <button type="submit" class="btn btn-success"><i class="fas fa-save"></i> Guardar</button>
+                <button type="button" class="btn btn-secondary" onclick="document.getElementById('generic-modal').classList.add('hidden')">
+                    <i class="fas fa-times"></i> Cancelar
+                </button>
+            </div>
+        </form>
+    `;
+    
+    // Configurar el formulario
+    const form = document.getElementById('form-nueva-poblacion');
+    form.onsubmit = (e) => {
+        e.preventDefault();
+        agregarPoblacionDesdeModal();
+    };
+    
+    document.getElementById('generic-modal').classList.remove('hidden');
+}
+
+/**
+ * Muestra modal para agregar nueva ruta
+ */
+function mostrarModalRuta() {
+    document.getElementById('modal-title').textContent = 'Nueva Ruta';
+    document.getElementById('modal-body').innerHTML = `
+        <form id="form-nueva-ruta">
+            <div class="form-group">
+                <label for="modal-ruta-nombre">Nombre de la Ruta:</label>
+                <input type="text" id="modal-ruta-nombre" class="form-control" required 
+                       placeholder="Ej: Ruta Norte, Ruta Centro...">
+            </div>
+            <div class="form-group">
+                <label for="modal-ruta-office">Sucursal:</label>
+                <select id="modal-ruta-office" class="form-control" required>
+                    <option value="GDL">Guadalajara</option>
+                    <option value="LEON">León</option>
+                </select>
+            </div>
+            <div class="form-actions">
+                <button type="submit" class="btn btn-success"><i class="fas fa-save"></i> Guardar</button>
+                <button type="button" class="btn btn-secondary" onclick="document.getElementById('generic-modal').classList.add('hidden')">
+                    <i class="fas fa-times"></i> Cancelar
+                </button>
+            </div>
+        </form>
+    `;
+    
+    const form = document.getElementById('form-nueva-ruta');
+    form.onsubmit = (e) => {
+        e.preventDefault();
+        agregarRutaDesdeModal();
+    };
+    
+    document.getElementById('generic-modal').classList.remove('hidden');
+}
+
+/**
+ * Agrega población desde el modal
+ */
+async function agregarPoblacionDesdeModal() {
+    const nombre = document.getElementById('modal-poblacion-nombre').value.trim().toUpperCase();
+    const office = document.getElementById('modal-poblacion-office').value;
+
+    if (!nombre) {
+        alert('Por favor ingresa un nombre para la población');
+        return;
+    }
+
+    showProcessingOverlay(true, 'Agregando población...');
+    
+    try {
+        const resultado = await database.agregarPoblacion(nombre, office);
+        
+        if (resultado.success) {
+            document.getElementById('generic-modal').classList.add('hidden');
+            await cargarTablaPoblaciones();
+            showStatus('status_configuracion', 'Población agregada correctamente', 'success');
+        } else {
+            throw new Error(resultado.message);
+        }
+    } catch (error) {
+        console.error("Error agregando población:", error);
+        alert(`Error: ${error.message}`);
+    } finally {
+        showProcessingOverlay(false);
+    }
+}
+
+/**
+ * Agrega ruta desde el modal
+ */
+async function agregarRutaDesdeModal() {
+    const nombre = document.getElementById('modal-ruta-nombre').value.trim().toUpperCase();
+    const office = document.getElementById('modal-ruta-office').value;
+
+    if (!nombre) {
+        alert('Por favor ingresa un nombre para la ruta');
+        return;
+    }
+
+    showProcessingOverlay(true, 'Agregando ruta...');
+    
+    try {
+        const resultado = await database.agregarRuta(nombre, office);
+        
+        if (resultado.success) {
+            document.getElementById('generic-modal').classList.add('hidden');
+            await cargarTablaRutas();
+            showStatus('status_configuracion', 'Ruta agregada correctamente', 'success');
+        } else {
+            throw new Error(resultado.message);
+        }
+    } catch (error) {
+        console.error("Error agregando ruta:", error);
+        alert(`Error: ${error.message}`);
+    } finally {
+        showProcessingOverlay(false);
     }
 }
 
@@ -5019,6 +5258,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
