@@ -430,47 +430,67 @@
             </div>
 
             <div id="view-configuracion" class="view hidden">
-                <div class="view-header">
-                    <h2>Configuración del Sistema</h2>
-                    <button class="btn btn-secondary" data-view="view-main-menu"><i class="fas fa-arrow-left"></i> Volver al Menú</button>
+            <div class="view-header">
+                <h2>Gestión de Poblaciones y Rutas</h2>
+                <button class="btn btn-secondary" data-view="view-main-menu"><i class="fas fa-arrow-left"></i> Volver al Menú</button>
             </div>
-                <div id="status_configuracion"></div>
-
+            <div id="status_configuracion"></div>
+                
                 <div class="config-grid">
+                <!-- SECCIÓN POBLACIONES -->
                     <div class="config-section card">
                         <h3><i class="fas fa-map-marker-alt"></i> Gestionar Poblaciones/Grupos</h3>
-                        <div class="form-inline">
-                            <input type="text" id="nueva-poblacion-nombre" placeholder="Nombre nueva población">
+                        <!-- Formulario para agregar nueva población -->
+                    <div class="form-inline">
+                        <input type="text" id="nueva-poblacion-nombre" placeholder="Nombre nueva población">
                             <select id="nueva-poblacion-sucursal">
                                 <option value="GDL">Guadalajara</option>
                                 <option value="LEON">León</option>
                             </select>
-                            <button id="btn-agregar-poblacion" class="btn btn-success btn-sm"><i class="fas fa-plus"></i> Agregar</button>
-                            <button id="btn-cargar-poblaciones" class="btn btn-info btn-sm"><i class="fas fa-sync"></i> Cargar Poblaciones</button>
-                        </div>
+                            <button id="btn-agregar-poblacion" class="btn btn-success btn-sm">
+                                <i class="fas fa-plus"></i> Agregar
+                            </button>
+                    </div>
+                    <!-- Lista de poblaciones existentes -->
+                    <div style="margin-top: 20px;">
+                        <h4>Poblaciones Existentes</h4>
+                        <div class="config-list-header">
+                            <span><strong>Nombre (Sucursal)</strong></span>
+                            <span><strong>Acciones</strong></span>
+                    </div>
                         <ul id="lista-poblaciones" class="config-list">
-                            <li>Cargando...</li>
+                            <li>Cargando poblaciones...</li>
                         </ul>
                     </div>
-
-                    <div class="config-section card">
+                </div>
+                <!-- SECCIÓN RUTAS -->
+                <div class="config-section card">
                     <h3><i class="fas fa-route"></i> Gestionar Rutas</h3>
+                    <!-- Formulario para agregar nueva ruta -->
                     <div class="form-inline">
                         <input type="text" id="nueva-ruta-nombre" placeholder="Nombre nueva ruta">
                         <select id="nueva-ruta-sucursal">
                             <option value="GDL">Guadalajara</option>
                             <option value="LEON">León</option>
                         </select>
-                        <button id="btn-agregar-ruta" class="btn btn-success btn-sm"><i class="fas fa-plus"></i> Agregar</button>
-                <!-- BOTÓN NUEVO -->
-                        <button id="btn-cargar-rutas" class="btn btn-info btn-sm"><i class="fas fa-sync"></i> Cargar Rutas</button>
+                            <button id="btn-agregar-ruta" class="btn btn-success btn-sm">
+                                <i class="fas fa-plus"></i> Agregar
+                            </button>
                     </div>
-                    <ul id="lista-rutas" class="config-list">
-                        <li>Cargando...</li>
-                    </ul>
+                    <!-- Lista de rutas existentes -->
+                    <div style="margin-top: 20px;">
+                        <h4>Rutas Existentes</h4>
+                        <div class="config-list-header">
+                            <span><strong>Nombre (Sucursal)</strong></span>
+                            <span><strong>Acciones</strong></span>
+                        </div>
+                            <ul id="lista-rutas" class="config-list">
+                                <li>Cargando rutas...</li>
+                            </ul>
+                        </div>
+                    </div>
                 </div>
             </div>
-        </div>
 
             <div id="view-cliente" class="view hidden">
                 <div class="view-header">
@@ -1144,6 +1164,7 @@
     <script src="js/app.js"></script>
 </body>
 </html>
+
 
 
 
