@@ -16,12 +16,10 @@ let inactivityTimer; // Temporizador para el cierre de sesión por inactividad
 let grupoDePagoActual = null; // Para la nueva función de pago grupal
 let currentChart = null; // Para la nueva función de gráficos
 let cobranzaRutaData = null;
+let dropdownUpdateInProgress = false; // Prevenir actualizaciones duplicadas
 
 /**
  * Parsea de forma robusta una fecha que puede ser un string (ISO 8601, yyyy-mm-dd, etc.)
- * o un objeto Timestamp de Firestore. Esta función es la clave para corregir las fechas existentes en la DB.
- * @param {string|object} fechaInput La cadena de texto o el objeto de fecha.
- * @returns {Date|null} Un objeto Date válido o null si el formato es incorrecto.
  */
 function parsearFecha(fechaInput) {
     if (!fechaInput) return null;
@@ -2181,37 +2179,46 @@ async function _cargarRutasParaUsuario(office) { // <-- CAMBIO DE sucursal A off
         popularDropdown('nuevo-ruta', [], 'Error al cargar');
     }
 }
+
 /**
- * Actualiza un dropdown de Grupo/Población filtrando por oficina.
- * @param {string} selectId ID del elemento <select> a actualizar.
- * @param {string} office Oficina seleccionada ('GDL', 'LEON', '' para todas).
- * @param {string} placeholder Texto para la opción por defecto.
+ * Actualiza un dropdown de Grupo/Población filtrando por oficina
  */
-async function _actualizarDropdownGrupo(selectId, office, placeholder) { // <-- CAMBIO DE sucursal A office
+async function _actualizarDropdownGrupo(selectId, office, placeholder) {
+    // Prevenir actualizaciones duplicadas
+    if (dropdownUpdateInProgress) {
+        console.log(`--- Dropdown ${selectId} update skipped (already in progress)`);
+        return;
+    }
+    
+    dropdownUpdateInProgress = true;
+    
     const selectElement = document.getElementById(selectId);
     if (!selectElement) {
         console.error(`!!! Dropdown con ID "${selectId}" NO ENCONTRADO.`);
+        dropdownUpdateInProgress = false;
         return;
     }
+    
     console.log(`--- Actualizando Dropdown "${selectId}" ---`);
-    console.log(`   Oficina recibida: '${office}' (Tipo: ${typeof office})`); // <-- Log actualizado
+    console.log(`   Oficina recibida: '${office}'`);
 
     const currentValue = selectElement.value;
     selectElement.innerHTML = `<option value="">Cargando...</option>`;
     selectElement.disabled = true;
 
     try {
-        const poblaciones = await database.obtenerPoblaciones(office || null); // <-- CAMBIO DE sucursal A office
-        console.log(`   Poblaciones obtenidas para "${selectId}":`, poblaciones);
+        const poblaciones = await database.obtenerPoblaciones(office || null);
+        console.log(`   Poblaciones obtenidas para "${selectId}":`, poblaciones.length);
+        
         const nombres = [...new Set(poblaciones.map(p => p.nombre))].sort();
-        console.log(`   Nombres a popular en "${selectId}":`, nombres);
+        console.log(`   Nombres a popular en "${selectId}":`, nombres.length);
 
         popularDropdown(selectId, nombres, placeholder);
 
         if (nombres.includes(currentValue)) {
             selectElement.value = currentValue;
         } else {
-             selectElement.value = "";
+            selectElement.value = "";
         }
         console.log(`   Dropdown "${selectId}" actualizado.`);
 
@@ -2220,6 +2227,7 @@ async function _actualizarDropdownGrupo(selectId, office, placeholder) { // <-- 
         popularDropdown(selectId, [], 'Error al cargar');
     } finally {
         selectElement.disabled = false;
+        dropdownUpdateInProgress = false;
     }
 }
 
@@ -4071,34 +4079,47 @@ const popularDropdown = (elementId, options, placeholder, isObjectValueKey = fal
     console.log(`Dropdown ${elementId} actualizado con ${options?.length || 0} opciones`);
 };
 
-
+//** Manejaer el cambio de oficina ** //
 async function handleOfficeChangeForClientForm() {
     const office = this.value || document.getElementById('office_cliente')?.value;
+    console.log(`handleOfficeChangeForClientForm: Office = ${office}`);
 
-    const [poblaciones, rutas] = await Promise.all([
-        database.obtenerPoblaciones(office),
-        database.obtenerRutas(office)
-    ]);
-
-    const poblacionesNombres = poblaciones.map(p => p.nombre).sort();
-    const rutasNombres = rutas.map(r => r.nombre).sort();
-
-    if (editingClientId) {
-        const [todasPoblacionesDB, todasRutasDB] = await Promise.all([
-            database.obtenerPoblaciones(),
-            database.obtenerRutas()
+    try {
+        const [poblaciones, rutas] = await Promise.all([
+            database.obtenerPoblaciones(office),
+            database.obtenerRutas(office)
         ]);
-        const todasPoblacionesNombres = [...new Set(todasPoblacionesDB.map(p => p.nombre))].sort();
-        const todasRutasNombres = [...new Set(todasRutasDB.map(r => r.nombre))].sort();
 
-        popularDropdown('poblacion_grupo_cliente', todasPoblacionesNombres, 'Selecciona población/grupo');
-        popularDropdown('ruta_cliente', todasRutasNombres, 'Selecciona una ruta');
-    } else {
-        popularDropdown('poblacion_grupo_cliente', poblacionesNombres, 'Selecciona población/grupo');
-        popularDropdown('ruta_cliente', rutasNombres, 'Selecciona una ruta');
+        const poblacionesNombres = poblaciones.map(p => p.nombre).sort();
+        const rutasNombres = rutas.map(r => r.nombre).sort();
+
+        console.log(`Poblaciones para ${office}:`, poblacionesNombres.length);
+        console.log(`Rutas para ${office}:`, rutasNombres.length);
+
+        // Si estamos editando, cargar todas las opciones disponibles
+        if (editingClientId) {
+            const [todasPoblacionesDB, todasRutasDB] = await Promise.all([
+                database.obtenerPoblaciones(),
+                database.obtenerRutas()
+            ]);
+            const todasPoblacionesNombres = [...new Set(todasPoblacionesDB.map(p => p.nombre))].sort();
+            const todasRutasNombres = [...new Set(todasRutasDB.map(r => r.nombre))].sort();
+
+            popularDropdown('poblacion_grupo_cliente', todasPoblacionesNombres, 'Selecciona población/grupo');
+            popularDropdown('ruta_cliente', todasRutasNombres, 'Selecciona una ruta');
+        } else {
+            popularDropdown('poblacion_grupo_cliente', poblacionesNombres, 'Selecciona población/grupo');
+            popularDropdown('ruta_cliente', rutasNombres, 'Selecciona una ruta');
+        }
+    } catch (error) {
+        console.error('Error en handleOfficeChangeForClientForm:', error);
+        // En caso de error, cargar listas vacías
+        popularDropdown('poblacion_grupo_cliente', [], 'Error al cargar');
+        popularDropdown('ruta_cliente', [], 'Error al cargar');
     }
 }
 
+//** Manejar el cambio de oficina en reportes gráficos **//
 
 async function handleSucursalGraficoChange() {
     const office = this.value;
@@ -4109,9 +4130,7 @@ async function handleSucursalGraficoChange() {
     popularDropdown('grafico_grupo', poblacionesNombres, 'Todos');
 }
 
-/**
- * Carga las rutas en el dropdown del formulario de usuario, filtradas por oficina.
- */
+//** Carga las rutas en el dropdown del formulario de usuario, filtradas por oficina **//
 async function _cargarRutasParaUsuario(office) {
     const rutaSelect = document.getElementById('nuevo-ruta');
     if (!rutaSelect) return;
@@ -4142,74 +4161,76 @@ async function _cargarRutasParaUsuario(office) {
  */
 async function inicializarDropdowns() {
     console.log('===> Inicializando dropdowns...');
-    const userOffice = currentUserData?.office; // <-- CAMBIO DE userSucursal A userOffice
-    console.log(`===> Oficina del usuario actual: ${userOffice}`); // <-- Log actualizado
+    const userOffice = currentUserData?.office;
+    console.log(`===> Oficina del usuario actual: ${userOffice}`);
 
-    // Cargar poblaciones y rutas (database.js ya usa 'office')
-    const [poblaciones, rutas] = await Promise.all([
-        database.obtenerPoblaciones(),
-        database.obtenerRutas()
-    ]);
-    const todasLasRutas = [...new Set(rutas.map(r => r.nombre))].sort();
+    try {
+        // Cargar poblaciones y rutas
+        const [poblaciones, rutas] = await Promise.all([
+            database.obtenerPoblaciones(),
+            database.obtenerRutas()
+        ]);
+        
+        const todasLasRutas = [...new Set(rutas.map(r => r.nombre))].sort();
+        console.log(`===> Rutas encontradas: ${todasLasRutas.length}`, todasLasRutas);
 
-    const tiposCredito = ['NUEVO', 'RENOVACION', 'REINGRESO'];
-    const montos = [3000, 3500, 4000, 4500, 5000, 6000, 7000, 8000, 9000, 10000];
-    const plazosCredito = [10, 13, 14].sort((a, b) => a - b);
-    const estadosCredito = ['al corriente', 'atrasado', 'cobranza', 'juridico', 'liquidado'];
-    const tiposPago = ['normal', 'extraordinario', 'actualizado', 'grupal'];
-    const roles = [
-        { value: 'Super Admin', text: 'Super Admin' },
-        { value: 'Gerencia', text: 'Gerencia' },
-        { value: 'Administrador', text: 'Administrador' },
-        { value: 'Área comercial', text: 'Área comercial' }
-        // Otros roles como consulta, cobrador, se pueden añadir si es necesario
-    ];
-    const tiposReporteGrafico = [
-        { value: 'colocacion', text: 'Colocación (Monto)' },
-        { value: 'recuperacion', text: 'Recuperación (Pagos)' },
-        { value: 'comportamiento', text: 'Comportamiento de Pago (Tipos)' },
-        { value: 'colocacion_vs_recuperacion', text: 'Colocación vs. Recuperación' } // <-- AÑADIR ESTA LÍNEA
-    ];
+        const tiposCredito = ['NUEVO', 'RENOVACION', 'REINGRESO'];
+        const montos = [3000, 3500, 4000, 4500, 5000, 6000, 7000, 8000, 9000, 10000];
+        const plazosCredito = [10, 13, 14].sort((a, b) => a - b);
+        const estadosCredito = ['al corriente', 'atrasado', 'cobranza', 'juridico', 'liquidado'];
+        const tiposPago = ['normal', 'extraordinario', 'actualizado', 'grupal'];
+        const roles = [
+            { value: 'Super Admin', text: 'Super Admin' },
+            { value: 'Gerencia', text: 'Gerencia' },
+            { value: 'Administrador', text: 'Administrador' },
+            { value: 'Área comercial', text: 'Área comercial' }
+        ];
+        const tiposReporteGrafico = [
+            { value: 'colocacion', text: 'Colocación (Monto)' },
+            { value: 'recuperacion', text: 'Recuperación (Pagos)' },
+            { value: 'comportamiento', text: 'Comportamiento de Pago (Tipos)' },
+            { value: 'colocacion_vs_recuperacion', text: 'Colocación vs. Recuperación' }
+        ];
 
-    // --- Dropdowns de Grupo/Población (AHORA USAN LA FUNCIÓN AUXILIAR) ---
-    // Usar la sucursal del usuario como filtro inicial si está definida y no es 'AMBAS'
-    const filtroOfficeInicial = (userOffice && userOffice !== 'AMBAS') ? userOffice : ''; // <-- CAMBIO DE filtroSucursalInicial A filtroOfficeInicial
-    console.log(`===> Filtro oficina inicial para grupos: '${filtroOfficeInicial}'`); // <-- Log actualizado
+        // --- Dropdowns de Grupo/Población ---
+        const filtroOfficeInicial = (userOffice && userOffice !== 'AMBAS') ? userOffice : '';
+        console.log(`===> Filtro oficina inicial para grupos: '${filtroOfficeInicial}'`);
 
-    // Customer Management Filters
-    await _actualizarDropdownGrupo('grupo_filtro', filtroOfficeInicial, 'Todos');
-    // Group Payment
-    //await _actualizarDropdownGrupo('grupo_pago_grupal', filtroOfficeInicial, 'Selecciona un Grupo');//**
-    // Advanced Reports Filters
-    await _actualizarDropdownGrupo('grupo_filtro_reporte', filtroOfficeInicial, 'Todos');
-    // Graphic Reports Filters
-    await _actualizarDropdownGrupo('grafico_grupo', filtroOfficeInicial, 'Todos');
+        // Inicializar dropdowns de grupos
+        await _actualizarDropdownGrupo('grupo_filtro', filtroOfficeInicial, 'Todos');
+        await _actualizarDropdownGrupo('grupo_filtro_reporte', filtroOfficeInicial, 'Todos');
+        await _actualizarDropdownGrupo('grafico_grupo', filtroOfficeInicial, 'Todos');
 
-    // --- Dropdowns Rutas ---
-    popularDropdown('ruta_filtro_reporte', todasLasRutas, 'Todas');
-    // Rutas para form cliente se cargan dinámicamente
-    popularDropdown('ruta_cliente', [], 'Selecciona Oficina primero');
-    // Rutas para form usuario se cargan dinámicamente
-    popularDropdown('nuevo-ruta', [], 'Selecciona Oficina primero');
+        // --- Dropdowns Rutas ---
+        // CORRECCIÓN: Usar todasLasRutas en lugar de arrays vacíos
+        popularDropdown('ruta_filtro_reporte', todasLasRutas, 'Todas');
+        popularDropdown('ruta_cliente', todasLasRutas, 'Selecciona una ruta'); // CORREGIDO
+        popularDropdown('nuevo-ruta', todasLasRutas, '-- Sin asignar --'); // CORREGIDO
 
-    // --- Dropdowns estáticos --- (SIN CAMBIOS)
-    popularDropdown('tipo_colocacion', tiposCredito.map(t => ({ value: t.toLowerCase(), text: t })), 'Selecciona tipo', true);
-    popularDropdown('monto_colocacion', montos.map(m => ({ value: m, text: `$${m.toLocaleString()}` })), 'Selecciona monto', true);
-    popularDropdown('plazo_colocacion', plazosCredito.map(p => ({ value: p, text: `${p} semanas` })), 'Selecciona plazo', true);
-    popularDropdown('tipo_colocacion_filtro', tiposCredito.map(t => ({ value: t.toLowerCase(), text: t })), 'Todos', true);
-    popularDropdown('plazo_filtro', plazosCredito.map(p => ({ value: p, text: `${p} semanas` })), 'Todos', true);
-    popularDropdown('estado_credito_filtro', estadosCredito.map(e => ({ value: e, text: e.charAt(0).toUpperCase() + e.slice(1) })), 'Todos', true);
-    popularDropdown('filtro-rol-usuario', roles, 'Todos los roles', true);
-    popularDropdown('nuevo-rol', roles, 'Seleccione un rol', true);
-    popularDropdown('tipo_credito_filtro_reporte', tiposCredito.map(t => ({ value: t.toLowerCase(), text: t })), 'Todos', true);
-    popularDropdown('estado_credito_filtro_reporte', estadosCredito.map(e => ({ value: e, text: e.toUpperCase() })), 'Todos', true);
-    popularDropdown('tipo_pago_filtro_reporte', tiposPago.map(t => ({ value: t, text: t.toUpperCase() })), 'Todos', true);
-    popularDropdown('grafico_tipo_reporte', tiposReporteGrafico, 'Selecciona un reporte', true);
+        // --- Dropdowns estáticos ---
+        popularDropdown('tipo_colocacion', tiposCredito.map(t => ({ value: t.toLowerCase(), text: t })), 'Selecciona tipo', true);
+        popularDropdown('monto_colocacion', montos.map(m => ({ value: m, text: `$${m.toLocaleString()}` })), 'Selecciona monto', true);
+        popularDropdown('plazo_colocacion', plazosCredito.map(p => ({ value: p, text: `${p} semanas` })), 'Selecciona plazo', true);
+        popularDropdown('tipo_colocacion_filtro', tiposCredito.map(t => ({ value: t.toLowerCase(), text: t })), 'Todos', true);
+        popularDropdown('plazo_filtro', plazosCredito.map(p => ({ value: p, text: `${p} semanas` })), 'Todos', true);
+        popularDropdown('estado_credito_filtro', estadosCredito.map(e => ({ value: e, text: e.charAt(0).toUpperCase() + e.slice(1) })), 'Todos', true);
+        popularDropdown('filtro-rol-usuario', roles, 'Todos los roles', true);
+        popularDropdown('nuevo-rol', roles, 'Seleccione un rol', true);
+        popularDropdown('tipo_credito_filtro_reporte', tiposCredito.map(t => ({ value: t.toLowerCase(), text: t })), 'Todos', true);
+        popularDropdown('estado_credito_filtro_reporte', estadosCredito.map(e => ({ value: e, text: e.toUpperCase() })), 'Todos', true);
+        popularDropdown('tipo_pago_filtro_reporte', tiposPago.map(t => ({ value: t, text: t.toUpperCase() })), 'Todos', true);
+        popularDropdown('grafico_tipo_reporte', tiposReporteGrafico, 'Selecciona un reporte', true);
 
-    // Dropdowns de Cliente (poblacion/ruta) se cargan con handleOfficeChangeForClientForm
-    popularDropdown('poblacion_grupo_cliente', [], 'Selecciona Oficina primero');
-    popularDropdown('ruta_cliente', [], 'Selecciona Oficina primero');
+        // Dropdowns de Cliente (se cargarán dinámicamente cuando cambie la oficina)
+        const poblacionesNombres = [...new Set(poblaciones.map(p => p.nombre))].sort();
+        popularDropdown('poblacion_grupo_cliente', poblacionesNombres, 'Selecciona población/grupo');
+        popularDropdown('ruta_cliente', todasLasRutas, 'Selecciona una ruta');
 
+        console.log('===> Dropdowns inicializados correctamente');
+
+    } catch (error) {
+        console.error('Error inicializando dropdowns:', error);
+    }
 }
 
 
@@ -5244,20 +5265,21 @@ function setupEventListeners() {
     const btnCargarPoblaciones = document.getElementById('btn-cargar-poblaciones');
     if (btnCargarPoblaciones) {
     btnCargarPoblaciones.addEventListener('click', handleCargarPoblaciones);
-    console.log('Listener añadido para btn-cargar-poblaciones');
+        console.log('Listener añadido para btn-cargar-poblaciones');
     } else {
-    console.error('No se encontró btn-cargar-poblaciones');
+        console.warn('No se encontró btn-cargar-poblaciones - puede que no exista en esta vista');
     }
 
     const btnCargarRutas = document.getElementById('btn-cargar-rutas');
     if (btnCargarRutas) {
     btnCargarRutas.addEventListener('click', handleCargarRutas);
-    console.log('Listener añadido para btn-cargar-rutas');
+        console.log('Listener añadido para btn-cargar-rutas');
     } else {
-    console.error('No se encontró btn-cargar-rutas');
+        console.warn('No se encontró btn-cargar-rutas - puede que no exista en esta vista');
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
