@@ -1463,10 +1463,11 @@ async function handleRegistrarEntregaInicial(e) {
 
 /**
  * Busca y muestra los movimientos y el balance del agente seleccionado.
+ * CORREGIDO: Ahora pasa el filtro de 'office' del administrador a la consulta.
  */
 async function handleBuscarMovimientos() {
     const btn = document.getElementById('btn-buscar-movimientos');
-    const statusEl = 'status_registrar_entrega'; // Usar el mismo status por ahora
+    const statusEl = 'status_registrar_entrega';
     const agenteId = document.getElementById('filtro-agente').value;
     const fechaInicio = document.getElementById('filtro-fecha-inicio-efectivo').value;
     const fechaFin = document.getElementById('filtro-fecha-fin-efectivo').value;
@@ -1493,12 +1494,19 @@ async function handleBuscarMovimientos() {
     document.getElementById('balance-final').textContent = '...';
 
     try {
+        // --- INICIO DE LA CORRECCIÓN ---
+        const adminOffice = currentUserData?.office;
+        const esAdminTotal = (currentUserData?.role === 'Super Admin' || currentUserData?.role === 'Gerencia');
+        
         const filtros = {
             userId: agenteId,
             fechaInicio: fechaInicio ? (fechaInicio + 'T00:00:00Z') : null,
-            fechaFin: fechaFin ? (fechaFin + 'T23:59:59Z') : null
-            // La oficina ya se filtró al cargar la lista de agentes
+            fechaFin: fechaFin ? (fechaFin + 'T23:59:59Z') : null,
+            // Añadir el filtro de oficina del admin (si no es admin total)
+            // 'null' significa que la función de DB no aplicará filtro de oficina
+            office: (esAdminTotal || !adminOffice || adminOffice === 'AMBAS') ? null : adminOffice
         };
+        // --- FIN DE LA CORRECCIÓN ---
 
         const movimientos = await database.getMovimientosEfectivo(filtros);
 
@@ -1506,6 +1514,7 @@ async function handleBuscarMovimientos() {
             tbody.innerHTML = '<tr><td colspan="5">No se encontraron movimientos para este agente en este rango de fechas.</td></tr>';
             showStatus(statusEl, 'No se encontraron movimientos.', 'info');
         } else {
+            // El resto de la función (renderizado de tabla) es correcto
             tbody.innerHTML = movimientos.map(mov => `
                 <tr style="color: ${mov.monto > 0 ? 'var(--success)' : 'var(--danger)'};">
                     <td>${formatDateForDisplay(parsearFecha(mov.fecha))}</td>
@@ -1518,18 +1527,18 @@ async function handleBuscarMovimientos() {
             showStatus(statusEl, `Se encontraron ${movimientos.length} movimientos.`, 'success');
         }
         
-        // Calcular Balance
+        // El resto del cálculo de balance es correcto
         let totalEntregado = 0;
         let totalGastos = 0;
         let totalColocado = 0;
         
         movimientos.forEach(mov => {
             if (mov.tipo === 'ENTREGA_INICIAL') {
-                totalEntregado += (mov.monto || 0); // Suma (positivo)
+                totalEntregado += (mov.monto || 0);
             } else if (mov.tipo === 'GASTO') {
-                totalGastos += (mov.monto || 0); // Suma (ya es negativo)
+                totalGastos += (mov.monto || 0);
             } else if (mov.tipo === 'COLOCACION') {
-                totalColocado += (mov.monto || 0); // Suma (ya es negativo)
+                totalColocado += (mov.monto || 0);
             }
         });
         
@@ -4101,6 +4110,7 @@ function mostrarModalRuta() {
 
 /**
  * Agrega población desde el modal
+ * CORREGIDO: Llama a la función correcta 'cargarInterfazPoblaciones' para recargar la UI.
  */
 async function agregarPoblacionDesdeModal() {
     const nombre = document.getElementById('modal-poblacion-nombre').value.trim().toUpperCase();
@@ -4118,7 +4128,17 @@ async function agregarPoblacionDesdeModal() {
         
         if (resultado.success) {
             document.getElementById('generic-modal').classList.add('hidden');
-            await cargarTablaPoblaciones();
+            
+            // --- INICIO DE LA CORRECCIÓN ---
+            // Determinar el filtro de oficina actual para recargar la vista
+            let officeFiltro = null;
+            if (currentUserData.role === 'Administrador' && currentUserData.office && currentUserData.office !== 'AMBAS') {
+                officeFiltro = currentUserData.office;
+            }
+            // Llamar a la función de renderizado de UI correcta
+            await cargarInterfazPoblaciones(officeFiltro); 
+            // --- FIN DE LA CORRECCIÓN ---
+
             showStatus('status_configuracion', 'Población agregada correctamente', 'success');
         } else {
             throw new Error(resultado.message);
@@ -4133,6 +4153,7 @@ async function agregarPoblacionDesdeModal() {
 
 /**
  * Agrega ruta desde el modal
+ * CORREGIDO: Llama a la función correcta 'cargarInterfazRutas' para recargar la UI.
  */
 async function agregarRutaDesdeModal() {
     const nombre = document.getElementById('modal-ruta-nombre').value.trim().toUpperCase();
@@ -4150,7 +4171,17 @@ async function agregarRutaDesdeModal() {
         
         if (resultado.success) {
             document.getElementById('generic-modal').classList.add('hidden');
-            await cargarTablaRutas();
+
+            // --- INICIO DE LA CORRECCIÓN ---
+            // Determinar el filtro de oficina actual para recargar la vista
+            let officeFiltro = null;
+            if (currentUserData.role === 'Administrador' && currentUserData.office && currentUserData.office !== 'AMBAS') {
+                officeFiltro = currentUserData.office;
+            }
+            // Llamar a la función de renderizado de UI correcta
+            await cargarInterfazRutas(officeFiltro);
+            // --- FIN DE LA CORRECCIÓN ---
+
             showStatus('status_configuracion', 'Ruta agregada correctamente', 'success');
         } else {
             throw new Error(resultado.message);
@@ -5782,6 +5813,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
