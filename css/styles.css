@@ -1621,6 +1621,66 @@ body.has-connection-status .progress-container-fixed {
         page-break-before: auto;
         page-break-inside: avoid;
     }
+
+    .config-list-header {
+    display: flex;
+    justify-content: space-between;
+    padding: 10px;
+    background: #f8f9fa;
+    border-bottom: 1px solid #dee2e6;
+    font-weight: bold;
+    }
+
+    .config-list-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px;
+    border-bottom: 1px solid #eee;
+    }
+
+    .config-list-item:hover {
+    background: #f8f9fa;
+    }
+
+    .badge-sucursal {
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.8em;
+    margin-left: 8px;
+    }
+
+    .badge-sucursal.GDL {
+    background: #2E8B57;
+    color: white;
+    }
+
+    .badge-sucursal.LEON {
+    background: #1E90FF;
+    color: white;
+    }
+
+    .ruta-asignada {
+    color: #28a745;
+    font-size: 0.85em;
+    }
+
+    .sin-ruta {
+    color: #6c757d;
+    font-size: 0.85em;
+    }
+
+    .action-buttons {
+    display: flex;
+    gap: 5px;
+    }
+
+    .config-list {
+    max-height: 400px;
+    overflow-y: auto;
+    }
+    
 }
+
 
 
