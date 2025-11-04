@@ -18,9 +18,7 @@ let currentChart = null; // Para la nueva función de gráficos
 let cobranzaRutaData = null;
 let dropdownUpdateInProgress = false; // Prevenir actualizaciones duplicadas
 
-/**
- * Parsea de forma robusta una fecha que puede ser un string (ISO 8601, yyyy-mm-dd, etc.)
- */
+/** Parsea de forma robusta una fecha que puede ser un string (ISO 8601, yyyy-mm-dd, etc.) **/
 function parsearFecha(fechaInput) {
     if (!fechaInput) return null;
     if (fechaInput instanceof Date) return fechaInput;
@@ -3389,24 +3387,36 @@ async function handleGenerarGrafico() {
 
 /**
  * Carga la nueva interfaz de gestión de poblaciones y rutas
+ * CORREGIDO: Ahora determina el filtro de oficina basado en el rol del usuario.
  */
 async function loadConfiguracion() {
-    console.log("--- Cargando nueva interfaz de gestión ---");
+    console.log("--- Cargando nueva interfaz de gestión (Corregida) ---");
     const statusEl = 'status_configuracion';
     
-    // Verificar permisos
+    // 1. Verificar permisos de acceso
     if (!currentUserData || !['Super Admin', 'Gerencia', 'Administrador'].includes(currentUserData.role)) {
         showStatus(statusEl, 'No tienes permisos para acceder a esta sección.', 'error');
         showView('view-main-menu');
         return;
     }
 
+    // 2. Determinar el filtro de oficina
+    let officeFiltro = null; // null = Super Admin/Gerencia (ven todo)
+    
+    // Si es Administrador Y tiene una oficina específica (no AMBAS), aplicar el filtro
+    if (currentUserData.role === 'Administrador' && currentUserData.office && currentUserData.office !== 'AMBAS') {
+        officeFiltro = currentUserData.office;
+    }
+    
+    console.log(`Filtro de oficina para configuración: ${officeFiltro || 'TODAS'}`);
     showStatus(statusEl, 'Cargando catálogos...', 'info');
 
     try {
-        await cargarInterfazPoblaciones();
-        await cargarInterfazRutas();
-        setupNuevosTabsConfiguracion();
+        // 3. Pasar el filtro a las funciones de carga
+        await cargarInterfazPoblaciones(officeFiltro);
+        await cargarInterfazRutas(officeFiltro);
+        
+        setupNuevosTabsConfiguracion(); // Esto está bien
         showStatus(statusEl, 'Catálogos cargados correctamente', 'success');
         
     } catch (error) {
@@ -3439,35 +3449,20 @@ function setupNuevosTabsConfiguracion() {
 
 /**
  * Carga la nueva interfaz de poblaciones
+ * CORREGIDO: Acepta 'officeFiltro' para filtrar datos y ajustar la UI.
  */
-async function cargarInterfazPoblaciones() {
+async function cargarInterfazPoblaciones(officeFiltro) {
     const container = document.getElementById('tabla-poblaciones-container');
     if (!container) return;
 
+    // Limpiar contenedor antes de cargar
+    container.innerHTML = `<div style="text-align: center; padding: 40px;"><div class="spinner"></div><p>Cargando poblaciones...</p></div>`;
+
     try {
-        const poblaciones = await database.obtenerPoblaciones();
+        const poblaciones = await database.obtenerPoblaciones(officeFiltro);
         
-        if (poblaciones.length === 0) {
-            container.innerHTML = `
-                <div class="empty-state">
-                    <i class="fas fa-map-marker-alt fa-3x"></i>
-                    <h3>No hay poblaciones registradas</h3>
-                    <p>Comienza agregando tu primera población</p>
-                    <button class="btn btn-primary" onclick="mostrarModalPoblacion()">
-                        <i class="fas fa-plus"></i> Agregar Población
-                    </button>
-                </div>
-            `;
-            return;
-        }
-
-        // Agrupar por oficina
-        const poblacionesPorOficina = {
-            'GDL': poblaciones.filter(p => p.office === 'GDL'),
-            'LEON': poblaciones.filter(p => p.office === 'LEON')
-        };
-
-        let html = `
+        // Preparar HTML del encabezado (siempre visible)
+        const headerHTML = `
             <div class="config-header">
                 <h3>Gestión de Poblaciones</h3>
                 <div class="header-actions">
@@ -3480,30 +3475,71 @@ async function cargarInterfazPoblaciones() {
                     </button>
                 </div>
             </div>
+        `;
 
-            <div class="filter-tabs">
+        // Si no hay datos, mostrar estado vacío CON el encabezado
+        if (poblaciones.length === 0) {
+            container.innerHTML = headerHTML + `
+                <div class="empty-state">
+                    <i class="fas fa-map-marker-alt fa-3x"></i>
+                    <h3>No hay poblaciones registradas</h3>
+                    <p>No se encontraron poblaciones ${officeFiltro ? `para tu oficina (${officeFiltro})` : 'en el sistema'}.</p>
+                    <button class="btn btn-primary" onclick="mostrarModalPoblacion()">
+                        <i class="fas fa-plus"></i> Agregar Población
+                    </button>
+                </div>
+            `;
+            return;
+        }
+
+        // Agrupar por oficina (solo si el filtro es nulo)
+        const poblacionesPorOficina = {};
+        const oficinasAMostrar = [];
+
+        if (officeFiltro) {
+            // Si es Admin, solo mostrar su oficina
+            poblacionesPorOficina[officeFiltro] = poblaciones;
+            oficinasAMostrar.push(officeFiltro);
+        } else {
+            // Si es Super Admin/Gerencia, agrupar
+            poblacionesPorOficina['GDL'] = poblaciones.filter(p => p.office === 'GDL');
+            poblacionesPorOficina['LEON'] = poblaciones.filter(p => p.office === 'LEON');
+            oficinasAMostrar.push('GDL', 'LEON');
+        }
+
+        let html = headerHTML + `
+            <div class="filter-tabs" style="display: ${officeFiltro ? 'none' : 'flex'};">
                 <button class="filter-tab active" data-office="all">Todas</button>
                 <button class="filter-tab" data-office="GDL">Guadalajara</button>
                 <button class="filter-tab" data-office="LEON">León</button>
             </div>
-
             <div class="poblaciones-grid" id="poblaciones-grid">
         `;
 
-        // Mostrar todas las poblaciones
-        for (const office of ['GDL', 'LEON']) {
+        let tarjetasGeneradas = 0;
+        for (const office of oficinasAMostrar) {
             const poblacionesOffice = poblacionesPorOficina[office];
-            if (poblacionesOffice.length > 0) {
+            if (poblacionesOffice && poblacionesOffice.length > 0) {
                 html += `<div class="office-section" data-office="${office}">`;
-                html += `<h4 class="office-title">${office === 'GDL' ? 'Guadalajara' : 'León'} (${poblacionesOffice.length})</h4>`;
+                // No mostrar título de oficina si es un admin filtrado
+                if (!officeFiltro) {
+                    html += `<h4 class="office-title">${office === 'GDL' ? 'Guadalajara' : 'León'} (${poblacionesOffice.length})</h4>`;
+                }
                 html += `<div class="poblaciones-list">`;
                 
                 poblacionesOffice.forEach(poblacion => {
                     html += crearTarjetaPoblacion(poblacion);
+                    tarjetasGeneradas++;
                 });
                 
                 html += `</div></div>`;
             }
+        }
+        
+        if (tarjetasGeneradas === 0) {
+             // Esto puede pasar si hay poblaciones pero no GDL o LEON (datos corruptos)
+             container.innerHTML = headerHTML + `<div class="empty-state"><p>No se encontraron poblaciones para GDL o LEON.</p></div>`;
+             return;
         }
 
         html += `</div>`;
@@ -3520,7 +3556,7 @@ async function cargarInterfazPoblaciones() {
                 <i class="fas fa-exclamation-triangle fa-2x"></i>
                 <h3>Error al cargar las poblaciones</h3>
                 <p>${error.message}</p>
-                <button class="btn btn-secondary" onclick="cargarInterfazPoblaciones()">
+                <button class="btn btn-secondary" onclick="cargarInterfazPoblaciones('${officeFiltro}')">
                     <i class="fas fa-redo"></i> Reintentar
                 </button>
             </div>
@@ -3626,29 +3662,20 @@ function configurarFiltrosPoblaciones() {
 
 /**
  * Carga la nueva interfaz de rutas
+ * CORREGIDO: Acepta 'officeFiltro' para filtrar datos y ajustar la UI.
  */
-async function cargarInterfazRutas() {
+async function cargarInterfazRutas(officeFiltro) {
     const container = document.getElementById('tabla-rutas-container');
     if (!container) return;
 
-    try {
-        const rutas = await database.obtenerRutas();
-        
-        if (rutas.length === 0) {
-            container.innerHTML = `
-                <div class="empty-state">
-                    <i class="fas fa-route fa-3x"></i>
-                    <h3>No hay rutas registradas</h3>
-                    <p>Comienza agregando tu primera ruta</p>
-                    <button class="btn btn-primary" onclick="mostrarModalRuta()">
-                        <i class="fas fa-plus"></i> Agregar Ruta
-                    </button>
-                </div>
-            `;
-            return;
-        }
+    // Limpiar contenedor antes de cargar
+    container.innerHTML = `<div style="text-align: center; padding: 40px;"><div class="spinner"></div><p>Cargando rutas...</p></div>`;
 
-        let html = `
+    try {
+        const rutas = await database.obtenerRutas(officeFiltro);
+        
+        // Preparar HTML del encabezado (siempre visible)
+        const headerHTML = `
             <div class="config-header">
                 <h3>Gestión de Rutas</h3>
                 <div class="header-actions">
@@ -3661,21 +3688,47 @@ async function cargarInterfazRutas() {
                     </button>
                 </div>
             </div>
-
-            <div class="rutas-grid" id="rutas-grid">
         `;
 
-        // Agrupar por oficina
-        const rutasPorOficina = {
-            'GDL': rutas.filter(r => r.office === 'GDL').sort((a, b) => a.nombre.localeCompare(b.nombre)),
-            'LEON': rutas.filter(r => r.office === 'LEON').sort((a, b) => a.nombre.localeCompare(b.nombre))
-        };
+        if (rutas.length === 0) {
+            container.innerHTML = headerHTML + `
+                <div class="empty-state">
+                    <i class="fas fa-route fa-3x"></i>
+                    <h3>No hay rutas registradas</h3>
+                    <p>No se encontraron rutas ${officeFiltro ? `para tu oficina (${officeFiltro})` : 'en el sistema'}.</p>
+                    <button class="btn btn-primary" onclick="mostrarModalRuta()">
+                        <i class="fas fa-plus"></i> Agregar Ruta
+                    </button>
+                </div>
+            `;
+            return;
+        }
 
-        for (const office of ['GDL', 'LEON']) {
+        let html = headerHTML + `<div class="rutas-grid" id="rutas-grid">`;
+
+        // Agrupar por oficina (solo si el filtro es nulo)
+        const rutasPorOficina = {};
+        const oficinasAMostrar = [];
+
+        if (officeFiltro) {
+            // Si es Admin, solo mostrar su oficina
+            rutasPorOficina[officeFiltro] = rutas.sort((a, b) => a.nombre.localeCompare(b.nombre));
+            oficinasAMostrar.push(officeFiltro);
+        } else {
+            // Si es Super Admin/Gerencia, agrupar
+            rutasPorOficina['GDL'] = rutas.filter(r => r.office === 'GDL').sort((a, b) => a.nombre.localeCompare(b.nombre));
+            rutasPorOficina['LEON'] = rutas.filter(r => r.office === 'LEON').sort((a, b) => a.nombre.localeCompare(b.nombre));
+            oficinasAMostrar.push('GDL', 'LEON');
+        }
+
+        for (const office of oficinasAMostrar) {
             const rutasOffice = rutasPorOficina[office];
-            if (rutasOffice.length > 0) {
+            if (rutasOffice && rutasOffice.length > 0) {
                 html += `<div class="office-section" data-office="${office}">`;
-                html += `<h4 class="office-title">${office === 'GDL' ? 'Guadalajara' : 'León'} (${rutasOffice.length})</h4>`;
+                // No mostrar título de oficina si es admin
+                if (!officeFiltro) {
+                    html += `<h4 class="office-title">${office === 'GDL' ? 'Guadalajara' : 'León'} (${rutasOffice.length})</h4>`;
+                }
                 html += `<div class="rutas-list">`;
                 
                 rutasOffice.forEach(ruta => {
@@ -3700,7 +3753,7 @@ async function cargarInterfazRutas() {
                 <i class="fas fa-exclamation-triangle fa-2x"></i>
                 <h3>Error al cargar las rutas</h3>
                 <p>${error.message}</p>
-                <button class="btn btn-secondary" onclick="cargarInterfazRutas()">
+                <button class="btn btn-secondary" onclick="cargarInterfazRutas('${officeFiltro}')">
                     <i class="fas fa-redo"></i> Reintentar
                 </button>
             </div>
@@ -5729,6 +5782,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
