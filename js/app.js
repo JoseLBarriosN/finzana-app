@@ -3464,13 +3464,11 @@ async function cargarInterfazPoblaciones(officeFiltro) {
     const container = document.getElementById('tabla-poblaciones-container');
     if (!container) return;
 
-    // Limpiar contenedor antes de cargar
     container.innerHTML = `<div style="text-align: center; padding: 40px;"><div class="spinner"></div><p>Cargando poblaciones...</p></div>`;
 
     try {
         const poblaciones = await database.obtenerPoblaciones(officeFiltro);
         
-        // Preparar HTML del encabezado (siempre visible)
         const headerHTML = `
             <div class="config-header">
                 <h3>Gestión de Poblaciones</h3>
@@ -3486,34 +3484,28 @@ async function cargarInterfazPoblaciones(officeFiltro) {
             </div>
         `;
 
-        // Si no hay datos, mostrar estado vacío CON el encabezado
         if (poblaciones.length === 0) {
             container.innerHTML = headerHTML + `
                 <div class="empty-state">
                     <i class="fas fa-map-marker-alt fa-3x"></i>
                     <h3>No hay poblaciones registradas</h3>
                     <p>No se encontraron poblaciones ${officeFiltro ? `para tu oficina (${officeFiltro})` : 'en el sistema'}.</p>
-                    <button class="btn btn-primary" onclick="mostrarModalPoblacion()">
-                        <i class="fas fa-plus"></i> Agregar Población
-                    </button>
                 </div>
             `;
             return;
         }
 
-        // Agrupar por oficina (solo si el filtro es nulo)
         const poblacionesPorOficina = {};
         const oficinasAMostrar = [];
 
         if (officeFiltro) {
-            // Si es Admin, solo mostrar su oficina
             poblacionesPorOficina[officeFiltro] = poblaciones;
             oficinasAMostrar.push(officeFiltro);
         } else {
-            // Si es Super Admin/Gerencia, agrupar
             poblacionesPorOficina['GDL'] = poblaciones.filter(p => p.office === 'GDL');
             poblacionesPorOficina['LEON'] = poblaciones.filter(p => p.office === 'LEON');
-            oficinasAMostrar.push('GDL', 'LEON');
+            poblacionesPorOficina['OTROS'] = poblaciones.filter(p => p.office !== 'GDL' && p.office !== 'LEON');
+            oficinasAMostrar.push('GDL', 'LEON', 'OTROS');
         }
 
         let html = headerHTML + `
@@ -3521,51 +3513,49 @@ async function cargarInterfazPoblaciones(officeFiltro) {
                 <button class="filter-tab active" data-office="all">Todas</button>
                 <button class="filter-tab" data-office="GDL">Guadalajara</button>
                 <button class="filter-tab" data-office="LEON">León</button>
+                <button class="filter-tab" data-office="OTROS">Sin Asignar / Otros</button>
             </div>
             <div class="poblaciones-grid" id="poblaciones-grid">
         `;
 
-        let tarjetasGeneradas = 0;
         for (const office of oficinasAMostrar) {
             const poblacionesOffice = poblacionesPorOficina[office];
+            
             if (poblacionesOffice && poblacionesOffice.length > 0) {
+                let officeTitle = office;
+                if(office === 'OTROS') officeTitle = 'Sin Asignar / Otros';
+                else if (office === 'GDL') officeTitle = 'Guadalajara';
+                else if (office === 'LEON') officeTitle = 'León';
+
                 html += `<div class="office-section" data-office="${office}">`;
-                // No mostrar título de oficina si es un admin filtrado
                 if (!officeFiltro) {
-                    html += `<h4 class="office-title">${office === 'GDL' ? 'Guadalajara' : 'León'} (${poblacionesOffice.length})</h4>`;
+                    html += `<h4 class="office-title">${officeTitle} (${poblacionesOffice.length})</h4>`;
                 }
                 html += `<div class="poblaciones-list">`;
                 
                 poblacionesOffice.forEach(poblacion => {
-                    html += crearTarjetaPoblacion(poblacion);
-                    tarjetasGeneradas++;
+                    html += crearTarjetaPoblacion(poblacion); // Llama a la nueva función robusta
                 });
                 
                 html += `</div></div>`;
             }
         }
-        
-        if (tarjetasGeneradas === 0) {
-             // Esto puede pasar si hay poblaciones pero no GDL o LEON (datos corruptos)
-             container.innerHTML = headerHTML + `<div class="empty-state"><p>No se encontraron poblaciones para GDL o LEON.</p></div>`;
-             return;
-        }
 
         html += `</div>`;
         container.innerHTML = html;
 
-        // Configurar eventos
         configurarBusquedaPoblaciones();
         configurarFiltrosPoblaciones();
 
     } catch (error) {
         console.error("Error cargando interfaz de poblaciones:", error);
+        const filtroString = officeFiltro === null ? 'null' : `'${officeFiltro}'`;
         container.innerHTML = `
             <div class="error-state">
                 <i class="fas fa-exclamation-triangle fa-2x"></i>
                 <h3>Error al cargar las poblaciones</h3>
                 <p>${error.message}</p>
-                <button class="btn btn-secondary" onclick="cargarInterfazPoblaciones('${officeFiltro}')">
+                <button class="btn btn-secondary" onclick="cargarInterfazPoblaciones(${filtroString})">
                     <i class="fas fa-redo"></i> Reintentar
                 </button>
             </div>
@@ -3578,7 +3568,7 @@ async function cargarInterfazPoblaciones(officeFiltro) {
  */
 function crearTarjetaPoblacion(poblacion) {
     // Si falta un campo, asigna un valor por defecto
-    const id = poblacion.id || 'ID_DESCONOCIDO_' + Math.random(); // ID único temporal si falta
+    const id = poblacion.id || 'ID_DESCONOCIDO_' + Math.random();
     const nombre = poblacion.nombre || 'SIN NOMBRE';
     const office = poblacion.office || 'SIN OFICINA';
     const ruta = poblacion.ruta || '';
@@ -3591,7 +3581,7 @@ function crearTarjetaPoblacion(poblacion) {
         : `<span class="no-ruta-tag" title="Sin ruta asignada">Sin ruta</span>`;
 
     // Escapar comillas en los nombres para los 'onclick'
-    const nombreEscapado = nombre.replace(/'/g, "&apos;").replace(/"/g, "&quot;");
+    const nombreEscapado = String(nombre).replace(/'/g, "&apos;").replace(/"/g, "&quot;");
 
     return `
         <div class="poblacion-card" data-id="${id}" data-office="${displayOffice}" data-nombre="${nombre.toLowerCase()}">
@@ -3689,13 +3679,11 @@ async function cargarInterfazRutas(officeFiltro) {
     const container = document.getElementById('tabla-rutas-container');
     if (!container) return;
 
-    // Limpiar contenedor antes de cargar
     container.innerHTML = `<div style="text-align: center; padding: 40px;"><div class="spinner"></div><p>Cargando rutas...</p></div>`;
 
     try {
         const rutas = await database.obtenerRutas(officeFiltro);
         
-        // Preparar HTML del encabezado (siempre visible)
         const headerHTML = `
             <div class="config-header">
                 <h3>Gestión de Rutas</h3>
@@ -3717,9 +3705,6 @@ async function cargarInterfazRutas(officeFiltro) {
                     <i class="fas fa-route fa-3x"></i>
                     <h3>No hay rutas registradas</h3>
                     <p>No se encontraron rutas ${officeFiltro ? `para tu oficina (${officeFiltro})` : 'en el sistema'}.</p>
-                    <button class="btn btn-primary" onclick="mostrarModalRuta()">
-                        <i class="fas fa-plus"></i> Agregar Ruta
-                    </button>
                 </div>
             `;
             return;
@@ -3727,33 +3712,35 @@ async function cargarInterfazRutas(officeFiltro) {
 
         let html = headerHTML + `<div class="rutas-grid" id="rutas-grid">`;
 
-        // Agrupar por oficina (solo si el filtro es nulo)
         const rutasPorOficina = {};
         const oficinasAMostrar = [];
 
         if (officeFiltro) {
-            // Si es Admin, solo mostrar su oficina
             rutasPorOficina[officeFiltro] = rutas.sort((a, b) => a.nombre.localeCompare(b.nombre));
             oficinasAMostrar.push(officeFiltro);
         } else {
-            // Si es Super Admin/Gerencia, agrupar
             rutasPorOficina['GDL'] = rutas.filter(r => r.office === 'GDL').sort((a, b) => a.nombre.localeCompare(b.nombre));
             rutasPorOficina['LEON'] = rutas.filter(r => r.office === 'LEON').sort((a, b) => a.nombre.localeCompare(b.nombre));
-            oficinasAMostrar.push('GDL', 'LEON');
+            rutasPorOficina['OTROS'] = rutas.filter(r => r.office !== 'GDL' && r.office !== 'LEON').sort((a, b) => a.nombre.localeCompare(b.nombre));
+            oficinasAMostrar.push('GDL', 'LEON', 'OTROS');
         }
 
         for (const office of oficinasAMostrar) {
             const rutasOffice = rutasPorOficina[office];
             if (rutasOffice && rutasOffice.length > 0) {
+                let officeTitle = office;
+                if(office === 'OTROS') officeTitle = 'Sin Asignar / Otros';
+                else if (office === 'GDL') officeTitle = 'Guadalajara';
+                else if (office === 'LEON') officeTitle = 'León';
+
                 html += `<div class="office-section" data-office="${office}">`;
-                // No mostrar título de oficina si es admin
                 if (!officeFiltro) {
-                    html += `<h4 class="office-title">${office === 'GDL' ? 'Guadalajara' : 'León'} (${rutasOffice.length})</h4>`;
+                    html += `<h4 class="office-title">${officeTitle} (${rutasOffice.length})</h4>`;
                 }
                 html += `<div class="rutas-list">`;
                 
                 rutasOffice.forEach(ruta => {
-                    html += crearTarjetaRuta(ruta);
+                    html += crearTarjetaRuta(ruta); // Llama a la nueva función robusta
                 });
                 
                 html += `</div></div>`;
@@ -3763,18 +3750,18 @@ async function cargarInterfazRutas(officeFiltro) {
         html += `</div>`;
         container.innerHTML = html;
 
-        // Configurar eventos
         configurarBusquedaRutas();
         configurarEdicionRutas();
-
+    
     } catch (error) {
         console.error("Error cargando interfaz de rutas:", error);
+        const filtroString = officeFiltro === null ? 'null' : `'${officeFiltro}'`;
         container.innerHTML = `
             <div class="error-state">
                 <i class="fas fa-exclamation-triangle fa-2x"></i>
                 <h3>Error al cargar las rutas</h3>
                 <p>${error.message}</p>
-                <button class="btn btn-secondary" onclick="cargarInterfazRutas('${officeFiltro}')">
+                <button class="btn btn-secondary" onclick="cargarInterfazRutas(${filtroString})">
                     <i class="fas fa-redo"></i> Reintentar
                 </button>
             </div>
@@ -3787,7 +3774,7 @@ async function cargarInterfazRutas(officeFiltro) {
  */
 function crearTarjetaRuta(ruta) {
     // Si falta un campo, asigna un valor por defecto
-    const id = ruta.id || 'ID_DESCONOCIDO_' + Math.random(); // ID único temporal si falta
+    const id = ruta.id || 'ID_DESCONOCIDO_' + Math.random();
     const nombre = ruta.nombre || 'SIN NOMBRE';
     const office = ruta.office || 'SIN OFICINA';
 
@@ -3795,7 +3782,7 @@ function crearTarjetaRuta(ruta) {
     const displayOffice = (office === 'GDL' || office === 'LEON') ? office : 'OTROS';
     
     // Escapar comillas en los nombres para los 'onclick'
-    const nombreEscapado = nombre.replace(/'/g, "&apos;").replace(/"/g, "&quot;");
+    const nombreEscapado = String(nombre).replace(/'/g, "&apos;").replace(/"/g, "&quot;");
 
     return `
         <div class="ruta-card" data-id="${id}" data-office="${displayOffice}" data-nombre="${nombre.toLowerCase()}">
@@ -5768,18 +5755,7 @@ function setupEventListeners() {
     }
 
     // ---- Configuración ----
-    const btnAgregarPoblacion = document.getElementById('btn-agregar-poblacion');
-    if (btnAgregarPoblacion) btnAgregarPoblacion.addEventListener('click', () => handleAgregarConfig('poblacion'));
-
-    const btnAgregarRuta = document.getElementById('btn-agregar-ruta');
-    if (btnAgregarRuta) btnAgregarRuta.addEventListener('click', () => handleAgregarConfig('ruta'));
-
-    const listaPoblaciones = document.getElementById('lista-poblaciones');
-    if (listaPoblaciones) listaPoblaciones.addEventListener('click', handleConfigListClick);
-
-    const listaRutas = document.getElementById('lista-rutas');
-    if (listaRutas) listaRutas.addEventListener('click', handleConfigListClick);
-    const modalCloseBtn = document.getElementById('modal-close-btn');
+        const modalCloseBtn = document.getElementById('modal-close-btn');
     if (modalCloseBtn) modalCloseBtn.addEventListener('click', () => document.getElementById('generic-modal').classList.add('hidden'));
     const modalOverlay = document.getElementById('generic-modal');
     if (modalOverlay) {
@@ -5818,24 +5794,10 @@ function setupEventListeners() {
     if (btnExportarTelefonos) btnExportarTelefonos.addEventListener('click', handleExportarTelefonos);    
         
     }
-
-    const btnCargarPoblaciones = document.getElementById('btn-cargar-poblaciones');
-    if (btnCargarPoblaciones) {
-    btnCargarPoblaciones.addEventListener('click', handleCargarPoblaciones);
-        console.log('Listener añadido para btn-cargar-poblaciones');
-    } else {
-        console.warn('No se encontró btn-cargar-poblaciones - puede que no exista en esta vista');
-    }
-
-    const btnCargarRutas = document.getElementById('btn-cargar-rutas');
-    if (btnCargarRutas) {
-    btnCargarRutas.addEventListener('click', handleCargarRutas);
-        console.log('Listener añadido para btn-cargar-rutas');
-    } else {
-        console.warn('No se encontró btn-cargar-rutas - puede que no exista en esta vista');
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
