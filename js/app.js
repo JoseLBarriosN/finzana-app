@@ -5792,21 +5792,6 @@ function setupEventListeners() {
 
     const btnExportarTelefonos = document.getElementById('btn-exportar-telefonos');
     if (btnExportarTelefonos) btnExportarTelefonos.addEventListener('click', handleExportarTelefonos);    
-        
-    }
 }
 
 console.log('app.js cargado correctamente y listo.');
-
-
-
-
-
-
-
-
-
-
-
-
-
