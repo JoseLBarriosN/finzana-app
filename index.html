@@ -428,41 +428,41 @@
                     <div id="detalle-importacion"></div>
                 </div>
             </div>
-
             <div id="view-configuracion" class="view hidden">
     <div class="view-header">
         <h2>Gestión de Poblaciones y Rutas</h2>
         <button class="btn btn-secondary" data-view="view-main-menu"><i class="fas fa-arrow-left"></i> Volver al Menú</button>
     </div>
+    
     <div id="status_configuracion" class="status-message"></div>
     
     <div class="tabs" style="margin-bottom: 20px;">
-        <button class="tab-button active" data-tab="poblaciones">Poblaciones</button>
-        <button class="tab-button" data-tab="rutas">Rutas</button>
+        <button class="tab-button active" data-tab="poblaciones">
+            <i class="fas fa-map-marker-alt"></i> Poblaciones
+        </button>
+        <button class="tab-button" data-tab="rutas">
+            <i class="fas fa-route"></i> Rutas
+        </button>
     </div>
     
     <div id="tab-poblaciones" class="tab-content active">
-        <div class="card">
-            <div id="tabla-poblaciones-container">
-                <div style="text-align: center; padding: 40px;">
-                    <div class="spinner"></div>
-                    <p>Cargando poblaciones...</p>
-                </div>
+        <div id="tabla-poblaciones-container">
+            <div style="text-align: center; padding: 40px;">
+                <div class="spinner"></div>
+                <p>Cargando poblaciones...</p>
             </div>
         </div>
     </div>
     
-    <div id="tab-rutas" class="tab-content"> 
-        <div class="card">
-            <div id="tabla-rutas-container">
-                <div style="text-align: center; padding: 40px;">
-                    <div class="spinner"></div>
-                    <p>Cargando rutas...</p>
-                </div>
+    <div id="tab-rutas" class="tab-content">
+         <div id="tabla-rutas-container">
+            <div style="text-align: center; padding: 40px;">
+                <div class="spinner"></div>
+                <p>Cargando rutas...</p>
             </div>
         </div>
     </div>
-</div>
+</div>  
                 <div id="view-cliente" class="view hidden">
                 <div class="view-header">
                     <h2>Registrar Cliente</h2>
@@ -1135,6 +1135,7 @@
     <script src="js/app.js"></script>
 </body>
 </html>
+
 
 
 
