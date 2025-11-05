@@ -1382,8 +1382,10 @@ const database = {
         try {
             // --- INICIO CORRECCIÓN ---
             // 1. Obtener TODAS las poblaciones sin filtrar en Firebase
-            const snapshot = await db.collection('poblaciones').get();
-            let poblacionesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            const snapshot = await query.get();
+            let poblacionesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            // 2. Ordena los resultados en JavaScript
+            poblacionesData.sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
             console.log(`>>> Se obtuvieron ${poblacionesData.length} poblaciones en total.`);
 
             // 2. Filtrar en JavaScript (si es necesario)
@@ -1436,8 +1438,10 @@ const database = {
         try {
             // --- INICIO CORRECCIÓN ---
             // 1. Obtener TODAS las rutas sin filtrar en Firebase
-            const snapshot = await db.collection('rutas').get();
-            let rutasData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            const snapshot = await query.get();
+            let rutasData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            // 2. Ordena los resultados en JavaScript
+            rutasData.sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
             console.log(`>>> Se obtuvieron ${rutasData.length} rutas en total.`);
 
             // 2. Filtrar en JavaScript (si es necesario)
@@ -1671,6 +1675,7 @@ const database = {
         }
     }
 }; // Fin del objeto database
+
 
 
 
