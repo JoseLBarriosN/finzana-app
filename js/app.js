@@ -1378,22 +1378,23 @@ async function loadGestionEfectivo() {
         
         // --- INICIO DE LA CORRECCIÓN ---
         const adminOffice = currentUserData?.office;
-        const adminRole = currentUserData?.role; // <-- NUEVO: Obtener el rol
-        const esAdminConAccesoTotal = (adminRole === 'Super Admin' || adminRole === 'Gerencia'); // <-- NUEVO: Variable de permiso
+        const adminRole = currentUserData?.role; // <-- Obtener el rol
+        const esAdminConAccesoTotal = (adminRole === 'Super Admin' || adminRole === 'Gerencia'); // <-- Variable de permiso
 
         agentes = agentes.filter(u =>
             u.role === 'Área comercial' &&
-            // <-- CORRECCIÓN: Añadir 'esAdminConAccesoTotal' a la lógica
-            (esAdminConAccesoTotal || adminOffice === 'AMBAS' || !adminOffice || u.office === adminOffice)
+            // <-- Lógica corregida que incluye a Super Admin/Gerencia
+            (esAdminConAccesoTotal || adminOffice === 'AMBAS' || !adminOffice || u.office === u.office)
         );
         // --- FIN DE LA CORRECCIÓN ---
 
         agentes.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 
-        // Poblar dropdowns usando la función popularDropdown correctamente
+        // Poblar dropdowns
         if (agentes.length === 0) {
-            popularDropdown('entrega-agente', [], 'No hay agentes', true);
-            popularDropdown('filtro-agente', [], 'No hay agentes', true);
+            const msg = (adminOffice && adminOffice !== 'AMBAS' && !esAdminConAccesoTotal) ? `No hay agentes para ${adminOffice}` : 'No hay agentes de Área Comercial';
+            popularDropdown('entrega-agente', [], msg, true);
+            popularDropdown('filtro-agente', [], msg, true);
         } else {
             const opciones = agentes.map(a => ({ value: a.id, text: `${a.name} (${a.office || 'Sin Oficina'})` }));
             popularDropdown('entrega-agente', opciones, 'Selecciona un agente', true);
@@ -1409,6 +1410,7 @@ async function loadGestionEfectivo() {
         popularDropdown('filtro-agente', [], 'Error al cargar', true);
     }
 }
+
 /**
  * Maneja el formulario para registrar una entrega de efectivo a un agente.
  */
@@ -5705,3 +5707,4 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
