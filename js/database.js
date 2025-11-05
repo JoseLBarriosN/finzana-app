@@ -1378,30 +1378,37 @@ const database = {
     },
 
     obtenerPoblaciones: async (office = null) => {
-        console.log(`>>> obtenerPoblaciones llamada con office: ${office}`); // CORREGIDO
-        try {
-            let query = db.collection('poblaciones');
-            // AHORA FILTRA POR 'office'
-            if (office && office !== 'AMBAS') {
-                console.log(`>>> Filtrando poblaciones por office: ${office}`); // CORREGIDO
-                query = query.where('office', '==', office);
-            } else {
-                console.log(">>> Obteniendo todas las poblaciones (sin filtro office)."); // CORREGIDO
-            }
-            const snapshot = await query.orderBy('nombre').get();
-            const poblacionesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            console.log(`>>> obtenerPoblaciones encontró ${poblacionesData.length} poblaciones.`); // CORREGIDO
-            return poblacionesData;
-        } catch (error) {
-            console.error("Error obteniendo poblaciones:", error);
-            console.log(`>>> ERROR en obtenerPoblaciones: ${error.message}`); // CORREGIDO
-            // Sugerir índice si falla
-            if (error.message && error.message.includes("requires an index")) {
-                console.warn(">>> Firestore requiere un índice compuesto en 'poblaciones': office ASC, nombre ASC. Verifica si existe y está habilitado.");
-            }
-            return [];
-        }
-    },
+        console.log(`>>> obtenerPoblaciones llamada con office: ${office}`);
+        try {
+            // --- INICIO DE LA CORRECCIÓN ---
+            // 1. Obtener TODOS los documentos sin filtrar ni ordenar en la consulta
+            let query = db.collection('poblaciones');
+            const snapshot = await query.get(); // No filtrar ni ordenar aquí
+            let poblacionesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+            // 2. Filtrar en JavaScript (si es necesario)
+            if (office && office !== 'AMBAS') {
+                console.log(`>>> Filtrando ${poblacionesData.length} poblaciones en JS por office: ${office}`);
+                poblacionesData = poblacionesData.filter(p => p.office === office);
+            } else {
+                console.log(">>> Obteniendo todas las poblaciones (sin filtro JS).");
+            }
+            
+            // 3. Ordenar en JavaScript
+            poblacionesData.sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
+            // --- FIN DE LA CORRECCIÓN ---
+
+            console.log(`>>> obtenerPoblaciones encontró ${poblacionesData.length} poblaciones.`);
+            return poblacionesData;
+        } catch (error) {
+            console.error("Error obteniendo poblaciones:", error);
+            console.log(`>>> ERROR en obtenerPoblaciones: ${error.message}`);
+            if (error.message && error.message.includes("requires an index")) {
+                console.warn(">>> Firestore requiere un índice compuesto en 'poblaciones': office ASC, nombre ASC. Verifica si existe y está habilitado.");
+            }
+            return [];
+        }
+    },
 
     agregarPoblacion: async (nombre, office) => {
         try {
@@ -1433,30 +1440,37 @@ const database = {
     },
 
     obtenerRutas: async (office = null) => {
-        console.log(`>>> obtenerRutas llamada con office: ${office}`); // CORREGIDO
-        try {
-            let query = db.collection('rutas');
-            // AHORA FILTRA POR 'office'
-            if (office && office !== 'AMBAS') {
-                console.log(`>>> Filtrando rutas por office: ${office}`); // CORREGIDO
-                query = query.where('office', '==', office);
-            } else {
-                console.log(">>> Obteniendo todas las rutas."); // CORREGIDO
-            }
-            const snapshot = await query.orderBy('nombre').get();
-            const rutasData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            console.log(`>>> obtenerRutas encontró ${rutasData.length} rutas.`); // CORREGIDO
-            return rutasData;
-        } catch (error) {
-            console.error("Error obteniendo rutas:", error);
-            console.log(`>>> ERROR en obtenerRutas: ${error.message}`); // CORREGIDO
-            // Sugerir índice si falla
-            if (error.message && error.message.includes("requires an index")) {
-                console.warn(">>> Firestore requiere un índice compuesto en 'rutas': office ASC, nombre ASC. Verifica si existe y está habilitado.");
-            }
-            return [];
-        }
-    },
+        console.log(`>>> obtenerRutas llamada con office: ${office}`);
+        try {
+            // --- INICIO DE LA CORRECCIÓN ---
+            // 1. Obtener TODAS las rutas sin filtrar ni ordenar en la consulta
+            let query = db.collection('rutas');
+            const snapshot = await query.get();
+            let rutasData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+            // 2. Filtrar en JavaScript (si es necesario)
+            if (office && office !== 'AMBAS') {
+                console.log(`>>> Filtrando ${rutasData.length} rutas en JS por office: ${office}`);
+                rutasData = rutasData.filter(r => r.office === office);
+            } else {
+                console.log(">>> Obteniendo todas las rutas (sin filtro JS).");
+            }
+
+            // 3. Ordenar en JavaScript
+            rutasData.sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
+            // --- FIN DE LA CORRECCIÓN ---
+
+            console.log(`>>> obtenerRutas encontró ${rutasData.length} rutas.`);
+            return rutasData;
+        } catch (error) {
+            console.error("Error obteniendo rutas:", error);
+            console.log(`>>> ERROR en obtenerRutas: ${error.message}`);
+            if (error.message && error.message.includes("requires an index")) {
+                console.warn(">>> Firestore requiere un índice compuesto en 'rutas': office ASC, nombre ASC. Verifica si existe y está habilitado.");
+            }
+            return [];
+        }
+    },
 
     // Actualiza el nombre de una ruta específica
     actualizarNombreRuta: async (id, nuevoNombre) => {
@@ -1641,6 +1655,7 @@ const database = {
         }
     }
 }; // Fin del objeto database
+
 
 
 
