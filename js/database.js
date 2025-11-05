@@ -1380,174 +1380,200 @@ const database = {
     obtenerPoblaciones: async (office = null) => {
         console.log(`>>> obtenerPoblaciones llamada con office: ${office}`);
         try {
-            // --- INICIO DE LA CORRECCIÓN ---
-            // 1. Obtener TODOS los documentos sin filtrar ni ordenar en la consulta
             let query = db.collection('poblaciones');
-            const snapshot = await query.get(); // No filtrar ni ordenar aquí
-            let poblacionesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-            // 2. Filtrar en JavaScript (si es necesario)
             if (office && office !== 'AMBAS') {
-                console.log(`>>> Filtrando ${poblacionesData.length} poblaciones en JS por office: ${office}`);
-                poblacionesData = poblacionesData.filter(p => p.office === office);
+                console.log(`>>> Filtrando poblaciones por office: ${office}`);
+                query = query.where('office', '==', office);
             } else {
-                console.log(">>> Obteniendo todas las poblaciones (sin filtro JS).");
+                console.log(">>> Obteniendo todas las poblaciones (sin filtro office).");
             }
             
-            // 3. Ordenar en JavaScript
+            // --- CORRECCIÓN ---
+            // 1. NO uses .orderBy('nombre') aquí si usas .where('office', ...)
+            const snapshot = await query.get();
+            let poblacionesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            
+            // 2. Ordena los resultados en JavaScript
             poblacionesData.sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
-            // --- FIN DE LA CORRECCIÓN ---
+            // --- FIN CORRECCIÓN ---
 
             console.log(`>>> obtenerPoblaciones encontró ${poblacionesData.length} poblaciones.`);
             return poblacionesData;
         } catch (error) {
             console.error("Error obteniendo poblaciones:", error);
-            console.log(`>>> ERROR en obtenerPoblaciones: ${error.message}`);
             if (error.message && error.message.includes("requires an index")) {
-                console.warn(">>> Firestore requiere un índice compuesto en 'poblaciones': office ASC, nombre ASC. Verifica si existe y está habilitado.");
+                console.warn(">>> Firestore requiere un índice en 'poblaciones': office ASC, nombre ASC. O puedes ignorar esto ya que estamos ordenando en JS.");
             }
             return [];
         }
     },
 
-    agregarPoblacion: async (nombre, office) => {
-        try {
-            // AHORA BUSCA POR 'office'
-            const existeSnap = await db.collection('poblaciones')
-                .where('nombre', '==', nombre)
-                .where('office', '==', office)
-                .limit(1).get();
-            if (!existeSnap.empty) {
-                return { success: false, message: `La población "${nombre}" ya existe en la oficina ${office}.` };
-            }
-            // AHORA GUARDA 'office'
-            await db.collection('poblaciones').add({ nombre: nombre.toUpperCase(), office });
-            return { success: true, message: 'Población agregada.' };
-        } catch (error) {
-            console.error("Error agregando población:", error);
-            return { success: false, message: `Error: ${error.message}` };
-        }
-    },
+    agregarPoblacion: async (nombre, office) => {
+        try {
+            const nombreUpper = nombre.toUpperCase();
+            const existeSnap = await db.collection('poblaciones')
+                .where('nombre', '==', nombreUpper)
+                .where('office', '==', office)
+                .limit(1).get();
+            if (!existeSnap.empty) {
+                return { success: false, message: `La población "${nombreUpper}" ya existe en la oficina ${office}.` };
+            }
+            await db.collection('poblaciones').add({ nombre: nombreUpper, office, ruta: null });
+            return { success: true, message: 'Población agregada.' };
+        } catch (error) {
+            console.error("Error agregando población:", error);
+            return { success: false, message: `Error: ${error.message}` };
+        }
+    },
 
-    eliminarPoblacion: async (id) => {
-        try { 
-            await db.collection('poblaciones').doc(id).delete(); 
-            return { success: true, message: 'Población eliminada.' }; 
-        } catch (error) { 
-            console.error("Error eliminando población:", error); 
-            return { success: false, message: `Error: ${error.message}` }; 
-        }
-    },
+    eliminarPoblacion: async (id) => {
+        try { 
+            await db.collection('poblaciones').doc(id).delete(); 
+            return { success: true, message: 'Población eliminada.' }; 
+        } catch (error) { 
+            console.error("Error eliminando población:", error); 
+            return { success: false, message: `Error: ${error.message}` }; 
+        }
+    },
 
-    obtenerRutas: async (office = null) => {
+    obtenerRutas: async (office = null) => {
         console.log(`>>> obtenerRutas llamada con office: ${office}`);
         try {
-            // --- INICIO DE LA CORRECCIÓN ---
-            // 1. Obtener TODAS las rutas sin filtrar ni ordenar en la consulta
             let query = db.collection('rutas');
-            const snapshot = await query.get();
-            let rutasData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-            // 2. Filtrar en JavaScript (si es necesario)
             if (office && office !== 'AMBAS') {
-                console.log(`>>> Filtrando ${rutasData.length} rutas en JS por office: ${office}`);
-                rutasData = rutasData.filter(r => r.office === office);
+                console.log(`>>> Filtrando rutas por office: ${office}`);
+                query = query.where('office', '==', office);
             } else {
-                console.log(">>> Obteniendo todas las rutas (sin filtro JS).");
+                console.log(">>> Obteniendo todas las rutas.");
             }
 
-            // 3. Ordenar en JavaScript
+            // --- CORRECCIÓN ---
+            // 1. NO uses .orderBy('nombre') aquí
+            const snapshot = await query.get();
+            let rutasData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            
+            // 2. Ordena los resultados en JavaScript
             rutasData.sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
-            // --- FIN DE LA CORRECCIÓN ---
+            // --- FIN CORRECCIÓN ---
 
             console.log(`>>> obtenerRutas encontró ${rutasData.length} rutas.`);
             return rutasData;
         } catch (error) {
             console.error("Error obteniendo rutas:", error);
-            console.log(`>>> ERROR en obtenerRutas: ${error.message}`);
             if (error.message && error.message.includes("requires an index")) {
-                console.warn(">>> Firestore requiere un índice compuesto en 'rutas': office ASC, nombre ASC. Verifica si existe y está habilitado.");
+                console.warn(">>> Firestore requiere un índice en 'rutas': office ASC, nombre ASC. O puedes ignorar esto ya que estamos ordenando en JS.");
             }
             return [];
         }
     },
 
-    // Actualiza el nombre de una ruta específica
-    actualizarNombreRuta: async (id, nuevoNombre) => {
-        if (!id || !nuevoNombre || !nuevoNombre.trim()) {
-            return { success: false, message: 'ID o nombre inválido.' };
-        }
-        try {
-            const rutaRef = db.collection('rutas').doc(id);
-            const rutaDoc = await rutaRef.get();
-            if (!rutaDoc.exists) throw new Error("Ruta no encontrada.");
-            const rutaData = rutaDoc.data();
+    // Actualiza el nombre de una ruta específica
+    actualizarNombreRuta: async (id, nuevoNombre) => {
+        if (!id || !nuevoNombre || !nuevoNombre.trim()) {
+            return { success: false, message: 'ID o nombre inválido.' };
+        }
+        try {
+            const nombreUpper = nuevoNombre.toUpperCase();
+            const rutaRef = db.collection('rutas').doc(id);
+            const rutaDoc = await rutaRef.get();
+            if (!rutaDoc.exists) throw new Error("Ruta no encontrada.");
+            const rutaData = rutaDoc.data();
+            const nombreOriginal = rutaData.nombre;
 
-            // Opcional: Verificar si el nuevo nombre ya existe en la misma oficina
-            const existeSnap = await db.collection('rutas')
-                .where('nombre', '==', nuevoNombre.toUpperCase())
-                .where('office', '==', rutaData.office)
-                .limit(1).get();
-            if (!existeSnap.empty && existeSnap.docs[0].id !== id) {
-                 return { success: false, message: `El nombre "${nuevoNombre}" ya existe en la oficina ${rutaData.office}.` };
-            }
+            // Verificar si el nuevo nombre ya existe en la misma oficina
+            const existeSnap = await db.collection('rutas')
+                .where('nombre', '==', nombreUpper)
+                .where('office', '==', rutaData.office)
+                .limit(1).get();
+            if (!existeSnap.empty && existeSnap.docs[0].id !== id) {
+                 return { success: false, message: `El nombre "${nombreUpper}" ya existe en la oficina ${rutaData.office}.` };
+            }
 
-            await rutaRef.update({ nombre: nuevoNombre.toUpperCase() });
-            return { success: true, message: 'Nombre de ruta actualizado.' };
-        } catch (error) {
-            console.error("Error actualizando nombre de ruta:", error);
-            return { success: false, message: `Error: ${error.message}` };
-        }
-    },
+            // Actualizar en 'rutas'
+            await rutaRef.update({ nombre: nombreUpper });
+            
+            // Actualizar en 'poblaciones' (batch)
+            const poblacionesSnap = await db.collection('poblaciones')
+                .where('office', '==', rutaData.office)
+                .where('ruta', '==', nombreOriginal)
+                .get();
+            
+            if (!poblacionesSnap.empty) {
+                const batch = db.batch();
+                poblacionesSnap.docs.forEach(doc => {
+                    batch.update(doc.ref, { ruta: nombreUpper });
+                });
+                await batch.commit();
+            }
 
-    // Asigna o cambia la ruta de una población específica
-    asignarRutaAPoblacion: async (poblacionId, rutaNombre) => {
-        if (!poblacionId) {
-            return { success: false, message: 'ID de población inválido.' };
-        }
-        try {
-            const poblacionRef = db.collection('poblaciones').doc(poblacionId);
-            // Si rutaNombre es null, '', o undefined, eliminar el campo ruta.
-            // Si tiene valor, lo asigna/actualiza.
-            const updateData = {
-                ruta: rutaNombre ? rutaNombre.toUpperCase() : null
-            };
-            await poblacionRef.update(updateData);
-            return { success: true, message: `Ruta ${rutaNombre ? 'asignada/actualizada' : 'eliminada'} para la población.` };
-        } catch (error) {
-            console.error("Error asignando ruta a población:", error);
-            return { success: false, message: `Error: ${error.message}` };
-        }
-    },
+            return { success: true, message: 'Nombre de ruta actualizado.' };
+        } catch (error) {
+            console.error("Error actualizando nombre de ruta:", error);
+            return { success: false, message: `Error: ${error.message}` };
+        }
+    },
 
-    agregarRuta: async (nombre, office) => {
-        try {
-            // AHORA BUSCA POR 'office'
-            const existeSnap = await db.collection('rutas')
-                .where('nombre', '==', nombre)
-                .where('office', '==', office)
-                .limit(1).get();
-            if (!existeSnap.empty) {
-                return { success: false, message: `La ruta "${nombre}" ya existe en la oficina ${office}.` };
-            }
-            // AHORA GUARDA 'office'
-            await db.collection('rutas').add({ nombre: nombre.toUpperCase(), office });
-            return { success: true, message: 'Ruta agregada.' };
-        } catch (error) {
-            console.error("Error agregando ruta:", error);
-            return { success: false, message: `Error: ${error.message}` };
-        }
-    },
+    // Asigna o cambia la ruta de una población específica
+    asignarRutaAPoblacion: async (poblacionId, rutaNombre) => {
+        if (!poblacionId) {
+            return { success: false, message: 'ID de población inválido.' };
+        }
+        try {
+            const poblacionRef = db.collection('poblaciones').doc(poblacionId);
+            const updateData = {
+                ruta: rutaNombre ? rutaNombre.toUpperCase() : null
+            };
+            await poblacionRef.update(updateData);
+            return { success: true, message: `Ruta ${rutaNombre ? 'asignada/actualizada' : 'eliminada'} para la población.` };
+        } catch (error) {
+            console.error("Error asignando ruta a población:", error);
+            return { success: false, message: `Error: ${error.message}` };
+        }
+    },
 
-    eliminarRuta: async (id) => {
-        try {
-            await db.collection('rutas').doc(id).delete();
-            return { success: true, message: 'Ruta eliminada.' };
-        } catch (error) {
-            console.error("Error eliminando ruta:", error);
-            return { success: false, message: `Error: ${error.message}` };
-        }
-    },
+    agregarRuta: async (nombre, office) => {
+        try {
+            const nombreUpper = nombre.toUpperCase();
+            const existeSnap = await db.collection('rutas')
+                .where('nombre', '==', nombreUpper)
+                .where('office', '==', office)
+                .limit(1).get();
+            if (!existeSnap.empty) {
+                return { success: false, message: `La ruta "${nombreUpper}" ya existe en la oficina ${office}.` };
+            }
+            await db.collection('rutas').add({ nombre: nombreUpper, office });
+            return { success: true, message: 'Ruta agregada.' };
+        } catch (error) {
+            console.error("Error agregando ruta:", error);
+            return { success: false, message: `Error: ${error.message}` };
+        }
+    },
+
+    eliminarRuta: async (id, nombre, office) => {
+        try {
+            // 1. Eliminar la ruta
+            await db.collection('rutas').doc(id).delete();
+            
+            // 2. Des-asignar la ruta de las poblaciones
+            const poblacionesSnap = await db.collection('poblaciones')
+                .where('office', '==', office)
+                .where('ruta', '==', nombre)
+                .get();
+            
+            if (!poblacionesSnap.empty) {
+                const batch = db.batch();
+                poblacionesSnap.docs.forEach(doc => {
+                    batch.update(doc.ref, { ruta: null });
+                });
+                await batch.commit();
+            }
+            
+            return { success: true, message: 'Ruta eliminada y des-asignada.' };
+        } catch (error) {
+            console.error("Error eliminando ruta:", error);
+            return { success: false, message: `Error: ${error.message}` };
+        }
+    },
 
     // =============================================
     // *** NUEVAS FUNCIONES: EFECTIVO Y COMISIONES ***
@@ -1655,6 +1681,7 @@ const database = {
         }
     }
 }; // Fin del objeto database
+
 
 
 
