@@ -1339,72 +1339,75 @@ async function handleCargarRutas() {
 // =============================================
 // *** NUEVAS FUNCIONES: EFECTIVO Y COMISIONES ***
 // =============================================
-
-// EN app.js - REEMPLAZA loadGestionEfectivo
 /**
  * Carga la lista de agentes (Área Comercial) en los dropdowns de la vista Gestión Efectivo.
  * Se llama al mostrar la vista 'view-gestion-efectivo'.
  */
 async function loadGestionEfectivo() {
-    console.log("--- Ejecutando loadGestionEfectivo ---");
-    const selectAgenteEntrega = document.getElementById('entrega-agente');
-    const selectAgenteFiltro = document.getElementById('filtro-agente');
-    const statusEntrega = document.getElementById('status_registrar_entrega');
+    console.log("--- Ejecutando loadGestionEfectivo (Corregido) ---");
+    const selectAgenteEntrega = document.getElementById('entrega-agente');
+    const selectAgenteFiltro = document.getElementById('filtro-agente');
+    const statusEntrega = document.getElementById('status_registrar_entrega');
 
-    if (!selectAgenteEntrega || !selectAgenteFiltro) {
-        console.error("loadGestionEfectivo: No se encontraron los dropdowns 'entrega-agente' o 'filtro-agente'.");
-        return;
-    }
+    if (!selectAgenteEntrega || !selectAgenteFiltro) {
+        console.error("loadGestionEfectivo: No se encontraron los dropdowns 'entrega-agente' o 'filtro-agente'.");
+        return;
+    }
 
-    // Resetear vista
-    selectAgenteEntrega.innerHTML = '<option value="">Cargando...</option>';
-    selectAgenteFiltro.innerHTML = '<option value="">Cargando...</option>';
-    document.getElementById('resultados-gestion-efectivo').classList.add('hidden');
-    document.getElementById('tabla-movimientos-efectivo').innerHTML = '<tr><td colspan="5">Selecciona un agente y rango de fechas.</td></tr>';
-    document.getElementById('form-registrar-entrega').reset();
+    // Resetear vista
+    selectAgenteEntrega.innerHTML = '<option value="">Cargando...</option>';
+    selectAgenteFiltro.innerHTML = '<option value="">Cargando...</option>';
+    document.getElementById('resultados-gestion-efectivo').classList.add('hidden');
+    document.getElementById('tabla-movimientos-efectivo').innerHTML = '<tr><td colspan="5">Selecciona un agente y rango de fechas.</td></tr>';
+    document.getElementById('form-registrar-entrega').reset();
 
-    // Poner fechas por defecto
-    const hoy = new Date();
-    const haceUnMes = new Date(hoy.getFullYear(), hoy.getMonth() - 1, hoy.getDate() + 1);
-    document.getElementById('filtro-fecha-inicio-efectivo').value = haceUnMes.toISOString().split('T')[0];
-    document.getElementById('filtro-fecha-fin-efectivo').value = hoy.toISOString().split('T')[0];
+    // Poner fechas por defecto
+    const hoy = new Date();
+    const haceUnMes = new Date(hoy.getFullYear(), hoy.getMonth() - 1, hoy.getDate() + 1);
+    document.getElementById('filtro-fecha-inicio-efectivo').value = haceUnMes.toISOString().split('T')[0];
+    document.getElementById('filtro-fecha-fin-efectivo').value = hoy.toISOString().split('T')[0];
 
-    try {
-        const resultado = await database.obtenerUsuarios();
-        
-        if (!resultado.success) {
-            throw new Error(resultado.message || 'Error desconocido al obtener usuarios.');
-        }
+    try {
+        const resultado = await database.obtenerUsuarios();
+        
+        if (!resultado.success) {
+            throw new Error(resultado.message || 'Error desconocido al obtener usuarios.');
+        }
 
-        let agentes = resultado.data || [];
-        
-        // Filtrar solo Área Comercial y por oficina del admin (si aplica)
-        const adminOffice = currentUserData?.office;
-        agentes = agentes.filter(u =>
-            u.role === 'Área comercial' &&
-            (adminOffice === 'AMBAS' || !adminOffice || u.office === adminOffice)
-        );
+        let agentes = resultado.data || [];
+        
+        // --- INICIO DE LA CORRECCIÓN ---
+        const adminOffice = currentUserData?.office;
+        const adminRole = currentUserData?.role; // <-- NUEVO: Obtener el rol
+        const esAdminConAccesoTotal = (adminRole === 'Super Admin' || adminRole === 'Gerencia'); // <-- NUEVO: Variable de permiso
 
-        agentes.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+        agentes = agentes.filter(u =>
+            u.role === 'Área comercial' &&
+            // <-- CORRECCIÓN: Añadir 'esAdminConAccesoTotal' a la lógica
+            (esAdminConAccesoTotal || adminOffice === 'AMBAS' || !adminOffice || u.office === adminOffice)
+        );
+        // --- FIN DE LA CORRECCIÓN ---
 
-        // Poblar dropdowns usando la función popularDropdown correctamente
-        if (agentes.length === 0) {
-            popularDropdown('entrega-agente', [], 'No hay agentes', true);
-            popularDropdown('filtro-agente', [], 'No hay agentes', true);
-        } else {
-            const opciones = agentes.map(a => ({ value: a.id, text: `${a.name} (${a.office || 'Sin Oficina'})` }));
-            popularDropdown('entrega-agente', opciones, 'Selecciona un agente', true);
-            popularDropdown('filtro-agente', opciones, 'Selecciona un agente', true);
-        }
+        agentes.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 
-        if (statusEntrega) showStatus(statusEntrega.id, 'Listo.', 'info');
+        // Poblar dropdowns usando la función popularDropdown correctamente
+        if (agentes.length === 0) {
+            popularDropdown('entrega-agente', [], 'No hay agentes', true);
+            popularDropdown('filtro-agente', [], 'No hay agentes', true);
+        } else {
+            const opciones = agentes.map(a => ({ value: a.id, text: `${a.name} (${a.office || 'Sin Oficina'})` }));
+            popularDropdown('entrega-agente', opciones, 'Selecciona un agente', true);
+            popularDropdown('filtro-agente', opciones, 'Selecciona un agente', true);
+        }
 
-    } catch (error) {
-        console.error("Error cargando agentes para gestión efectivo:", error);
-        if (statusEntrega) showStatus(statusEntrega.id, `Error cargando agentes: ${error.message}`, 'error');
-        popularDropdown('entrega-agente', [], 'Error al cargar', true);
-        popularDropdown('filtro-agente', [], 'Error al cargar', true);
-    }
+        if (statusEntrega) showStatus(statusEntrega.id, 'Listo.', 'info');
+
+    } catch (error) {
+        console.error("Error cargando agentes para gestión efectivo:", error);
+        if (statusEntrega) showStatus(statusEntrega.id, `Error cargando agentes: ${error.message}`, 'error');
+        popularDropdown('entrega-agente', [], 'Error al cargar', true);
+        popularDropdown('filtro-agente', [], 'Error al cargar', true);
+    }
 }
 /**
  * Maneja el formulario para registrar una entrega de efectivo a un agente.
@@ -5795,3 +5798,4 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
