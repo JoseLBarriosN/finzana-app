@@ -1381,20 +1381,23 @@ const database = {
         console.log(`>>> obtenerPoblaciones (Corregido) llamada con office: ${office}`);
         try {
             // --- INICIO CORRECCIÓN ---
-            // 1. Obtener TODAS las poblaciones sin filtrar en Firebase
-            const snapshot = await query.get();
-            let poblacionesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            // 2. Ordena los resultados en JavaScript
-            poblacionesData.sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
-            console.log(`>>> Se obtuvieron ${poblacionesData.length} poblaciones en total.`);
-
-            // 2. Filtrar en JavaScript (si es necesario)
+            // 1. Definir la consulta base
+            let query = db.collection('poblaciones');
+            
+            // 2. Aplicar filtro SI ES NECESARIO (para Admin)
             if (office && office !== 'AMBAS') {
-                poblacionesData = poblacionesData.filter(p => p.office === office);
-                console.log(`>>> Filtrado en JS, ${poblacionesData.length} poblaciones para ${office}.`);
+                console.log(`>>> Filtrando poblaciones por office: ${office}`);
+                query = query.where('office', '==', office);
+            } else {
+                console.log(">>> Obteniendo todas las poblaciones (sin filtro office).");
             }
             
-            // 3. Ordenar en JavaScript
+            // 3. Ejecutar la consulta
+            const snapshot = await query.get();
+            let poblacionesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            console.log(`>>> Se obtuvieron ${poblacionesData.length} poblaciones.`);
+            
+            // 4. Ordenar en JavaScript
             poblacionesData.sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
             // --- FIN CORRECCIÓN ---
 
@@ -1437,20 +1440,23 @@ const database = {
         console.log(`>>> obtenerRutas (Corregido) llamada con office: ${office}`);
         try {
             // --- INICIO CORRECCIÓN ---
-            // 1. Obtener TODAS las rutas sin filtrar en Firebase
-            const snapshot = await query.get();
-            let rutasData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            // 2. Ordena los resultados en JavaScript
-            rutasData.sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
-            console.log(`>>> Se obtuvieron ${rutasData.length} rutas en total.`);
-
-            // 2. Filtrar en JavaScript (si es necesario)
+            // 1. Definir la consulta base
+            let query = db.collection('rutas');
+            
+            // 2. Aplicar filtro SI ES NECESARIO (para Admin)
             if (office && office !== 'AMBAS') {
-                rutasData = rutasData.filter(r => r.office === office);
-                console.log(`>>> Filtrado en JS, ${rutasData.length} rutas para ${office}.`);
+                console.log(`>>> Filtrando rutas por office: ${office}`);
+                query = query.where('office', '==', office);
+            } else {
+                console.log(">>> Obteniendo todas las rutas.");
             }
 
-            // 3. Ordenar en JavaScript
+            // 3. Ejecutar la consulta
+            const snapshot = await query.get();
+            let rutasData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            console.log(`>>> Se obtuvieron ${rutasData.length} rutas en total.`);
+
+            // 4. Ordenar en JavaScript
             rutasData.sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
             // --- FIN CORRECCIÓN ---
             
@@ -1675,6 +1681,7 @@ const database = {
         }
     }
 }; // Fin del objeto database
+
 
 
 
