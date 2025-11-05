@@ -3577,15 +3577,27 @@ async function cargarInterfazPoblaciones(officeFiltro) {
  * Crea una tarjeta de población
  */
 function crearTarjetaPoblacion(poblacion) {
-    const rutaDisplay = poblacion.ruta 
-        ? `<span class="ruta-tag" title="Ruta asignada">${poblacion.ruta}</span>`
+    // Si falta un campo, asigna un valor por defecto
+    const id = poblacion.id || 'ID_DESCONOCIDO_' + Math.random(); // ID único temporal si falta
+    const nombre = poblacion.nombre || 'SIN NOMBRE';
+    const office = poblacion.office || 'SIN OFICINA';
+    const ruta = poblacion.ruta || '';
+
+    // Asignar 'OTROS' si la oficina no es GDL ni LEON
+    const displayOffice = (office === 'GDL' || office === 'LEON') ? office : 'OTROS';
+
+    const rutaDisplay = ruta
+        ? `<span class="ruta-tag" title="Ruta asignada">${ruta}</span>`
         : `<span class="no-ruta-tag" title="Sin ruta asignada">Sin ruta</span>`;
 
+    // Escapar comillas en los nombres para los 'onclick'
+    const nombreEscapado = nombre.replace(/'/g, "&apos;").replace(/"/g, "&quot;");
+
     return `
-        <div class="poblacion-card" data-id="${poblacion.id}" data-office="${poblacion.office}" data-nombre="${poblacion.nombre.toLowerCase()}">
+        <div class="poblacion-card" data-id="${id}" data-office="${displayOffice}" data-nombre="${nombre.toLowerCase()}">
             <div class="poblacion-header">
-                <h5 class="poblacion-nombre">${poblacion.nombre}</h5>
-                <span class="office-badge ${poblacion.office}">${poblacion.office}</span>
+                <h5 class="poblacion-nombre">${nombre}</h5>
+                <span class="office-badge ${displayOffice}">${displayOffice}</span>
             </div>
             <div class="poblacion-content">
                 <div class="ruta-asignacion">
@@ -3593,11 +3605,11 @@ function crearTarjetaPoblacion(poblacion) {
                 </div>
             </div>
             <div class="poblacion-actions">
-                <button class="btn btn-sm btn-outline-primary" onclick="asignarRutaPoblacion('${poblacion.id}', '${poblacion.nombre}', '${poblacion.office}')" 
+                <button class="btn btn-sm btn-outline-primary" onclick="asignarRutaPoblacion('${id}', '${nombreEscapado}', '${office}')" 
                         title="Asignar/Cambiar Ruta">
                     <i class="fas fa-route"></i>
                 </button>
-                <button class="btn btn-sm btn-outline-danger" onclick="eliminarPoblacion('${poblacion.id}', '${poblacion.nombre}')" 
+                <button class="btn btn-sm btn-outline-danger" onclick="eliminarPoblacion('${id}', '${nombreEscapado}')" 
                         title="Eliminar Población">
                     <i class="fas fa-trash"></i>
                 </button>
@@ -3774,25 +3786,36 @@ async function cargarInterfazRutas(officeFiltro) {
  * Crea una tarjeta de ruta editable
  */
 function crearTarjetaRuta(ruta) {
+    // Si falta un campo, asigna un valor por defecto
+    const id = ruta.id || 'ID_DESCONOCIDO_' + Math.random(); // ID único temporal si falta
+    const nombre = ruta.nombre || 'SIN NOMBRE';
+    const office = ruta.office || 'SIN OFICINA';
+
+    // Asignar 'OTROS' si la oficina no es GDL ni LEON
+    const displayOffice = (office === 'GDL' || office === 'LEON') ? office : 'OTROS';
+    
+    // Escapar comillas en los nombres para los 'onclick'
+    const nombreEscapado = nombre.replace(/'/g, "&apos;").replace(/"/g, "&quot;");
+
     return `
-        <div class="ruta-card" data-id="${ruta.id}" data-office="${ruta.office}" data-nombre="${ruta.nombre.toLowerCase()}">
+        <div class="ruta-card" data-id="${id}" data-office="${displayOffice}" data-nombre="${nombre.toLowerCase()}">
             <div class="ruta-header">
-                <div class="ruta-nombre-editable" contenteditable="false" data-id="${ruta.id}">
-                    ${ruta.nombre}
+                <div class="ruta-nombre-editable" contenteditable="false" data-id="${id}">
+                    ${nombre}
                 </div>
-                <span class="office-badge ${ruta.office}">${ruta.office}</span>
+                <span class="office-badge ${displayOffice}">${displayOffice}</span>
             </div>
             <div class="ruta-actions">
-                <button class="btn btn-sm btn-outline-info btn-editar-ruta" data-id="${ruta.id}" title="Editar Nombre">
+                <button class="btn btn-sm btn-outline-info btn-editar-ruta" data-id="${id}" title="Editar Nombre">
                     <i class="fas fa-edit"></i>
                 </button>
-                <button class="btn btn-sm btn-outline-success btn-guardar-ruta hidden" data-id="${ruta.id}" title="Guardar">
+                <button class="btn btn-sm btn-outline-success btn-guardar-ruta hidden" data-id="${id}" title="Guardar">
                     <i class="fas fa-check"></i>
                 </button>
-                <button class="btn btn-sm btn-outline-secondary btn-cancelar-ruta hidden" data-id="${ruta.id}" title="Cancelar">
+                <button class="btn btn-sm btn-outline-secondary btn-cancelar-ruta hidden" data-id="${id}" title="Cancelar">
                     <i class="fas fa-times"></i>
                 </button>
-                <button class="btn btn-sm btn-outline-danger" onclick="eliminarRuta('${ruta.id}', '${ruta.nombre}')" title="Eliminar">
+                <button class="btn btn-sm btn-outline-danger" onclick="eliminarRuta('${id}', '${nombreEscapado}')" title="Eliminar">
                     <i class="fas fa-trash"></i>
                 </button>
             </div>
@@ -5813,6 +5836,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
