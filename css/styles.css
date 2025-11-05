@@ -967,7 +967,7 @@ input, select, textarea {
         .user-table th, .user-table td,
         .report-table th, .report-table td {
             padding: 10px 8px;
-      t }
+        }
 
     .action-buttons {
         flex-direction: column;
@@ -1397,7 +1397,7 @@ body.has-connection-status .progress-container-fixed {
 
 #diagnostico-json-output {
     background-color: #e9ecef;
-    border-radius: 4px;
+  s border-radius: 4px;
     padding: 10px;
     max-height: 300px;
     overflow-y: auto;
@@ -1419,7 +1419,7 @@ body.has-connection-status .progress-container-fixed {
     min-height: 450px; /* Aumentar altura mínima */
     height: 60vh; /* O usar un porcentaje de la altura visible */
     width: 100%;
-    margin: 0 auto; /* Centrar si es necesario */
+TA   margin: 0 auto; /* Centrar si es necesario */
     padding: 10px; /* Añadir padding si se desea espacio interno */
     box-sizing: border-box; /* Incluir padding en el tamaño */
 }
@@ -1497,7 +1497,7 @@ body.has-connection-status .progress-container-fixed {
 
 .config-list {
     list-style: none;
-  M padding: 0;
+    padding: 0;
     max-height: 300px;
     overflow-y: auto;
     border: 1px solid var(--border-color);
@@ -1562,7 +1562,7 @@ body.has-connection-status .progress-container-fixed {
     .advanced-filters,
     #btn-imprimir-reporte-contable,
     #logout-btn {
-t     display: none !important;
+        display: none !important;
     }
 
     .app-content {
@@ -1594,7 +1594,7 @@ t     display: none !important;
         border-collapse: collapse;
         margin-bottom: 15px;
         page-break-inside: auto; /* Permitir que la tabla se divida entre páginas */
-M   }
+    }
     .reporte-contable-tabla th,
     .reporte-contable-tabla td {
         border: 1px solid #ccc;
@@ -1607,14 +1607,14 @@ M   }
     .reporte-contable-tabla tbody tr {
         page-break-inside: avoid; /* Intentar no cortar filas */
     }
-A   .reporte-contable-tabla .monto {
+    .reporte-contable-tabla .monto {
         text-align: right;
         font-family: monospace;
     }
     
     .info-grid {
         background: #f8f9fa !important; /* Forzar fondo en impresión */
-Do     border: 1px solid #ccc;
+        border: 1px solid #ccc;
     }
 
     #reporte-contable-footer {
@@ -1629,7 +1629,7 @@ Do     border: 1px solid #ccc;
     background: #f8f9fa;
     border-bottom: 1px solid #dee2e6;
     font-weight: bold;
-A   }
+    }
 
     .config-list-item {
     display: flex;
@@ -1641,7 +1641,7 @@ A   }
 
     .config-list-item:hover {
     background: #f8f9fa;
-    }
+  D }
 
     .badge-sucursal {
     padding: 2px 6px;
@@ -1663,7 +1663,7 @@ A   }
     .ruta-asignada {
     color: #28a745;
     font-size: 0.85em;
-  t }
+    }
 
     .sin-ruta {
     color: #6c757d;
@@ -1678,10 +1678,10 @@ A   }
     .config-list {
     max-height: 400px;
     overflow-y: auto;
-    }
+Two }
 
 /* =============================================
-   *** (INICIO DEL BLOQUE DUPLICADO - AHORA ELIMINADO) ***
+    (ESTE ES EL BLOQUE CORRECTO QUE SE QUEDA)
    ============================================= */
 /* --- Estilos para Pestañas (Tabs) --- */
 .tabs {
@@ -1720,7 +1720,7 @@ A   }
 /* --- Estilos de la Interfaz de Gestión --- */
 .config-header {
   display: flex;
-  justify-content: space-between;
+IT justify-content: space-between;
   align-items: center;
   margin-bottom: 20px;
   padding-bottom: 15px;
@@ -1844,7 +1844,7 @@ A   }
   padding: 4px 8px;
   margin: -4px -8px; /* Compensar padding */
   border: 1px solid transparent;
-A   border-radius: 4px;
+  border-radius: 4px;
   transition: border-color 0.3s ease;
   min-height: 1.2em;
   word-break: break-all;
@@ -1869,14 +1869,14 @@ A   border-radius: 4px;
   background: #e3f2fd; color: #1976d2; border: 1px solid #1976d2;
 }
 .office-badge.LEON {
-D   background: #f3e5f5; color: #7b1fa2; border: 1px solid #7b1fa2;
+  background: #f3e5f5; color: #7b1fa2; border: 1px solid #7b1fa2;
 }
 .office-badge.OTROS {
   background: #f8f9fa; color: #6c757d; border: 1px solid #6c757d;
 }
 
 .poblacion-content {
-  margin-bottom: 15px;
+M   margin-bottom: 15px;
   flex-grow: 1; /* Empuja acciones al fondo */
 }
 .ruta-tag {
@@ -1900,7 +1900,7 @@ D   background: #f3e5f5; color: #7b1fa2; border: 1px solid #7b1fa2;
 
 .poblacion-actions,
 .ruta-actions {
-  display: flex;
+s   display: flex;
   gap: 8px;
   justify-content: flex-end;
   border-top: 1px solid #f0f0f0;
@@ -1912,7 +1912,7 @@ D   background: #f3e5f5; color: #7b1fa2; border: 1px solid #7b1fa2;
   color: var(--secondary); border: 1px solid var(--secondary); background: none;
 }
 .btn-outline-primary:hover {
-G   background: var(--secondary); color: white;
+  background: var(--secondary); color: white;
 }
 .btn-outline-info {
   color: var(--info); border: 1px solid var(--info); background: none;
@@ -1921,10 +1921,10 @@ G   background: var(--secondary); color: white;
   background: var(--info); color: white;
 }
 .btn-outline-danger {
-  color: var(--danger); border: 1px solid var(--danger); background: none;
+D   color: var(--danger); border: 1px solid var(--danger); background: none;
 }
 .btn-outline-danger:hover {
-  background: var(--danger); color: white;
+s   background: var(--danger); color: white;
 }
 .btn-outline-success {
   color: var(--success); border: 1px solid var(--success); background: none;
@@ -1947,7 +1947,7 @@ G   background: var(--secondary); color: white;
   color: #6c757d;
 }
 .empty-state i, .error-state i {
-  margin-bottom: 15px;
+ar   margin-bottom: 15px;
   color: #dee2e6;
   font-size: 3em;
 }
@@ -1988,10 +1988,10 @@ G   background: var(--secondary); color: white;
   }
   .poblaciones-list,
   .rutas-list {
-      grid-template-columns: 1fr;
+    g grid-template-columns: 1fr;
   }
   .poblacion-header,
-  .ruta-header {
+section-ruta-header {
       flex-direction: column;
       gap: 10px;
   }
