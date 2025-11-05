@@ -3393,983 +3393,890 @@ async function handleGenerarGrafico() {
     }
 }
 
+// EN app.js: REEMPLAZA TODA LA SECCIÓN DE "NUEVA INTERFAZ DE GESTIÓN - CONFIGURACIÓN" CON ESTO
+
 // =============================================
-// NUEVA INTERFAZ DE GESTIÓN - CONFIGURACIÓN
+// NUEVA INTERFAZ DE GESTIÓN - CONFIGURACIÓN (REHECHA)
 // =============================================
 
 /**
- * Carga la nueva interfaz de gestión de poblaciones y rutas
- * CORREGIDO: Ahora determina el filtro de oficina basado en el rol del usuario.
- */
+ * Carga la nueva interfaz de gestión de poblaciones y rutas (Entry Point)
+ * Se llama cuando se muestra 'view-configuracion'.
+*/
 async function loadConfiguracion() {
-    console.log("--- Cargando nueva interfaz de gestión (Corregida) ---");
-    const statusEl = 'status_configuracion';
-    
-    // 1. Verificar permisos de acceso
-    if (!currentUserData || !['Super Admin', 'Gerencia', 'Administrador'].includes(currentUserData.role)) {
-        showStatus(statusEl, 'No tienes permisos para acceder a esta sección.', 'error');
-        showView('view-main-menu');
-        return;
-    }
+    console.log("--- Cargando nueva interfaz de gestión (REHECHA) ---");
+    const statusEl = 'status_configuracion';
+    
+    // 1. Verificar permisos de acceso
+    if (!currentUserData || !['Super Admin', 'Gerencia', 'Administrador'].includes(currentUserData.role)) {
+        showStatus(statusEl, 'No tienes permisos para acceder a esta sección.', 'error');
+        showView('view-main-menu');
+        return;
+    }
 
-    // 2. Determinar el filtro de oficina
-    let officeFiltro = null; // null = Super Admin/Gerencia (ven todo)
-    
-    // Si es Administrador Y tiene una oficina específica (no AMBAS), aplicar el filtro
-    if (currentUserData.role === 'Administrador' && currentUserData.office && currentUserData.office !== 'AMBAS') {
-        officeFiltro = currentUserData.office;
-    }
-    
-    console.log(`Filtro de oficina para configuración: ${officeFiltro || 'TODAS'}`);
-    showStatus(statusEl, 'Cargando catálogos...', 'info');
+    // 2. Determinar el filtro de oficina basado en el ROL
+    let officeFiltro = null; // null = Super Admin/Gerencia (ven todo)
+    
+    // Si es Administrador Y tiene una oficina específica (no AMBAS), aplicar el filtro
+    if (currentUserData.role === 'Administrador' && currentUserData.office && currentUserData.office !== 'AMBAS') {
+        officeFiltro = currentUserData.office;
+    }
+    
+    console.log(`Filtro de oficina para configuración: ${officeFiltro || 'TODAS'}`);
+    showStatus(statusEl, 'Cargando catálogos...', 'info');
 
-    try {
-        // 3. Pasar el filtro a las funciones de carga
-        await cargarInterfazPoblaciones(officeFiltro);
-        await cargarInterfazRutas(officeFiltro);
-        
-        setupNuevosTabsConfiguracion(); // Esto está bien
-        showStatus(statusEl, 'Catálogos cargados correctamente', 'success');
-        
-    } catch (error) {
-        console.error("Error cargando configuración:", error);
-        showStatus(statusEl, `Error: ${error.message}`, 'error');
-    }
+    try {
+        // 3. Cargar las dos pestañas (pasando el filtro)
+        // Usamos Promise.all para cargarlas en paralelo
+        await Promise.all([
+            cargarInterfazPoblaciones(officeFiltro),
+            cargarInterfazRutas(officeFiltro)
+        ]);
+        
+        // 4. Activar los botones de las pestañas (Tabs)
+        setupNuevosTabsConfiguracion();
+        showStatus(statusEl, 'Catálogos cargados correctamente', 'success');
+        
+    } catch (error) {
+        console.error("Error cargando configuración:", error);
+        showStatus(statusEl, `Error crítico al cargar: ${error.message}`, 'error');
+        document.getElementById('tabla-poblaciones-container').innerHTML = `<div class="error-state"><i class="fas fa-exclamation-triangle"></i><h3>Error</h3><p>${error.message}</p></div>`;
+        document.getElementById('tabla-rutas-container').innerHTML = `<div class="error-state"><i class="fas fa-exclamation-triangle"></i><h3>Error</h3><p>${error.message}</p></div>`;
+    }
 }
 
 /**
- * Configura los tabs de la nueva interfaz
- */
+ * Configura los botones de las pestañas "Poblaciones" y "Rutas"
+ */
 function setupNuevosTabsConfiguracion() {
-    document.querySelectorAll('.tab-button').forEach(button => {
-        button.addEventListener('click', function() {
-            // Remover active de todos
-            document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
-            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
-            
-            // Activar actual
-            this.classList.add('active');
-            const tabId = this.getAttribute('data-tab');
-            document.getElementById(`tab-${tabId}`).classList.add('active');
-        });
-    });
+    // Remover listeners antiguos para evitar duplicados
+    const tabsContainer = document.querySelector('#view-configuracion .tabs');
+    if (tabsContainer) {
+        const newTabsContainer = tabsContainer.cloneNode(true);
+        tabsContainer.parentNode.replaceChild(newTabsContainer, tabsContainer);
+    }
+
+    document.querySelectorAll('#view-configuracion .tab-button').forEach(button => {
+        button.addEventListener('click', function() {
+            // Remover active de todos los botones
+            document.querySelectorAll('#view-configuracion .tab-button').forEach(btn => btn.classList.remove('active'));
+            // Ocultar todos los contenidos
+            document.querySelectorAll('#view-configuracion .tab-content').forEach(content => content.classList.remove('active'));
+            
+            // Activar el botón clickeado
+            this.classList.add('active');
+            // Mostrar el contenido correspondiente
+            const tabId = this.getAttribute('data-tab');
+            document.getElementById(`tab-${tabId}`).classList.add('active');
+        });
+    });
+    console.log("Listeners de Tabs de Configuración aplicados.");
 }
 
 // =============================================
-// INTERFAZ DE POBLACIONES MEJORADA
+// LÓGICA DE POBLACIONES
 // =============================================
 
 /**
- * Carga la nueva interfaz de poblaciones
- * CORREGIDO: Acepta 'officeFiltro' para filtrar datos y ajustar la UI.
- */
+ * Carga la interfaz de la pestaña "Poblaciones"
+ * @param {string | null} officeFiltro - 'GDL', 'LEON', o null (para todos)
+*/
 async function cargarInterfazPoblaciones(officeFiltro) {
-    const container = document.getElementById('tabla-poblaciones-container');
-    if (!container) return;
+    const container = document.getElementById('tabla-poblaciones-container');
+    if (!container) return;
 
-    container.innerHTML = `<div style="text-align: center; padding: 40px;"><div class="spinner"></div><p>Cargando poblaciones...</p></div>`;
+    container.innerHTML = `<div style="text-align: center; padding: 40px;"><div class="spinner"></div><p>Cargando poblaciones...</p></div>`;
 
-    try {
-        const poblaciones = await database.obtenerPoblaciones(officeFiltro);
-        
-        const headerHTML = `
-            <div class="config-header">
-                <h3>Gestión de Poblaciones</h3>
-                <div class="header-actions">
-                    <div class="search-box">
-                        <input type="text" id="search-poblaciones" placeholder="Buscar población..." class="form-control">
-                        <i class="fas fa-search"></i>
-                    </div>
-                    <button class="btn btn-success" onclick="mostrarModalPoblacion()">
-                        <i class="fas fa-plus"></i> Nueva Población
-                    </button>
-                </div>
-            </div>
-        `;
+    try {
+        const poblaciones = await database.obtenerPoblaciones(officeFiltro);
+        
+        // 1. Construir el Header
+        const headerHTML = `
+            <div class="config-header">
+                <h3>Poblaciones (${poblaciones.length})</h3>
+                <div class="header-actions">
+                    <div class="search-box">
+                        <input type="text" id="search-poblaciones" placeholder="Buscar población..." class="form-control">
+                        <i class="fas fa-search"></i>
+                    </div>
+                    <button class="btn btn-success" onclick="mostrarModalPoblacion()">
+                        <i class="fas fa-plus"></i> Nueva Población
+                    </button>
+                </div>
+            </div>
+        `;
 
-        if (poblaciones.length === 0) {
-            container.innerHTML = headerHTML + `
-                <div class="empty-state">
-                    <i class="fas fa-map-marker-alt fa-3x"></i>
-                    <h3>No hay poblaciones registradas</h3>
-                    <p>No se encontraron poblaciones ${officeFiltro ? `para tu oficina (${officeFiltro})` : 'en el sistema'}.</p>
-                </div>
-            `;
-            return;
-        }
+        // 2. Mostrar estado vacío si no hay datos
+        if (poblaciones.length === 0) {
+            container.innerHTML = headerHTML + `
+                <div class="empty-state">
+                    <i class="fas fa-map-marker-alt"></i>
+                    <h3>No hay poblaciones registradas</h3>
+                    <p>No se encontraron poblaciones ${officeFiltro ? `para tu oficina (${officeFiltro})` : 'en el sistema'}.</p>
+                </div>
+            `;
+            configurarBusquedaPoblaciones(); // Activar búsqueda aunque esté vacío
+            return;
+        }
 
-        const poblacionesPorOficina = {};
-        const oficinasAMostrar = [];
+        // 3. Agrupar poblaciones por oficina (solo para Super Admin/Gerencia)
+        const poblacionesPorOficina = {};
+        const oficinasAMostrar = [];
 
-        if (officeFiltro) {
-            poblacionesPorOficina[officeFiltro] = poblaciones;
-            oficinasAMostrar.push(officeFiltro);
-        } else {
-            poblacionesPorOficina['GDL'] = poblaciones.filter(p => p.office === 'GDL');
-            poblacionesPorOficina['LEON'] = poblaciones.filter(p => p.office === 'LEON');
-            poblacionesPorOficina['OTROS'] = poblaciones.filter(p => p.office !== 'GDL' && p.office !== 'LEON');
-            oficinasAMostrar.push('GDL', 'LEON', 'OTROS');
-        }
+        if (officeFiltro) {
+            // El Administrador solo ve su oficina
+            poblacionesPorOficina[officeFiltro] = poblaciones;
+            oficinasAMostrar.push(officeFiltro);
+        } else {
+            // Super Admin/Gerencia ven todo, agrupado
+            poblacionesPorOficina['GDL'] = poblaciones.filter(p => p.office === 'GDL');
+            poblacionesPorOficina['LEON'] = poblaciones.filter(p => p.office === 'LEON');
+            poblacionesPorOficina['OTROS'] = poblaciones.filter(p => p.office !== 'GDL' && p.office !== 'LEON');
+            oficinasAMostrar.push('GDL', 'LEON', 'OTROS');
+        }
 
-        let html = headerHTML + `
-            <div class="filter-tabs" style="display: ${officeFiltro ? 'none' : 'flex'};">
-                <button class="filter-tab active" data-office="all">Todas</button>
-                <button class="filter-tab" data-office="GDL">Guadalajara</button>
-                <button class="filter-tab" data-office="LEON">León</button>
-                <button class="filter-tab" data-office="OTROS">Sin Asignar / Otros</button>
-            </div>
-            <div class="poblaciones-grid" id="poblaciones-grid">
-        `;
+        // 4. Construir HTML de la lista
+        let html = headerHTML;
+        
+        // Añadir pestañas de filtro GDL/LEON solo si es admin total
+        if (!officeFiltro) {
+            html += `
+                <div class="filter-tabs">
+                    <button class="filter-tab active" data-office="all">Todas</button>
+                    <button class="filter-tab" data-office="GDL">Guadalajara</button>
+                    <button class="filter-tab" data-office="LEON">León</button>
+                    <button class="filter-tab" data-office="OTROS">Sin Asignar / Otros</button>
+                </div>
+            `;
+        }
+        
+        html += `<div class="poblaciones-grid">`;
 
-        for (const office of oficinasAMostrar) {
-            const poblacionesOffice = poblacionesPorOficina[office];
-            
-            if (poblacionesOffice && poblacionesOffice.length > 0) {
-                let officeTitle = office;
-                if(office === 'OTROS') officeTitle = 'Sin Asignar / Otros';
-                else if (office === 'GDL') officeTitle = 'Guadalajara';
-                else if (office === 'LEON') officeTitle = 'León';
+        for (const office of oficinasAMostrar) {
+            const poblacionesOffice = poblacionesPorOficina[office];
+            
+            if (poblacionesOffice && poblacionesOffice.length > 0) {
+                let officeTitle = office;
+                if(office === 'OTROS') officeTitle = 'Sin Asignar / Otros';
+                else if (office === 'GDL') officeTitle = 'Guadalajara';
+                else if (office === 'LEON') officeTitle = 'León';
 
-                html += `<div class="office-section" data-office="${office}">`;
-                if (!officeFiltro) {
-                    html += `<h4 class="office-title">${officeTitle} (${poblacionesOffice.length})</h4>`;
-                }
-                html += `<div class="poblaciones-list">`;
-                
-                poblacionesOffice.forEach(poblacion => {
-                    html += crearTarjetaPoblacion(poblacion); // Llama a la nueva función robusta
-                });
-                
-                html += `</div></div>`;
-            }
-        }
+                html += `<div class="office-section" data-office="${office}">`;
+                // No mostrar título si el admin está filtrado (es redundante)
+                if (!officeFiltro) {
+                    html += `<h4 class="office-title">${officeTitle} (${poblacionesOffice.length})</h4>`;
+                }
+                html += `<div class="poblaciones-list">`;
+                
+                // Ordenar alfabéticamente (ya debería venir de la DB, pero re-aseguramos)
+                poblacionesOffice.sort((a,b) => (a.nombre || '').localeCompare(b.nombre || ''));
+                
+                poblacionesOffice.forEach(poblacion => {
+                    html += crearTarjetaPoblacion(poblacion);
+                });
+                
+                html += `</div></div>`;
+            }
+        }
 
-        html += `</div>`;
-        container.innerHTML = html;
+        html += `</div>`;
+        container.innerHTML = html;
 
-        configurarBusquedaPoblaciones();
-        configurarFiltrosPoblaciones();
+        // 5. Activar listeners
+        configurarBusquedaPoblaciones();
+        if (!officeFiltro) {
+            configurarFiltrosPoblaciones();
+        }
 
-    } catch (error) {
-        console.error("Error cargando interfaz de poblaciones:", error);
-        const filtroString = officeFiltro === null ? 'null' : `'${officeFiltro}'`;
-        container.innerHTML = `
-            <div class="error-state">
-                <i class="fas fa-exclamation-triangle fa-2x"></i>
-                <h3>Error al cargar las poblaciones</h3>
-                <p>${error.message}</p>
-                <button class="btn btn-secondary" onclick="cargarInterfazPoblaciones(${filtroString})">
-                    <i class="fas fa-redo"></i> Reintentar
-                </button>
-            </div>
-        `;
-    }
+    } catch (error) {
+        console.error("Error cargando interfaz de poblaciones:", error);
+        container.innerHTML = `
+            <div class="error-state">
+                <i class="fas fa-exclamation-triangle fa-2x"></i>
+                <h3>Error al cargar las poblaciones</h3>
+                <p>${error.message}</p>
+                <button class="btn btn-secondary" onclick="loadConfiguracion()">
+                    <i class="fas fa-redo"></i> Reintentar
+                </button>
+            </div>
+        `;
+    }
 }
 
 /**
- * Crea una tarjeta de población
- */
+ * Helper: Crea el HTML para una tarjeta de población
+ */
 function crearTarjetaPoblacion(poblacion) {
-    // Si falta un campo, asigna un valor por defecto
-    const id = poblacion.id || 'ID_DESCONOCIDO_' + Math.random();
-    const nombre = poblacion.nombre || 'SIN NOMBRE';
-    const office = poblacion.office || 'SIN OFICINA';
-    const ruta = poblacion.ruta || '';
+    const id = poblacion.id || 'ID_DESCONOCIDO';
+    const nombre = poblacion.nombre || 'SIN NOMBRE';
+    const office = poblacion.office || 'OTROS';
+    const ruta = poblacion.ruta || '';
 
-    // Asignar 'OTROS' si la oficina no es GDL ni LEON
-    const displayOffice = (office === 'GDL' || office === 'LEON') ? office : 'OTROS';
+    const displayOffice = (office === 'GDL' || office === 'LEON') ? office : 'OTROS';
 
-    const rutaDisplay = ruta
-        ? `<span class="ruta-tag" title="Ruta asignada">${ruta}</span>`
-        : `<span class="no-ruta-tag" title="Sin ruta asignada">Sin ruta</span>`;
+    const rutaDisplay = ruta
+        ? `<span class="ruta-tag" title="Ruta asignada">${ruta}</span>`
+        : `<span class="no-ruta-tag" title="Sin ruta asignada">Sin ruta</span>`;
 
-    // Escapar comillas en los nombres para los 'onclick'
-    const nombreEscapado = String(nombre).replace(/'/g, "&apos;").replace(/"/g, "&quot;");
+    // Escapar comillas en los nombres para los 'onclick'
+    const nombreEscapado = String(nombre).replace(/'/g, "&apos;").replace(/"/g, "&quot;");
 
-    return `
-        <div class="poblacion-card" data-id="${id}" data-office="${displayOffice}" data-nombre="${nombre.toLowerCase()}">
-            <div class="poblacion-header">
-                <h5 class="poblacion-nombre">${nombre}</h5>
-                <span class="office-badge ${displayOffice}">${displayOffice}</span>
-            </div>
-            <div class="poblacion-content">
-                <div class="ruta-asignacion">
-                    ${rutaDisplay}
-                </div>
-            </div>
-            <div class="poblacion-actions">
-                <button class="btn btn-sm btn-outline-primary" onclick="asignarRutaPoblacion('${id}', '${nombreEscapado}', '${office}')" 
-                        title="Asignar/Cambiar Ruta">
-                    <i class="fas fa-route"></i>
-                </button>
-                <button class="btn btn-sm btn-outline-danger" onclick="eliminarPoblacion('${id}', '${nombreEscapado}')" 
-                        title="Eliminar Población">
-                    <i class="fas fa-trash"></i>
-                </button>
-            </div>
-        </div>
-    `;
+    return `
+        <div class="poblacion-card" data-id="${id}" data-office="${displayOffice}" data-nombre="${nombre.toLowerCase()}">
+            <div class="poblacion-header">
+                <h5 class="poblacion-nombre">${nombre}</h5>
+                <span class="office-badge ${displayOffice}">${displayOffice}</span>
+            </div>
+            <div class="poblacion-content">
+                <div class="ruta-asignacion">
+                    ${rutaDisplay}
+                </div>
+            </div>
+            <div class="poblacion-actions">
+                <button class="btn btn-sm btn-outline-primary" onclick="asignarRutaPoblacion('${id}', '${nombreEscapado}', '${office}')" 
+                        title="Asignar/Cambiar Ruta">
+                    <i class="fas fa-route"></i> Asignar Ruta
+                </button>
+                <button class="btn btn-sm btn-outline-danger" onclick="eliminarPoblacion('${id}', '${nombreEscapado}')" 
+                        title="Eliminar Población">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </div>
+        </div>
+    `;
 }
 
 /**
- * Configura la búsqueda en tiempo real
- */
+ * Configura la búsqueda en tiempo real para poblaciones
+ */
 function configurarBusquedaPoblaciones() {
-    const searchInput = document.getElementById('search-poblaciones');
-    if (!searchInput) return;
+    const searchInput = document.getElementById('search-poblaciones');
+    if (!searchInput) return;
 
-    searchInput.addEventListener('input', function() {
-        const searchTerm = this.value.toLowerCase().trim();
-        const cards = document.querySelectorAll('.poblacion-card');
-        
-        cards.forEach(card => {
-            const nombre = card.getAttribute('data-nombre');
-            const office = card.getAttribute('data-office');
-            const matchesSearch = !searchTerm || nombre.includes(searchTerm);
-            
-            card.style.display = matchesSearch ? 'block' : 'none';
-        });
+    // Prevenir listeners duplicados
+    searchInput.replaceWith(searchInput.cloneNode(true));
+    document.getElementById('search-poblaciones').addEventListener('input', function() {
+        const searchTerm = this.value.toLowerCase().trim();
+        const cards = document.querySelectorAll('#tab-poblaciones .poblacion-card');
+        const activeFilter = document.querySelector('#tab-poblaciones .filter-tab.active')?.getAttribute('data-office') || 'all';
+        
+        let visibleCount = 0;
+        cards.forEach(card => {
+            const nombre = card.getAttribute('data-nombre');
+            const office = card.getAttribute('data-office');
+            const matchesSearch = !searchTerm || nombre.includes(searchTerm);
+            const matchesFilter = activeFilter === 'all' || office === activeFilter;
+            
+            if (matchesSearch && matchesFilter) {
+                card.style.display = 'flex';
+                visibleCount++;
+            } else {
+                card.style.display = 'none';
+            }
+        });
 
-        // Ocultar secciones vacías
-        document.querySelectorAll('.office-section').forEach(section => {
-            const visibleCards = section.querySelectorAll('.poblacion-card[style="display: block"]');
-            section.style.display = visibleCards.length > 0 ? 'block' : 'none';
-        });
-    });
+        // Ocultar secciones de oficina si quedan vacías (para Super Admin)
+        document.querySelectorAll('#tab-poblaciones .office-section').forEach(section => {
+            const visibleCardsInSection = section.querySelectorAll('.poblacion-card[style*="display: flex"]').length;
+            section.style.display = visibleCardsInSection > 0 ? 'block' : 'none';
+        });
+    });
 }
 
 /**
- * Configura los filtros por oficina
- */
+ * Configura los filtros por oficina (GDL, LEON, etc.) para poblaciones
+ */
 function configurarFiltrosPoblaciones() {
-    document.querySelectorAll('.filter-tab').forEach(tab => {
-        tab.addEventListener('click', function() {
-            // Actualizar tabs activos
-            document.querySelectorAll('.filter-tab').forEach(t => t.classList.remove('active'));
-            this.classList.add('active');
-            
-            const officeFilter = this.getAttribute('data-office');
-            const cards = document.querySelectorAll('.poblacion-card');
-            
-            cards.forEach(card => {
-                const cardOffice = card.getAttribute('data-office');
-                const matchesFilter = officeFilter === 'all' || cardOffice === officeFilter;
-                
-                card.style.display = matchesFilter ? 'block' : 'none';
-            });
-
-            // Mostrar/ocultar secciones
-            document.querySelectorAll('.office-section').forEach(section => {
-                const sectionOffice = section.getAttribute('data-office');
-                const matchesFilter = officeFilter === 'all' || sectionOffice === officeFilter;
-                const hasVisibleCards = section.querySelectorAll('.poblacion-card[style="display: block"]').length > 0;
-                
-                section.style.display = matchesFilter && hasVisibleCards ? 'block' : 'none';
-            });
-        });
-    });
+    document.querySelectorAll('#tab-poblaciones .filter-tab').forEach(tab => {
+        // Prevenir listeners duplicados
+        const newTab = tab.cloneNode(true);
+        tab.parentNode.replaceChild(newTab, tab);
+        
+        newTab.addEventListener('click', function() {
+            document.querySelectorAll('#tab-poblaciones .filter-tab').forEach(t => t.classList.remove('active'));
+            this.classList.add('active');
+            
+            // Disparar el evento 'input' de la búsqueda para re-filtrar todo
+            const searchInput = document.getElementById('search-poblaciones');
+            searchInput.dispatchEvent(new Event('input'));
+        });
+    });
 }
 
 // =============================================
-// INTERFAZ DE RUTAS MEJORADA
+// LÓGICA DE RUTAS
 // =============================================
 
 /**
- * Carga la nueva interfaz de rutas
- * CORREGIDO: Acepta 'officeFiltro' para filtrar datos y ajustar la UI.
- */
+ * Carga la interfaz de la pestaña "Rutas"
+ * @param {string | null} officeFiltro - 'GDL', 'LEON', o null (para todos)
+*/
 async function cargarInterfazRutas(officeFiltro) {
-    const container = document.getElementById('tabla-rutas-container');
-    if (!container) return;
+    const container = document.getElementById('tabla-rutas-container');
+    if (!container) return;
 
-    container.innerHTML = `<div style="text-align: center; padding: 40px;"><div class="spinner"></div><p>Cargando rutas...</p></div>`;
+    container.innerHTML = `<div style="text-align: center; padding: 40px;"><div class="spinner"></div><p>Cargando rutas...</p></div>`;
 
-    try {
-        const rutas = await database.obtenerRutas(officeFiltro);
-        
-        const headerHTML = `
-            <div class="config-header">
-                <h3>Gestión de Rutas</h3>
-                <div class="header-actions">
-                    <div class="search-box">
-                        <input type="text" id="search-rutas" placeholder="Buscar ruta..." class="form-control">
-                        <i class="fas fa-search"></i>
-                    </div>
-                    <button class="btn btn-success" onclick="mostrarModalRuta()">
-                        <i class="fas fa-plus"></i> Nueva Ruta
-                    </button>
-                </div>
-            </div>
-        `;
+    try {
+        const rutas = await database.obtenerRutas(officeFiltro);
+        
+        // 1. Construir el Header
+        const headerHTML = `
+            <div class="config-header">
+                <h3>Rutas (${rutas.length})</h3>
+                <div class="header-actions">
+                    <div class="search-box">
+                        <input type="text" id="search-rutas" placeholder="Buscar ruta..." class="form-control">
+                        <i class="fas fa-search"></i>
+                    </div>
+                    <button class="btn btn-success" onclick="mostrarModalRuta()">
+                        <i class="fas fa-plus"></i> Nueva Ruta
+                    </button>
+                </div>
+            </div>
+        `;
 
-        if (rutas.length === 0) {
-            container.innerHTML = headerHTML + `
-                <div class="empty-state">
-                    <i class="fas fa-route fa-3x"></i>
-                    <h3>No hay rutas registradas</h3>
-                    <p>No se encontraron rutas ${officeFiltro ? `para tu oficina (${officeFiltro})` : 'en el sistema'}.</p>
-                </div>
-            `;
-            return;
-        }
+        // 2. Mostrar estado vacío si no hay datos
+        if (rutas.length === 0) {
+            container.innerHTML = headerHTML + `
+                <div class="empty-state">
+                    <i class="fas fa-route"></i>
+                    <h3>No hay rutas registradas</h3>
+                    <p>No se encontraron rutas ${officeFiltro ? `para tu oficina (${officeFiltro})` : 'en el sistema'}.</p>
+                </div>
+            `;
+            configurarBusquedaRutas(); // Activar búsqueda
+            return;
+        }
 
-        let html = headerHTML + `<div class="rutas-grid" id="rutas-grid">`;
+        // 3. Agrupar rutas por oficina
+        const rutasPorOficina = {};
+        const oficinasAMostrar = [];
 
-        const rutasPorOficina = {};
-        const oficinasAMostrar = [];
+        if (officeFiltro) {
+            rutasPorOficina[officeFiltro] = rutas;
+            oficinasAMostrar.push(officeFiltro);
+        } else {
+            rutasPorOficina['GDL'] = rutas.filter(r => r.office === 'GDL');
+            rutasPorOficina['LEON'] = rutas.filter(r => r.office === 'LEON');
+            rutasPorOficina['OTROS'] = rutas.filter(r => r.office !== 'GDL' && r.office !== 'LEON');
+            oficinasAMostrar.push('GDL', 'LEON', 'OTROS');
+        }
 
-        if (officeFiltro) {
-            rutasPorOficina[officeFiltro] = rutas.sort((a, b) => a.nombre.localeCompare(b.nombre));
-            oficinasAMostrar.push(officeFiltro);
-        } else {
-            rutasPorOficina['GDL'] = rutas.filter(r => r.office === 'GDL').sort((a, b) => a.nombre.localeCompare(b.nombre));
-            rutasPorOficina['LEON'] = rutas.filter(r => r.office === 'LEON').sort((a, b) => a.nombre.localeCompare(b.nombre));
-            rutasPorOficina['OTROS'] = rutas.filter(r => r.office !== 'GDL' && r.office !== 'LEON').sort((a, b) => a.nombre.localeCompare(b.nombre));
-            oficinasAMostrar.push('GDL', 'LEON', 'OTROS');
-        }
+        // 4. Construir HTML de la lista
+        let html = headerHTML + `<div class="rutas-grid">`;
 
-        for (const office of oficinasAMostrar) {
-            const rutasOffice = rutasPorOficina[office];
-            if (rutasOffice && rutasOffice.length > 0) {
-                let officeTitle = office;
-                if(office === 'OTROS') officeTitle = 'Sin Asignar / Otros';
-                else if (office === 'GDL') officeTitle = 'Guadalajara';
-                else if (office === 'LEON') officeTitle = 'León';
+        for (const office of oficinasAMostrar) {
+            const rutasOffice = rutasPorOficina[office];
+            
+            if (rutasOffice && rutasOffice.length > 0) {
+                let officeTitle = office;
+                if(office === 'OTROS') officeTitle = 'Sin Asignar / Otros';
+                else if (office === 'GDL') officeTitle = 'Guadalajara';
+                else if (office === 'LEON') officeTitle = 'León';
 
-                html += `<div class="office-section" data-office="${office}">`;
-                if (!officeFiltro) {
-                    html += `<h4 class="office-title">${officeTitle} (${rutasOffice.length})</h4>`;
-                }
-                html += `<div class="rutas-list">`;
-                
-                rutasOffice.forEach(ruta => {
-                    html += crearTarjetaRuta(ruta); // Llama a la nueva función robusta
-                });
-                
-                html += `</div></div>`;
-            }
-        }
+                html += `<div class="office-section" data-office="${office}">`;
+                if (!officeFiltro) {
+                    html += `<h4 class="office-title">${officeTitle} (${rutasOffice.length})</h4>`;
+                }
+                html += `<div class="rutas-list">`;
+                
+                // Ordenar alfabéticamente
+                rutasOffice.sort((a,b) => (a.nombre || '').localeCompare(b.nombre || ''));
+                
+                rutasOffice.forEach(ruta => {
+                    html += crearTarjetaRuta(ruta);
+                });
+                
+                html += `</div></div>`;
+            }
+        }
 
-        html += `</div>`;
-        container.innerHTML = html;
+        html += `</div>`;
+        container.innerHTML = html;
 
-        configurarBusquedaRutas();
-        configurarEdicionRutas();
-    
-    } catch (error) {
-        console.error("Error cargando interfaz de rutas:", error);
-        const filtroString = officeFiltro === null ? 'null' : `'${officeFiltro}'`;
-        container.innerHTML = `
-            <div class="error-state">
-                <i class="fas fa-exclamation-triangle fa-2x"></i>
-                <h3>Error al cargar las rutas</h3>
-                <p>${error.message}</p>
-                <button class="btn btn-secondary" onclick="cargarInterfazRutas(${filtroString})">
-                    <i class="fas fa-redo"></i> Reintentar
-                </button>
-            </div>
-        `;
-    }
+        // 5. Activar listeners
+        configurarBusquedaRutas();
+        configurarEdicionRutas();
+    
+    } catch (error) {
+        console.error("Error cargando interfaz de rutas:", error);
+        container.innerHTML = `
+            <div class="error-state">
+                <i class="fas fa-exclamation-triangle fa-2x"></i>
+                <h3>Error al cargar las rutas</h3>
+                <p>${error.message}</p>
+                <button class="btn btn-secondary" onclick="loadConfiguracion()">
+                    <i class="fas fa-redo"></i> Reintentar
+                </button>
+            </div>
+        `;
+    }
 }
 
 /**
- * Crea una tarjeta de ruta editable
- */
-function crearTarjetaRuta(ruta) {
-    // Si falta un campo, asigna un valor por defecto
-    const id = ruta.id || 'ID_DESCONOCIDO_' + Math.random();
-    const nombre = ruta.nombre || 'SIN NOMBRE';
-    const office = ruta.office || 'SIN OFICINA';
-
-    // Asignar 'OTROS' si la oficina no es GDL ni LEON
-    const displayOffice = (office === 'GDL' || office === 'LEON') ? office : 'OTROS';
-    
-    // Escapar comillas en los nombres para los 'onclick'
-    const nombreEscapado = String(nombre).replace(/'/g, "&apos;").replace(/"/g, "&quot;");
-
-    return `
-        <div class="ruta-card" data-id="${id}" data-office="${displayOffice}" data-nombre="${nombre.toLowerCase()}">
-            <div class="ruta-header">
-                <div class="ruta-nombre-editable" contenteditable="false" data-id="${id}">
-                    ${nombre}
-                </div>
-                <span class="office-badge ${displayOffice}">${displayOffice}</span>
-            </div>
-            <div class="ruta-actions">
-                <button class="btn btn-sm btn-outline-info btn-editar-ruta" data-id="${id}" title="Editar Nombre">
-                    <i class="fas fa-edit"></i>
-                </button>
-                <button class="btn btn-sm btn-outline-success btn-guardar-ruta hidden" data-id="${id}" title="Guardar">
-                    <i class="fas fa-check"></i>
-                </button>
-                <button class="btn btn-sm btn-outline-secondary btn-cancelar-ruta hidden" data-id="${id}" title="Cancelar">
-                    <i class="fas fa-times"></i>
-                </button>
-                <button class="btn btn-sm btn-outline-danger" onclick="eliminarRuta('${id}', '${nombreEscapado}')" title="Eliminar">
-                    <i class="fas fa-trash"></i>
-                </button>
-            </div>
-        </div>
-    `;
-}
-
-/**
- * Configura la búsqueda de rutas
- */
-function configurarBusquedaRutas() {
-    const searchInput = document.getElementById('search-rutas');
-    if (!searchInput) return;
-
-    searchInput.addEventListener('input', function() {
-        const searchTerm = this.value.toLowerCase().trim();
-        const cards = document.querySelectorAll('.ruta-card');
-        
-        cards.forEach(card => {
-            const nombre = card.getAttribute('data-nombre');
-            const matchesSearch = !searchTerm || nombre.includes(searchTerm);
-            card.style.display = matchesSearch ? 'flex' : 'none';
-        });
-
-        // Ocultar secciones vacías
-        document.querySelectorAll('.office-section').forEach(section => {
-            const visibleCards = section.querySelectorAll('.ruta-card[style="display: flex"]');
-            section.style.display = visibleCards.length > 0 ? 'block' : 'none';
-        });
-    });
-}
-
-/**
- * Configura la edición in-place de rutas
- */
+Añade un listener a todos los botones de "Editar" de las rutas
+*/
 function configurarEdicionRutas() {
-    document.querySelectorAll('.btn-editar-ruta').forEach(btn => {
-        btn.addEventListener('click', function() {
-            const rutaId = this.getAttribute('data-id');
-            const card = this.closest('.ruta-card');
-            const nombreElement = card.querySelector('.ruta-nombre-editable');
-            const originalNombre = nombreElement.textContent.trim();
+    document.querySelectorAll('#tab-rutas .btn-editar-ruta').forEach(btn => {
+        // Prevenir listeners duplicados
+        const newBtn = btn.cloneNode(true);
+        btn.parentNode.replaceChild(newBtn, btn);
+        
+        newBtn.addEventListener('click', function() {
+            const card = this.closest('.ruta-card');
+            const nombreElement = card.querySelector('.ruta-nombre-editable');
+            const originalNombre = nombreElement.textContent.trim();
+            
+            // Guardar nombre original en el botón cancelar
+            card.querySelector('.btn-cancelar-ruta').setAttribute('data-original-nombre', originalNombre);
 
-            // Activar edición
-            nombreElement.contentEditable = true;
-            nombreElement.focus();
-            nombreElement.classList.add('editing');
+            // Activar edición
+            nombreElement.contentEditable = true;
+            nombreElement.classList.add('editing');
+            nombreElement.focus();
+            document.execCommand('selectAll',false,null); // Seleccionar texto
 
-            // Mostrar/ocultar botones
-            this.classList.add('hidden');
-            card.querySelector('.btn-guardar-ruta').classList.remove('hidden');
-            card.querySelector('.btn-cancelar-ruta').classList.remove('hidden');
+            // Mostrar/ocultar botones
+            this.classList.add('hidden');
+            card.querySelector('.btn-guardar-ruta').classList.remove('hidden');
+            card.querySelector('.btn-cancelar-ruta').classList.remove('hidden');
+            card.querySelector('.btn-outline-danger').classList.add('hidden'); // Ocultar eliminar
+        });
+    });
 
-            // Configurar cancelar
-            card.querySelector('.btn-cancelar-ruta').onclick = () => {
-                nombreElement.textContent = originalNombre;
-                nombreElement.contentEditable = false;
-                nombreElement.classList.remove('editing');
-                this.classList.remove('hidden');
-                card.querySelector('.btn-guardar-ruta').classList.add('hidden');
-                card.querySelector('.btn-cancelar-ruta').classList.add('hidden');
-            };
+    // Configurar botones de cancelar
+    document.querySelectorAll('#tab-rutas .btn-cancelar-ruta').forEach(btn => {
+        const newBtn = btn.cloneNode(true);
+        btn.parentNode.replaceChild(newBtn, btn);
 
-            // Configurar guardar
-            card.querySelector('.btn-guardar-ruta').onclick = async () => {
-                const nuevoNombre = nombreElement.textContent.trim();
-                if (!nuevoNombre) {
-                    alert('El nombre de la ruta no puede estar vacío');
-                    nombreElement.focus();
-                    return;
-                }
+        newBtn.addEventListener('click', function() {
+            const card = this.closest('.ruta-card');
+            const nombreElement = card.querySelector('.ruta-nombre-editable');
+            const originalNombre = this.getAttribute('data-original-nombre');
+            
+            nombreElement.textContent = originalNombre;
+            nombreElement.contentEditable = false;
+            nombreElement.classList.remove('editing');
+            
+            this.classList.add('hidden');
+            card.querySelector('.btn-guardar-ruta').classList.add('hidden');
+            card.querySelector('.btn-editar-ruta').classList.remove('hidden');
+            card.querySelector('.btn-outline-danger').classList.remove('hidden');
+        });
+    });
 
-                if (nuevoNombre === originalNombre) {
-                    // Sin cambios, solo cancelar
-                    card.querySelector('.btn-cancelar-ruta').click();
-                    return;
-                }
+    // Configurar botones de guardar
+    document.querySelectorAll('#tab-rutas .btn-guardar-ruta').forEach(btn => {
+        const newBtn = btn.cloneNode(true);
+        btn.parentNode.replaceChild(newBtn, btn);
 
-                try {
-                    showProcessingOverlay(true, 'Actualizando ruta...');
-                    const resultado = await database.actualizarNombreRuta(rutaId, nuevoNombre);
-                    
-                    if (resultado.success) {
-                        showStatus('status_configuracion', 'Ruta actualizada correctamente', 'success');
-                        nombreElement.contentEditable = false;
-                        nombreElement.classList.remove('editing');
-                        nombreElement.setAttribute('data-nombre', nuevoNombre.toLowerCase());
-                        this.classList.remove('hidden');
-                        card.querySelector('.btn-guardar-ruta').classList.add('hidden');
-                        card.querySelector('.btn-cancelar-ruta').classList.add('hidden');
-                    } else {
-                        throw new Error(resultado.message);
-                    }
-                } catch (error) {
-                    console.error('Error actualizando ruta:', error);
-                    alert(`Error: ${error.message}`);
-                    nombreElement.textContent = originalNombre;
-                } finally {
-                    showProcessingOverlay(false);
-                }
-            };
-        });
-    });
-}
+        newBtn.addEventListener('click', async function() {
+            const card = this.closest('.ruta-card');
+            const nombreElement = card.querySelector('.ruta-nombre-editable');
+            const rutaId = card.getAttribute('data-id');
+            const nuevoNombre = nombreElement.textContent.trim().toUpperCase();
+            const originalNombre = card.querySelector('.btn-cancelar-ruta').getAttribute('data-original-nombre');
 
-// =============================================
-// FUNCIONES DE ASIGNACIÓN DE RUTAS
-// =============================================
+            if (!nuevoNombre) {
+                showStatus('status_configuracion', 'El nombre de la ruta no puede estar vacío.', 'error');
+                nombreElement.focus();
+                return;
+            }
 
-/**
- * Asigna una ruta a una población
- */
-async function asignarRutaPoblacion(poblacionId, poblacionNombre, poblacionOffice) {
-    try {
-        // Obtener rutas disponibles para esta oficina
-        const rutasDisponibles = await database.obtenerRutas(poblacionOffice);
-        const opcionesRutas = rutasDisponibles.map(r => r.nombre).sort();
+            if (nuevoNombre === originalNombre.toUpperCase()) {
+                // No hay cambios, solo cancelar
+                card.querySelector('.btn-cancelar-ruta').click();
+                return;
+            }
 
-        let selectHTML = `
-            <div class="asignacion-ruta-modal">
-                <h4>Asignar Ruta a Población</h4>
-                <p><strong>${poblacionNombre}</strong> (${poblacionOffice})</p>
-                
-                <div class="form-group">
-                    <label for="ruta-poblacion-select">Selecciona la ruta:</label>
-                    <select id="ruta-poblacion-select" class="form-control">
-                        <option value="">-- Sin asignar --</option>
-        `;
+            showProcessingOverlay(true, 'Actualizando ruta...');
+            const resultado = await database.actualizarNombreRuta(rutaId, nuevoNombre);
+            showProcessingOverlay(false);
 
-        opcionesRutas.forEach(rutaNombre => {
-            selectHTML += `<option value="${rutaNombre}">${rutaNombre}</option>`;
-        });
-
-        selectHTML += `
-                    </select>
-                </div>
-                
-                <div class="modal-actions">
-                    <button id="btn-confirmar-ruta-poblacion" class="btn btn-success">
-                        <i class="fas fa-save"></i> Guardar
-                    </button>
-                    <button class="btn btn-secondary" onclick="document.getElementById('generic-modal').classList.add('hidden')">
-                        <i class="fas fa-times"></i> Cancelar
-                    </button>
-                </div>
-            </div>
-        `;
-
-        // Mostrar modal
-        document.getElementById('modal-title').textContent = 'Asignar Ruta';
-        document.getElementById('modal-body').innerHTML = selectHTML;
-        document.getElementById('generic-modal').classList.remove('hidden');
-
-        // Configurar evento del botón
-        const btnConfirmar = document.getElementById('btn-confirmar-ruta-poblacion');
-        btnConfirmar.onclick = async () => {
-            const nuevaRuta = document.getElementById('ruta-poblacion-select').value || null;
-
-            showProcessingOverlay(true, 'Asignando ruta...');
-            try {
-                const resultado = await database.asignarRutaAPoblacion(poblacionId, nuevaRuta);
-                
-                if (resultado.success) {
-                    document.getElementById('generic-modal').classList.add('hidden');
-                    showStatus('status_configuracion', resultado.message, 'success');
-                    await cargarInterfazPoblaciones(); // Recargar la vista
-                } else {
-                    throw new Error(resultado.message);
-                }
-            } catch (error) {
-                console.error("Error asignando ruta:", error);
-                alert(`Error: ${error.message}`);
-            } finally {
-                showProcessingOverlay(false);
-            }
-        };
-
-    } catch (error) {
-        console.error("Error en asignarRutaPoblacion:", error);
-        alert(`Error: ${error.message}`);
-    }
-}
-
-// =============================================
-// ELIMINACIÓN DE REGISTROS
-// =============================================
-
-/**
- * Elimina una población
- */
-async function eliminarPoblacion(id, nombre) {
-    if (!confirm(`¿Estás seguro de que deseas eliminar la población "${nombre}"?\nEsta acción no se puede deshacer.`)) {
-        return;
-    }
-
-    showProcessingOverlay(true, 'Eliminando población...');
-    try {
-        const resultado = await database.eliminarPoblacion(id);
-        
-        if (resultado.success) {
-            showStatus('status_configuracion', `Población "${nombre}" eliminada correctamente`, 'success');
-            await cargarInterfazPoblaciones();
-        } else {
-            throw new Error(resultado.message);
-        }
-    } catch (error) {
-        console.error("Error eliminando población:", error);
-        alert(`Error: ${error.message}`);
-    } finally {
-        showProcessingOverlay(false);
-    }
+            if (resultado.success) {
+                showStatus('status_configuracion', 'Ruta actualizada. Se recargarán ambas listas.', 'success');
+                // Recargar todo para reflejar el cambio en las poblaciones
+                await loadConfiguracion(); 
+            } else {
+                showStatus('status_configuracion', `Error: ${resultado.message}`, 'error');
+                card.querySelector('.btn-cancelar-ruta').click(); // Revertir
+            }
+        });
+    });
 }
 
 /**
- * Elimina una ruta
- */
-async function eliminarRuta(id, nombre) {
-    if (!confirm(`¿Estás seguro de que deseas eliminar la ruta "${nombre}"?\nEsta acción afectará a las poblaciones que la tengan asignada.`)) {
-        return;
-    }
+ * Helper: Crea el HTML para una tarjeta de ruta
+ */
+function crearTarjetaRuta(ruta) {
+    const id = ruta.id || 'ID_DESCONOCIDO';
+    const nombre = ruta.nombre || 'SIN NOMBRE';
+    const office = ruta.office || 'OTROS';
+    const displayOffice = (office === 'GDL' || office === 'LEON') ? office : 'OTROS';
+    const nombreEscapado = String(nombre).replace(/'/g, "&apos;").replace(/"/g, "&quot;");
 
-    showProcessingOverlay(true, 'Eliminando ruta...');
-    try {
-        const resultado = await database.eliminarRuta(id);
-        
-        if (resultado.success) {
-            showStatus('status_configuracion', `Ruta "${nombre}" eliminada correctamente`, 'success');
-            await cargarInterfazRutas();
-            await cargarInterfazPoblaciones(); // Recargar poblaciones para actualizar asignaciones
-        } else {
-            throw new Error(resultado.message);
-        }
-    } catch (error) {
-        console.error("Error eliminando ruta:", error);
-        alert(`Error: ${error.message}`);
-    } finally {
-        showProcessingOverlay(false);
-    }
+    return `
+        <div class="ruta-card" data-id="${id}" data-office="${displayOffice}" data-nombre="${nombre.toLowerCase()}">
+            <div class="ruta-header">
+                <div class="ruta-nombre-editable" contenteditable="false">${nombre}</div>
+                <span class="office-badge ${displayOffice}">${displayOffice}</span>
+            </div>
+            <div class="ruta-actions">
+                <button class="btn btn-sm btn-outline-info btn-editar-ruta" title="Editar Nombre">
+                    <i class="fas fa-edit"></i> Editar
+                </button>
+                                <button class="btn btn-sm btn-outline-success btn-guardar-ruta hidden" title="Guardar">
+                    <i class="fas fa-check"></i> Guardar
+                </button>
+                <button class="btn btn-sm btn-outline-secondary btn-cancelar-ruta hidden" title="Cancelar" data-original-nombre="${nombreEscapado}">
+                    <i class="fas fa-times"></i>
+                </button>
+                <button class="btn btn-sm btn-outline-danger" onclick="eliminarRuta('${id}', '${nombreEscapado}', '${office}')" title="Eliminar Ruta">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </div>
+        </div>
+    `;
 }
 
 /**
- * Muestra modal para agregar nueva población
- */
+ * Configura la búsqueda en tiempo real para rutas
+ */
+function configurarBusquedaRutas() {
+    const searchInput = document.getElementById('search-rutas');
+    if (!searchInput) return;
+    
+    // Prevenir listeners duplicados
+    searchInput.replaceWith(searchInput.cloneNode(true));
+    document.getElementById('search-rutas').addEventListener('input', function() {
+        const searchTerm = this.value.toLowerCase().trim();
+        const cards = document.querySelectorAll('#tab-rutas .ruta-card');
+        
+        cards.forEach(card => {
+            const nombre = card.getAttribute('data-nombre');
+            const matchesSearch = !searchTerm || nombre.includes(searchTerm);
+            card.style.display = matchesSearch ? 'flex' : 'none';
+        });
+
+        // Ocultar secciones de oficina si quedan vacías
+        document.querySelectorAll('#tab-rutas .office-section').forEach(section => {
+            const visibleCardsInSection = section.querySelectorAll('.ruta-card[style*="display: flex"]').length;
+            section.style.display = visibleCardsInSection > 0 ? 'block' : 'none';
+        });
+    });
+}
+
+// =============================================
+// LÓGICA DE MODALES Y ACCIONES (CRUD)
+// =============================================
+
+/**
+ * Muestra modal para agregar nueva población
+ */
 function mostrarModalPoblacion() {
-    document.getElementById('modal-title').textContent = 'Nueva Población';
-    document.getElementById('modal-body').innerHTML = `
-        <form id="form-nueva-poblacion">
-            <div class="form-group">
-                <label for="modal-poblacion-nombre">Nombre de la Población:</label>
-                <input type="text" id="modal-poblacion-nombre" class="form-control" required 
-                       placeholder="Ej: Colonia Centro, Villa Jardín...">
-            </div>
-            <div class="form-group">
-                <label for="modal-poblacion-office">Sucursal:</label>
-                <select id="modal-poblacion-office" class="form-control" required>
-                    <option value="GDL">Guadalajara</option>
-                    <option value="LEON">León</option>
-                </select>
-            </div>
-            <div class="modal-actions">
-                <button type="submit" class="btn btn-success"><i class="fas fa-save"></i> Guardar</button>
-                <button type="button" class="btn btn-secondary" onclick="document.getElementById('generic-modal').classList.add('hidden')">
-                    <i class="fas fa-times"></i> Cancelar
-                </button>
-            </div>
-        </form>
-    `;
-    
-    // Configurar el formulario
-    const form = document.getElementById('form-nueva-poblacion');
-    form.onsubmit = (e) => {
-        e.preventDefault();
-        agregarPoblacionDesdeModal();
-    };
-    
-    document.getElementById('generic-modal').classList.remove('hidden');
+    const userRole = currentUserData?.role;
+    const userOffice = currentUserData?.office;
+    const isAdminRestringido = (userRole === 'Administrador' && userOffice && userOffice !== 'AMBAS');
+    
+    let officeOptionsHTML = '';
+    if (isAdminRestringido) {
+        // Opción única, bloqueada
+        officeOptionsHTML = `<option value="${userOffice}" selected>${userOffice}</option>`;
+    } else {
+        // Opciones para Super Admin/Gerencia
+        officeOptionsHTML = `
+            <option value="" selected disabled>Selecciona una oficina...</option>
+            <option value="GDL">Guadalajara</option>
+            <option value="LEON">León</option>
+        `;
+    }
+
+    document.getElementById('modal-title').textContent = 'Nueva Población';
+    document.getElementById('modal-body').innerHTML = `
+        <form id="form-nueva-poblacion">
+            <div class="form-group">
+                <label for="modal-poblacion-nombre">Nombre de la Población:</label>
+                <input type="text" id="modal-poblacion-nombre" class="form-control" required 
+                       placeholder="Ej: Colonia Centro, Villa Jardín...">
+            </div>
+            <div class="form-group">
+                <label for="modal-poblacion-office">Sucursal:</label>
+                <select id="modal-poblacion-office" class="form-control" required ${isAdminRestringido ? 'disabled' : ''}>
+                    ${officeOptionsHTML}
+                </select>
+            </div>
+            <div class="modal-actions">
+                <button type="submit" class="btn btn-success"><i class="fas fa-save"></i> Guardar</button>
+                <button type="button" class="btn btn-secondary" onclick="document.getElementById('generic-modal').classList.add('hidden')">
+                    <i class="fas fa-times"></i> Cancelar
+                </button>
+            </div>
+        </form>
+    `;
+    
+    const form = document.getElementById('form-nueva-poblacion');
+    form.onsubmit = (e) => {
+        e.preventDefault();
+        agregarPoblacionDesdeModal();
+    };
+    
+    document.getElementById('generic-modal').classList.remove('hidden');
+    document.getElementById('modal-poblacion-nombre').focus();
 }
 
 /**
- * Muestra modal para agregar nueva ruta
- */
+ * Muestra modal para agregar nueva ruta
+ */
 function mostrarModalRuta() {
-    document.getElementById('modal-title').textContent = 'Nueva Ruta';
-    document.getElementById('modal-body').innerHTML = `
-        <form id="form-nueva-ruta">
-            <div class="form-group">
-                <label for="modal-ruta-nombre">Nombre de la Ruta:</label>
-                <input type="text" id="modal-ruta-nombre" class="form-control" required 
-                       placeholder="Ej: Ruta Norte, Ruta Centro...">
-            </div>
-            <div class="form-group">
-                <label for="modal-ruta-office">Sucursal:</label>
-                <select id="modal-ruta-office" class="form-control" required>
-                    <option value="GDL">Guadalajara</option>
-                    <option value="LEON">León</option>
-                </select>
-            </div>
-            <div class="modal-actions">
-                <button type="submit" class="btn btn-success"><i class="fas fa-save"></i> Guardar</button>
-                <button type="button" class="btn btn-secondary" onclick="document.getElementById('generic-modal').classList.add('hidden')">
-                    <i class="fas fa-times"></i> Cancelar
-                </button>
-            </div>
-        </form>
-    `;
-    
-    const form = document.getElementById('form-nueva-ruta');
-    form.onsubmit = (e) => {
-        e.preventDefault();
-        agregarRutaDesdeModal();
-    };
-    
-    document.getElementById('generic-modal').classList.remove('hidden');
+    const userRole = currentUserData?.role;
+    const userOffice = currentUserData?.office;
+    const isAdminRestringido = (userRole === 'Administrador' && userOffice && userOffice !== 'AMBAS');
+    
+    let officeOptionsHTML = '';
+    if (isAdminRestringido) {
+        officeOptionsHTML = `<option value="${userOffice}" selected>${userOffice}</option>`;
+    } else {
+        officeOptionsHTML = `
+            <option value="" selected disabled>Selecciona una oficina...</option>
+            <option value="GDL">Guadalajara</option>
+            <option value="LEON">León</option>
+        `;
+    }
+
+    document.getElementById('modal-title').textContent = 'Nueva Ruta';
+    document.getElementById('modal-body').innerHTML = `
+        <form id="form-nueva-ruta">
+            <div class="form-group">
+                <label for="modal-ruta-nombre">Nombre de la Ruta:</label>
+                <input type="text" id="modal-ruta-nombre" class="form-control" required 
+                       placeholder="Ej: Ruta Norte, Ruta Centro...">
+            </div>
+            <div class="form-group">
+                <label for="modal-ruta-office">Sucursal:</label>
+                <select id="modal-ruta-office" class="form-control" required ${isAdminRestringido ? 'disabled' : ''}>
+                    ${officeOptionsHTML}
+                </select>
+            </div>
+            <div class="modal-actions">
+                <button type="submit" class="btn btn-success"><i class="fas fa-save"></i> Guardar</button>
+                <button type="button" class="btn btn-secondary" onclick="document.getElementById('generic-modal').classList.add('hidden')">
+                    <i class="fas fa-times"></i> Cancelar
+                </button>
+            </div>
+        </form>
+    `;
+    
+    const form = document.getElementById('form-nueva-ruta');
+    form.onsubmit = (e) => {
+        e.preventDefault();
+        agregarRutaDesdeModal();
+    };
+    
+    document.getElementById('generic-modal').classList.remove('hidden');
+    document.getElementById('modal-ruta-nombre').focus();
 }
 
 /**
- * Agrega población desde el modal
- * CORREGIDO: Llama a la función correcta 'cargarInterfazPoblaciones' para recargar la UI.
- */
+ * Procesa el guardado de la nueva población desde el modal
+ */
 async function agregarPoblacionDesdeModal() {
-    const nombre = document.getElementById('modal-poblacion-nombre').value.trim().toUpperCase();
-    const office = document.getElementById('modal-poblacion-office').value;
+    const nombreInput = document.getElementById('modal-poblacion-nombre');
+    const officeInput = document.getElementById('modal-poblacion-office');
+    const nombre = nombreInput.value.trim();
+    const office = officeInput.value;
 
-    if (!nombre) {
-        alert('Por favor ingresa un nombre para la población');
-        return;
-    }
+    if (!nombre || !office) {
+        alert('Por favor completa todos los campos');
+        return;
+    }
 
-    showProcessingOverlay(true, 'Agregando población...');
-    
-    try {
-        const resultado = await database.agregarPoblacion(nombre, office);
-        
-        if (resultado.success) {
-            document.getElementById('generic-modal').classList.add('hidden');
-            
-            // --- INICIO DE LA CORRECCIÓN ---
-            // Determinar el filtro de oficina actual para recargar la vista
-            let officeFiltro = null;
-            if (currentUserData.role === 'Administrador' && currentUserData.office && currentUserData.office !== 'AMBAS') {
-                officeFiltro = currentUserData.office;
-            }
-            // Llamar a la función de renderizado de UI correcta
-            await cargarInterfazPoblaciones(officeFiltro); 
-            // --- FIN DE LA CORRECCIÓN ---
-
-            showStatus('status_configuracion', 'Población agregada correctamente', 'success');
-        } else {
-            throw new Error(resultado.message);
-        }
-    } catch (error) {
-        console.error("Error agregando población:", error);
-        alert(`Error: ${error.message}`);
-    } finally {
-        showProcessingOverlay(false);
-    }
+    showProcessingOverlay(true, 'Agregando población...');
+    try {
+        const resultado = await database.agregarPoblacion(nombre, office);
+        
+        if (resultado.success) {
+            document.getElementById('generic-modal').classList.add('hidden');
+            showStatus('status_configuracion', 'Población agregada correctamente', 'success');
+            // Recargar solo la pestaña de poblaciones
+            const officeFiltro = (currentUserData.role === 'Administrador' && currentUserData.office !== 'AMBAS') ? currentUserData.office : null;
+            await cargarInterfazPoblaciones(officeFiltro);
+        } else {
+            throw new Error(resultado.message);
+        }
+    } catch (error) {
+        console.error("Error agregando población:", error);
+        alert(`Error: ${error.message}`); // Mostrar error en el modal
+    } finally {
+        showProcessingOverlay(false);
+    }
 }
 
 /**
- * Agrega ruta desde el modal
- * CORREGIDO: Llama a la función correcta 'cargarInterfazRutas' para recargar la UI.
- */
+ * Procesa el guardado de la nueva ruta desde el modal
+ */
 async function agregarRutaDesdeModal() {
-    const nombre = document.getElementById('modal-ruta-nombre').value.trim().toUpperCase();
-    const office = document.getElementById('modal-ruta-office').value;
+    const nombreInput = document.getElementById('modal-ruta-nombre');
+    const officeInput = document.getElementById('modal-ruta-office');
+    const nombre = nombreInput.value.trim();
+    const office = officeInput.value;
 
-    if (!nombre) {
-        alert('Por favor ingresa un nombre para la ruta');
-        return;
-    }
+    if (!nombre || !office) {
+        alert('Por favor completa todos los campos');
+        return;
+    }
 
-    showProcessingOverlay(true, 'Agregando ruta...');
-    
-    try {
-        const resultado = await database.agregarRuta(nombre, office);
-        
-        if (resultado.success) {
-            document.getElementById('generic-modal').classList.add('hidden');
-
-            // --- INICIO DE LA CORRECCIÓN ---
-            // Determinar el filtro de oficina actual para recargar la vista
-            let officeFiltro = null;
-            if (currentUserData.role === 'Administrador' && currentUserData.office && currentUserData.office !== 'AMBAS') {
-                officeFiltro = currentUserData.office;
-            }
-            // Llamar a la función de renderizado de UI correcta
-            await cargarInterfazRutas(officeFiltro);
-            // --- FIN DE LA CORRECCIÓN ---
-
-            showStatus('status_configuracion', 'Ruta agregada correctamente', 'success');
-        } else {
-            throw new Error(resultado.message);
-        }
-    } catch (error) {
-        console.error("Error agregando ruta:", error);
-        alert(`Error: ${error.message}`);
-    } finally {
-        showProcessingOverlay(false);
-    }
+    showProcessingOverlay(true, 'Agregando ruta...');
+    try {
+        const resultado = await database.agregarRuta(nombre, office);
+        
+        if (resultado.success) {
+            document.getElementById('generic-modal').classList.add('hidden');
+            showStatus('status_configuracion', 'Ruta agregada correctamente', 'success');
+            // Recargar solo la pestaña de rutas
+            const officeFiltro = (currentUserData.role === 'Administrador' && currentUserData.office !== 'AMBAS') ? currentUserData.office : null;
+            await cargarInterfazRutas(officeFiltro);
+        } else {
+            throw new Error(resultado.message);
+        }
+    } catch (error) {
+        console.error("Error agregando ruta:", error);
+        alert(`Error: ${error.message}`);
+    } finally {
+        showProcessingOverlay(false);
+    }
 }
 
-/** Renderiza la lista de poblaciones **/
-function renderizarListaPoblaciones(poblaciones) {
-    const listaPoblaciones = document.getElementById('lista-poblaciones');
-    if (!listaPoblaciones) return;
+/**
+ * Muestra modal para ASIGNAR una ruta a una población
+ */
+async function asignarRutaPoblacion(poblacionId, poblacionNombre, poblacionOffice) {
+    showProcessingOverlay(true, 'Cargando rutas disponibles...');
+    try {
+        // Obtener rutas disponibles SOLO para esta oficina
+        const rutasDisponibles = await database.obtenerRutas(poblacionOffice);
+        const opcionesRutas = rutasDisponibles.map(r => r.nombre).sort();
 
-    if (poblaciones.length === 0) {
-        listaPoblaciones.innerHTML = '<li>No hay poblaciones registradas</li>';
-        return;
-    }
+        let selectHTML = `
+            <div class="asignacion-ruta-modal">
+                <p>Asignar ruta a: <strong>${poblacionNombre}</strong> (${poblacionOffice})</p>
+                
+                <div class="form-group" style="text-align: left;">
+                    <label for="ruta-poblacion-select">Selecciona la ruta:</label>
+                    <select id="ruta-poblacion-select" class="form-control">
+                        <option value="">-- Sin asignar --</option>
+        `;
 
-    poblaciones.sort((a, b) => {
-        if (a.office !== b.office) return a.office.localeCompare(b.office);
-        return a.nombre.localeCompare(b.nombre);
-    });
+        opcionesRutas.forEach(rutaNombre => {
+            selectHTML += `<option value="${rutaNombre}">${rutaNombre}</option>`;
+        });
 
-    listaPoblaciones.innerHTML = poblaciones.map(p => `
-        <li class="config-list-item">
-            <span>
-                <strong>${p.nombre}</strong> 
-                <span class="badge-sucursal ${p.office}">${p.office}</span>
-                ${p.ruta ? `<br><small class="ruta-asignada">Ruta: ${p.ruta}</small>` : '<br><small class="sin-ruta">Sin ruta asignada</small>'}
-            </span>
-            <span class="action-buttons">
-                <button class="btn btn-sm btn-info btn-editar-poblacion" 
-                        data-id="${p.id}" 
-                        data-nombre="${p.nombre}" 
-                        data-office="${p.office}" 
-                        data-ruta="${p.ruta || ''}"
-                        title="Asignar/Cambiar Ruta">
-                    <i class="fas fa-route"></i>
-                </button>
-                <button class="btn btn-sm btn-danger btn-eliminar-config" 
-                        data-id="${p.id}" 
-                        data-nombre="${p.nombre}" 
-                        data-tipo="poblacion"
-                        title="Eliminar Población">
-                    <i class="fas fa-trash"></i>
-                </button>
-            </span>
-        </li>
-    `).join('');
+        selectHTML += `
+                    </select>
+                </div>
+                
+                <div class="modal-actions">
+                    <button id="btn-confirmar-ruta-poblacion" class="btn btn-success">
+                        <i class="fas fa-save"></i> Guardar
+                    </button>
+                    <button type="button" class="btn btn-secondary" onclick="document.getElementById('generic-modal').classList.add('hidden')">
+                        <i class="fas fa-times"></i> Cancelar
+                    </button>
+                </div>
+            </div>
+        `;
+
+        showProcessingOverlay(false);
+        document.getElementById('modal-title').textContent = 'Asignar Ruta';
+        document.getElementById('modal-body').innerHTML = selectHTML;
+        document.getElementById('generic-modal').classList.remove('hidden');
+
+        // Configurar evento del botón
+        const btnConfirmar = document.getElementById('btn-confirmar-ruta-poblacion');
+        btnConfirmar.onclick = async () => {
+            const nuevaRuta = document.getElementById('ruta-poblacion-select').value || null;
+
+            showProcessingOverlay(true, 'Asignando ruta...');
+            try {
+                const resultado = await database.asignarRutaAPoblacion(poblacionId, nuevaRuta);
+                
+                if (resultado.success) {
+                    document.getElementById('generic-modal').classList.add('hidden');
+                    showStatus('status_configuracion', resultado.message, 'success');
+                    // Recargar solo la pestaña de poblaciones
+                    const officeFiltro = (currentUserData.role === 'Administrador' && currentUserData.office !== 'AMBAS') ? currentUserData.office : null;
+                    await cargarInterfazPoblaciones(officeFiltro);
+                } else {
+                    throw new Error(resultado.message);
+                }
+            } catch (error) {
+                console.error("Error asignando ruta:", error);
+                alert(`Error: ${error.message}`);
+            } finally {
+                showProcessingOverlay(false);
+            }
+        };
+
+    } catch (error) {
+        console.error("Error en asignarRutaPoblacion:", error);
+        showProcessingOverlay(false);
+        alert(`Error al cargar rutas: ${error.message}`);
+    }
 }
 
-//** Renderiza las ruttass **//
-function renderizarListaRutas(rutas) {
-    const listaRutas = document.getElementById('lista-rutas');
-    if (!listaRutas) return;
+/**
+ * Elimina una población
+ */
+async function eliminarPoblacion(id, nombre) {
+    if (!confirm(`¿Estás seguro de que deseas eliminar la población "${nombre}"?\nEsta acción no se puede deshacer.`)) {
+        return;
+    }
 
-    if (rutas.length === 0) {
-        listaRutas.innerHTML = '<li>No hay rutas registradas</li>';
-        return;
-    }
-
-    // Ordenar por sucursal y nombre
-    rutas.sort((a, b) => {
-        if (a.office !== b.office) return a.office.localeCompare(b.office);
-        return a.nombre.localeCompare(b.nombre);
-    });
-
-    listaRutas.innerHTML = rutas.map(r => `
-        <li class="config-list-item">
-            <span>
-                <input type="text" value="${r.nombre}" class="ruta-nombre-editable" data-id="${r.id}" readonly 
-                       style="border:none; background:transparent; font-weight: bold; width: 120px;">
-                <span class="badge-sucursal ${r.office}">${r.office}</span>
-            </span>
-            <span class="action-buttons">
-                <button class="btn btn-sm btn-info btn-editar-ruta" data-id="${r.id}" title="Editar Nombre">
-                    <i class="fas fa-edit"></i>
-                </button>
-                <button class="btn btn-sm btn-success btn-guardar-ruta hidden" data-id="${r.id}" title="Guardar Nombre">
-                    <i class="fas fa-save"></i>
-                </button>
-                <button class="btn btn-sm btn-secondary btn-cancelar-ruta hidden" data-id="${r.id}" data-original-nombre="${r.nombre}" title="Cancelar Edición">
-                    <i class="fas fa-times"></i>
-                </button>
-                <button class="btn btn-sm btn-danger btn-eliminar-config" 
-                        data-id="${r.id}" 
-                        data-nombre="${r.nombre}" 
-                        data-tipo="ruta"
-                        title="Eliminar Ruta">
-                    <i class="fas fa-trash"></i>
-                </button>
-            </span>
-        </li>
-    `).join('');
+    showProcessingOverlay(true, 'Eliminando población...');
+    try {
+        const resultado = await database.eliminarPoblacion(id);
+        
+        if (resultado.success) {
+            showStatus('status_configuracion', `Población "${nombre}" eliminada correctamente`, 'success');
+            const officeFiltro = (currentUserData.role === 'Administrador' && currentUserData.office !== 'AMBAS') ? currentUserData.office : null;
+            await cargarInterfazPoblaciones(officeFiltro);
+        } else {
+            throw new Error(resultado.message);
+        }
+    } catch (error) {
+        console.error("Error eliminando población:", error);
+        showStatus('status_configuracion', `Error: ${error.message}`, 'error');
+    } finally {
+        showProcessingOverlay(false);
+    }
 }
 
-//** Configuración para agregar población **//
+/**
+ * Elimina una ruta
+ */
+async function eliminarRuta(id, nombre, office) {
+    if (!confirm(`¿Estás seguro de que deseas eliminar la ruta "${nombre}"?\nEsta acción también la quitará de todas las poblaciones asignadas.`)) {
+        return;
+    }
 
-async function handleAgregarConfig(tipo) {
-    const nombreInput = document.getElementById(`nueva-${tipo}-nombre`);
-    const officeInput = document.getElementById(`nueva-${tipo}-sucursal`);
-    const button = document.getElementById(`btn-agregar-${tipo}`);
-
-    const nombre = nombreInput.value.trim().toUpperCase();
-    const office = officeInput.value;
-
-    if (!nombre || !office) {
-        showStatus('status_configuracion', 'El nombre y la oficina son obligatorios.', 'warning');
-        return;
-    }
-
-    showButtonLoading(button, true, 'Agregando...');
-    showStatus('status_configuracion', `Agregando ${tipo}...`, 'info');
-
-   try {
-        let resultado;
-        if (tipo === 'poblacion') {
-            resultado = await database.agregarPoblacion(nombre, office);
-        } else {
-            resultado = await database.agregarRuta(nombre, office);
-        }
-
-        if (resultado.success) {
-            showStatus('status_configuracion', `${tipo.charAt(0).toUpperCase() + tipo.slice(1)} agregada exitosamente.`, 'success');
-            nombreInput.value = '';
-            await loadConfiguracion();
-            await inicializarDropdowns();
-        } else {
-            throw new Error(resultado.message);
-        }
-
-    } catch (error) {
-        console.error(`Error agregando ${tipo}:`, error);
-        showStatus('status_configuracion', `Error: ${error.message}`, 'error');
-    } finally {
-        showButtonLoading(button, false);
-    }
-}
-
-
-async function handleEliminarConfig(tipo, id, nombre) {
-    if (!id || !tipo) return;
-
-    if (confirm(`¿Estás seguro de que deseas eliminar ${tipo} "${nombre}"?\nEsta acción no se puede deshacer.`)) {
-        showProcessingOverlay(true, `Eliminando ${tipo}...`);
-        showStatus('status_configuracion', `Eliminando ${tipo}...`, 'info');
-
-        try {
-            let resultado;
-            if (tipo === 'poblacion') {
-                resultado = await database.eliminarPoblacion(id);
-            } else if (tipo === 'ruta'){ // Asegurar que sea 'ruta'
-                resultado = await database.eliminarRuta(id);
-            } else {
-                 throw new Error(`Tipo desconocido para eliminar: ${tipo}`);
-            }
-
-            if (resultado.success) {
-                showStatus('status_configuracion', `${tipo.charAt(0).toUpperCase() + tipo.slice(1)} "${nombre}" eliminada.`, 'success');
-                await loadConfiguracion(); // Recargar listas
-                await inicializarDropdowns(); // Actualizar todos los dropdowns
-            } else {
-                throw new Error(resultado.message);
-            }
-        } catch (error) {
-            console.error(`Error eliminando ${tipo}:`, error);
-            showStatus('status_configuracion', `Error: ${error.message}`, 'error');
-        } finally {
-            showProcessingOverlay(false);
-        }
-    }
+    showProcessingOverlay(true, 'Eliminando ruta...');
+    try {
+        // La nueva función de DB ya se encarga de des-asignar
+        const resultado = await database.eliminarRuta(id, nombre, office);
+        
+        if (resultado.success) {
+            showStatus('status_configuracion', `Ruta "${nombre}" eliminada y des-asignada.`, 'success');
+            // Recargar AMBAS pestañas
+            await loadConfiguracion(); 
+        } else {
+            throw new Error(resultado.message);
+        }
+    } catch (error) {
+        console.error("Error eliminando ruta:", error);
+        showStatus('status_configuracion', `Error: ${error.message}`, 'error');
+    } finally {
+        showProcessingOverlay(false);
+    }
 }
 
 
@@ -5798,4 +5705,3 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
-
