@@ -4791,8 +4791,8 @@ async function inicializarDropdowns() {
     try {
         // Cargar poblaciones y rutas
         const [poblaciones, rutas] = await Promise.all([
-            database.obtenerPoblaciones(),
-            database.obtenerRutas()
+            database.obtenerPoblaciones(userOffice),
+            database.obtenerRutas(userOffice)
         ]);
         
         const todasLasRutas = [...new Set(rutas.map(r => r.nombre))].sort();
@@ -6024,6 +6024,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
