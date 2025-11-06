@@ -4741,7 +4741,22 @@ document.addEventListener('viewshown', async function (e) {
             inicializarVistaReportesAvanzados();
             break;
         case 'view-configuracion':
-            loadConfiguracion();
+            console.log('=== INICIANDO CARGA DE CONFIGURACIÓN ===');
+            console.log('Usuario:', currentUserData?.email);
+            console.log('Rol:', currentUserData?.role);
+            // Resetear contenedores primero
+            document.getElementById('tabla-poblaciones-container').innerHTML = '<div class="loading">Cargando poblaciones...</div>';
+            document.getElementById('tabla-rutas-container').innerHTML = '<div class="loading">Cargando rutas...</div>';
+            // Llamar a loadConfiguracion con un pequeño delay para asegurar que el DOM esté listo
+            setTimeout(async () => {
+            try {
+                await loadConfiguracion();
+                console.log('=== CONFIGURACIÓN CARGADA EXITOSAMENTE ===');
+            } catch (error) {
+                console.error('Error cargando configuración:', error);
+                showStatus('status_configuracion', `Error: ${error.message}`, 'error');
+            }
+                }, 100);
             break;
         case 'view-gestion-clientes':
             inicializarVistaGestionClientes();
@@ -4820,6 +4835,7 @@ document.addEventListener('viewshown', async function (e) {
                  }
             }
             break; // Fin case 'view-pago-grupo'
+           
         case 'view-reportes-graficos':
             const hoyGraf = new Date();
             const haceUnAnio = new Date(hoyGraf.getFullYear() - 1, hoyGraf.getMonth(), hoyGraf.getDate() + 1);
@@ -4833,10 +4849,12 @@ document.addEventListener('viewshown', async function (e) {
             document.getElementById('grafico-container').innerHTML = '';
             showStatus('status_graficos', 'Selecciona los filtros y genera un gráfico.', 'info');
             break;
+           
         case 'view-importar':
             document.getElementById('office-select').value = 'GDL';
             handleOfficeChange.call(document.getElementById('office-select'));
             break;
+           
         case 'view-main-menu':
             break;
 
@@ -5732,5 +5750,6 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
