@@ -4174,77 +4174,78 @@ async function agregarRutaDesdeModal() {
  * Muestra modal para ASIGNAR una ruta a una población
  */
 async function asignarRutaPoblacion(poblacionId, poblacionNombre, poblacionOffice) {
-    showProcessingOverlay(true, 'Cargando rutas disponibles...');
-    try {
-        // Obtener rutas disponibles SOLO para esta oficina
-        const rutasDisponibles = await database.obtenerRutas(poblacionOffice);
-        const opcionesRutas = rutasDisponibles.map(r => r.nombre).sort();
+    console.log("=== ASIGNAR RUTA POBLACIÓN ===");
+    console.log("Población ID:", poblacionId);
+    console.log("Población Nombre:", poblacionNombre);
+    console.log("Población Office:", poblacionOffice);
+    
+    showProcessingOverlay(true, 'Cargando rutas disponibles...');
+    try {
+        // Obtener rutas disponibles SOLO para esta oficina
+        const rutasDisponibles = await database.obtenerRutas(poblacionOffice);
+        const opcionesRutas = rutasDisponibles.map(r => r.nombre).sort();
 
-        let selectHTML = `
-            <div class="asignacion-ruta-modal">
-                <p>Asignar ruta a: <strong>${poblacionNombre}</strong> (${poblacionOffice})</p>
-                
-                <div class="form-group" style="text-align: left;">
-                    <label for="ruta-poblacion-select">Selecciona la ruta:</label>
-                    <select id="ruta-poblacion-select" class="form-control">
-                        <option value="">-- Sin asignar --</option>
-        `;
+        let selectHTML = `
+            <div class="asignacion-ruta-modal">
+                <p>Asignar ruta a: <strong>${poblacionNombre}</strong> (${poblacionOffice})</p>
+                
+                <div class="form-group" style="text-align: left;">
+                    <label for="ruta-poblacion-select">Selecciona la ruta:</label>
+                    <select id="ruta-poblacion-select" class="form-control">
+                        <option value="">-- Sin asignar --</option>
+        `;
 
-        opcionesRutas.forEach(rutaNombre => {
-            selectHTML += `<option value="${rutaNombre}">${rutaNombre}</option>`;
-        });
+        opcionesRutas.forEach(rutaNombre => {
+            selectHTML += `<option value="${rutaNombre}">${rutaNombre}</option>`;
+        });
 
-        selectHTML += `
-                    </select>
-                </div>
-                
-                <div class="modal-actions">
-                    <button id="btn-confirmar-ruta-poblacion" class="btn btn-success">
-                        <i class="fas fa-save"></i> Guardar
-                    </button>
-                    <button type="button" class="btn btn-secondary" onclick="document.getElementById('generic-modal').classList.add('hidden')">
-                        <i class="fas fa-times"></i> Cancelar
-                    </button>
-                </div>
-            </div>
-        `;
+        selectHTML += `
+                    </select>
+                </div>
+                
+                <div class="modal-actions">
+                    <button id="btn-confirmar-ruta-poblacion" class="btn btn-success">
+                        <i class="fas fa-save"></i> Guardar
+                    </button>
+                    <button type="button" class="btn btn-secondary" onclick="document.getElementById('generic-modal').classList.add('hidden')">
+                        <i class="fas fa-times"></i> Cancelar
+                    </button>
+                </div>
+            </div>
+        `;
 
-        showProcessingOverlay(false);
-        document.getElementById('modal-title').textContent = 'Asignar Ruta';
-        document.getElementById('modal-body').innerHTML = selectHTML;
-        document.getElementById('generic-modal').classList.remove('hidden');
-
-        // Configurar evento del botón
-        const btnConfirmar = document.getElementById('btn-confirmar-ruta-poblacion');
-        btnConfirmar.onclick = async () => {
-            const nuevaRuta = document.getElementById('ruta-poblacion-select').value || null;
-
-            showProcessingOverlay(true, 'Asignando ruta...');
-            try {
-                const resultado = await database.asignarRutaAPoblacion(poblacionId, nuevaRuta);
-                
-                if (resultado.success) {
-                    document.getElementById('generic-modal').classList.add('hidden');
-                    showStatus('status_configuracion', resultado.message, 'success');
-                    // Recargar solo la pestaña de poblaciones
-                    const officeFiltro = (currentUserData.role === 'Administrador' && currentUserData.office !== 'AMBAS') ? currentUserData.office : null;
-                    await cargarInterfazPoblaciones(officeFiltro);
-                } else {
-                    throw new Error(resultado.message);
-                }
-            } catch (error) {
-                console.error("Error asignando ruta:", error);
-                alert(`Error: ${error.message}`);
-            } finally {
-                showProcessingOverlay(false);
-            }
-        };
-
-    } catch (error) {
-        console.error("Error en asignarRutaPoblacion:", error);
-        showProcessingOverlay(false);
-        alert(`Error al cargar rutas: ${error.message}`);
-    }
+        showProcessingOverlay(false);
+        document.getElementById('modal-title').textContent = 'Asignar Ruta';
+        document.getElementById('modal-body').innerHTML = selectHTML;
+        document.getElementById('generic-modal').classList.remove('hidden');
+        const btnConfirmar = document.getElementById('btn-confirmar-ruta-poblacion');
+        btnConfirmar.replaceWith(btnConfirmar.cloneNode(true));
+        const nuevoBtnConfirmar = document.getElementById('btn-confirmar-ruta-poblacion');
+        nuevoBtnConfirmar.onclick = async () => {
+            const nuevaRuta = document.getElementById('ruta-poblacion-select').value || null;
+            showProcessingOverlay(true, 'Asignando ruta...');
+            try {
+                const resultado = await database.asignarRutaAPoblacion(poblacionId, nuevaRuta);
+                if (resultado.success) {
+                    document.getElementById('generic-modal').classList.add('hidden');
+                    showStatus('status_configuracion', resultado.message, 'success');
+                    const officeFiltro = (currentUserData.role === 'Administrador' && currentUserData.office !== 'AMBAS') ? currentUserData.office : null;
+                    await cargarInterfazPoblaciones(officeFiltro);
+                } else {
+                    throw new Error(resultado.message);
+                }
+            } catch (error) {
+                console.error("Error asignando ruta:", error);
+                alert(`Error: ${error.message}`);
+            } finally {
+                showProcessingOverlay(false);
+            }
+        };
+    } catch (error) {
+        console.error("Error en asignarRutaPoblacion:", error);
+        showProcessingOverlay(false);
+        alert(`Error al cargar rutas: ${error.message}`);
+    }
 }
 
 /**
@@ -5883,6 +5884,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
