@@ -2717,7 +2717,7 @@ async function handleCalcularCobranzaRuta() {
             // --- FIN AÑADIDO ---
 
             if (!nombresPoblacionesDeLaRuta.includes(cliente.poblacion_grupo)) { /*...*/ continue; }
-            const creditoActivo = await database.buscarCreditoActivoPorCliente(cliente.curp);
+            const creditoActivo = await database.buscarCreditoActivoPorCliente(cliente.curp, userOffice);
             if (creditoActivo) {
                 if (creditoActivo.office !== userOffice) continue;
                 const pagos = await database.getPagosPorCredito(creditoActivo.historicalIdCredito || creditoActivo.id, creditoActivo.office);
@@ -6024,6 +6024,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
