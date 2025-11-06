@@ -1942,4 +1942,22 @@ body.has-connection-status .progress-container-fixed {
       align-self: flex-start;
       margin-left: 0;
   }
+
+    .config-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  padding-bottom: 15px;
+  border-bottom: 1px solid #e0e0e0;
+  flex-wrap: wrap;
+  gap: 10px;
 }
+
+.search-box {
+  position: relative;
+  width: 300px;
+}
+    
+}
+
