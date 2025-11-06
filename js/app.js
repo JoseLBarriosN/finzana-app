@@ -3616,43 +3616,45 @@ async function cargarInterfazPoblaciones(officeFiltro) {
  * Helper: Crea el HTML para una tarjeta de población
  */
 function crearTarjetaPoblacion(poblacion) {
-    const id = poblacion.id || 'ID_DESCONOCIDO';
-    const nombre = poblacion.nombre || 'SIN NOMBRE';
-    const office = poblacion.office || 'OTROS';
-    const ruta = poblacion.ruta || '';
+    const id = poblacion.id || 'ID_DESCONOCIDO';
+    const nombre = poblacion.nombre || 'SIN NOMBRE';
+    const office = poblacion.office || 'OTROS';
+    const ruta = poblacion.ruta || '';
 
-    const displayOffice = (office === 'GDL' || office === 'LEON') ? office : 'OTROS';
+    const displayOffice = (office === 'GDL' || office === 'LEON') ? office : 'OTROS';
 
-    const rutaDisplay = ruta
-        ? `<span class="ruta-tag" title="Ruta asignada">${ruta}</span>`
-        : `<span class="no-ruta-tag" title="Sin ruta asignada">Sin ruta</span>`;
+    const rutaDisplay = ruta
+        ? `<span class="ruta-tag" title="Ruta asignada">${ruta}</span>`
+        : `<span class="no-ruta-tag" title="Sin ruta asignada">Sin ruta</span>`;
 
-    // Escapar comillas en los nombres para los 'onclick'
-    const nombreEscapado = String(nombre).replace(/'/g, "&apos;").replace(/"/g, "&quot;");
-
-    return `
-        <div class="poblacion-card" data-id="${id}" data-office="${displayOffice}" data-nombre="${nombre.toLowerCase()}">
-            <div class="poblacion-header">
-                <h5 class="poblacion-nombre">${nombre}</h5>
-                <span class="office-badge ${displayOffice}">${displayOffice}</span>
-            </div>
-            <div class="poblacion-content">
-                <div class="ruta-asignacion">
-                    ${rutaDisplay}
-                </div>
-            </div>
-            <div class="poblacion-actions">
-                <button class="btn btn-sm btn-outline-primary" onclick="asignarRutaPoblacion('${id}', '${nombreEscapado}', '${office}')" 
-                        title="Asignar/Cambiar Ruta">
-                    <i class="fas fa-route"></i> Asignar Ruta
-                </button>
-                <button class="btn btn-sm btn-outline-danger" onclick="eliminarPoblacion('${id}', '${nombreEscapado}')" 
-                        title="Eliminar Población">
-                    <i class="fas fa-trash"></i>
-                </button>
-            </div>
-        </div>
-    `;
+    return `
+        <div class="poblacion-card" data-id="${id}" data-office="${displayOffice}" data-nombre="${nombre.toLowerCase()}">
+            <div class="poblacion-header">
+                <h5 class="poblacion-nombre">${nombre}</h5>
+                <span class="office-badge ${displayOffice}">${displayOffice}</span>
+            </div>
+            <div class="poblacion-content">
+                <div class="ruta-asignacion">
+                    ${rutaDisplay}
+                </div>
+            </div>
+            <div class="poblacion-actions">
+                <button class="btn btn-sm btn-outline-primary btn-asignar-ruta" 
+                        data-id="${id}" 
+                        data-nombre="${nombre}" 
+                        data-office="${office}"
+                        title="Asignar/Cambiar Ruta">
+                    <i class="fas fa-route"></i> Asignar Ruta
+                </button>
+                <button class="btn btn-sm btn-outline-danger btn-eliminar-poblacion" 
+                        data-id="${id}" 
+                        data-nombre="${nombre}"
+                        title="Eliminar Población">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </div>
+        </div>
+    `;
 }
 
 /**
@@ -5884,6 +5886,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
