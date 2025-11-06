@@ -5636,6 +5636,144 @@ function handleExportarTelefonos() {
 }
 
 // =============================================
+// CONFIGURACIÓN DE EVENT LISTENERS PARA CONFIGURACIÓN
+// =============================================
+
+function configurarEventListenersConfiguracion() {
+    console.log("🔧 Configurando event listeners para configuración...");
+    
+    // Delegación de eventos para los botones de poblaciones
+    document.addEventListener('click', function(e) {
+        // Botón "Asignar Ruta" en poblaciones
+        if (e.target.closest('.btn-asignar-ruta')) {
+            const button = e.target.closest('.btn-asignar-ruta');
+            const poblacionId = button.getAttribute('data-id');
+            const poblacionNombre = button.getAttribute('data-nombre');
+            const poblacionOffice = button.getAttribute('data-office');
+            
+            console.log("📍 Asignar ruta a población:", { poblacionId, poblacionNombre, poblacionOffice });
+            asignarRutaPoblacion(poblacionId, poblacionNombre, poblacionOffice);
+        }
+        
+        // Botón "Eliminar" en poblaciones
+        if (e.target.closest('.btn-eliminar-poblacion')) {
+            const button = e.target.closest('.btn-eliminar-poblacion');
+            const poblacionId = button.getAttribute('data-id');
+            const poblacionNombre = button.getAttribute('data-nombre');
+            
+            console.log("🗑️ Eliminar población:", { poblacionId, poblacionNombre });
+            eliminarPoblacion(poblacionId, poblacionNombre);
+        }
+    });
+
+    // Configurar búsqueda en poblaciones
+    const searchPoblaciones = document.getElementById('search-poblaciones');
+    if (searchPoblaciones) {
+        searchPoblaciones.addEventListener('input', function() {
+            const searchTerm = this.value.toLowerCase().trim();
+            const cards = document.querySelectorAll('#tab-poblaciones .poblacion-card');
+            const activeFilter = document.querySelector('#tab-poblaciones .filter-tab.active')?.getAttribute('data-office') || 'all';
+            
+            let visibleCount = 0;
+            cards.forEach(card => {
+                const nombre = card.getAttribute('data-nombre');
+                const office = card.getAttribute('data-office');
+                const matchesSearch = !searchTerm || nombre.includes(searchTerm);
+                const matchesFilter = activeFilter === 'all' || office === activeFilter;
+                
+                if (matchesSearch && matchesFilter) {
+                    card.style.display = 'flex';
+                    visibleCount++;
+                } else {
+                    card.style.display = 'none';
+                }
+            });
+
+            // Ocultar secciones vacías
+            document.querySelectorAll('#tab-poblaciones .office-section').forEach(section => {
+                const visibleCards = section.querySelectorAll('.poblacion-card[style*="display: flex"]').length;
+                section.style.display = visibleCards > 0 ? 'block' : 'none';
+            });
+        });
+    }
+
+    // Configurar filtros por oficina en poblaciones
+    document.querySelectorAll('#tab-poblaciones .filter-tab').forEach(tab => {
+        tab.addEventListener('click', function() {
+            document.querySelectorAll('#tab-poblaciones .filter-tab').forEach(t => t.classList.remove('active'));
+            this.classList.add('active');
+            
+            // Disparar búsqueda para re-filtrar
+            const searchInput = document.getElementById('search-poblaciones');
+            if (searchInput) searchInput.dispatchEvent(new Event('input'));
+        });
+    });
+
+    // Configurar búsqueda en rutas
+    const searchRutas = document.getElementById('search-rutas');
+    if (searchRutas) {
+        searchRutas.addEventListener('input', function() {
+            const searchTerm = this.value.toLowerCase().trim();
+            const cards = document.querySelectorAll('#tab-rutas .ruta-card');
+            
+            cards.forEach(card => {
+                const nombre = card.getAttribute('data-nombre');
+                const matchesSearch = !searchTerm || nombre.includes(searchTerm);
+                card.style.display = matchesSearch ? 'flex' : 'none';
+            });
+
+            // Ocultar secciones vacías
+            document.querySelectorAll('#tab-rutas .office-section').forEach(section => {
+                const visibleCards = section.querySelectorAll('.ruta-card[style*="display: flex"]').length;
+                section.style.display = visibleCards > 0 ? 'block' : 'none';
+            });
+        });
+    }
+
+    console.log("✅ Event listeners de configuración configurados");
+}
+
+// Modifica la función loadConfiguracion para llamar a esta configuración
+async function loadConfiguracion() {
+    console.log("🚀 EJECUTANDO loadConfiguracion - INICIO");
+    const statusEl = 'status_configuracion';
+    
+    // 1. Verificar permisos de acceso
+    if (!currentUserData || !['Super Admin', 'Gerencia', 'Administrador'].includes(currentUserData.role)) {
+        showStatus(statusEl, 'No tienes permisos para acceder a esta sección.', 'error');
+        return;
+    }
+
+    // Determinar filtro de oficina
+    let officeFiltro = null;
+    if (currentUserData.role === 'Administrador' && currentUserData.office && currentUserData.office !== 'AMBAS') {
+        officeFiltro = currentUserData.office;
+    }
+    
+    console.log(`📍 Filtro oficina: ${officeFiltro || 'TODAS'}`);
+    showStatus(statusEl, 'Cargando catálogos...', 'info');
+
+    try {
+        console.log("📋 Cargando interfaz de poblaciones...");
+        await cargarInterfazPoblaciones(officeFiltro);
+        
+        console.log("🛣️ Cargando interfaz de rutas...");
+        await cargarInterfazRutas(officeFiltro);
+        
+        console.log("🔧 Configurando tabs y event listeners...");
+        setupNuevosTabsConfiguracion();
+        configurarEventListenersConfiguracion(); // ← AÑADIR ESTA LÍNEA
+        
+        showStatus(statusEl, '✅ Catálogos cargados correctamente', 'success');
+        console.log("🎉 loadConfiguracion - COMPLETADO EXITOSAMENTE");
+        
+    } catch (error) {
+        console.error("❌ Error en loadConfiguracion:", error);
+        showStatus(statusEl, `❌ Error al cargar: ${error.message}`, 'error');
+    }
+}
+
+// =============================================
 // INICIALIZACIÓN Y EVENT LISTENERS PRINCIPALES
 // =============================================
 
@@ -5886,6 +6024,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
