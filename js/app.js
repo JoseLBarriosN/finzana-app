@@ -4861,155 +4861,164 @@ function actualizarPlazosSegunCliente(esComisionista) {
     popularDropdown('plazo_colocacion', plazosDisponibles.map(p => ({ value: p, text: `${p} semanas` })), 'Selecciona plazo', true);
 }
 
-switch (viewId) {
-        case 'view-reportes':
-            loadBasicReports(currentUserData?.office);
-            break;
-        case 'view-reportes-avanzados':
-            inicializarVistaReportesAvanzados();
-            break;
-       case 'view-configuracion':
-            console.log('🔄 VISTA CONFIGURACIÓN ACTIVADA - EJECUTANDO loadConfiguracion()');
-            const poblacionesContainer = document.getElementById('tabla-poblaciones-container');
-            const rutasContainer = document.getElementById('tabla-rutas-container');
+function showView(viewId) {
+    console.log(`Navegando a vista: ${viewId}`);
     
-            if (poblacionesContainer) {
-                poblacionesContainer.innerHTML = '<div style="text-align: center; padding: 40px;"><div class="spinner"></div><p>Cargando poblaciones...</p></div>';
+    // Ocultar todas las vistas
+    document.querySelectorAll('.view').forEach(view => view.classList.add('hidden'));
+    
+    const targetView = document.getElementById(viewId);
+    if (targetView) {
+        targetView.classList.remove('hidden');
+        console.log(`Vista ${viewId} mostrada.`);
+        
+        // Ejecutar código específico para cada vista usando IIFE async
+        (async () => {
+            switch(viewId) {
+                case 'view-configuracion':
+                    console.log('🚀 EJECUTANDO loadConfiguracion AUTOMÁTICAMENTE');
+                    await loadConfiguracion();
+                    break;
+                    
+                case 'view-reportes':
+                    await loadBasicReports(currentUserData?.office);
+                    break;
+                    
+                case 'view-reportes-avanzados':
+                    inicializarVistaReportesAvanzados();
+                    break;
+                    
+                case 'view-gestion-clientes':
+                    inicializarVistaGestionClientes();
+                    break;
+                    
+                case 'view-cliente':
+                    if (!editingClientId) { resetClientForm(); }
+                    break;
+                    
+                case 'view-colocacion':
+                    document.getElementById('curp_colocacion').value = '';
+                    document.getElementById('form-colocacion').classList.add('hidden');
+                    showStatus('status_colocacion', 'Ingresa la CURP del cliente para buscar.', 'info');
+                    document.getElementById('plazo_colocacion').disabled = false;
+                    document.getElementById('tipo_colocacion').disabled = false;
+                    break;
+                    
+                case 'view-cobranza':
+                    document.getElementById('idCredito_cobranza').value = '';
+                    document.getElementById('form-cobranza').classList.add('hidden');
+                    showStatus('status_cobranza', 'Ingresa el ID del crédito (histórico) para buscar.', 'info');
+                    creditoActual = null;
+                    break;
+                    
+                case 'view-pago-grupo':
+                    // Tu código existente para pago grupal (sin await)
+                    const statusPagoGrupo = document.getElementById('status_pago_grupo');
+                    const btnCalcular = document.getElementById('btn-calcular-cobranza-ruta');
+                    const btnGuardar = document.getElementById('btn-guardar-cobranza-offline');
+                    const btnRegistrar = document.getElementById('btn-registrar-pagos-offline');
+                    const container = document.getElementById('cobranza-ruta-container');
+                    const placeholder = document.getElementById('cobranza-ruta-placeholder');
+
+                    container.innerHTML = '';
+                    placeholder.classList.remove('hidden');
+                    placeholder.textContent = 'Presiona "Calcular Cobranza" (requiere conexión) o carga una lista guardada si estás offline.';
+                    btnGuardar.classList.add('hidden');
+                    btnRegistrar.classList.add('hidden');
+                    cobranzaRutaData = null;
+
+                    if (!currentUserData || !currentUserData.ruta || !currentUserData.office || currentUserData.office === 'AMBAS') {
+                        showStatus('status_pago_grupo', 'Debes tener una ruta y oficina única asignada.', 'warning');
+                        btnCalcular.disabled = true;
+                        placeholder.textContent = 'Función no disponible: Ruta/Oficina no asignada.';
+                        break;
+                    }
+
+                    if (navigator.onLine) {
+                        showStatus('status_pago_grupo', `Listo para calcular cobranza de ruta ${currentUserData.ruta}.`, 'info');
+                        btnCalcular.disabled = false;
+                    } else {
+                        showStatus('status_pago_grupo', `Modo Offline. Buscando lista guardada para ruta ${currentUserData.ruta}...`, 'info');
+                        btnCalcular.disabled = true;
+                        const key = OFFLINE_STORAGE_KEY + currentUserData.ruta;
+                        const savedDataString = localStorage.getItem(key);
+
+                        if (savedDataString) {
+                            try {
+                                const savedData = JSON.parse(savedDataString);
+                                if (savedData.ruta === currentUserData.ruta && savedData.office === currentUserData.office && savedData.data) {
+                                    cobranzaRutaData = savedData.data;
+                                    renderizarCobranzaRuta(cobranzaRutaData, container);
+                                    btnRegistrar.classList.remove('hidden');
+                                    placeholder.classList.add('hidden');
+                                    const timestamp = savedData.timestamp ? new Date(savedData.timestamp).toLocaleString() : 'desconocida';
+                                    showStatus('status_pago_grupo', `Lista offline cargada (guardada el ${timestamp})...`, 'success');
+                                } else {
+                                    throw new Error("Datos guardados inválidos o de otra oficina.");
+                                }
+                            } catch (error) {
+                                console.error("Error cargando datos offline:", error);
+                                showStatus('status_pago_grupo', `Error al cargar datos guardados: ${error.message}. Intenta conectarte y generar una nueva lista.`, 'error');
+                                placeholder.textContent = 'Error al cargar lista guardada.';
+                            }
+                        } else {
+                            showStatus('status_pago_grupo', `No se encontró lista guardada para ruta ${currentUserData.ruta}. Conéctate para generar una.`, 'warning');
+                            placeholder.textContent = 'No hay lista guardada para uso offline.';
+                        }
+                    }
+                    break;
+                    
+                case 'view-reportes-graficos':
+                    const hoyGraf = new Date();
+                    const haceUnAnio = new Date(hoyGraf.getFullYear() - 1, hoyGraf.getMonth(), hoyGraf.getDate() + 1);
+                    document.getElementById('grafico_fecha_inicio').value = haceUnAnio.toISOString().split('T')[0];
+                    document.getElementById('grafico_fecha_fin').value = hoyGraf.toISOString().split('T')[0];
+                    handleSucursalGraficoChange.call(document.getElementById('grafico_sucursal') || { value: '' });
+                    if (currentChart) {
+                        currentChart.destroy();
+                        currentChart = null;
+                    }
+                    document.getElementById('grafico-container').innerHTML = '';
+                    showStatus('status_graficos', 'Selecciona los filtros y genera un gráfico.', 'info');
+                    break;
+                    
+                case 'view-importar':
+                    document.getElementById('office-select').value = 'GDL';
+                    handleOfficeChange.call(document.getElementById('office-select'));
+                    break;
+                    
+                case 'view-registrar-gasto':
+                    const fechaGastoInput = document.getElementById('gasto-fecha');
+                    if (fechaGastoInput) {
+                        fechaGastoInput.value = new Date().toISOString().split('T')[0];
+                    }
+                    showStatus('status_registrar_gasto', '', 'info');
+                    document.getElementById('form-registrar-gasto').reset();
+                    if (fechaGastoInput) {
+                        fechaGastoInput.value = new Date().toISOString().split('T')[0];
+                    }
+                    break;
+                    
+                case 'view-gestion-efectivo':
+                    await loadGestionEfectivo();
+                    break;
+                    
+                case 'view-reporte-contable':
+                    await inicializarVistaReporteContable();
+                    break;
+                    
+                case 'view-usuarios':
+                    inicializarVistaUsuarios();
+                    break;
             }
-            if (rutasContainer) {
-                rutasContainer.innerHTML = '<div style="text-align: center; padding: 40px;"><div class="spinner"></div><p>Cargando rutas...</p></div>';
-            }
-            loadConfiguracion();
-            break;
-           
-        case 'view-gestion-clientes':
-            inicializarVistaGestionClientes();
-            break;
-        case 'view-cliente':
-            if (!editingClientId) { resetClientForm(); }
-            break;
-        case 'view-colocacion':
-            document.getElementById('curp_colocacion').value = '';
-            document.getElementById('form-colocacion').classList.add('hidden');
-            showStatus('status_colocacion', 'Ingresa la CURP del cliente para buscar.', 'info');
-            // Asegurar que los selectores de plazo/tipo no estén deshabilitados
-            document.getElementById('plazo_colocacion').disabled = false;
-            document.getElementById('tipo_colocacion').disabled = false;
-            break;
-        case 'view-cobranza':
-            document.getElementById('idCredito_cobranza').value = '';
-            document.getElementById('form-cobranza').classList.add('hidden');
-            showStatus('status_cobranza', 'Ingresa el ID del crédito (histórico) para buscar.', 'info');
-            creditoActual = null;
-            break;
-        case 'view-pago-grupo':
-            const statusPagoGrupo = document.getElementById('status_pago_grupo');
-            const btnCalcular = document.getElementById('btn-calcular-cobranza-ruta');
-            const btnGuardar = document.getElementById('btn-guardar-cobranza-offline');
-            const btnRegistrar = document.getElementById('btn-registrar-pagos-offline');
-            const container = document.getElementById('cobranza-ruta-container');
-            const placeholder = document.getElementById('cobranza-ruta-placeholder');
-
-            // Resetear UI
-            container.innerHTML = '';
-            placeholder.classList.remove('hidden');
-            placeholder.textContent = 'Presiona "Calcular Cobranza" (requiere conexión) o carga una lista guardada si estás offline.';
-            btnGuardar.classList.add('hidden');
-            btnRegistrar.classList.add('hidden');
-            cobranzaRutaData = null; // Limpiar datos globales al entrar
-
-            if (!currentUserData || !currentUserData.ruta || !currentUserData.office || currentUserData.office === 'AMBAS') { // <-- CAMBIO DE sucursal A office (x2)
-                 showStatus('status_pago_grupo', 'Debes tener una ruta y oficina única asignada.', 'warning'); // <-- Mensaje actualizado
-                 btnCalcular.disabled = true;
-                 placeholder.textContent = 'Función no disponible: Ruta/Oficina no asignada.';
-                 break;
-            }
-
-            if (navigator.onLine) {
-                 showStatus('status_pago_grupo', `Listo para calcular cobranza de ruta ${currentUserData.ruta}.`, 'info');
-                 btnCalcular.disabled = false;
-            } else {
-                 showStatus('status_pago_grupo', `Modo Offline. Buscando lista guardada para ruta ${currentUserData.ruta}...`, 'info');
-                 btnCalcular.disabled = true;
-                 const key = OFFLINE_STORAGE_KEY + currentUserData.ruta;
-                 const savedDataString = localStorage.getItem(key);
-
-                 if (savedDataString) {
-                     try {
-                         const savedData = JSON.parse(savedDataString);
-                         // Validar si los datos son razonables (opcional)
-                         if (savedData.ruta === currentUserData.ruta && savedData.office === currentUserData.office && savedData.data) { // <-- Añadir validación office
-                             cobranzaRutaData = savedData.data;
-                             renderizarCobranzaRuta(cobranzaRutaData, container);
-                             btnRegistrar.classList.remove('hidden');
-                             placeholder.classList.add('hidden');
-                             const timestamp = savedData.timestamp ? new Date(savedData.timestamp).toLocaleString() : 'desconocida';
-                             showStatus('status_pago_grupo', `Lista offline cargada (guardada el ${timestamp})...`, 'success');
-                         } else {
-                              throw new Error("Datos guardados inválidos o de otra oficina."); // <-- Mensaje actualizado
-                         }
-                     } catch (error) {
-                         console.error("Error cargando datos offline:", error);
-                         showStatus('status_pago_grupo', `Error al cargar datos guardados: ${error.message}. Intenta conectarte y generar una nueva lista.`, 'error');
-                         placeholder.textContent = 'Error al cargar lista guardada.';
-                     }
-                 } else {
-                     showStatus('status_pago_grupo', `No se encontró lista guardada para ruta ${currentUserData.ruta}. Conéctate para generar una.`, 'warning');
-                     placeholder.textContent = 'No hay lista guardada para uso offline.';
-                 }
-            }
-            break; // Fin case 'view-pago-grupo'
-           
-        case 'view-reportes-graficos':
-            const hoyGraf = new Date();
-            const haceUnAnio = new Date(hoyGraf.getFullYear() - 1, hoyGraf.getMonth(), hoyGraf.getDate() + 1);
-            document.getElementById('grafico_fecha_inicio').value = haceUnAnio.toISOString().split('T')[0];
-            document.getElementById('grafico_fecha_fin').value = hoyGraf.toISOString().split('T')[0];
-            handleSucursalGraficoChange.call(document.getElementById('grafico_sucursal') || { value: '' });
-            if (currentChart) {
-                currentChart.destroy();
-                currentChart = null;
-            }
-            document.getElementById('grafico-container').innerHTML = '';
-            showStatus('status_graficos', 'Selecciona los filtros y genera un gráfico.', 'info');
-            break;
-           
-        case 'view-importar':
-            document.getElementById('office-select').value = 'GDL';
-            handleOfficeChange.call(document.getElementById('office-select'));
-            break;
-           
-        case 'view-main-menu':
-            break;
-
-        case 'view-registrar-gasto':
-            // Poner fecha de hoy por defecto
-            const fechaGastoInput = document.getElementById('gasto-fecha');
-            if (fechaGastoInput) {
-                fechaGastoInput.value = new Date().toISOString().split('T')[0];
-            }
-            showStatus('status_registrar_gasto', '', 'info');
-            document.getElementById('form-registrar-gasto').reset();
-            // Poner la fecha de nuevo después de reset
-            if (fechaGastoInput) {
-                 fechaGastoInput.value = new Date().toISOString().split('T')[0];
-            }
-            break;
-
-           // Cargar la lista de agentes del área comercial
-        case 'view-gestion-efectivo':
-            await loadGestionEfectivo();
-            break;  
-
-        case 'view-reporte-contable':
-            inicializarVistaReporteContable();
-            break;
-
-        case 'view-usuarios':
-            inicializarVistaUsuarios(); // <-- AÑADIR ESTA LÍNEA
-            break;
+        })();
+        
+    } else {
+        console.error(`Error: No se encontró la vista con ID ${viewId}`);
+        const fallbackView = document.getElementById('view-main-menu');
+        if (fallbackView) fallbackView.classList.remove('hidden');
     }
-});
+}
 
 // *** MANEJO DE DUPLICADOS ***
 async function handleVerificarDuplicados() {
@@ -5874,6 +5883,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
