@@ -352,16 +352,19 @@ const database = {
     },
 
     // --- MÉTODOS DE CRÉDITOS ---
-    buscarCreditosPorCliente: async (curp) => {
-        try {
-            // No necesita filtro de sucursal, ya que la CURP es el filtro principal
-            const snapshot = await db.collection('creditos').where('curpCliente', '==', curp.toUpperCase()).get();
-            return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        } catch (error) {
-            console.error("Error buscando créditos por cliente:", error);
-            return [];
-        }
-    },
+    buscarCreditosPorCliente: async (curp, userOffice = null) => { // <-- 1. Aceptar parámetro
+        try {
+            let query = db.collection('creditos').where('curpCliente', '==', curp.toUpperCase());
+            if (userOffice && userOffice !== 'AMBAS') {
+                query = query.where('office', '==', userOffice);
+            }
+            const snapshot = await query.get();
+            return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        } catch (error) {
+            console.error("Error buscando créditos por cliente:", error);
+            return [];
+        }
+    },
 
     buscarCreditosPorHistoricalId: async (historicalId, options = {}) => {
         try {
@@ -421,25 +424,22 @@ const database = {
         }
     },
 
-    buscarCreditoActivoPorCliente: async (curp) => {
-        try {
-            const creditos = await database.buscarCreditosPorCliente(curp);
-            const estadosNoActivos = ['liquidado']; // Estados que definitivamente no están activos
-            // Filtrar créditos que NO estén en estados no activos Y tengan saldo pendiente
-            const creditosActivos = creditos.filter(c =>
-                !estadosNoActivos.includes(c.estado) &&
-                (c.saldo === undefined || c.saldo > 0.01)
-            );
-
-            if (creditosActivos.length === 0) return null;
-
-            creditosActivos.sort((a, b) => (parsearFecha(b.fechaCreacion)?.getTime() || 0) - (parsearFecha(a.fechaCreacion)?.getTime() || 0));
-            return creditosActivos[0]; // Devolver el más reciente activo
-        } catch (error) {
-            console.error("Error buscando crédito activo:", error);
-            return null;
-        }
-    },
+    buscarCreditoActivoPorCliente: async (curp, userOffice = null) => {
+        try {
+            const creditos = await database.buscarCreditosPorCliente(curp, userOffice);
+            const estadosNoActivos = ['liquidado'];
+            const creditosActivos = creditos.filter(c =>
+                !estadosNoActivos.includes(c.estado) &&
+                (c.saldo === undefined || c.saldo > 0.01)
+            );
+            if (creditosActivos.length === 0) return null;
+            creditosActivos.sort((a, b) => (parsearFecha(b.fechaCreacion)?.getTime() || 0) - (parsearFecha(a.fechaCreacion)?.getTime() || 0));
+            return creditosActivos[0];
+        } catch (error) {
+            console.error("Error buscando crédito activo:", error);
+            return null;
+        }
+    },
 
     verificarElegibilidadCliente: async (curp) => {
         const creditoActivo = await database.buscarCreditoActivoPorCliente(curp);
@@ -1681,6 +1681,7 @@ const database = {
         }
     }
 }; // Fin del objeto database
+
 
 
 
