@@ -3406,45 +3406,41 @@ async function handleGenerarGrafico() {
  * Se llama cuando se muestra 'view-configuracion'.
 */
 async function loadConfiguracion() {
-    console.log("--- Cargando nueva interfaz de gestión (REHECHA) ---");
-    const statusEl = 'status_configuracion';
+    console.log("🚀 EJECUTANDO loadConfiguracion - INICIO");
+    const statusEl = 'status_configuracion';
     
     // 1. Verificar permisos de acceso
     if (!currentUserData || !['Super Admin', 'Gerencia', 'Administrador'].includes(currentUserData.role)) {
-        showStatus(statusEl, 'No tienes permisos para acceder a esta sección.', 'error');
-        showView('view-main-menu');
-        return;
-    }
+        showStatus(statusEl, 'No tienes permisos para acceder a esta sección.', 'error');
+        return;
+    }
 
-    // 2. Determinar el filtro de oficina basado en el ROL
-    let officeFiltro = null; // null = Super Admin/Gerencia (ven todo)
-    
-    // Si es Administrador Y tiene una oficina específica (no AMBAS), aplicar el filtro
-    if (currentUserData.role === 'Administrador' && currentUserData.office && currentUserData.office !== 'AMBAS') {
-        officeFiltro = currentUserData.office;
-    }
-    
-    console.log(`Filtro de oficina para configuración: ${officeFiltro || 'TODAS'}`);
-    showStatus(statusEl, 'Cargando catálogos...', 'info');
+    // Determinar filtro de oficina
+    let officeFiltro = null;
+    if (currentUserData.role === 'Administrador' && currentUserData.office && currentUserData.office !== 'AMBAS') {
+        officeFiltro = currentUserData.office;
+    }
+    
+    console.log(`📍 Filtro oficina: ${officeFiltro || 'TODAS'}`);
+    showStatus(statusEl, 'Cargando catálogos...', 'info');
 
-    try {
-        // 3. Cargar las dos pestañas (pasando el filtro)
-        // Usamos Promise.all para cargarlas en paralelo
-        await Promise.all([
-            cargarInterfazPoblaciones(officeFiltro),
-            cargarInterfazRutas(officeFiltro)
-        ]);
-        
-        // 4. Activar los botones de las pestañas (Tabs)
-        setupNuevosTabsConfiguracion();
-        showStatus(statusEl, 'Catálogos cargados correctamente', 'success');
-        
-    } catch (error) {
-        console.error("Error cargando configuración:", error);
-        showStatus(statusEl, `Error crítico al cargar: ${error.message}`, 'error');
-        document.getElementById('tabla-poblaciones-container').innerHTML = `<div class="error-state"><i class="fas fa-exclamation-triangle"></i><h3>Error</h3><p>${error.message}</p></div>`;
-        document.getElementById('tabla-rutas-container').innerHTML = `<div class="error-state"><i class="fas fa-exclamation-triangle"></i><h3>Error</h3><p>${error.message}</p></div>`;
-    }
+    try {
+        console.log("📋 Cargando interfaz de poblaciones...");
+        await cargarInterfazPoblaciones(officeFiltro);
+        
+        console.log("🛣️ Cargando interfaz de rutas...");
+        await cargarInterfazRutas(officeFiltro);
+        
+        console.log("🔧 Configurando tabs...");
+        setupNuevosTabsConfiguracion();
+        
+        showStatus(statusEl, '✅ Catálogos cargados correctamente', 'success');
+        console.log("🎉 loadConfiguracion - COMPLETADO EXITOSAMENTE");
+        
+    } catch (error) {
+        console.error("❌ Error en loadConfiguracion:", error);
+        showStatus(statusEl, `❌ Error al cargar: ${error.message}`, 'error');
+    }
 }
 
 /**
@@ -4740,24 +4736,20 @@ document.addEventListener('viewshown', async function (e) {
         case 'view-reportes-avanzados':
             inicializarVistaReportesAvanzados();
             break;
-        case 'view-configuracion':
-            console.log('=== INICIANDO CARGA DE CONFIGURACIÓN ===');
-            console.log('Usuario:', currentUserData?.email);
-            console.log('Rol:', currentUserData?.role);
-            // Resetear contenedores primero
-            document.getElementById('tabla-poblaciones-container').innerHTML = '<div class="loading">Cargando poblaciones...</div>';
-            document.getElementById('tabla-rutas-container').innerHTML = '<div class="loading">Cargando rutas...</div>';
-            // Llamar a loadConfiguracion con un pequeño delay para asegurar que el DOM esté listo
-            setTimeout(async () => {
-            try {
-                await loadConfiguracion();
-                console.log('=== CONFIGURACIÓN CARGADA EXITOSAMENTE ===');
-            } catch (error) {
-                console.error('Error cargando configuración:', error);
-                showStatus('status_configuracion', `Error: ${error.message}`, 'error');
+       case 'view-configuracion':
+            console.log('🔄 VISTA CONFIGURACIÓN ACTIVADA - EJECUTANDO loadConfiguracion()');
+            const poblacionesContainer = document.getElementById('tabla-poblaciones-container');
+            const rutasContainer = document.getElementById('tabla-rutas-container');
+    
+            if (poblacionesContainer) {
+                poblacionesContainer.innerHTML = '<div style="text-align: center; padding: 40px;"><div class="spinner"></div><p>Cargando poblaciones...</p></div>';
             }
-                }, 100);
+            if (rutasContainer) {
+                rutasContainer.innerHTML = '<div style="text-align: center; padding: 40px;"><div class="spinner"></div><p>Cargando rutas...</p></div>';
+            }
+            loadConfiguracion();
             break;
+           
         case 'view-gestion-clientes':
             inicializarVistaGestionClientes();
             break;
@@ -5750,6 +5742,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
