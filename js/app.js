@@ -3484,125 +3484,136 @@ function setupNuevosTabsConfiguracion() {
  * @param {string | null} officeFiltro - 'GDL', 'LEON', o null (para todos)
 */
 async function cargarInterfazPoblaciones(officeFiltro) {
-    const container = document.getElementById('tabla-poblaciones-container');
-    if (!container) return;
+    const container = document.getElementById('tabla-poblaciones-container');
+    if (!container) {
+        console.error("No se encontró el contenedor de poblaciones");
+        return;
+    }
 
-    container.innerHTML = `<div style="text-align: center; padding: 40px;"><div class="spinner"></div><p>Cargando poblaciones...</p></div>`;
+    console.log("=== DEBUG CARGAR POBLACIONES ===");
+    console.log("Office filtro:", officeFiltro);
+    
+    container.innerHTML = `<div style="text-align: center; padding: 40px;"><div class="spinner"></div><p>Cargando poblaciones...</p></div>`;
 
-    try {
-        const poblaciones = await database.obtenerPoblaciones(officeFiltro);
-        
-        // 1. Construir el Header
-        const headerHTML = `
-            <div class="config-header">
-                <h3>Poblaciones (${poblaciones.length})</h3>
-                <div class="header-actions">
-                    <div class="search-box">
-                        <input type="text" id="search-poblaciones" placeholder="Buscar población..." class="form-control">
-                        <i class="fas fa-search"></i>
-                    </div>
-                    <button class="btn btn-success" onclick="mostrarModalPoblacion()">
-                        <i class="fas fa-plus"></i> Nueva Población
-                    </button>
-                </div>
-            </div>
-        `;
+    try {
+        console.log("Llamando a database.obtenerPoblaciones...");
+        const poblaciones = await database.obtenerPoblaciones(officeFiltro);
+        console.log("Poblaciones obtenidas:", poblaciones);
+        
+        if (!poblaciones || !Array.isArray(poblaciones)) {
+            throw new Error("Datos de poblaciones inválidos: " + typeof poblaciones);
+        }
 
-        // 2. Mostrar estado vacío si no hay datos
-        if (poblaciones.length === 0) {
-            container.innerHTML = headerHTML + `
-                <div class="empty-state">
-                    <i class="fas fa-map-marker-alt"></i>
-                    <h3>No hay poblaciones registradas</h3>
-                    <p>No se encontraron poblaciones ${officeFiltro ? `para tu oficina (${officeFiltro})` : 'en el sistema'}.</p>
-                </div>
-            `;
-            configurarBusquedaPoblaciones(); // Activar búsqueda aunque esté vacío
-            return;
-        }
+        console.log(`Se obtuvieron ${poblaciones.length} poblaciones`);
+        
+        // 1. Construir el Header
+        const headerHTML = `
+            <div class="config-header">
+                <h3>Poblaciones (${poblaciones.length})</h3>
+                <div class="header-actions">
+                    <div class="search-box">
+                        <input type="text" id="search-poblaciones" placeholder="Buscar población..." class="form-control">
+                        <i class="fas fa-search"></i>
+                    </div>
+                    <button class="btn btn-success" onclick="mostrarModalPoblacion()">
+                        <i class="fas fa-plus"></i> Nueva Población
+                    </button>
+                </div>
+            </div>
+        `;
 
-        // 3. Agrupar poblaciones por oficina (solo para Super Admin/Gerencia)
-        const poblacionesPorOficina = {};
-        const oficinasAMostrar = [];
+        // 2. Mostrar estado vacío si no hay datos
+        if (poblaciones.length === 0) {
+            container.innerHTML = headerHTML + `
+                <div class="empty-state">
+                    <i class="fas fa-map-marker-alt"></i>
+                    <h3>No hay poblaciones registradas</h3>
+                    <p>No se encontraron poblaciones ${officeFiltro ? `para tu oficina (${officeFiltro})` : 'en el sistema'}.</p>
+                </div>
+            `;
+            configurarBusquedaPoblaciones();
+            return;
+        }
 
-        if (officeFiltro) {
-            // El Administrador solo ve su oficina
-            poblacionesPorOficina[officeFiltro] = poblaciones;
-            oficinasAMostrar.push(officeFiltro);
-        } else {
-            // Super Admin/Gerencia ven todo, agrupado
-            poblacionesPorOficina['GDL'] = poblaciones.filter(p => p.office === 'GDL');
-            poblacionesPorOficina['LEON'] = poblaciones.filter(p => p.office === 'LEON');
-            poblacionesPorOficina['OTROS'] = poblaciones.filter(p => p.office !== 'GDL' && p.office !== 'LEON');
-            oficinasAMostrar.push('GDL', 'LEON', 'OTROS');
-        }
+        // 3. Agrupar poblaciones por oficina
+        const poblacionesPorOficina = {};
+        const oficinasAMostrar = [];
 
-        // 4. Construir HTML de la lista
-        let html = headerHTML;
-        
-        // Añadir pestañas de filtro GDL/LEON solo si es admin total
-        if (!officeFiltro) {
-            html += `
-                <div class="filter-tabs">
-                    <button class="filter-tab active" data-office="all">Todas</button>
-                    <button class="filter-tab" data-office="GDL">Guadalajara</button>
-                    <button class="filter-tab" data-office="LEON">León</button>
-                    <button class="filter-tab" data-office="OTROS">Sin Asignar / Otros</button>
-                </div>
-            `;
-        }
-        
-        html += `<div class="poblaciones-grid">`;
+        if (officeFiltro) {
+            poblacionesPorOficina[officeFiltro] = poblaciones;
+            oficinasAMostrar.push(officeFiltro);
+        } else {
+            poblacionesPorOficina['GDL'] = poblaciones.filter(p => p.office === 'GDL');
+            poblacionesPorOficina['LEON'] = poblaciones.filter(p => p.office === 'LEON');
+            poblacionesPorOficina['OTROS'] = poblaciones.filter(p => p.office !== 'GDL' && p.office !== 'LEON');
+            oficinasAMostrar.push('GDL', 'LEON', 'OTROS');
+        }
 
-        for (const office of oficinasAMostrar) {
-            const poblacionesOffice = poblacionesPorOficina[office];
-            
-            if (poblacionesOffice && poblacionesOffice.length > 0) {
-                let officeTitle = office;
-                if(office === 'OTROS') officeTitle = 'Sin Asignar / Otros';
-                else if (office === 'GDL') officeTitle = 'Guadalajara';
-                else if (office === 'LEON') officeTitle = 'León';
+        // 4. Construir HTML de la lista
+        let html = headerHTML;
+        
+        // Añadir pestañas de filtro GDL/LEON solo si es admin total
+        if (!officeFiltro) {
+            html += `
+                <div class="filter-tabs">
+                    <button class="filter-tab active" data-office="all">Todas</button>
+                    <button class="filter-tab" data-office="GDL">Guadalajara</button>
+                    <button class="filter-tab" data-office="LEON">León</button>
+                    <button class="filter-tab" data-office="OTROS">Sin Asignar / Otros</button>
+                </div>
+            `;
+        }
+        
+        html += `<div class="poblaciones-grid">`;
 
-                html += `<div class="office-section" data-office="${office}">`;
-                // No mostrar título si el admin está filtrado (es redundante)
-                if (!officeFiltro) {
-                    html += `<h4 class="office-title">${officeTitle} (${poblacionesOffice.length})</h4>`;
-                }
-                html += `<div class="poblaciones-list">`;
-                
-                // Ordenar alfabéticamente (ya debería venir de la DB, pero re-aseguramos)
-                poblacionesOffice.sort((a,b) => (a.nombre || '').localeCompare(b.nombre || ''));
-                
-                poblacionesOffice.forEach(poblacion => {
-                    html += crearTarjetaPoblacion(poblacion);
-                });
-                
-                html += `</div></div>`;
-            }
-        }
+        for (const office of oficinasAMostrar) {
+            const poblacionesOffice = poblacionesPorOficina[office];
+            
+            if (poblacionesOffice && poblacionesOffice.length > 0) {
+                let officeTitle = office;
+                if(office === 'OTROS') officeTitle = 'Sin Asignar / Otros';
+                else if (office === 'GDL') officeTitle = 'Guadalajara';
+                else if (office === 'LEON') officeTitle = 'León';
 
-        html += `</div>`;
-        container.innerHTML = html;
+                html += `<div class="office-section" data-office="${office}">`;
+                if (!officeFiltro) {
+                    html += `<h4 class="office-title">${officeTitle} (${poblacionesOffice.length})</h4>`;
+                }
+                html += `<div class="poblaciones-list">`;
+                
+                // Ordenar alfabéticamente
+                poblacionesOffice.sort((a,b) => (a.nombre || '').localeCompare(b.nombre || ''));
+                
+                poblacionesOffice.forEach(poblacion => {
+                    html += crearTarjetaPoblacion(poblacion);
+                });
+                
+                html += `</div></div>`;
+            }
+        }
 
-        // 5. Activar listeners
-        configurarBusquedaPoblaciones();
-        if (!officeFiltro) {
-            configurarFiltrosPoblaciones();
-        }
+        html += `</div>`;
+        container.innerHTML = html;
 
-    } catch (error) {
-        console.error("Error cargando interfaz de poblaciones:", error);
-        container.innerHTML = `
-            <div class="error-state">
-                <i class="fas fa-exclamation-triangle fa-2x"></i>
-                <h3>Error al cargar las poblaciones</h3>
-                <p>${error.message}</p>
-                <button class="btn btn-secondary" onclick="loadConfiguracion()">
-                    <i class="fas fa-redo"></i> Reintentar
-                </button>
-            </div>
-        `;
-    }
+        // 5. Activar listeners
+        configurarBusquedaPoblaciones();
+        if (!officeFiltro) {
+            configurarFiltrosPoblaciones();
+        }
+
+    } catch (error) {
+        console.error("ERROR en cargarInterfazPoblaciones:", error);
+        container.innerHTML = `
+            <div class="error-state">
+                <i class="fas fa-exclamation-triangle fa-2x"></i>
+                <h3>Error al cargar las poblaciones</h3>
+                <p>${error.message}</p>
+                <button class="btn btn-secondary" onclick="cargarInterfazPoblaciones('${officeFiltro}')">
+                    <i class="fas fa-redo"></i> Reintentar
+                </button>
+            </div>
+        `;
+    }
 }
 
 /**
@@ -3714,110 +3725,124 @@ function configurarFiltrosPoblaciones() {
  * @param {string | null} officeFiltro - 'GDL', 'LEON', o null (para todos)
 */
 async function cargarInterfazRutas(officeFiltro) {
-    const container = document.getElementById('tabla-rutas-container');
-    if (!container) return;
+    const container = document.getElementById('tabla-rutas-container');
+    if (!container) {
+        console.error("No se encontró el contenedor de rutas");
+        return;
+    }
 
-    container.innerHTML = `<div style="text-align: center; padding: 40px;"><div class="spinner"></div><p>Cargando rutas...</p></div>`;
+    console.log("=== DEBUG CARGAR RUTAS ===");
+    console.log("Office filtro:", officeFiltro);
+    
+    container.innerHTML = `<div style="text-align: center; padding: 40px;"><div class="spinner"></div><p>Cargando rutas...</p></div>`;
 
-    try {
-        const rutas = await database.obtenerRutas(officeFiltro);
-        
-        // 1. Construir el Header
-        const headerHTML = `
-            <div class="config-header">
-                <h3>Rutas (${rutas.length})</h3>
-                <div class="header-actions">
-                    <div class="search-box">
-                        <input type="text" id="search-rutas" placeholder="Buscar ruta..." class="form-control">
-                        <i class="fas fa-search"></i>
-                    </div>
-                    <button class="btn btn-success" onclick="mostrarModalRuta()">
-                        <i class="fas fa-plus"></i> Nueva Ruta
-                    </button>
-                </div>
-            </div>
-        `;
+    try {
+        console.log("Llamando a database.obtenerRutas...");
+        const rutas = await database.obtenerRutas(officeFiltro);
+        console.log("Rutas obtenidas:", rutas);
+        
+        if (!rutas || !Array.isArray(rutas)) {
+            throw new Error("Datos de rutas inválidos: " + typeof rutas);
+        }
 
-        // 2. Mostrar estado vacío si no hay datos
-        if (rutas.length === 0) {
-            container.innerHTML = headerHTML + `
-                <div class="empty-state">
-                    <i class="fas fa-route"></i>
-                    <h3>No hay rutas registradas</h3>
-                    <p>No se encontraron rutas ${officeFiltro ? `para tu oficina (${officeFiltro})` : 'en el sistema'}.</p>
-                </div>
-            `;
-            configurarBusquedaRutas(); // Activar búsqueda
-            return;
-        }
+        console.log(`Se obtuvieron ${rutas.length} rutas`);
+        
+        // 1. Construir el Header
+        const headerHTML = `
+            <div class="config-header">
+                <h3>Rutas (${rutas.length})</h3>
+                <div class="header-actions">
+                    <div class="search-box">
+                        <input type="text" id="search-rutas" placeholder="Buscar ruta..." class="form-control">
+                        <i class="fas fa-search"></i>
+                    </div>
+                    <button class="btn btn-success" onclick="mostrarModalRuta()">
+                        <i class="fas fa-plus"></i> Nueva Ruta
+                    </button>
+                </div>
+            </div>
+        `;
 
-        // 3. Agrupar rutas por oficina
-        const rutasPorOficina = {};
-        const oficinasAMostrar = [];
+        // 2. Mostrar estado vacío si no hay datos
+        if (rutas.length === 0) {
+            container.innerHTML = headerHTML + `
+                <div class="empty-state">
+                    <i class="fas fa-route"></i>
+                    <h3>No hay rutas registradas</h3>
+                    <p>No se encontraron rutas ${officeFiltro ? `para tu oficina (${officeFiltro})` : 'en el sistema'}.</p>
+                </div>
+            `;
+            configurarBusquedaRutas();
+            return;
+        }
 
-        if (officeFiltro) {
-            rutasPorOficina[officeFiltro] = rutas;
-            oficinasAMostrar.push(officeFiltro);
-        } else {
-            rutasPorOficina['GDL'] = rutas.filter(r => r.office === 'GDL');
-            rutasPorOficina['LEON'] = rutas.filter(r => r.office === 'LEON');
-            rutasPorOficina['OTROS'] = rutas.filter(r => r.office !== 'GDL' && r.office !== 'LEON');
-            oficinasAMostrar.push('GDL', 'LEON', 'OTROS');
-        }
+        // 3. Agrupar rutas por oficina
+        const rutasPorOficina = {};
+        const oficinasAMostrar = [];
 
-        // 4. Construir HTML de la lista
-        let html = headerHTML + `<div class="rutas-grid">`;
+        if (officeFiltro) {
+            rutasPorOficina[officeFiltro] = rutas;
+            oficinasAMostrar.push(officeFiltro);
+        } else {
+            rutasPorOficina['GDL'] = rutas.filter(r => r.office === 'GDL');
+            rutasPorOficina['LEON'] = rutas.filter(r => r.office === 'LEON');
+            rutasPorOficina['OTROS'] = rutas.filter(r => r.office !== 'GDL' && r.office !== 'LEON');
+            oficinasAMostrar.push('GDL', 'LEON', 'OTROS');
+        }
 
-        for (const office of oficinasAMostrar) {
-            const rutasOffice = rutasPorOficina[office];
-            
-            if (rutasOffice && rutasOffice.length > 0) {
-                let officeTitle = office;
-                if(office === 'OTROS') officeTitle = 'Sin Asignar / Otros';
-                else if (office === 'GDL') officeTitle = 'Guadalajara';
-                else if (office === 'LEON') officeTitle = 'León';
+        // 4. Construir HTML de la lista
+        let html = headerHTML + `<div class="rutas-grid">`;
 
-                html += `<div class="office-section" data-office="${office}">`;
-                if (!officeFiltro) {
-                    html += `<h4 class="office-title">${officeTitle} (${rutasOffice.length})</h4>`;
-                }
-                html += `<div class="rutas-list">`;
-                
-                // Ordenar alfabéticamente
-                rutasOffice.sort((a,b) => (a.nombre || '').localeCompare(b.nombre || ''));
-                
-                rutasOffice.forEach(ruta => {
-                    html += crearTarjetaRuta(ruta);
-                });
-                
-                html += `</div></div>`;
-            }
-        }
+        for (const office of oficinasAMostrar) {
+            const rutasOffice = rutasPorOficina[office];
+            
+            if (rutasOffice && rutasOffice.length > 0) {
+                let officeTitle = office;
+                if(office === 'OTROS') officeTitle = 'Sin Asignar / Otros';
+                else if (office === 'GDL') officeTitle = 'Guadalajara';
+                else if (office === 'LEON') officeTitle = 'León';
 
-        html += `</div>`;
-        container.innerHTML = html;
+                html += `<div class="office-section" data-office="${office}">`;
+                if (!officeFiltro) {
+                    html += `<h4 class="office-title">${officeTitle} (${rutasOffice.length})</h4>`;
+                }
+                html += `<div class="rutas-list">`;
+                
+                // Ordenar alfabéticamente
+                rutasOffice.sort((a,b) => (a.nombre || '').localeCompare(b.nombre || ''));
+                
+                rutasOffice.forEach(ruta => {
+                    html += crearTarjetaRuta(ruta);
+                });
+                
+                html += `</div></div>`;
+            }
+        }
 
-        // 5. Activar listeners
-        configurarBusquedaRutas();
-        configurarEdicionRutas();
-    
-    } catch (error) {
-        console.error("Error cargando interfaz de rutas:", error);
-        container.innerHTML = `
-            <div class="error-state">
-                <i class="fas fa-exclamation-triangle fa-2x"></i>
-                <h3>Error al cargar las rutas</h3>
-                <p>${error.message}</p>
-                <button class="btn btn-secondary" onclick="loadConfiguracion()">
-                    <i class="fas fa-redo"></i> Reintentar
-                </button>
-            </div>
-        `;
-    }
+        html += `</div>`;
+        container.innerHTML = html;
+
+        // 5. Activar listeners
+        configurarBusquedaRutas();
+        configurarEdicionRutas();
+    
+    } catch (error) {
+        console.error("ERROR en cargarInterfazRutas:", error);
+        container.innerHTML = `
+            <div class="error-state">
+                <i class="fas fa-exclamation-triangle fa-2x"></i>
+                <h3>Error al cargar las rutas</h3>
+                <p>${error.message}</p>
+                <button class="btn btn-secondary" onclick="cargarInterfazRutas('${officeFiltro}')">
+                    <i class="fas fa-redo"></i> Reintentar
+                </button>
+            </div>
+        `;
+    }
 }
 
 /**
-Añade un listener a todos los botones de "Editar" de las rutas
+Listener a todos los botones de "Editar" de las rutas
 */
 function configurarEdicionRutas() {
     document.querySelectorAll('#tab-rutas .btn-editar-ruta').forEach(btn => {
@@ -5707,4 +5732,5 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
