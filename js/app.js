@@ -2680,7 +2680,7 @@ async function handleCalcularCobranzaRuta() {
         console.log(`Poblaciones encontradas para la ruta ${userRuta}:`, nombresPoblacionesDeLaRuta);
         showFixedProgress(20, `Buscando clientes en ${nombresPoblacionesDeLaRuta.length} poblaciones...`);
         const clientesDeLasPoblaciones = [];
-        const MAX_IN_VALUES = 30;
+        const MAX_IN_VALUES = 10;
         for (let i = 0; i < nombresPoblacionesDeLaRuta.length; i += MAX_IN_VALUES) {
             const chunkPoblaciones = nombresPoblacionesDeLaRuta.slice(i, i + MAX_IN_VALUES);
             let clientesQuery = db.collection('clientes')
@@ -6040,6 +6040,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
