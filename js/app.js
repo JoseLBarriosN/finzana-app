@@ -106,7 +106,23 @@ function updateConnectionStatus() {
     isOnline = navigator.onLine;
     const filtrosOnline = document.querySelectorAll('#sucursal_filtro, #estado_credito_filtro, #plazo_filtro, #curp_aval_filtro, #grupo_filtro, #tipo_colocacion_filtro');
     const botonesOnline = document.querySelectorAll('#btn-aplicar-filtros-reportes, #btn-exportar-csv, #btn-exportar-pdf, #btn-generar-grafico, #btn-verificar-duplicados, #btn-diagnosticar-pagos, #btn-agregar-poblacion, #btn-agregar-ruta'); // Añadir más si aplica
+    const progressContainer = document.getElementById('progress-container-fixed');
+    const isProgressActive = progressContainer && progressContainer.classList.contains('visible');
 
+    if (isProgressActive) {
+
+        if (isOnline) {
+              filtrosOnline.forEach(el => { if (el) el.disabled = false; });
+              botonesOnline.forEach(el => { if (el) el.disabled = false; });
+              if (currentUserData) aplicarPermisosUI(currentUserData.role);
+              logoutBtn.disabled = false;
+              logoutBtn.title = 'Cerrar Sesión';
+        }    
+
+        if (isOnline) {
+            return; 
+        }
+        
     if (isOnline) {
         statusDiv.textContent = 'Conexión restablecida. Sincronizando datos...';
         statusDiv.className = 'connection-status online';
@@ -2742,11 +2758,15 @@ async function handleCalcularCobranzaRuta() {
             throw new Error('No se encontraron créditos con cobranza pendiente para esta ruta y oficina.'); 
         }
         showFixedProgress(95, 'Agrupando y renderizando resultados...');
-        cobranzaRutaData = {};
-        const poblacionesOrdenadas = Array.from(poblacionesEncontradasSet).sort();
-        poblacionesOrdenadas.forEach(pob => { 
-            cobranzaRutaData[pob] = [];
-        });
+        cobranzaRutaData = {};
+        creditosPendientes.forEach(cred => {
+            const clienteDelCredito = clientesDeLasPoblaciones.find(c => c.curp === cred.curpCliente);
+            const grupo = clienteDelCredito ? clienteDelCredito.poblacion_grupo : 'Desconocido';
+            if (!cobranzaRutaData[grupo]) {
+                cobranzaRutaData[grupo] = [];
+            }
+            cobranzaRutaData[grupo].push(cred);
+        });
         creditosPendientes.forEach(cred => {
             const pob = cliente.poblacion_grupo;
             creditosPendientes.forEach(cred => {
@@ -4561,42 +4581,46 @@ function showButtonLoading(selector, show, loadingText = '') {
 // =============================================
 
 function showFixedProgress(percentage, message = '') {
-    if (typeof resetInactivityTimer === 'function') {
-        resetInactivityTimer();
-    }
-    let progressContainer = document.getElementById('progress-container-fixed');
-    if (!progressContainer) {
-        progressContainer = document.createElement('div');
-        progressContainer.id = 'progress-container-fixed';
-        progressContainer.className = 'progress-container-fixed hidden';
-        progressContainer.innerHTML = `
-            <div id="progress-text-fixed" class="progress-text-fixed"></div>
-            <div id="progress-bar-fixed" class="progress-bar-fixed" style="width: 0%;"></div>
-            <button id="btn-cancelar-carga-fixed" class="btn-cancelar-carga-fixed" title="Cancelar operación">
-                <i class="fas fa-times"></i>
-            </button>
-        `;
-        document.body.insertBefore(progressContainer, document.body.firstChild);
-        const cancelButton = document.getElementById('btn-cancelar-carga-fixed');
-        if (cancelButton) cancelButton.addEventListener('click', cancelarCarga);
-    }
-
-    const progressBar = document.getElementById('progress-bar-fixed');
-    const progressText = document.getElementById('progress-text-fixed');
-    const validPercentage = Math.max(0, Math.min(100, percentage));
-
-    if (progressBar) progressBar.style.width = validPercentage + '%';
-    if (progressText) progressText.textContent = `${message} (${validPercentage.toFixed(0)}%)`;
-    progressContainer.classList.add('visible'); // Usar clase 'visible' para mostrar
-    document.body.classList.add('has-progress'); // Añadir clase al body para padding
+    if (typeof resetInactivityTimer === 'function') {
+        resetInactivityTimer();
+    }
+    let progressContainer = document.getElementById('progress-container-fixed');
+    if (!progressContainer) {
+        progressContainer = document.createElement('div');
+        progressContainer.id = 'progress-container-fixed';
+        progressContainer.className = 'progress-container-fixed hidden';
+        progressContainer.innerHTML = `
+            <div id="progress-text-fixed" class="progress-text-fixed"></div>
+            <div id="progress-bar-fixed" class="progress-bar-fixed" style="width: 0%;"></div>
+            <button id="btn-cancelar-carga-fixed" class="btn-cancelar-carga-fixed" title="Cancelar operación">
+                <i class="fas fa-times"></i>
+            </button>
+        `;
+        document.body.insertBefore(progressContainer, document.body.firstChild);
+        const cancelButton = document.getElementById('btn-cancelar-carga-fixed');
+        if (cancelButton) cancelButton.addEventListener('click', cancelarCarga);
+    }
+    const statusDiv = document.getElementById('connection-status');
+    if (statusDiv) statusDiv.classList.add('hidden');
+    document.body.classList.remove('has-connection-status');
+    const progressBar = document.getElementById('progress-bar-fixed');
+    const progressText = document.getElementById('progress-text-fixed');
+    const validPercentage = Math.max(0, Math.min(100, percentage));
+    if (progressBar) progressBar.style.width = validPercentage + '%';
+    if (progressText) progressText.textContent = `${message} (${validPercentage.toFixed(0)}%)`;
+    progressContainer.classList.remove('hidden');
+    progressContainer.classList.add('visible');
+    progressContainer.style.display = 'block';
+    document.body.classList.add('has-progress');
 }
 
 function hideFixedProgress() {
-    const progressContainer = document.getElementById('progress-container-fixed');
-    if (progressContainer) {
-        progressContainer.classList.add('hidden');
-        progressContainer.style.display = 'none';
-        const progressBar = document.getElementById('progress-bar-fixed');
+    const progressContainer = document.getElementById('progress-container-fixed');
+    if (progressContainer) {
+        progressContainer.classList.add('hidden');
+        progressContainer.classList.remove('visible');
+        progressContainer.style.display = 'none';
+        const progressBar = document.getElementById('progress-bar-fixed');
         if (progressBar) progressBar.style.width = '0%';
         const progressText = document.getElementById('progress-text-fixed');
         if (progressText) progressText.textContent = '';
@@ -6040,6 +6064,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
