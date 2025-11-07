@@ -17,6 +17,9 @@ let grupoDePagoActual = null; // Para la nueva función de pago grupal
 let currentChart = null; // Para la nueva función de gráficos
 let cobranzaRutaData = null;
 let dropdownUpdateInProgress = false; // Prevenir actualizaciones duplicadas
+let cobranzaRutaData = null;
+let dropdownUpdateInProgress = false; // Prevenir actualizaciones duplicadas
+const OFFLINE_STORAGE_KEY = 'cobranza_ruta_';
 
 /** Parsea de forma robusta una fecha que puede ser un string (ISO 8601, yyyy-mm-dd, etc.) **/
 function parsearFecha(fechaInput) {
@@ -2776,7 +2779,7 @@ async function handleCalcularCobranzaRuta() {
                     clientesConErrores++;
                 }
             }
-        } // Fin del bucle for
+        }
 
         if (creditosPendientes.length === 0) { 
             if (clientesConErrores > 0) {
@@ -2785,26 +2788,16 @@ async function handleCalcularCobranzaRuta() {
             throw new Error('No se encontraron créditos con cobranza pendiente para esta ruta y oficina.'); 
         }
 
-        // 4. Agrupar y Renderizar
         showFixedProgress(95, 'Agrupando y renderizando resultados...');
-        cobranzaRutaData = {}; // Objeto para agrupar
-
-        // Itera sobre los créditos pendientes que encontramos
+        cobranzaRutaData = {};
         creditosPendientes.forEach(cred => {
-            // Busca el cliente correspondiente en la lista de clientes que ya tenemos
             const clienteDelCredito = clientesDeLasPoblaciones.find(c => c.curp === cred.curpCliente);
-            // Obtiene el grupo (población) de ese cliente
             const grupo = clienteDelCredito ? clienteDelCredito.poblacion_grupo : 'Desconocido';
-
-            // Si es la primera vez que vemos este grupo, crea un array vacío para él
             if (!cobranzaRutaData[grupo]) {
                 cobranzaRutaData[grupo] = [];
             }
-            // Añade el crédito al array de su grupo
             cobranzaRutaData[grupo].push(cred);
         });
-
-        // *** EL BLOQUE DUPLICADO HA SIDO ELIMINADO ***
 
         renderizarCobranzaRuta(cobranzaRutaData, container);
         if (btnGuardar) btnGuardar.classList.remove('hidden');
@@ -2835,7 +2828,6 @@ async function handleCalcularCobranzaRuta() {
         cargaEnProgreso = false;
         showButtonLoading(btnCalcular, false);
         setTimeout(hideFixedProgress, 2000);
-        // Reactivar el temporizador de inactividad
         console.log('Cálculo de ruta finalizado. Temporizador de inactividad REACTIVADO.');
         resetInactivityTimer();
     }
@@ -6093,3 +6085,4 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
