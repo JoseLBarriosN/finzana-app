@@ -100,60 +100,58 @@ function formatDateForDisplay(dateObj) {
  * Actualiza la UI para mostrar el estado actual de la conexión y gestiona filtros.
  */
 function updateConnectionStatus() {
-    const statusDiv = document.getElementById('connection-status');
-    const logoutBtn = document.getElementById('logout-btn');
-    if (!statusDiv || !logoutBtn) return;
-    isOnline = navigator.onLine;
-    const filtrosOnline = document.querySelectorAll('#sucursal_filtro, #estado_credito_filtro, #plazo_filtro, #curp_aval_filtro, #grupo_filtro, #tipo_colocacion_filtro');
-    const botonesOnline = document.querySelectorAll('#btn-aplicar-filtros-reportes, #btn-exportar-csv, #btn-exportar-pdf, #btn-generar-grafico, #btn-verificar-duplicados, #btn-diagnosticar-pagos, #btn-agregar-poblacion, #btn-agregar-ruta'); // Añadir más si aplica
-    const progressContainer = document.getElementById('progress-container-fixed');
-    const isProgressActive = progressContainer && progressContainer.classList.contains('visible');
+    const statusDiv = document.getElementById('connection-status');
+    const logoutBtn = document.getElementById('logout-btn');
+    if (!statusDiv || !logoutBtn) return;
+    isOnline = navigator.onLine;
+    const filtrosOnline = document.querySelectorAll('#sucursal_filtro, #estado_credito_filtro, #plazo_filtro, #curp_aval_filtro, #grupo_filtro, #tipo_colocacion_filtro');
+    const botonesOnline = document.querySelectorAll('#btn-aplicar-filtros-reportes, #btn-exportar-csv, #btn-exportar-pdf, #btn-generar-grafico, #btn-verificar-duplicados, #btn-diagnosticar-pagos, #btn-agregar-poblacion, #btn-agregar-ruta');
 
-    if (isProgressActive) {
+    const progressContainer = document.getElementById('progress-container-fixed');
+    const isProgressActive = progressContainer && progressContainer.classList.contains('visible');
 
-        if (isOnline) {
-              filtrosOnline.forEach(el => { if (el) el.disabled = false; });
-              botonesOnline.forEach(el => { if (el) el.disabled = false; });
-              if (currentUserData) aplicarPermisosUI(currentUserData.role);
-              logoutBtn.disabled = false;
-              logoutBtn.title = 'Cerrar Sesión';
-        }    
+    if (isProgressActive) {
+        if (isOnline) {
+            filtrosOnline.forEach(el => { if (el) el.disabled = false; });
+            botonesOnline.forEach(el => { if (el) el.disabled = false; });
+            if (currentUserData) aplicarPermisosUI(currentUserData.role);
+            logoutBtn.disabled = false;
+            logoutBtn.title = 'Cerrar Sesión';
+            return;
+        }
+    }
 
-        if (isOnline) {
-            return; 
-        }
-        
-    if (isOnline) {
-        statusDiv.textContent = 'Conexión restablecida. Sincronizando datos...';
-        statusDiv.className = 'connection-status online';
-        statusDiv.classList.remove('hidden');
-        document.body.classList.add('has-connection-status');
-        logoutBtn.disabled = false;
-        logoutBtn.title = 'Cerrar Sesión';
-        filtrosOnline.forEach(el => { if (el) el.disabled = false; });
-        botonesOnline.forEach(el => { if (el) el.disabled = false; });
-        if (currentUserData) aplicarPermisosUI(currentUserData.role);
-        setTimeout(() => {
-            if (navigator.onLine) {
-                statusDiv.textContent = 'Datos sincronizados correctamente.';             
-                setTimeout(() => {                
-                    if (navigator.onLine) {
-                        statusDiv.classList.add('hidden');
-                        document.body.classList.remove('has-connection-status');
-                    }
-                }, 2500);
-            }
-        }, 3000);
-    } else {
-        statusDiv.textContent = 'Modo sin conexión. Búsquedas por CURP, Nombre e ID Crédito habilitadas.';
-        statusDiv.className = 'connection-status offline';
-        statusDiv.classList.remove('hidden');
-        document.body.classList.add('has-connection-status');
-        logoutBtn.disabled = true;
-        logoutBtn.title = 'No puedes cerrar sesión sin conexión';
-        filtrosOnline.forEach(el => { if (el) el.disabled = true; });
-        botonesOnline.forEach(el => { if (el) el.disabled = true; });
-    }
+    if (isOnline) {
+        statusDiv.textContent = 'Conexión restablecida. Sincronizando datos...';
+        statusDiv.className = 'connection-status online';
+        statusDiv.classList.remove('hidden');
+        document.body.classList.add('has-connection-status');
+        logoutBtn.disabled = false;
+        logoutBtn.title = 'Cerrar Sesión';
+        filtrosOnline.forEach(el => { if (el) el.disabled = false; });
+        botonesOnline.forEach(el => { if (el) el.disabled = false; });
+        if (currentUserData) aplicarPermisosUI(currentUserData.role);
+        setTimeout(() => {
+            if (navigator.onLine) {
+                statusDiv.textContent = 'Datos sincronizados correctamente.';             
+                setTimeout(() => {                
+                    if (navigator.onLine) {
+                        statusDiv.classList.add('hidden');
+                        document.body.classList.remove('has-connection-status');
+                    }
+                }, 2500);
+            }
+        }, 3000);
+    } else {
+        statusDiv.textContent = 'Modo sin conexión. Búsquedas por CURP, Nombre e ID Crédito habilitadas.';
+        statusDiv.className = 'connection-status offline';
+        statusDiv.classList.remove('hidden');
+        document.body.classList.add('has-connection-status');
+        logoutBtn.disabled = true;
+        logoutBtn.title = 'No puedes cerrar sesión sin conexión';
+        filtrosOnline.forEach(el => { if (el) el.disabled = true; });
+        botonesOnline.forEach(el => { if (el) el.disabled = true; });
+    }
 }
 
 // =============================================
@@ -5940,10 +5938,9 @@ function setupEventListeners() {
     document.querySelectorAll('[data-view]').forEach(button => {
         button.addEventListener('click', function () {
             if (this.type === 'button' && this.closest('#form-cliente') && !editingClientId) {
-                // No resetear si es un botón 'Cancelar' dentro del form de edición
             } else if (this.closest('.menu-card')) {
                 if (this.getAttribute('data-view') === 'view-cliente') {
-                    resetClientForm(); // Resetear SIEMPRE al ir a registrar nuevo desde menú
+                    resetClientForm();
                 }
             }
             showView(this.getAttribute('data-view'));
@@ -6096,18 +6093,3 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
