@@ -17,8 +17,6 @@ let grupoDePagoActual = null; // Para la nueva función de pago grupal
 let currentChart = null; // Para la nueva función de gráficos
 let cobranzaRutaData = null;
 let dropdownUpdateInProgress = false; // Prevenir actualizaciones duplicadas
-let cobranzaRutaData = null;
-let dropdownUpdateInProgress = false; // Prevenir actualizaciones duplicadas
 const OFFLINE_STORAGE_KEY = 'cobranza_ruta_';
 
 /** Parsea de forma robusta una fecha que puede ser un string (ISO 8601, yyyy-mm-dd, etc.) **/
@@ -6085,4 +6083,5 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
