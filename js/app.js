@@ -2647,31 +2647,36 @@ async function handleMontoPagoChange() {
 // SECCIÓN DE PAGO GRUPAL
 // =============================================
 async function handleCalcularCobranzaRuta() {
+    // Pausar el temporizador de inactividad
     console.log('Temporizador de inactividad PAUSADO para cálculo de ruta.');
     clearTimeout(inactivityTimer);
+
     const statusPagoGrupo = document.getElementById('status_pago_grupo');
     const btnCalcular = document.getElementById('btn-calcular-cobranza-ruta');
     const btnGuardar = document.getElementById('btn-guardar-cobranza-offline');
     const btnRegistrar = document.getElementById('btn-registrar-pagos-offline');
     const container = document.getElementById('cobranza-ruta-container');
     const placeholder = document.getElementById('cobranza-ruta-placeholder');
-    
+    
     if (!currentUserData || !currentUserData.ruta || !currentUserData.office || currentUserData.office === 'AMBAS') {
         showStatus('status_pago_grupo', 'Error: Debes tener una ruta y oficina única asignada para usar esta función.', 'error');
-        resetInactivityTimer();
+        resetInactivityTimer(); // Reactivar si fallamos rápido
         return;
     }
     if (!navigator.onLine) {
         showStatus('status_pago_grupo', 'Error: Se necesita conexión a internet para calcular la cobranza de la ruta.', 'error');
-        resetInactivityTimer();
+        resetInactivityTimer(); // Reactivar si fallamos rápido
         return;
     }
+
     const userRuta = currentUserData.ruta;
-    const userOffice = currentUserData.office;
-    const esAdminConAccesoTotal = (currentUserData?.role === 'Super Admin' || currentUserData?.role === 'Gerencia');
+    const userOffice = currentUserData.office; // Oficina del usuario
+    const esAdminConAccesoTotal = (currentUserData?.role === 'Super Admin' || currentUserData?.role === 'Gerencia');
+
     cargaEnProgreso = true;
     currentSearchOperation = Date.now();
     const operationId = currentSearchOperation;
+
     showButtonLoading(btnCalcular, true, 'Calculando...');
     showFixedProgress(5, `Calculando cobranza para ruta ${userRuta}...`);
     statusPagoGrupo.innerHTML = `Buscando poblaciones para la ruta ${userRuta}...`;
@@ -2681,112 +2686,137 @@ async function handleCalcularCobranzaRuta() {
     cobranzaRutaData = {};
     if (btnGuardar) btnGuardar.classList.add('hidden');
     if (btnRegistrar) btnRegistrar.classList.add('hidden');
+
     try {
+        // 1. Obtener las poblaciones
         statusPagoGrupo.textContent = `Buscando poblaciones asignadas a ruta ${userRuta}...`;
         let poblacionesQuery = db.collection('poblaciones')
-                                    .where('ruta', '==', userRuta);        
-        if (!esAdminConAccesoTotal) {
-            poblacionesQuery = poblacionesQuery.where('office', '==', userOffice);
-        }
+                                    .where('ruta', '==', userRuta);
+        
+        if (!esAdminConAccesoTotal) {
+            // Un 'Área comercial' solo puede ver poblaciones de su propia oficina
+            poblacionesQuery = poblacionesQuery.where('office', '==', userOffice);
+        }
+
         const poblacionesSnapshot = await poblacionesQuery.get();
-        const nombresPoblacionesDeLaRuta = poblacionesSnapshot.docs.map(doc => doc.data().nombre);        
-        if (nombresPoblacionesDeLaRuta.length === 0) { 
-            throw new Error(`No se encontraron poblaciones asignadas a la ruta ${userRuta}` + (esAdminConAccesoTotal ? '.' : ` en tu oficina (${userOffice}).`)); 
-        }
+        const nombresPoblacionesDeLaRuta = poblacionesSnapshot.docs.map(doc => doc.data().nombre);
+        
+        if (nombresPoblacionesDeLaRuta.length === 0) { 
+            throw new Error(`No se encontraron poblaciones asignadas a la ruta ${userRuta}` + (esAdminConAccesoTotal ? '.' : ` en tu oficina (${userOffice}).`)); 
+        }
         console.log(`Poblaciones encontradas para la ruta ${userRuta}:`, nombresPoblacionesDeLaRuta);
+
+        // 2. Buscar clientes
         showFixedProgress(20, `Buscando clientes en ${nombresPoblacionesDeLaRuta.length} poblaciones...`);
         const clientesDeLasPoblaciones = [];
-        const MAX_IN_VALUES = 10;
+        const MAX_IN_VALUES = 10; // Límite real de Firebase para consultas 'in'
+
         for (let i = 0; i < nombresPoblacionesDeLaRuta.length; i += MAX_IN_VALUES) {
             const chunkPoblaciones = nombresPoblacionesDeLaRuta.slice(i, i + MAX_IN_VALUES);
             let clientesQuery = db.collection('clientes')
                                 .where('poblacion_grupo', 'in', chunkPoblaciones);
-            if (!esAdminConAccesoTotal) {
+
+            if (!esAdminConAccesoTotal) {
+                // Un 'Área comercial' solo puede ver clientes de su propia oficina
                 clientesQuery = clientesQuery.where('office', '==', userOffice);
-            }
+            }
+
             const clientesSnapshot = await clientesQuery.get();
             clientesSnapshot.docs.forEach(doc => {
                 clientesDeLasPoblaciones.push({ id: doc.id, ...doc.data() });
             });
         }
-        if (clientesDeLasPoblaciones.length === 0) { 
-            throw new Error(`No se encontraron clientes en las poblaciones de la ruta ${userRuta}` + (esAdminConAccesoTotal ? '.' : ` asignados a tu oficina (${userOffice}).`)); 
-        }
+        if (clientesDeLasPoblaciones.length === 0) { 
+            throw new Error(`No se encontraron clientes en las poblaciones de la ruta ${userRuta}` + (esAdminConAccesoTotal ? '.' : ` asignados a tu oficina (${userOffice}).`)); 
+        }
+
+        // 3. Procesar clientes
         showFixedProgress(40, `Procesando ${clientesDeLasPoblaciones.length} clientes...`);
         let creditosPendientes = [];
         let poblacionesEncontradasSet = new Set();
         let totalGeneralACobrar = 0;
         let clientesConErrores = 0;
         const totalClientes = clientesDeLasPoblaciones.length;
+
         for (const [index, cliente] of clientesDeLasPoblaciones.entries()) {
             if (operationId !== currentSearchOperation) throw new Error("Operación cancelada");            
             const progress = 40 + Math.round(((index + 1) / totalClientes) * 50);
             showFixedProgress(progress, `Procesando cliente ${index + 1} de ${totalClientes}...`);
+
             if (!nombresPoblacionesDeLaRuta.includes(cliente.poblacion_grupo)) { continue; }
-            const clienteOffice = cliente.office; 
-            if (!clienteOffice) {
-                console.warn(`Cliente ${cliente.curp} omitido por no tener oficina asignada.`);
-                continue;
-            }
-            const creditoActivo = await database.buscarCreditoActivoPorCliente(cliente.curp, clienteOffice);             
+
+            // Usar la oficina DEL CLIENTE para buscar su crédito
+            const clienteOffice = cliente.office; 
+            if (!clienteOffice) {
+                console.warn(`Cliente ${cliente.curp} omitido por no tener oficina asignada.`);
+                continue;
+            }
+
+            // Pasar la oficina del *cliente* a la función de BD
+            const creditoActivo = await database.buscarCreditoActivoPorCliente(cliente.curp, clienteOffice);             
+            
             if (creditoActivo) {
+                // Usar la oficina del crédito (debería ser la misma que clienteOffice) para buscar pagos
                 const pagos = await database.getPagosPorCredito(creditoActivo.historicalIdCredito || creditoActivo.id, creditoActivo.office);
                 pagos.sort((a, b) => (parsearFecha(b.fecha)?.getTime() || 0) - (parsearFecha(a.fecha)?.getTime() || 0));
                 const estadoCalc = _calcularEstadoCredito(creditoActivo, pagos);
+
                 if (estadoCalc && estadoCalc.estado !== 'liquidado' && estadoCalc.pagoSemanal > 0.01) {
                     poblacionesEncontradasSet.add(cliente.poblacion_grupo);
                     totalGeneralACobrar += estadoCalc.pagoSemanal;
                     creditosPendientes.push({
-                            firestoreId: creditoActivo.id,
-                            historicalIdCredito: creditoActivo.historicalIdCredito || creditoActivo.id,
-                            nombreCliente: cliente.nombre,
-                            curpCliente: cliente.curp,
-                            pagoSemanal: estadoCalc.pagoSemanal,
-                            saldoRestante: estadoCalc.saldoRestante,
-                            office: creditoActivo.office
-                        });
-                } else if (!estadoCalc) { 
-                    console.warn(`Error al calcular estado para crédito ${creditoActivo.id}`);
-                    clientesConErrores++;
-                }
+                            firestoreId: creditoActivo.id,
+                            historicalIdCredito: creditoActivo.historicalIdCredito || creditoActivo.id,
+                            nombreCliente: cliente.nombre,
+                            curpCliente: cliente.curp,
+                            pagoSemanal: estadoCalc.pagoSemanal,
+                            saldoRestante: estadoCalc.saldoRestante,
+                            office: creditoActivo.office
+                        });
+                } else if (!estadoCalc) { 
+                    console.warn(`Error al calcular estado para crédito ${creditoActivo.id}`);
+                    clientesConErrores++;
+                }
             }
+        } // Fin del bucle for
+
+        if (creditosPendientes.length === 0) { 
+            if (clientesConErrores > 0) {
+                throw new Error(`Se encontraron ${clientesDeLasPoblaciones.length} clientes, pero ${clientesConErrores} créditos tienen datos inconsistentes.`);
+            }
+            throw new Error('No se encontraron créditos con cobranza pendiente para esta ruta y oficina.'); 
         }
-        if (creditosPendientes.length === 0) { 
-            if (clientesConErrores > 0) {
-                throw new Error(`Se encontraron ${clientesDeLasPoblaciones.length} clientes, pero ${clientesConErrores} créditos tienen datos inconsistentes.`);
-            }
-            throw new Error('No se encontraron créditos con cobranza pendiente para esta ruta y oficina.'); 
-        }
+
+        // 4. Agrupar y Renderizar
         showFixedProgress(95, 'Agrupando y renderizando resultados...');
-        cobranzaRutaData = {};
+        cobranzaRutaData = {}; // Objeto para agrupar
+
+        // Itera sobre los créditos pendientes que encontramos
         creditosPendientes.forEach(cred => {
+            // Busca el cliente correspondiente en la lista de clientes que ya tenemos
             const clienteDelCredito = clientesDeLasPoblaciones.find(c => c.curp === cred.curpCliente);
+            // Obtiene el grupo (población) de ese cliente
             const grupo = clienteDelCredito ? clienteDelCredito.poblacion_grupo : 'Desconocido';
+
+            // Si es la primera vez que vemos este grupo, crea un array vacío para él
             if (!cobranzaRutaData[grupo]) {
                 cobranzaRutaData[grupo] = [];
             }
+            // Añade el crédito al array de su grupo
             cobranzaRutaData[grupo].push(cred);
         });
-        creditosPendientes.forEach(cred => {
-            const pob = cliente.poblacion_grupo;
-            creditosPendientes.forEach(cred => {
-                const cliente = clientesDeLasPoblaciones.find(c => c.curp === cred.curpCliente);
-                const grupo = cliente ? cliente.poblacion_grupo : 'Desconocido';
-                if (!cobranzaRutaData[grupo]) {
-                    cobranzaRutaData[grupo] = [];
-                }
-                cobranzaRutaData[grupo].push(cred);
-            });
-        });
+
+        // *** EL BLOQUE DUPLICADO HA SIDO ELIMINADO ***
 
         renderizarCobranzaRuta(cobranzaRutaData, container);
         if (btnGuardar) btnGuardar.classList.remove('hidden');
         if (btnRegistrar) btnRegistrar.classList.remove('hidden');
 
         showFixedProgress(100, 'Cálculo completado');
-        let msgExito = `Cálculo completado: ${creditosPendientes.length} créditos encontrados.`;
-        if (clientesConErrores > 0) msgExito += ` (${clientesConErrores} créditos omitidos por errores).`;
-        showStatus('status_pago_grupo', msgExito, 'success');        
+        let msgExito = `Cálculo completado: ${creditosPendientes.length} créditos encontrados.`;
+        if (clientesConErrores > 0) msgExito += ` (${clientesConErrores} créditos omitidos por errores).`;
+        showStatus('status_pago_grupo', msgExito, 'success');        
+    
     } catch (error) {
         console.error("Error al calcular cobranza de ruta:", error);
         if (error.message === "Operación cancelada") {
@@ -2797,15 +2827,17 @@ async function handleCalcularCobranzaRuta() {
         if (placeholder) {
             placeholder.textContent = `Error al calcular: ${error.message}`;
             placeholder.classList.remove('hidden');
-        }        
+    Gira     }        
         container.innerHTML = '';
         cobranzaRutaData = null;
         if (btnGuardar) btnGuardar.classList.add('hidden');
         if (btnRegistrar) btnRegistrar.classList.add('hidden');
-    } finally {
+    
+    } finally {
         cargaEnProgreso = false;
         showButtonLoading(btnCalcular, false);
         setTimeout(hideFixedProgress, 2000);
+        // Reactivar el temporizador de inactividad
         console.log('Cálculo de ruta finalizado. Temporizador de inactividad REACTIVADO.');
         resetInactivityTimer();
     }
@@ -6064,6 +6096,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
