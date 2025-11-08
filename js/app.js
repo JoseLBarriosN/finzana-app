@@ -2836,109 +2836,148 @@ async function handleCalcularCobranzaRuta() {
  * (ya sea calculada online o cargada offline). Funciona offline.
  */
 async function handleRegistroPagoGrupal() {
-    const statusPagoGrupo = document.getElementById('status_pago_grupo');
-    const container = document.getElementById('cobranza-ruta-container');
-    const checkboxes = container.querySelectorAll('.pago-grupal-check:checked'); // Buscar checkboxes DENTRO del contenedor
+    const statusPagoGrupo = document.getElementById('status_pago_grupo');
+    const container = document.getElementById('cobranza-ruta-container');
+    const checkboxes = container.querySelectorAll('.pago-grupal-check:checked'); // 1. Buscar checkboxes marcados
 
-    if (!cobranzaRutaData || Object.keys(cobranzaRutaData).length === 0) {
-        showStatus('status_pago_grupo', 'Error: No hay datos de cobranza cargados (calculados o de offline) para registrar.', 'error');
-        return;
-    }
-    if (!checkboxes || checkboxes.length === 0) {
-        showStatus('status_pago_grupo', 'No hay pagos seleccionados para registrar.', 'warning');
-        return;
-    }
+    if (!cobranzaRutaData || Object.keys(cobranzaRutaData).length === 0) {
+        showStatus('status_pago_grupo', 'Error: No hay datos de cobranza cargados (calculados o de offline) para registrar.', 'error');
+        return;
+    }
+    if (!checkboxes || checkboxes.length === 0) {
+        showStatus('status_pago_grupo', 'No hay pagos seleccionados para registrar.', 'warning');
+        return;
+    }
+    // 2. Lógica de Filtrado y Validación
+    const pagosAProcesar = [];
+    const erroresValidacion = [];
+    // Limpiar errores visuales previos
+    container.querySelectorAll('.pago-grupal-input').forEach(input => input.closest('tr')?.classList.remove('pago-registrado-error'));
 
-    showProcessingOverlay(true, `Registrando ${checkboxes.length} pagos...`);
-    statusPagoGrupo.innerHTML = `Registrando ${checkboxes.length} pagos seleccionados...`;
-    statusPagoGrupo.className = 'status-message status-info';
+    checkboxes.forEach(checkbox => {
+        // Obtenemos los datos del checkbox
+        const idLink = checkbox.getAttribute('data-id-link');
+        const firestoreId = checkbox.getAttribute('data-firestore-id');
+        const histId = checkbox.getAttribute('data-hist-id');
+        const nombreCliente = checkbox.getAttribute('data-nombre');
+        // Buscamos el input de monto correspondiente usando el idLink
+        const inputElement = container.querySelector(`.pago-grupal-input[data-id-link="${idLink}"]`);
+        if (!inputElement) {
+            erroresValidacion.push(`Cliente ${nombreCliente}: No se encontró el campo de monto.`);
+            checkbox.closest('tr')?.classList.add('pago-registrado-error');
+            return;
+        }
+        // Obtenemos el monto y el saldo máximo DESDE EL INPUT
+        const montoPago = parseFloat(inputElement.value);
+        const saldoMax = parseFloat(inputElement.getAttribute('data-saldo-max'));
+        const tolerancia = 0.015;
+        // Validar monto
+        if (isNaN(montoPago) || montoPago <= 0) {
+            erroresValidacion.push(`Cliente ${nombreCliente}: El monto a pagar es inválido o es cero.`);
+            inputElement.closest('tr')?.classList.add('pago-registrado-error');
+            return; 
+        }
+        // Validación de sobrepago
+        if (montoPago > saldoMax + tolerancia) {
+            erroresValidacion.push(`Cliente ${nombreCliente}: El pago $${montoPago.toFixed(2)} excede el saldo $${saldoMax.toFixed(2)}.`);
+            inputElement.closest('tr')?.classList.add('pago-registrado-error');
+            return;
+        }
+        // Encontrar la oficina
+        let office = null;
+        for (const pob in cobranzaRutaData) {
+            const cred = cobranzaRutaData[pob].find(c => c.firestoreId === firestoreId);
+            if (cred) {
+                office = cred.office;
+                break;
+            }
+        }
+        if (montoPago > 0 && firestoreId && histId && office) {
+            pagosAProcesar.push({
+                inputElement: inputElement,
+                checkboxElement: checkbox,
+                pagoData: { idCredito: histId, monto: montoPago, tipoPago: 'grupal' },
+                firestoreId: firestoreId,
+                nombreCliente: nombreCliente
+            });
+        } else {
+            erroresValidacion.push(`Datos incompletos para ${nombreCliente || firestoreId}.`);
+            inputElement.closest('tr')?.classList.add('pago-registrado-error');
+        }
+    });
+    // --- Fin Lógica de Filtrado ---
+    if (pagosAProcesar.length === 0) {
+        let msg = 'No hay pagos seleccionados para registrar.';
+        if (erroresValidacion.length > 0) {
+            msg += ` Se encontraron ${erroresValidacion.length} errores: ${erroresValidacion[0]}`;
+        }
+        showStatus('status_pago_grupo', msg, 'warning');
+        return;
+    }
 
-    let pagosRegistrados = 0;
-    const erroresRegistro = [];
-    const promesasPagos = [];
+    if (erroresValidacion.length > 0) {
+        if (!confirm(`Se encontraron ${erroresValidacion.length} errores (ej: sobrepagos). ¿Deseas continuar y registrar solo los ${pagosAProcesar.length} pagos válidos?`)) {
+            return;
+        }
+    }
 
-    checkboxes.forEach(checkbox => {
-        const firestoreId = checkbox.getAttribute('data-firestore-id');
-        const montoPago = parseFloat(checkbox.getAttribute('data-monto'));
-        const histId = checkbox.getAttribute('data-hist-id'); // Necesario para database.agregarPago
-        const nombreCliente = checkbox.getAttribute('data-nombre');
+    showProcessingOverlay(true, `Registrando ${pagosAProcesar.length} pagos...`);
+    statusPagoGrupo.innerHTML = `Registrando ${pagosAProcesar.length} pagos seleccionados...`;
+    statusPagoGrupo.className = 'status-message status-info';
 
-        // Encontrar la oficina (la necesitamos para agregarPago, aunque no esté directo en el checkbox)
-        // Buscamos en la data guardada
-        let office = null;
-        for (const pob in cobranzaRutaData) {
-            const cred = cobranzaRutaData[pob].find(c => c.firestoreId === firestoreId);
-            if (cred) {
-                office = cred.office;
-                break;
-            }
-        }
+    let pagosRegistrados = 0;
+    const erroresRegistro = [];
+    const promesasPagos = [];
+    pagosAProcesar.forEach(pago => {
+        promesasPagos.push(
+            database.agregarPago(pago.pagoData, currentUser.email, pago.firestoreId)
+                .then(resultado => {
+                    if (resultado.success) {
+                        pagosRegistrados++;
+                        pago.inputElement.disabled = true;
+                        pago.checkboxElement.checked = false;
+                        pago.checkboxElement.disabled = true;
+                        pago.inputElement.closest('tr')?.classList.add('pago-registrado-exito');
+                    } else {
+                        erroresRegistro.push(`Cliente ${pago.nombreCliente}: ${resultado.message}`);
+                        pago.inputElement.closest('tr')?.classList.add('pago-registrado-error');
+                    }
+                })
+                .catch(error => {
+                    erroresRegistro.push(`Cliente ${pago.nombreCliente}: ${error.message}`);
+                    pago.inputElement.closest('tr')?.classList.add('pago-registrado-error');
+                })
+        );
+    });
 
-        if (montoPago > 0 && firestoreId && histId && office) {
-            const pagoData = {
-                idCredito: histId, // Historical ID
-                monto: montoPago,
-                tipoPago: 'grupal' // O podrías poner 'ruta'
-            };
+    try {
+        await Promise.all(promesasPagos);
 
-            promesasPagos.push(
-                database.agregarPago(pagoData, currentUser.email, firestoreId)
-                    .then(resultado => {
-                        if (resultado.success) {
-                            pagosRegistrados++;
-                            // Desmarcar y deshabilitar visualmente el checkbox/fila (opcional)
-                             checkbox.checked = false;
-                             checkbox.disabled = true;
-                             checkbox.closest('tr')?.classList.add('pago-registrado-exito');
-                        } else {
-                             erroresRegistro.push(`Cliente ${nombreCliente}: ${resultado.message}`);
-                             checkbox.closest('tr')?.classList.add('pago-registrado-error');
-                        }
-                    })
-                    .catch(error => {
-                        erroresRegistro.push(`Cliente ${nombreCliente}: ${error.message}`);
-                         checkbox.closest('tr')?.classList.add('pago-registrado-error');
-                    })
-            );
-        } else {
-            erroresRegistro.push(`Datos incompletos para registrar pago del cliente ${nombreCliente || firestoreId}. Monto: ${montoPago}, ID: ${firestoreId}, HistID: ${histId}, Office: ${office}`);
-             checkbox.closest('tr')?.classList.add('pago-registrado-error');
-        }
-    }); // Fin forEach
+        // --- INICIO DE LA CORRECCIÓN ---
+        let finalMessage = `Registro completado: ${pagosRegistrados} pagos registrados exitosamente.`;
+        let finalStatusType = 'success';
+        if (erroresRegistro.length > 0) {
+            finalMessage += ` ${erroresRegistro.length} pagos fallaron. Revisa la lista y la consola para detalles.`;
+            finalStatusType = (pagosRegistrados > 0) ? 'warning' : 'error';
+            console.error("Errores durante registro de pagos:", erroresRegistro);
+        }
 
-    try {
-        await Promise.all(promesasPagos);
-
-        let finalMessage = `Registro completado: ${pagosRegistrados} pagos registrados exitosamente.`;
-        let finalStatusType = 'success';
-
-        if (erroresRegistro.length > 0) {
-            finalMessage += ` ${erroresRegistro.length} pagos fallaron. Revisa la lista y la consola para detalles.`;
-            finalStatusType = (pagosRegistrados > 0) ? 'warning' : 'error';
-            console.error("Errores durante registro de pagos:", erroresRegistro);
-        }
-
-         showStatus('status_pago_grupo', finalMessage, finalStatusType);
-         // No limpiamos la vista aquí, solo actualizamos los checkboxes/filas
-
-         // Añadir estilos CSS para filas registradas (puedes poner esto en styles.css)
-         const style = document.createElement('style');
-         style.textContent = `
-            tr.pago-registrado-exito { opacity: 0.5; background-color: #d4edda !important; }
-            tr.pago-registrado-error { background-color: #f8d7da !important; }
-            tr.pago-registrado-exito td, tr.pago-registrado-error td { text-decoration: line-through; }
-         `;
-         document.head.appendChild(style);
-
-
-    } catch (error) {
-        console.error("Error crítico al procesar pagos:", error);
-        showStatus('status_pago_grupo', `Error crítico durante el registro: ${error.message}`, 'error');
-    } finally {
-        showProcessingOverlay(false);
-        // El botón sigue visible, solo lo rehabilitamos si es necesario
-        // showButtonLoading('#btn-registrar-pagos-offline', false); // Podría ser necesario si lo deshabilitas al inicio
-    }
+        showStatus('status_pago_grupo', finalMessage, finalStatusType);
+        const style = document.createElement('style');
+        style.textContent = `
+            tr.pago-registrado-exito { opacity: 0.5; background-color: #d4edda !important; }
+            tr.pago-registrado-exito input { background-color: #c3e6cb !important; }
+            tr.pago-registrado-error { background-color: #f8d7da !important; }
+            tr.pago-registrado-exito td, tr.pago-registrado-error td { text-decoration: line-through; }
+        `;
+        document.head.appendChild(style);
+        // --- FIN DE LA CORRECCIÓN ---
+    } catch (error) {
+        console.error("Error crítico al procesar pagos:", error);
+        showStatus('status_pago_grupo', `Error crítico durante el registro: ${error.message}`, 'error');
+    } finally {
+        showProcessingOverlay(false);
+    }
 }
 
 /**
@@ -2996,98 +3035,117 @@ async function loadBasicReports(userOffice = null) {
  * @param {HTMLElement} container Elemento HTML donde se renderizará la lista.
  */
 function renderizarCobranzaRuta(data, container) {
-    if (!data || Object.keys(data).length === 0) {
-        container.innerHTML = '<p>No hay datos de cobranza para mostrar.</p>';
-        return;
-    }
+    if (!data || Object.keys(data).length === 0) {
+        container.innerHTML = '<p>No hay datos de cobranza para mostrar.</p>';
+        return;
+    }
 
-    let html = '';
-    let totalGeneralCalculado = 0;
+    let html = '';
+    let totalGeneralCalculado = 0;
+    const poblacionesOrdenadas = Object.keys(data).sort();
 
-    // Ordenar poblaciones alfabéticamente
-    const poblacionesOrdenadas = Object.keys(data).sort();
+    poblacionesOrdenadas.forEach(poblacion => {
+        const creditos = data[poblacion];
+        let totalPoblacion = 0;
 
-    poblacionesOrdenadas.forEach(poblacion => {
-        const creditos = data[poblacion];
-        let totalPoblacion = 0;
+        html += `<div class="poblacion-group card">`;
+        html += `<h3>Población: ${poblacion} (${creditos.length} clientes)</h3>`;
+        html += `<table class="cobranza-ruta-table">
+                    <thead>
+                        <tr>
+                            <th>Cliente</th>
+                            <th>ID Crédito</th>
+                            <th title="Pago semanal de referencia">Pago Sem. (Ref)</th>
+                            <th>Saldo Rest.</th>
+                            <th>Monto a Pagar</th>
+                            <th>Pagar</th>
+                        </tr>
+                    </thead>
+                    <tbody>`;
 
-        html += `<div class="poblacion-group card">`;
-        html += `<h3>Población: ${poblacion} (${creditos.length} clientes)</h3>`;
-        html += `<table class="cobranza-ruta-table">
-                    <thead>
-                        <tr>
-                            <th>Cliente</th>
-                            <th>ID Crédito</th>
-                            <th>Pago Sem.</th>
-                            <th>Saldo Rest.</th>
-                            <th>Registrar</th>
-                        </tr>
-                    </thead>
-                    <tbody>`;
+        creditos.forEach(cred => {
+            const linkId = cred.firestoreId; 
+            totalPoblacion += cred.pagoSemanal;
+            html += `<tr>
+                        <td>${cred.nombreCliente}<br><small>${cred.curpCliente}</small></td>
+                        <td>${cred.historicalIdCredito}</td>
+                        <td class="monto-pago" title="Pago semanal sugerido">$${cred.pagoSemanal.toFixed(2)}</td>
+                        <td>$${cred.saldoRestante.toFixed(2)}</td>
+                        <td>
+                            <input 
+                                type="number" 
+                                class="form-control pago-grupal-input" 
+                                min="0" 
+                                step="0.01" 
+                                placeholder="0.00"
+                                value="${cred.pagoSemanal.toFixed(2)}"
+                                data-id-link="${linkId}" 
+                                data-saldo-max="${cred.saldoRestante.toFixed(2)}"
+                            >
+                        </td>
+                        <td class="checkbox-cell">
+                            <input 
+                                type="checkbox" 
+                                class="pago-grupal-check" 
+                                data-id-link="${linkId}"
+                                data-firestore-id="${cred.firestoreId}"
+                                data-hist-id="${cred.historicalIdCredito}" 
+                                data-nombre="${cred.nombreCliente}"
+                            >
+                        </td>
+                     </tr>`;
+        });
 
-        creditos.forEach(cred => {
-            totalPoblacion += cred.pagoSemanal;
-            html += `<tr>
-                        <td>${cred.nombreCliente}<br><small>${cred.curpCliente}</small></td>
-                        <td>${cred.historicalIdCredito}</td>
-                        <td class="monto-pago">$${cred.pagoSemanal.toFixed(2)}</td>
-                        <td>$${cred.saldoRestante.toFixed(2)}</td>
-                        <td><input type="checkbox" class="pago-grupal-check" data-firestore-id="${cred.firestoreId}" data-monto="${cred.pagoSemanal.toFixed(2)}" data-hist-id="${cred.historicalIdCredito}" data-nombre="${cred.nombreCliente}"></td>
-                     </tr>`;
-        });
+        totalGeneralCalculado += totalPoblacion;
+        html += `</tbody>
+                 <tfoot>
+                     <tr>
+                         <td colspan="2"><b>Total Sugerido:</b></td>
+                         <td><b>$${totalPoblacion.toFixed(2)}</b></td>
+                         <td colspan="3"></td>
+                     </tr>
+                 </tfoot>
+                 </table>`;
+        html += `</div>`;
+    });
+    const resumenGeneral = `
+        <div class="info-grid card" style="background: #eef; padding: 15px; margin-bottom: 20px;">
+            <div class="info-item">
+                <span class="info-label">Ruta:</span>
+                <span class="info-value">${currentUserData?.ruta || 'N/A'}</span>
+            </div>
+             <div class="info-item">
+                <span class="info-label">Total Poblaciones:</span>
+                <span class="info-value">${poblacionesOrdenadas.length}</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">Total Clientes Pendientes:</span>
+                <span class="info-value">${poblacionesOrdenadas.reduce((sum, pob) => sum + data[pob].length, 0)}</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">Total Semanal Sugerido:</span>
+                <span class="info-value" style="font-size: 1.1em; font-weight: bold;">$${totalGeneralCalculado.toFixed(2)}</span>
+            </div>
+        </div>
+    `;
 
-        totalGeneralCalculado += totalPoblacion;
-        html += `</tbody>
-                 <tfoot>
-                     <tr>
-                         <td colspan="2"><b>Total Población:</b></td>
-                         <td><b>$${totalPoblacion.toFixed(2)}</b></td>
-                         <td colspan="2"></td>
-                     </tr>
-                 </tfoot>
-                 </table>`;
-        html += `</div>`; // Fin poblacion-group
-    });
-
-    // Añadir resumen general al principio
-    const resumenGeneral = `
-        <div class="info-grid card" style="background: #eef; padding: 15px; margin-bottom: 20px;">
-            <div class="info-item">
-                <span class="info-label">Ruta:</span>
-                <span class="info-value">${currentUserData?.ruta || 'N/A'}</span>
-            </div>
-             <div class="info-item">
-                <span class="info-label">Total Poblaciones:</span>
-                <span class="info-value">${poblacionesOrdenadas.length}</span>
-            </div>
-            <div class="info-item">
-                <span class="info-label">Total Clientes Pendientes:</span>
-                <span class="info-value">${poblacionesOrdenadas.reduce((sum, pob) => sum + data[pob].length, 0)}</span>
-            </div>
-            <div class="info-item">
-                <span class="info-label">Total General Esperado:</span>
-                <span class="info-value" style="font-size: 1.1em; font-weight: bold;">$${totalGeneralCalculado.toFixed(2)}</span>
-            </div>
-        </div>
-    `;
-
-    container.innerHTML = resumenGeneral + html;
-
-    // Añadir estilo CSS para la tabla (puedes poner esto en styles.css)
-    const style = document.createElement('style');
-    style.textContent = `
-        .poblacion-group { margin-bottom: 20px; padding: 15px; background: #fff; border: 1px solid #eee; }
-        .poblacion-group h3 { margin-bottom: 10px; font-size: 1.1em; color: var(--primary); border-bottom: 1px solid #eee; padding-bottom: 5px;}
-        .cobranza-ruta-table { width: 100%; border-collapse: collapse; font-size: 0.9em; }
-        .cobranza-ruta-table th, .cobranza-ruta-table td { padding: 6px 4px; border: 1px solid #ddd; text-align: left; vertical-align: middle; }
-        .cobranza-ruta-table thead th { background: #f8f9fa; font-weight: bold; }
-        .cobranza-ruta-table tbody tr:nth-child(even) { background: #f8f9fa; }
-        .cobranza-ruta-table tfoot td { font-weight: bold; background: #e9ecef; }
-        .cobranza-ruta-table td:nth-child(3), .cobranza-ruta-table td:nth-child(4), .cobranza-ruta-table th:nth-child(3), .cobranza-ruta-table th:nth-child(4) { text-align: right; }
-        .cobranza-ruta-table td:last-child, .cobranza-ruta-table th:last-child { text-align: center; }
-        .cobranza-ruta-table input[type="checkbox"] { width: 18px; height: 18px; }
-    `;
-    document.head.appendChild(style);
+    container.innerHTML = resumenGeneral + html;
+    const style = document.createElement('style');
+    style.textContent = `
+        .poblacion-group { margin-bottom: 20px; padding: 15px; background: #fff; border: 1px solid #eee; }
+        .poblacion-group h3 { margin-bottom: 10px; font-size: 1.1em; color: var(--primary); border-bottom: 1px solid #eee; padding-bottom: 5px;}
+        .cobranza-ruta-table { width: 100%; border-collapse: collapse; font-size: 0.9em; }
+        .cobranza-ruta-table th, .cobranza-ruta-table td { padding: 6px 4px; border: 1px solid #ddd; text-align: left; vertical-align: middle; }
+        .cobranza-ruta-table thead th { background: #f8f9fa; font-weight: bold; }
+        .cobranza-ruta-table tbody tr:nth-child(even) { background: #f8f9fa; }
+        .cobranza-ruta-table tfoot td { font-weight: bold; background: #e9ecef; }
+        .cobranza-ruta-table td:nth-child(3), .cobranza-ruta-table td:nth-child(4), .cobranza-ruta-table th:nth-child(3), .cobranza-ruta-table th:nth-child(4) { text-align: right; }
+        .cobranza-ruta-table td:nth-child(5) { width: 120px; }
+        .cobranza-ruta-table td:last-child, .cobranza-ruta-table th:last-child { text-align: center; width: 60px; }
+        .pago-grupal-input { text-align: right; font-weight: bold; padding: 4px 6px; max-width: 110px; }
+        .cobranza-ruta-table input[type="checkbox"] { width: 18px; height: 18px; }
+    `;
+    document.head.appendChild(style);
 }
 
 
@@ -6083,6 +6141,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
