@@ -515,7 +515,7 @@ async function loadClientesTable() {
         for (const [index, cliente] of clientesFiltrados.entries()) {
             if (operationId !== currentSearchOperation) throw new Error("Búsqueda cancelada");
             clientesMap.set(cliente.curp, cliente);
-                const creditosDelCliente = await database.buscarCreditosPorCliente(cliente.curp);
+                const creditosDelCliente = await database.buscarCreditosPorCliente(cliente.curp, filtros.userOffice);
                 creditosAMostrar.push(...creditosDelCliente);
                 progress = 40 + Math.round((index / clientesFiltrados.length) * 30);
             showFixedProgress(progress, `Revisando cliente ${index + 1} de ${clientesFiltrados.length}`);
@@ -6083,5 +6083,6 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
