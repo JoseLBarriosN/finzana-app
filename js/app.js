@@ -3139,9 +3139,11 @@ function renderizarCobranzaRuta(data, container) {
         .cobranza-ruta-table thead th { background: #f8f9fa; font-weight: bold; }
         .cobranza-ruta-table tbody tr:nth-child(even) { background: #f8f9fa; }
         .cobranza-ruta-table tfoot td { font-weight: bold; background: #e9ecef; }
-        .cobranza-ruta-table td:nth-child(3), .cobranza-ruta-table td:nth-child(4), .cobranza-ruta-table th:nth-child(3), .cobranza-ruta-table th:nth-child(4) { text-align: right; }
-        .cobranza-ruta-table td:nth-child(5) { width: 120px; }
-        .cobranza-ruta-table td:last-child, .cobranza-ruta-table th:last-child { text-align: center; width: 60px; }
+        .cobranza-ruta-table td:nth-child(3), .cobranza-ruta-table th:nth-child(3),
+        .cobranza-ruta-table td:nth-child(4), .cobranza-ruta-table th:nth-child(4) { text-align: right; }
+        .cobranza-ruta-table th:nth-child(5) { text-align: center; width: 120px; }
+        .cobranza-ruta-table td:nth-child(5) { text-align: right; width: 120px; }
+        .cobranza-ruta-table th:last-child, .cobranza-ruta-table td:last-child { text-align: center; width: 60px; }
         .pago-grupal-input { text-align: right; font-weight: bold; padding: 4px 6px; max-width: 110px; }
         .cobranza-ruta-table input[type="checkbox"] { width: 18px; height: 18px; }
     `;
@@ -6141,6 +6143,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
