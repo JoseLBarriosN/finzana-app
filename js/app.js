@@ -3035,46 +3035,43 @@ async function loadBasicReports(userOffice = null) {
  * @param {HTMLElement} container Elemento HTML donde se renderizará la lista.
  */
 function renderizarCobranzaRuta(data, container) {
-    if (!data || Object.keys(data).length === 0) {
-        container.innerHTML = '<p>No hay datos de cobranza para mostrar.</p>';
-        return;
-    }
+    if (!data || Object.keys(data).length === 0) {
+        container.innerHTML = '<p>No hay datos de cobranza para mostrar.</p>';
+        return;
+    }
 
-    let html = '';
-    let totalGeneralCalculado = 0;
-    const poblacionesOrdenadas = Object.keys(data).sort();
-
-    poblacionesOrdenadas.forEach(poblacion => {
-        const creditos = data[poblacion];
-        let totalPoblacion = 0;
-
-        html += `<div class="poblacion-group card">`;
-        html += `<h3>Población: ${poblacion} (${creditos.length} clientes)</h3>`;
-        html += `<table class="cobranza-ruta-table">
-                    <thead>
-                        <tr>
-                            <th>Cliente</th>
-                            <th>ID Crédito</th>
-                            <th title="Pago semanal de referencia">Pago Sem. (Ref)</th>
-                            <th>Saldo Rest.</th>
-                            <th>Monto a Pagar</th>
+    let html = '';
+    let totalGeneralCalculado = 0;
+    const poblacionesOrdenadas = Object.keys(data).sort();
+    poblacionesOrdenadas.forEach(poblacion => {
+        const creditos = data[poblacion];
+        let totalPoblacion = 0;
+        html += `<div class="poblacion-group card">`;
+        html += `<h3>Población: ${poblacion} (${creditos.length} clientes)</h3>`;
+        html += `<table class="cobranza-ruta-table">
+                    <thead>
+                        <tr>
+                            <th>Cliente</th>
+                            <th>ID Crédito</th>
+                            <th title="Pago semanal de referencia">Pago Sem. (Ref)</th>
+                            <th>Saldo Rest.</th>
+                            <th>Monto a Pagar</th>
                             <th>Pagar</th>
-                        </tr>
-                    </thead>
-                    <tbody>`;
-
-        creditos.forEach(cred => {
+                        </tr>
+                    </thead>
+                    <tbody>`;
+        creditos.forEach(cred => {
             const linkId = cred.firestoreId; 
-            totalPoblacion += cred.pagoSemanal;
-            html += `<tr>
-                        <td>${cred.nombreCliente}<br><small>${cred.curpCliente}</small></td>
-                        <td>${cred.historicalIdCredito}</td>
-                        <td class="monto-pago" title="Pago semanal sugerido">$${cred.pagoSemanal.toFixed(2)}</td>
-                        <td>$${cred.saldoRestante.toFixed(2)}</td>
-                        <td>
+            totalPoblacion += cred.pagoSemanal;
+            html += `<tr>
+                        <td>${cred.nombreCliente}<br><small>${cred.curpCliente}</small></td>
+                        <td>${cred.historicalIdCredito}</td>
+                        <td class="monto-pago" title="Pago semanal sugerido">$${cred.pagoSemanal.toFixed(2)}</td>
+                        <td>$${cred.saldoRestante.toFixed(2)}</td>
+                        <td>
                             <input 
                                 type="number" 
-                                class="form-control pago-grupal-input" 
+                                class="pago-grupal-input" 
                                 min="0" 
                                 step="0.01" 
                                 placeholder="0.00"
@@ -3083,7 +3080,7 @@ function renderizarCobranzaRuta(data, container) {
                                 data-saldo-max="${cred.saldoRestante.toFixed(2)}"
                             >
                         </td>
-                        <td class="checkbox-cell">
+                        <td class="checkbox-cell">
                             <input 
                                 type="checkbox" 
                                 class="pago-grupal-check" 
@@ -3093,63 +3090,60 @@ function renderizarCobranzaRuta(data, container) {
                                 data-nombre="${cred.nombreCliente}"
                             >
                         </td>
-                     </tr>`;
-        });
-
-        totalGeneralCalculado += totalPoblacion;
-        html += `</tbody>
-                 <tfoot>
-                     <tr>
-                         <td colspan="2"><b>Total Sugerido:</b></td>
-                         <td><b>$${totalPoblacion.toFixed(2)}</b></td>
-                         <td colspan="3"></td>
-                     </tr>
-                 </tfoot>
-                 </table>`;
-        html += `</div>`;
-    });
-    const resumenGeneral = `
-        <div class="info-grid card" style="background: #eef; padding: 15px; margin-bottom: 20px;">
-            <div class="info-item">
-                <span class="info-label">Ruta:</span>
-                <span class="info-value">${currentUserData?.ruta || 'N/A'}</span>
-            </div>
-             <div class="info-item">
-                <span class="info-label">Total Poblaciones:</span>
-                <span class="info-value">${poblacionesOrdenadas.length}</span>
-            </div>
-            <div class="info-item">
-                <span class="info-label">Total Clientes Pendientes:</span>
-                <span class="info-value">${poblacionesOrdenadas.reduce((sum, pob) => sum + data[pob].length, 0)}</span>
-            </div>
-            <div class="info-item">
-                <span class="info-label">Total Semanal Sugerido:</span>
-                <span class="info-value" style="font-size: 1.1em; font-weight: bold;">$${totalGeneralCalculado.toFixed(2)}</span>
-            </div>
-        </div>
-    `;
-
-    container.innerHTML = resumenGeneral + html;
-    const style = document.createElement('style');
-    style.textContent = `
-        .poblacion-group { margin-bottom: 20px; padding: 15px; background: #fff; border: 1px solid #eee; }
-        .poblacion-group h3 { margin-bottom: 10px; font-size: 1.1em; color: var(--primary); border-bottom: 1px solid #eee; padding-bottom: 5px;}
-        .cobranza-ruta-table { width: 100%; border-collapse: collapse; font-size: 0.9em; }
-        .cobranza-ruta-table th, .cobranza-ruta-table td { padding: 6px 4px; border: 1px solid #ddd; text-align: left; vertical-align: middle; }
-        .cobranza-ruta-table thead th { background: #f8f9fa; font-weight: bold; }
-        .cobranza-ruta-table tbody tr:nth-child(even) { background: #f8f9fa; }
-        .cobranza-ruta-table tfoot td { font-weight: bold; background: #e9ecef; }
-        .cobranza-ruta-table td:nth-child(3), .cobranza-ruta-table th:nth-child(3),
-        .cobranza-ruta-table td:nth-child(4), .cobranza-ruta-table th:nth-child(4) { text-align: right; }
-        .cobranza-ruta-table th:nth-child(5) { text-align: center; width: 120px; }
-        .cobranza-ruta-table td:nth-child(5) { text-align: right; width: 120px; }
-        .cobranza-ruta-table th:last-child, .cobranza-ruta-table td:last-child { text-align: center; width: 60px; }
-        .pago-grupal-input { text-align: right; font-weight: bold; padding: 4px 6px; max-width: 110px; }
-        .cobranza-ruta-table input[type="checkbox"] { width: 18px; height: 18px; }
-    `;
-    document.head.appendChild(style);
+                       </tr>`;
+        });
+        totalGeneralCalculado += totalPoblacion;
+        html += `</tbody>
+                  <tfoot>
+                       <tr>
+                           <td colspan="2"><b>Total Sugerido:</b></td>
+                           <td><b>$${totalPoblacion.toFixed(2)}</b></td>
+                           <td colspan="3"></td>
+                       </tr>
+                  </tfoot>
+                 </table>`;
+        html += `</div>`;
+    });
+    const resumenGeneral = `
+        <div class="info-grid card" style="background: #eef; padding: 15px; margin-bottom: 20px;">
+            <div class="info-item">
+                <span class="info-label">Ruta:</span>
+                <span class="info-value">${currentUserData?.ruta || 'N/A'}</span>
+            </div>
+             <div class="info-item">
+                <span class="info-label">Total Poblaciones:</span>
+                <span class="info-value">${poblacionesOrdenadas.length}</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">Total Clientes Pendientes:</span>
+                <span class="info-value">${poblacionesOrdenadas.reduce((sum, pob) => sum + data[pob].length, 0)}</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">Total Semanal Sugerido:</span>
+                <span class="info-value" style="font-size: 1.1em; font-weight: bold;">$${totalGeneralCalculado.toFixed(2)}</span>
+            </div>
+        </div>
+    `;
+    container.innerHTML = resumenGeneral + html;
+    const style = document.createElement('style');
+    style.textContent = `
+        .poblacion-group { margin-bottom: 20px; padding: 15px; background: #fff; border: 1px solid #eee; }
+        .poblacion-group h3 { margin-bottom: 10px; font-size: 1.1em; color: var(--primary); border-bottom: 1px solid #eee; padding-bottom: 5px;}
+        .cobranza-ruta-table { width: 100%; border-collapse: collapse; font-size: 0.9em; }
+        .cobranza-ruta-table th, .cobranza-ruta-table td { padding: 6px 4px; border: 1px solid #ddd; text-align: left; vertical-align: middle; }
+        .cobranza-ruta-table thead th { background: #f8f9fa; font-weight: bold; }
+        .cobranza-ruta-table tbody tr:nth-child(even) { background: #f8f9fa; }
+        .cobranza-ruta-table tfoot td { font-weight: bold; background: #e9ecef; }
+        .cobranza-ruta-table td:nth-child(3), .cobranza-ruta-table th:nth-child(3),
+        .cobranza-ruta-table td:nth-child(4), .cobranza-ruta-table th:nth-child(4) { text-align: right; }
+        .cobranza-ruta-table th:nth-child(5) { text-align: center; width: 120px; }
+        .cobranza-ruta-table td:nth-child(5) { text-align: center; width: 120px; } 
+        .cobranza-ruta-table th:last-child, .cobranza-ruta-table td:last-child { text-align: center; width: 60px; }
+        .pago-grupal-input { text-align: right; font-weight: bold; padding: 4px 6px; max-width: 110px; } 
+        .cobranza-ruta-table input[type="checkbox"] { width: 18px; height: 18px; }
+    `;
+    document.head.appendChild(style);
 }
-
 
 /**
  * Guarda la lista de cobranza calculada (cobranzaRutaData) en localStorage.
@@ -6143,6 +6137,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
