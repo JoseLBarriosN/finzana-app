@@ -897,10 +897,15 @@
                     </div>
 
                     <div class="form-group">
-                        <label for="grafico-colores">Colores personalizados (opcional):</label>
-                            <input type="text" id="grafico-colores" placeholder="#FF6384,#36A2EB,#FFCE56,#4BC0C0,#9966FF" 
-                                title="Ingresa colores en formato HEX separados por comas">
-                        <small class="field-note">Ejemplo: #FF6384,#36A2EB,#FFCE56 (máximo 5 colores)</small>
+                        <label for="grafico-colores-container">Colores Personalizados (opcional):</label>
+                        <div id="grafico-colores-container" class="color-picker-container">
+                            <input type="color" id="color-picker-1" value="#FF6384" title="Color 1">
+                            <input type="color" id="color-picker-2" value="#36A2EB" title="Color 2">
+                            <input type="color" id="color-picker-3" value="#FFCE56" title="Color 3">
+                            <input type="color" id="color-picker-4" value="#4BC0C0" title="Color 4">
+                            <input type="color" id="color-picker-5" value="#9966FF" title="Color 5">
+                        </div>
+                        <small class="field-note">Selecciona los colores para tu gráfico.</small>
                     </div>
                     
                 </div>
