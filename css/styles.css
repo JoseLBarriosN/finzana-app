@@ -2023,4 +2023,48 @@ tr.pago-registrado-exito td, tr.pago-registrado-error td {
     .btn-eliminar-poblacion {
         width: 100%;
     }
+
+    /* =============================================
+   ESTILOS PARA SELECTORES DE COLOR (GRÁFICOS)
+   ============================================= */
+
+.color-picker-container {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap; /* Para que se ajusten en móvil */
+    padding-top: 5px;
 }
+
+.color-picker-container input[type="color"] {
+    width: 40px;  /* Ancho fijo */
+    height: 40px; /* Alto fijo */
+    padding: 0;   /* Quitar padding default */
+    border: 2px solid var(--border-color);
+    border-radius: 8px;
+    cursor: pointer;
+    -webkit-appearance: none; /* Quitar apariencia de sistema */
+    -moz-appearance: none;
+    appearance: none;
+    background-color: transparent; /* Quitar fondo default */
+}
+
+/* Estilo para el cuadro de color interno (Chrome/Edge/Safari) */
+.color-picker-container input[type="color"]::-webkit-color-swatch-wrapper {
+    padding: 0;
+    border-radius: 6px; /* Radio interno */
+}
+
+.color-picker-container input[type="color"]::-webkit-color-swatch {
+    border: none;
+    border-radius: 6px;
+}
+
+/* Estilo para el cuadro de color interno (Firefox) */
+.color-picker-container input[type="color"]::-moz-color-swatch {
+    border: none;
+    border-radius: 6px;
+}
+    
+}
+
