@@ -485,22 +485,31 @@ async function loadClientesTable() {
             soloComisionistas: document.getElementById('comisionista_filtro')?.checked || false
         };
 
-        const hayFiltros = Object.values(filtros).some((val, key) => val && val.trim() !== '' && key !== 'userOffice');
+        const hayFiltros = Object.values(filtros).some((val, index) => {
+            const key = Object.keys(filtros)[index];
+            if (key === 'userOffice') return false; 
+            if (typeof val === 'string') {
+                return val.trim() !== '';
+            }
+            if (typeof val === 'boolean') {
+                return val === true;
+            }
+            return false;
+        });
+
         if (!hayFiltros) {
             tbody.innerHTML = '<tr><td colspan="6">Por favor, especifica al menos un criterio de búsqueda.</td></tr>';
             throw new Error("Búsqueda vacía");
         }
 
         let creditosAMostrar = [];
-        const clientesMap = new Map(); // Cache para client data
+        const clientesMap = new Map();
         showFixedProgress(25, 'Obteniendo datos base...');
 
         if (filtros.idCredito) {
-            // --- PATH 1: Search by Credit ID (Historical ID) ---
             creditosAMostrar = await database.buscarCreditosPorHistoricalId(filtros.idCredito, { userOffice: filtros.userOffice, office: filtros.office });
         } else if (filtros.curp || filtros.nombre || filtros.grupo || filtros.office) {
-            // --- PATH 2: Search by Client Filters ---
-            const clientesIniciales = await database.buscarClientes(filtros); // filtros ya incluye userSucursal
+            const clientesIniciales = await database.buscarClientes(filtros);
                 let clientesFiltrados = clientesIniciales;
             if (filtros.soloComisionistas) {
             clientesFiltrados = clientesIniciales.filter(c => c.isComisionista === true);
@@ -522,7 +531,6 @@ async function loadClientesTable() {
         }
             
         } else if (filtros.curpAval || filtros.plazo || filtros.estado) {
-            // --- PATH 3: Search by Credit-Only Filters ---
             showFixedProgress(40, `Buscando créditos por filtros...`);
             creditosAMostrar = await database.buscarCreditos(filtros);
         } else {
@@ -546,11 +554,9 @@ async function loadClientesTable() {
             creditosProcesados++;
             const progress = 70 + Math.round((creditosProcesados / creditosAMostrar.length) * 30);
             showFixedProgress(progress, `Procesando crédito ${creditosProcesados} de ${creditosAMostrar.length}...`);
-
-            // 1. Get Client Data
             let cliente = clientesMap.get(credito.curpCliente);
             if (!cliente) {
-                cliente = await database.buscarClientePorCURP(credito.curpCliente, filtros.userOffice); // Aplicar filtro sucursal aquí también
+                cliente = await database.buscarClientePorCURP(credito.curpCliente, filtros.userOffice);
                 if (cliente) {
                     clientesMap.set(cliente.curp, cliente);
                 } else {
@@ -559,7 +565,6 @@ async function loadClientesTable() {
                 }
             }
 
-            // 2. Get Payments & Calculate Status
             const historicalId = credito.historicalIdCredito || credito.id;
             const pagos = await database.getPagosPorCredito(historicalId, credito.office);
             pagos.sort((a, b) => (parsearFecha(b.fecha)?.getTime() || 0) - (parsearFecha(a.fecha)?.getTime() || 0));
@@ -572,7 +577,6 @@ async function loadClientesTable() {
                 continue;
             }
 
-            // 3. Apply secondary filters
             if (filtros.estado && estadoCalculado.estado !== filtros.estado) continue;
             if (filtros.plazo && credito.plazo != filtros.plazo) continue;
             if (filtros.curpAval && (!credito.curpAval || !credito.curpAval.toUpperCase().includes(filtros.curpAval.toUpperCase()))) continue;
@@ -583,7 +587,6 @@ async function loadClientesTable() {
 
             resultadosEncontrados++;
 
-            // --- Build the Row ---
             const fechaInicioCredito = formatDateForDisplay(parsearFecha(credito.fechaCreacion));
             const fechaUltimoPago = formatDateForDisplay(ultimoPago ? parsearFecha(ultimoPago.fecha) : null);
             const comisionistaBadge = cliente.isComisionista ? '<span class="comisionista-badge-cliente" title="Comisionista">★</span>' : '';
@@ -6138,6 +6141,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
