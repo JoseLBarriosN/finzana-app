@@ -2653,26 +2653,24 @@ async function handleCalcularCobranzaRuta() {
     const btnGuardar = document.getElementById('btn-guardar-cobranza-offline');
     const btnRegistrar = document.getElementById('btn-registrar-pagos-offline');
     const container = document.getElementById('cobranza-ruta-container');
-    const placeholder = document.getElementById('cobranza-ruta-placeholder');
-
+    const placeholder = document.getElementById('cobranza-ruta-placeholder');    
     if (!currentUserData || !currentUserData.ruta || !currentUserData.office || currentUserData.office === 'AMBAS') {
         showStatus('status_pago_grupo', 'Error: Debes tener una ruta y oficina única asignada para usar esta función.', 'error');
-        resetInactivityTimer(); // Reactivar si fallamos rápido
+        resetInactivityTimer();
         return;
     }
     if (!navigator.onLine) {
         showStatus('status_pago_grupo', 'Error: Se necesita conexión a internet para calcular la cobranza de la ruta.', 'error');
-        resetInactivityTimer(); // Reactivar si fallamos rápido
+        resetInactivityTimer();
         return;
     }
 
     const userRuta = currentUserData.ruta;
-    const userOffice = currentUserData.office; // Oficina del usuario
+    const userOffice = currentUserData.office;
     const esAdminConAccesoTotal = (currentUserData?.role === 'Super Admin' || currentUserData?.role === 'Gerencia');
     cargaEnProgreso = true;
     currentSearchOperation = Date.now();
     const operationId = currentSearchOperation;
-
     showButtonLoading(btnCalcular, true, 'Calculando...');
     showFixedProgress(5, `Calculando cobranza para ruta ${userRuta}...`);
     statusPagoGrupo.innerHTML = `Buscando poblaciones para la ruta ${userRuta}...`;
@@ -2684,36 +2682,29 @@ async function handleCalcularCobranzaRuta() {
     if (btnRegistrar) btnRegistrar.classList.add('hidden');
 
     try {
-        // 1. Obtener las poblaciones
+
         statusPagoGrupo.textContent = `Buscando poblaciones asignadas a ruta ${userRuta}...`;
         let poblacionesQuery = db.collection('poblaciones')
-                                     .where('ruta', '==', userRuta);
-        
+                                     .where('ruta', '==', userRuta);    
         if (!esAdminConAccesoTotal) {
-            // Un 'Área comercial' solo puede ver poblaciones de su propia oficina
             poblacionesQuery = poblacionesQuery.where('office', '==', userOffice);
         }
 
         const poblacionesSnapshot = await poblacionesQuery.get();
         const nombresPoblacionesDeLaRuta = poblacionesSnapshot.docs.map(doc => doc.data().nombre);
-        
         if (nombresPoblacionesDeLaRuta.length === 0) { 
             throw new Error(`No se encontraron poblaciones asignadas a la ruta ${userRuta}` + (esAdminConAccesoTotal ? '.' : ` en tu oficina (${userOffice}).`)); 
         }
+        
         console.log(`Poblaciones encontradas para la ruta ${userRuta}:`, nombresPoblacionesDeLaRuta);
-
-        // 2. Buscar clientes
         showFixedProgress(20, `Buscando clientes en ${nombresPoblacionesDeLaRuta.length} poblaciones...`);
         const clientesDeLasPoblaciones = [];
-        const MAX_IN_VALUES = 10; // Límite real de Firebase para consultas 'in'
-
+        const MAX_IN_VALUES = 10;
         for (let i = 0; i < nombresPoblacionesDeLaRuta.length; i += MAX_IN_VALUES) {
             const chunkPoblaciones = nombresPoblacionesDeLaRuta.slice(i, i + MAX_IN_VALUES);
             let clientesQuery = db.collection('clientes')
                                     .where('poblacion_grupo', 'in', chunkPoblaciones);
-
             if (!esAdminConAccesoTotal) {
-                // Un 'Área comercial' solo puede ver clientes de su propia oficina
                 clientesQuery = clientesQuery.where('office', '==', userOffice);
             }
 
@@ -2726,36 +2717,29 @@ async function handleCalcularCobranzaRuta() {
             throw new Error(`No se encontraron clientes en las poblaciones de la ruta ${userRuta}` + (esAdminConAccesoTotal ? '.' : ` asignados a tu oficina (${userOffice}).`)); 
         }
 
-        // 3. Procesar clientes
         showFixedProgress(40, `Procesando ${clientesDeLasPoblaciones.length} clientes...`);
         let creditosPendientes = [];
         let poblacionesEncontradasSet = new Set();
         let totalGeneralACobrar = 0;
         let clientesConErrores = 0;
         const totalClientes = clientesDeLasPoblaciones.length;
-
         for (const [index, cliente] of clientesDeLasPoblaciones.entries()) {
             if (operationId !== currentSearchOperation) throw new Error("Operación cancelada");            
             const progress = 40 + Math.round(((index + 1) / totalClientes) * 50);
             showFixedProgress(progress, `Procesando cliente ${index + 1} de ${totalClientes}...`);
-
             if (!nombresPoblacionesDeLaRuta.includes(cliente.poblacion_grupo)) { continue; }
-
-            // Usar la oficina DEL CLIENTE para buscar su crédito
             const clienteOffice = cliente.office; 
             if (!clienteOffice) {
                 console.warn(`Cliente ${cliente.curp} omitido por no tener oficina asignada.`);
                 continue;
             }
-            const creditoActivo = await database.buscarCreditoActivoPorCliente(cliente.curp, clienteOffice);           
+
+            const creditoActivo = await database.buscarCreditoActivoPorCliente(cliente.curp, clienteOffice);            
             if (creditoActivo) {
                 const pagos = await database.getPagosPorCredito(creditoActivo.historicalIdCredito || creditoActivo.id, creditoActivo.office);
                 pagos.sort((a, b) => (parsearFecha(b.fecha)?.getTime() || 0) - (parsearFecha(a.fecha)?.getTime() || 0));
                 const estadoCalc = _calcularEstadoCredito(creditoActivo, pagos);
-
                 if (estadoCalc && estadoCalc.estado !== 'liquidado' && estadoCalc.pagoSemanal > 0.01) {
-                    
-                    // --- Lógica de pago acumulado (Mod 1) ---
                     const pagoSemanalRef = estadoCalc.pagoSemanal;
                     const semanasAtraso = estadoCalc.semanasAtraso || 0;
                     const saldoRestante = estadoCalc.saldoRestante;
@@ -2766,22 +2750,24 @@ async function handleCalcularCobranzaRuta() {
                         montoAcumulado = pagoSemanalRef;
                     }
                     const tolerancia = 0.015; 
-                    let montoAPagarFinal = Math.min(montoAcumulado, saldoRestante + tolerancia); 
-                    montoAPagarFinal = Math.max(0, parseFloat(montoAPagarFinal.toFixed(2)));     
+                    let montoAPagarFinal = Math.min(montoAcumulado, saldoRestante + tolerancia);
+                    montoAPagarFinal = Math.max(0, parseFloat(montoAPagarFinal.toFixed(2))); 
                     if (saldoRestante < 0.01) {
                         montoAPagarFinal = 0.00;
                     }
+                    
                     poblacionesEncontradasSet.add(cliente.poblacion_grupo);
                     totalGeneralACobrar += pagoSemanalRef; 
+                    
                     creditosPendientes.push({
                         firestoreId: creditoActivo.id,
                         historicalIdCredito: creditoActivo.historicalIdCredito || creditoActivo.id,
                         nombreCliente: cliente.nombre,
                         curpCliente: cliente.curp,
-                        pagoSemanalAcumulado: montoAPagarFinal,    
-                        pagoSemanalReferencia: pagoSemanalRef,     
+                        pagoSemanalAcumulado: montoAPagarFinal,
+                        pagoSemanalReferencia: pagoSemanalRef,
                         saldoRestante: estadoCalc.saldoRestante,
-                        estadoCredito: estadoCalc.estado,         
+                        estadoCredito: estadoCalc.estado,
                         office: creditoActivo.office
                     });
 
@@ -2798,6 +2784,7 @@ async function handleCalcularCobranzaRuta() {
             }
             throw new Error('No se encontraron créditos con cobranza pendiente para esta ruta y oficina.'); 
         }
+
         showFixedProgress(95, 'Agrupando y renderizando resultados...');
         cobranzaRutaData = {};
         creditosPendientes.forEach(cred => {
@@ -2828,7 +2815,7 @@ async function handleCalcularCobranzaRuta() {
         if (placeholder) {
             placeholder.textContent = `Error al calcular: ${error.message}`;
             placeholder.classList.remove('hidden');
-     Gira   }       
+        }       
         container.innerHTML = '';
         cobranzaRutaData = null;
         if (btnGuardar) btnGuardar.classList.add('hidden');
@@ -2850,7 +2837,7 @@ async function handleCalcularCobranzaRuta() {
 async function handleRegistroPagoGrupal() {
     const statusPagoGrupo = document.getElementById('status_pago_grupo');
     const container = document.getElementById('cobranza-ruta-container');
-    const checkboxes = container.querySelectorAll('.pago-grupal-check:checked'); // 1. Buscar checkboxes marcados
+    const checkboxes = container.querySelectorAll('.pago-grupal-check:checked');
 
     if (!cobranzaRutaData || Object.keys(cobranzaRutaData).length === 0) {
         showStatus('status_pago_grupo', 'Error: No hay datos de cobranza cargados (calculados o de offline) para registrar.', 'error');
@@ -3078,20 +3065,12 @@ function renderizarCobranzaRuta(data, container) {
 
         creditos.forEach(cred => {
             const linkId = cred.firestoreId;
-            
-            // Lógica de pagos (de la petición anterior)
             const pagoReferencia = cred.pagoSemanalReferencia !== undefined ? cred.pagoSemanalReferencia : (cred.pagoSemanal || 0);
             const pagoAcumulado = cred.pagoSemanalAcumulado !== undefined ? cred.pagoSemanalAcumulado : (cred.pagoSemanal || 0);
             totalPoblacion += pagoReferencia;
-
-            // ===================================
-            // --- 🚀 NUEVA LÓGICA PARA EL BADGE DE ESTADO ---
-            // ===================================
             const estado = cred.estadoCredito || 'desconocido';
             const estadoClase = `status-${estado.replace(/\s/g, '-')}`;
-            // Usamos info-value para que coincida con "Gestión de Clientes"
             const estadoHTML = `<span class="info-value ${estadoClase}">${estado.toUpperCase()}</span>`;
-            // ===================================
 
             html += `<tr>
                         <td>${cred.nombreCliente}<br><small>${cred.curpCliente}</small></td>
@@ -3132,7 +3111,6 @@ function renderizarCobranzaRuta(data, container) {
                        <tr>
                            <td colspan="3"><b>Total Sugerido:</b></td>
                            <td><b>$${totalPoblacion.toFixed(2)}</b></td>
-                           
                            <td colspan="3"></td>
                        </tr>
                   </tfoot>
@@ -3140,7 +3118,6 @@ function renderizarCobranzaRuta(data, container) {
         html += `</div>`;
     });
     
-    // CORRECCIÓN: Este bloque estaba incompleto en tu copia, lo restauré.
     const resumenGeneral = `
         <div class="info-grid card" style="background: #eef; padding: 15px; margin-bottom: 20px;">
             <div class="info-item">
@@ -3163,59 +3140,7 @@ function renderizarCobranzaRuta(data, container) {
     `;
 
     container.innerHTML = resumenGeneral + html;
-    
-    // ===================================
-    // --- 🚀 CSS MODIFICADO ---
-    // ===================================
-    const style = document.createElement('style');
-    // CORRECCIÓN: Limpiado de caracteres invisibles
-    style.textContent = `
-        .poblacion-group { margin-bottom: 20px; padding: 15px; background: #fff; border: 1px solid #eee; }
-        .poblacion-group h3 { margin-bottom: 10px; font-size: 1.1em; color: var(--primary); border-bottom: 1px solid #eee; padding-bottom: 5px;}
-        .cobranza-ruta-table { width: 100%; border-collapse: collapse; font-size: 0.9em; }
-        .cobranza-ruta-table th, .cobranza-ruta-table td { padding: 6px 4px; border: 1px solid #ddd; text-align: left; vertical-align: middle; }
-        .cobranza-ruta-table thead th { background: #f8f9fa; font-weight: bold; }
-        .cobranza-ruta-table tbody tr:nth-child(even) { background: #f8f9fa; }
-        .cobranza-ruta-table tfoot td { font-weight: bold; background: #e9ecef; }
 
-        /* --- 🚀 AÑADIDO: Estilos para el badge de Estado (Col 2) --- */
-        .cobranza-ruta-table td:nth-child(2), .cobranza-ruta-table th:nth-child(2) { 
-            text-align: center;
-            font-size: 0.9em; 
-        }
-        .cobranza-ruta-table .info-value {
-            padding: 2px 6px;
-            border-radius: 4px;
-            font-weight: bold;
-            color: #333;
-            background-color: #eee;
-            display: inline-block;
-            min-width: 60px;
-        }
-        .cobranza-ruta-table .status-al-corriente { background-color: #d4edda; color: #155724; }
-        .cobranza-ruta-table .status-atrasado { background-color: #fff3cd; color: #856404; }
-        .cobranza-ruta-table .status-cobranza { background-color: #f8d7da; color: #721c24; }
-        .cobranza-ruta-table .status-juridico { background-color: #d6d8db; color: #1b1e21; }
-        .cobranza-ruta-table .status-liquidado { background-color: #d1ecf1; color: #0c5460; }
-        .cobranza-ruta-table .status-desconocido { background-color: #e2e3e5; color: #383d41; }
-        /* --- Fin Estilos Badge --- */
-
-
-        /* --- 🚀 AJUSTADO: Selectores nth-child recorridos (eran 3 y 4, ahora 4 y 5) --- */
-        .cobranza-ruta-table td:nth-child(4), .cobranza-ruta-table th:nth-child(4),
-        .cobranza-ruta-table td:nth-child(5), .cobranza-ruta-table th:nth-child(5) { text-align: right; }
-        
-        /* --- 🚀 AJUSTADO: Selector nth-child recorrido (era 5, ahora 6) --- */
-        .cobranza-ruta-table th:nth-child(6) { text-align: center; width: 120px; }
-        .cobranza-ruta-table td:nth-child(6) { text-align: center; width: 120px; } 
-        
-        /* --- 🚀 AJUSTADO: last-child ahora es la columna 7 (sin cambios en la regla) --- */
-        .cobranza-ruta-table th:last-child, .cobranza-ruta-table td:last-child { text-align: center; width: 60px; }
-        
-        .pago-grupal-input { text-align: right; font-weight: bold; padding: 4px 6px; max-width: 110px; } 
-        .cobranza-ruta-table input[type="checkbox"] { width: 18px; height: 18px; }
-    `;
-    document.head.appendChild(style);
 }
 
 /**
@@ -6210,6 +6135,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
