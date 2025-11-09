@@ -3227,10 +3227,13 @@ async function handleGenerarGrafico() {
             userOffice: esAdminConAccesoTotal ? null : currentUserData?.office
         });
 
-        const coloresPersonalizadosInput = document.getElementById('grafico-colores').value;
-            let coloresPersonalizados = [];
-            if (coloresPersonalizadosInput) {
-            coloresPersonalizados = coloresPersonalizadosInput.split(',').map(c => c.trim()).filter(c => c);
+        const colorPickers = document.querySelectorAll('#grafico-colores-container input[type="color"]');
+        
+        let coloresPersonalizados = [];
+        if (colorPickers.length > 0) {
+            colorPickers.forEach(picker => {
+                coloresPersonalizados.push(picker.value);
+            });
         }
 
         statusGraficos.textContent = 'Procesando datos para el gráfico...';
@@ -6135,6 +6138,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
