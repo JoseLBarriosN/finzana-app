@@ -6,7 +6,7 @@
     <title>Finzana - Sistema de Gestión de Créditos</title>
     <link rel="icon" type="image/x-icon" href="favicon.ico">
     <link rel="shortcut icon" type="image/x-icon" href="favicon.ico">
-    <link rel="stylesheet" href="css/styles.css">
+    <link rel="stylesheet" href="css/styles.css"> 
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -145,7 +145,7 @@
                         <h3>Reporte Contable</h3>
                         <p>Genera y confirma reportes de flujos de efectivo por oficina.</p>
                         <button class="btn btn-primary" data-view="view-reporte-contable"><i class="fas fa-arrow-right"></i> Acceder</button>
-                    </div>  
+                    </div>
                 </div>
             </div>
 
@@ -426,42 +426,44 @@
                     <div id="detalle-importacion"></div>
                 </div>
             </div>
+            
             <div id="view-configuracion" class="view hidden">
-    <div class="view-header">
-        <h2>Gestión de Poblaciones y Rutas</h2>
-        <button class="btn btn-secondary" data-view="view-main-menu"><i class="fas fa-arrow-left"></i> Volver al Menú</button>
-    </div>
-    
-    <div id="status_configuracion" class="status-message"></div>
-    
-    <div class="tabs" style="margin-bottom: 20px;">
-        <button class="tab-button active" data-tab="poblaciones">
-            <i class="fas fa-map-marker-alt"></i> Poblaciones
-        </button>
-        <button class="tab-button" data-tab="rutas">
-            <i class="fas fa-route"></i> Rutas
-        </button>
-    </div>
-    
-    <div id="tab-poblaciones" class="tab-content active">
-        <div id="tabla-poblaciones-container">
-            <div style="text-align: center; padding: 40px;">
-                <div class="spinner"></div>
-                <p>Cargando poblaciones...</p>
+                <div class="view-header">
+                    <h2>Gestión de Poblaciones y Rutas</h2>
+                    <button class="btn btn-secondary" data-view="view-main-menu"><i class="fas fa-arrow-left"></i> Volver al Menú</button>
+                </div>
+            
+                <div id="status_configuracion" class="status-message"></div>
+            
+                <div class="tabs" style="margin-bottom: 20px;">
+                    <button class="tab-button active" data-tab="poblaciones">
+                        <i class="fas fa-map-marker-alt"></i> Poblaciones
+                    </button>
+                    <button class="tab-button" data-tab="rutas">
+                        <i class="fas fa-route"></i> Rutas
+                    </button>
+                </div>
+            
+                <div id="tab-poblaciones" class="tab-content active">
+                    <div id="tabla-poblaciones-container">
+                        <div style="text-align: center; padding: 40px;">
+                            <div class="spinner"></div>
+                            <p>Cargando poblaciones...</p>
+                        </div>
+                    </div>
+                </div>
+            
+                <div id="tab-rutas" class="tab-content">
+                     <div id="tabla-rutas-container">
+                        <div style="text-align: center; padding: 40px;">
+                            <div class="spinner"></div>
+                            <p>Cargando rutas...</p>
+                        </div>
+                    </div>
+                </div>
             </div>
-        </div>
-    </div>
-    
-    <div id="tab-rutas" class="tab-content">
-         <div id="tabla-rutas-container">
-            <div style="text-align: center; padding: 40px;">
-                <div class="spinner"></div>
-                <p>Cargando rutas...</p>
-            </div>
-        </div>
-    </div>
-
-                <div id="view-cliente" class="view hidden">
+            
+            <div id="view-cliente" class="view hidden">
                 <div class="view-header">
                     <h2>Registrar Cliente</h2>
                     <button class="btn btn-secondary" data-view="view-main-menu"><i class="fas fa-arrow-left"></i> Volver al Menú</button>
@@ -897,7 +899,7 @@
                     <div class="form-group">
                         <label for="grafico-colores">Colores personalizados (opcional):</label>
                             <input type="text" id="grafico-colores" placeholder="#FF6384,#36A2EB,#FFCE56,#4BC0C0,#9966FF" 
-                               title="Ingresa colores en formato HEX separados por comas">
+                                title="Ingresa colores en formato HEX separados por comas">
                         <small class="field-note">Ejemplo: #FF6384,#36A2EB,#FFCE56 (máximo 5 colores)</small>
                     </div>
                     
@@ -1022,83 +1024,85 @@
                     </div>
                 </div>
             </div>
+            
             <div id="view-reporte-contable" class="view hidden">
                 <div class="view-header">
                     <h2>Reporte Contable de Efectivo</h2>
                     <button class="btn btn-secondary btn-no-print" data-view="view-main-menu"><i class="fas fa-arrow-left"></i> Volver al Menú</button>
                 </div>
 
-            <div class="card advanced-filters btn-no-print">
-                <h3>Filtros del Reporte</h3>
-                <div class="filtros-grid">
-                    <div class="form-group">
-                        <label for="reporte-contable-sucursal">Sucursal</label>
-                        <select id="reporte-contable-sucursal">
-                            <option value="">Selecciona...</option>
-                            <option value="GDL">Guadalajara</option>
-                            <option value="LEON">León</option>
-                        </select>
+                <div class="card advanced-filters btn-no-print">
+                    <h3>Filtros del Reporte</h3>
+                    <div class="filtros-grid">
+                        <div class="form-group">
+                            <label for="reporte-contable-sucursal">Sucursal</label>
+                            <select id="reporte-contable-sucursal">
+                                <option value="">Selecciona...</option>
+                                <option value="GDL">Guadalajara</option>
+                                <option value="LEON">León</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="reporte-contable-agente">Agente (Opcional)</label>
+                            <select id="reporte-contable-agente">
+                                <option value="">Todos los Agentes</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="reporte-contable-fecha-inicio">Fecha Inicio</label>
+                            <input type="date" id="reporte-contable-fecha-inicio">
+                        </div>
+                        <div class="form-group">
+                            <label for="reporte-contable-fecha-fin">Fecha Fin</label>
+                            <input type="date" id="reporte-contable-fecha-fin">
+                        </div>
                     </div>
-                    <div class="form-group">
-                        <label for="reporte-contable-agente">Agente (Opcional)</label>
-                        <select id="reporte-contable-agente">
-                            <option value="">Todos los Agentes</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label for="reporte-contable-fecha-inicio">Fecha Inicio</label>
-                        <input type="date" id="reporte-contable-fecha-inicio">
-                    </div>
-                    <div class="form-group">
-                        <label for="reporte-contable-fecha-fin">Fecha Fin</label>
-                        <input type="date" id="reporte-contable-fecha-fin">
+                    <div class="filtros-actions">
+                        <button id="btn-generar-reporte-contable" class="btn btn-primary">
+                            <i class="fas fa-search"></i> Generar Reporte
+                        </button>
+                        <button id="btn-imprimir-reporte-contable" class="btn btn-success hidden">
+                            <i class="fas fa-print"></i> Confirmar e Imprimir
+                        </button>
                     </div>
                 </div>
-                <div class="filtros-actions">
-                    <button id="btn-generar-reporte-contable" class="btn btn-primary">
-                        <i class="fas fa-search"></i> Generar Reporte
-                    </button>
-                    <button id="btn-imprimir-reporte-contable" class="btn btn-success hidden">
-                        <i class="fas fa-print"></i> Confirmar e Imprimir
-                    </button>
-                </div>
-            </div>
 
-            <div id="status_reporte_contable" class="status-message hidden"></div>
+                <div id="status_reporte_contable" class="status-message hidden"></div>
 
-            <div id="reporte-contable-wrapper" class="hidden">
-                <div id="reporte-contable-contenido" class="card" style="padding: 20px;">
-                    <div id="reporte-contable-header" style="text-align: center; margin-bottom: 20px;">
-                        <h3 id="reporte-contable-titulo">Reporte de Flujo de Efectivo</h3>
-                        <p id="reporte-contable-subtitulo" style="font-size: 14px; color: #555;">(Selecciona filtros para generar)</p>
+                <div id="reporte-contable-wrapper" class="hidden">
+                    <div id="reporte-contable-contenido" class="card" style="padding: 20px;">
+                        <div id="reporte-contable-header" style="text-align: center; margin-bottom: 20px;">
+                            <h3 id="reporte-contable-titulo">Reporte de Flujo de Efectivo</h3>
+                            <p id="reporte-contable-subtitulo" style="font-size: 14px; color: #555;">(Selecciona filtros para generar)</p>
+                        </div>
+                
+                        <h4>Resumen de Flujos</h4>
+                        <div id="reporte-contable-resumen" class="info-grid" style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+                        </div>
+
+                        <h4>Detalle de Movimientos</h4>
+                        <div id="reporte-contable-detalle">
+                        </div>
+
+                        <div id="reporte-contable-footer" style="margin-top: 50px; padding-top: 20px; border-top: 1px solid #ccc; display: flex; justify-content: space-around; text-align: center;">
+                            <div>
+                                <p>_________________________</p>
+                                <p><strong>Elaboró</strong></p>
+                                <p>(Administrador)</p>
+                            </div>
+                            <div>
+                                <p>_________________________</p>
+                                <p><strong>Recibió</strong></p>
+                                <p>(Agente / Gerencia)</p>
+                            </div>
+                        </div>
                     </div>
+                </div>
+            </div>    
             
-                    <h4>Resumen de Flujos</h4>
-                    <div id="reporte-contable-resumen" class="info-grid" style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
-                        </div>
-
-                    <h4>Detalle de Movimientos</h4>
-                    <div id="reporte-contable-detalle">
-                        </div>
-
-                    <div id="reporte-contable-footer" style="margin-top: 50px; padding-top: 20px; border-top: 1px solid #ccc; display: flex; justify-content: space-around; text-align: center;">
-                        <div>
-                            <p>_________________________</p>
-                            <p><strong>Elaboró</strong></p>
-                            <p>(Administrador)</p>
-                        </div>
-                        <div>
-                            <p>_________________________</p>
-                            <p><strong>Recibió</strong></p>
-                            <p>(Agente / Gerencia)</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>      
-    </main>
+        </main>
     </div>
-    </div>
+    
     <div id="processing-overlay" class="processing-overlay hidden">
         <div class="processing-spinner"></div>
         <div id="processing-message" class="processing-message">Procesando...</div>
@@ -1133,20 +1137,3 @@
     <script src="js/app.js"></script>
 </body>
 </html>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
