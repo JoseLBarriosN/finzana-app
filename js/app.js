@@ -2646,189 +2646,201 @@ async function handleMontoPagoChange() {
 // SECCIÓN DE PAGO GRUPAL
 // =============================================
 async function handleCalcularCobranzaRuta() {
-    // Pausar el temporizador de inactividad
-    console.log('Temporizador de inactividad PAUSADO para cálculo de ruta.');
-    clearTimeout(inactivityTimer);
+    console.log('Temporizador de inactividad PAUSADO para cálculo de ruta.');
+    clearTimeout(inactivityTimer);
+    const statusPagoGrupo = document.getElementById('status_pago_grupo');
+    const btnCalcular = document.getElementById('btn-calcular-cobranza-ruta');
+    const btnGuardar = document.getElementById('btn-guardar-cobranza-offline');
+    const btnRegistrar = document.getElementById('btn-registrar-pagos-offline');
+    const container = document.getElementById('cobranza-ruta-container');
+    const placeholder = document.getElementById('cobranza-ruta-placeholder');
 
-    const statusPagoGrupo = document.getElementById('status_pago_grupo');
-    const btnCalcular = document.getElementById('btn-calcular-cobranza-ruta');
-    const btnGuardar = document.getElementById('btn-guardar-cobranza-offline');
-    const btnRegistrar = document.getElementById('btn-registrar-pagos-offline');
-    const container = document.getElementById('cobranza-ruta-container');
-    const placeholder = document.getElementById('cobranza-ruta-placeholder');
-    
-    if (!currentUserData || !currentUserData.ruta || !currentUserData.office || currentUserData.office === 'AMBAS') {
-        showStatus('status_pago_grupo', 'Error: Debes tener una ruta y oficina única asignada para usar esta función.', 'error');
-        resetInactivityTimer(); // Reactivar si fallamos rápido
-        return;
-    }
-    if (!navigator.onLine) {
-        showStatus('status_pago_grupo', 'Error: Se necesita conexión a internet para calcular la cobranza de la ruta.', 'error');
-        resetInactivityTimer(); // Reactivar si fallamos rápido
-        return;
-    }
+    if (!currentUserData || !currentUserData.ruta || !currentUserData.office || currentUserData.office === 'AMBAS') {
+        showStatus('status_pago_grupo', 'Error: Debes tener una ruta y oficina única asignada para usar esta función.', 'error');
+        resetInactivityTimer(); // Reactivar si fallamos rápido
+        return;
+    }
+    if (!navigator.onLine) {
+        showStatus('status_pago_grupo', 'Error: Se necesita conexión a internet para calcular la cobranza de la ruta.', 'error');
+        resetInactivityTimer(); // Reactivar si fallamos rápido
+        return;
+    }
 
-    const userRuta = currentUserData.ruta;
-    const userOffice = currentUserData.office; // Oficina del usuario
-    const esAdminConAccesoTotal = (currentUserData?.role === 'Super Admin' || currentUserData?.role === 'Gerencia');
+    const userRuta = currentUserData.ruta;
+    const userOffice = currentUserData.office; // Oficina del usuario
+    const esAdminConAccesoTotal = (currentUserData?.role === 'Super Admin' || currentUserData?.role === 'Gerencia');
+    cargaEnProgreso = true;
+    currentSearchOperation = Date.now();
+    const operationId = currentSearchOperation;
 
-    cargaEnProgreso = true;
-    currentSearchOperation = Date.now();
-    const operationId = currentSearchOperation;
+    showButtonLoading(btnCalcular, true, 'Calculando...');
+    showFixedProgress(5, `Calculando cobranza para ruta ${userRuta}...`);
+    statusPagoGrupo.innerHTML = `Buscando poblaciones para la ruta ${userRuta}...`;
+    statusPagoGrupo.className = 'status-message status-info';
+    container.innerHTML = '';
+    if (placeholder) placeholder.classList.add('hidden');
+    cobranzaRutaData = {};
+    if (btnGuardar) btnGuardar.classList.add('hidden');
+    if (btnRegistrar) btnRegistrar.classList.add('hidden');
 
-    showButtonLoading(btnCalcular, true, 'Calculando...');
-    showFixedProgress(5, `Calculando cobranza para ruta ${userRuta}...`);
-    statusPagoGrupo.innerHTML = `Buscando poblaciones para la ruta ${userRuta}...`;
-    statusPagoGrupo.className = 'status-message status-info';
-    container.innerHTML = '';
-    if (placeholder) placeholder.classList.add('hidden');
-    cobranzaRutaData = {};
-    if (btnGuardar) btnGuardar.classList.add('hidden');
-    if (btnRegistrar) btnRegistrar.classList.add('hidden');
+    try {
+        // 1. Obtener las poblaciones
+        statusPagoGrupo.textContent = `Buscando poblaciones asignadas a ruta ${userRuta}...`;
+        let poblacionesQuery = db.collection('poblaciones')
+                                     .where('ruta', '==', userRuta);
+        
+        if (!esAdminConAccesoTotal) {
+            // Un 'Área comercial' solo puede ver poblaciones de su propia oficina
+            poblacionesQuery = poblacionesQuery.where('office', '==', userOffice);
+        }
 
-    try {
-        // 1. Obtener las poblaciones
-        statusPagoGrupo.textContent = `Buscando poblaciones asignadas a ruta ${userRuta}...`;
-        let poblacionesQuery = db.collection('poblaciones')
-                                    .where('ruta', '==', userRuta);
-        
-        if (!esAdminConAccesoTotal) {
-            // Un 'Área comercial' solo puede ver poblaciones de su propia oficina
-            poblacionesQuery = poblacionesQuery.where('office', '==', userOffice);
-        }
+        const poblacionesSnapshot = await poblacionesQuery.get();
+        const nombresPoblacionesDeLaRuta = poblacionesSnapshot.docs.map(doc => doc.data().nombre);
+        
+        if (nombresPoblacionesDeLaRuta.length === 0) { 
+            throw new Error(`No se encontraron poblaciones asignadas a la ruta ${userRuta}` + (esAdminConAccesoTotal ? '.' : ` en tu oficina (${userOffice}).`)); 
+        }
+        console.log(`Poblaciones encontradas para la ruta ${userRuta}:`, nombresPoblacionesDeLaRuta);
 
-        const poblacionesSnapshot = await poblacionesQuery.get();
-        const nombresPoblacionesDeLaRuta = poblacionesSnapshot.docs.map(doc => doc.data().nombre);
-        
-        if (nombresPoblacionesDeLaRuta.length === 0) { 
-            throw new Error(`No se encontraron poblaciones asignadas a la ruta ${userRuta}` + (esAdminConAccesoTotal ? '.' : ` en tu oficina (${userOffice}).`)); 
-        }
-        console.log(`Poblaciones encontradas para la ruta ${userRuta}:`, nombresPoblacionesDeLaRuta);
+        // 2. Buscar clientes
+        showFixedProgress(20, `Buscando clientes en ${nombresPoblacionesDeLaRuta.length} poblaciones...`);
+        const clientesDeLasPoblaciones = [];
+        const MAX_IN_VALUES = 10; // Límite real de Firebase para consultas 'in'
 
-        // 2. Buscar clientes
-        showFixedProgress(20, `Buscando clientes en ${nombresPoblacionesDeLaRuta.length} poblaciones...`);
-        const clientesDeLasPoblaciones = [];
-        const MAX_IN_VALUES = 10; // Límite real de Firebase para consultas 'in'
+        for (let i = 0; i < nombresPoblacionesDeLaRuta.length; i += MAX_IN_VALUES) {
+            const chunkPoblaciones = nombresPoblacionesDeLaRuta.slice(i, i + MAX_IN_VALUES);
+            let clientesQuery = db.collection('clientes')
+                                    .where('poblacion_grupo', 'in', chunkPoblaciones);
 
-        for (let i = 0; i < nombresPoblacionesDeLaRuta.length; i += MAX_IN_VALUES) {
-            const chunkPoblaciones = nombresPoblacionesDeLaRuta.slice(i, i + MAX_IN_VALUES);
-            let clientesQuery = db.collection('clientes')
-                                .where('poblacion_grupo', 'in', chunkPoblaciones);
+            if (!esAdminConAccesoTotal) {
+                // Un 'Área comercial' solo puede ver clientes de su propia oficina
+                clientesQuery = clientesQuery.where('office', '==', userOffice);
+            }
 
-            if (!esAdminConAccesoTotal) {
-                // Un 'Área comercial' solo puede ver clientes de su propia oficina
-                clientesQuery = clientesQuery.where('office', '==', userOffice);
-            }
+            const clientesSnapshot = await clientesQuery.get();
+            clientesSnapshot.docs.forEach(doc => {
+                clientesDeLasPoblaciones.push({ id: doc.id, ...doc.data() });
+            });
+        }
+        if (clientesDeLasPoblaciones.length === 0) { 
+            throw new Error(`No se encontraron clientes en las poblaciones de la ruta ${userRuta}` + (esAdminConAccesoTotal ? '.' : ` asignados a tu oficina (${userOffice}).`)); 
+        }
 
-            const clientesSnapshot = await clientesQuery.get();
-            clientesSnapshot.docs.forEach(doc => {
-                clientesDeLasPoblaciones.push({ id: doc.id, ...doc.data() });
-            });
-        }
-        if (clientesDeLasPoblaciones.length === 0) { 
-            throw new Error(`No se encontraron clientes en las poblaciones de la ruta ${userRuta}` + (esAdminConAccesoTotal ? '.' : ` asignados a tu oficina (${userOffice}).`)); 
-        }
+        // 3. Procesar clientes
+        showFixedProgress(40, `Procesando ${clientesDeLasPoblaciones.length} clientes...`);
+        let creditosPendientes = [];
+        let poblacionesEncontradasSet = new Set();
+        let totalGeneralACobrar = 0;
+        let clientesConErrores = 0;
+        const totalClientes = clientesDeLasPoblaciones.length;
 
-        // 3. Procesar clientes
-        showFixedProgress(40, `Procesando ${clientesDeLasPoblaciones.length} clientes...`);
-        let creditosPendientes = [];
-        let poblacionesEncontradasSet = new Set();
-        let totalGeneralACobrar = 0;
-        let clientesConErrores = 0;
-        const totalClientes = clientesDeLasPoblaciones.length;
+        for (const [index, cliente] of clientesDeLasPoblaciones.entries()) {
+            if (operationId !== currentSearchOperation) throw new Error("Operación cancelada");            
+            const progress = 40 + Math.round(((index + 1) / totalClientes) * 50);
+            showFixedProgress(progress, `Procesando cliente ${index + 1} de ${totalClientes}...`);
 
-        for (const [index, cliente] of clientesDeLasPoblaciones.entries()) {
-            if (operationId !== currentSearchOperation) throw new Error("Operación cancelada");            
-            const progress = 40 + Math.round(((index + 1) / totalClientes) * 50);
-            showFixedProgress(progress, `Procesando cliente ${index + 1} de ${totalClientes}...`);
+            if (!nombresPoblacionesDeLaRuta.includes(cliente.poblacion_grupo)) { continue; }
 
-            if (!nombresPoblacionesDeLaRuta.includes(cliente.poblacion_grupo)) { continue; }
+            // Usar la oficina DEL CLIENTE para buscar su crédito
+            const clienteOffice = cliente.office; 
+            if (!clienteOffice) {
+                console.warn(`Cliente ${cliente.curp} omitido por no tener oficina asignada.`);
+                continue;
+            }
+            const creditoActivo = await database.buscarCreditoActivoPorCliente(cliente.curp, clienteOffice);           
+            if (creditoActivo) {
+                const pagos = await database.getPagosPorCredito(creditoActivo.historicalIdCredito || creditoActivo.id, creditoActivo.office);
+                pagos.sort((a, b) => (parsearFecha(b.fecha)?.getTime() || 0) - (parsearFecha(a.fecha)?.getTime() || 0));
+                const estadoCalc = _calcularEstadoCredito(creditoActivo, pagos);
 
-            // Usar la oficina DEL CLIENTE para buscar su crédito
-            const clienteOffice = cliente.office; 
-            if (!clienteOffice) {
-                console.warn(`Cliente ${cliente.curp} omitido por no tener oficina asignada.`);
-                continue;
-            }
+                if (estadoCalc && estadoCalc.estado !== 'liquidado' && estadoCalc.pagoSemanal > 0.01) {
+                    
+                    // --- Lógica de pago acumulado (Mod 1) ---
+                    const pagoSemanalRef = estadoCalc.pagoSemanal;
+                    const semanasAtraso = estadoCalc.semanasAtraso || 0;
+                    const saldoRestante = estadoCalc.saldoRestante;
+                    let montoAcumulado;
+                    if (semanasAtraso > 0) {
+                        montoAcumulado = semanasAtraso * pagoSemanalRef;
+                    } else {
+                        montoAcumulado = pagoSemanalRef;
+                    }
+                    const tolerancia = 0.015; 
+                    let montoAPagarFinal = Math.min(montoAcumulado, saldoRestante + tolerancia); 
+                    montoAPagarFinal = Math.max(0, parseFloat(montoAPagarFinal.toFixed(2)));     
+                    if (saldoRestante < 0.01) {
+                        montoAPagarFinal = 0.00;
+                    }
+                    poblacionesEncontradasSet.add(cliente.poblacion_grupo);
+                    totalGeneralACobrar += pagoSemanalRef; 
+                    creditosPendientes.push({
+                        firestoreId: creditoActivo.id,
+                        historicalIdCredito: creditoActivo.historicalIdCredito || creditoActivo.id,
+                        nombreCliente: cliente.nombre,
+                        curpCliente: cliente.curp,
+                        pagoSemanalAcumulado: montoAPagarFinal,    
+                        pagoSemanalReferencia: pagoSemanalRef,     
+                        saldoRestante: estadoCalc.saldoRestante,
+                        estadoCredito: estadoCalc.estado,         
+                        office: creditoActivo.office
+                    });
 
-            // Pasar la oficina del *cliente* a la función de BD
-            const creditoActivo = await database.buscarCreditoActivoPorCliente(cliente.curp, clienteOffice);             
-            
-            if (creditoActivo) {
-                // Usar la oficina del crédito (debería ser la misma que clienteOffice) para buscar pagos
-                const pagos = await database.getPagosPorCredito(creditoActivo.historicalIdCredito || creditoActivo.id, creditoActivo.office);
-                pagos.sort((a, b) => (parsearFecha(b.fecha)?.getTime() || 0) - (parsearFecha(a.fecha)?.getTime() || 0));
-                const estadoCalc = _calcularEstadoCredito(creditoActivo, pagos);
+                } else if (!estadoCalc) { 
+                    console.warn(`Error al calcular estado para crédito ${creditoActivo.id}`);
+                    clientesConErrores++;
+                }
+            }
+        }
 
-                if (estadoCalc && estadoCalc.estado !== 'liquidado' && estadoCalc.pagoSemanal > 0.01) {
-                    poblacionesEncontradasSet.add(cliente.poblacion_grupo);
-                    totalGeneralACobrar += estadoCalc.pagoSemanal;
-                    creditosPendientes.push({
-                            firestoreId: creditoActivo.id,
-                            historicalIdCredito: creditoActivo.historicalIdCredito || creditoActivo.id,
-                            nombreCliente: cliente.nombre,
-                            curpCliente: cliente.curp,
-                            pagoSemanal: estadoCalc.pagoSemanal,
-                            saldoRestante: estadoCalc.saldoRestante,
-                            office: creditoActivo.office
-                        });
-                } else if (!estadoCalc) { 
-                    console.warn(`Error al calcular estado para crédito ${creditoActivo.id}`);
-                    clientesConErrores++;
-                }
-            }
-        }
+        if (creditosPendientes.length === 0) { 
+            if (clientesConErrores > 0) {
+                throw new Error(`Se encontraron ${clientesDeLasPoblaciones.length} clientes, pero ${clientesConErrores} créditos tienen datos inconsistentes.`);
+            }
+            throw new Error('No se encontraron créditos con cobranza pendiente para esta ruta y oficina.'); 
+        }
+        showFixedProgress(95, 'Agrupando y renderizando resultados...');
+        cobranzaRutaData = {};
+        creditosPendientes.forEach(cred => {
+            const clienteDelCredito = clientesDeLasPoblaciones.find(c => c.curp === cred.curpCliente);
+            const grupo = clienteDelCredito ? clienteDelCredito.poblacion_grupo : 'Desconocido';
+            if (!cobranzaRutaData[grupo]) {
+                cobranzaRutaData[grupo] = [];
+            }
+            cobranzaRutaData[grupo].push(cred);
+        });
 
-        if (creditosPendientes.length === 0) { 
-            if (clientesConErrores > 0) {
-                throw new Error(`Se encontraron ${clientesDeLasPoblaciones.length} clientes, pero ${clientesConErrores} créditos tienen datos inconsistentes.`);
-            }
-            throw new Error('No se encontraron créditos con cobranza pendiente para esta ruta y oficina.'); 
-        }
+        renderizarCobranzaRuta(cobranzaRutaData, container);
+        if (btnGuardar) btnGuardar.classList.remove('hidden');
+        if (btnRegistrar) btnRegistrar.classList.remove('hidden');
 
-        showFixedProgress(95, 'Agrupando y renderizando resultados...');
-        cobranzaRutaData = {};
-        creditosPendientes.forEach(cred => {
-            const clienteDelCredito = clientesDeLasPoblaciones.find(c => c.curp === cred.curpCliente);
-            const grupo = clienteDelCredito ? clienteDelCredito.poblacion_grupo : 'Desconocido';
-            if (!cobranzaRutaData[grupo]) {
-                cobranzaRutaData[grupo] = [];
-            }
-            cobranzaRutaData[grupo].push(cred);
-        });
-
-        renderizarCobranzaRuta(cobranzaRutaData, container);
-        if (btnGuardar) btnGuardar.classList.remove('hidden');
-        if (btnRegistrar) btnRegistrar.classList.remove('hidden');
-
-        showFixedProgress(100, 'Cálculo completado');
-        let msgExito = `Cálculo completado: ${creditosPendientes.length} créditos encontrados.`;
-        if (clientesConErrores > 0) msgExito += ` (${clientesConErrores} créditos omitidos por errores).`;
-        showStatus('status_pago_grupo', msgExito, 'success');        
-    
-    } catch (error) {
-        console.error("Error al calcular cobranza de ruta:", error);
-        if (error.message === "Operación cancelada") {
-            showStatus('status_pago_grupo', 'Cálculo cancelado por el usuario.', 'warning');
-        } else {
-            showStatus('status_pago_grupo', `Error: ${error.message}`, 'error');
-        }
-        if (placeholder) {
-            placeholder.textContent = `Error al calcular: ${error.message}`;
-            placeholder.classList.remove('hidden');
-    Gira     }        
-        container.innerHTML = '';
-        cobranzaRutaData = null;
-        if (btnGuardar) btnGuardar.classList.add('hidden');
-        if (btnRegistrar) btnRegistrar.classList.add('hidden');
-    
-    } finally {
-        cargaEnProgreso = false;
-        showButtonLoading(btnCalcular, false);
-        setTimeout(hideFixedProgress, 2000);
-        console.log('Cálculo de ruta finalizado. Temporizador de inactividad REACTIVADO.');
-        resetInactivityTimer();
-    }
+        showFixedProgress(100, 'Cálculo completado');
+        let msgExito = `Cálculo completado: ${creditosPendientes.length} créditos encontrados.`;
+        if (clientesConErrores > 0) msgExito += ` (${clientesConErrores} créditos omitidos por errores).`;
+        showStatus('status_pago_grupo', msgExito, 'success');       
+    
+    } catch (error) {
+        console.error("Error al calcular cobranza de ruta:", error);
+        if (error.message === "Operación cancelada") {
+            showStatus('status_pago_grupo', 'Cálculo cancelado por el usuario.', 'warning');
+        } else {
+            showStatus('status_pago_grupo', `Error: ${error.message}`, 'error');
+        }
+        if (placeholder) {
+            placeholder.textContent = `Error al calcular: ${error.message}`;
+            placeholder.classList.remove('hidden');
+     Gira   }       
+        container.innerHTML = '';
+        cobranzaRutaData = null;
+        if (btnGuardar) btnGuardar.classList.add('hidden');
+        if (btnRegistrar) btnRegistrar.classList.add('hidden');
+    
+    } finally {
+        cargaEnProgreso = false;
+        showButtonLoading(btnCalcular, false);
+        setTimeout(hideFixedProgress, 2000);
+        console.log('Cálculo de ruta finalizado. Temporizador de inactividad REACTIVADO.');
+        resetInactivityTimer();
+    }
 }
 
 /**
@@ -3043,15 +3055,18 @@ function renderizarCobranzaRuta(data, container) {
     let html = '';
     let totalGeneralCalculado = 0;
     const poblacionesOrdenadas = Object.keys(data).sort();
+
     poblacionesOrdenadas.forEach(poblacion => {
         const creditos = data[poblacion];
         let totalPoblacion = 0;
+
         html += `<div class="poblacion-group card">`;
         html += `<h3>Población: ${poblacion} (${creditos.length} clientes)</h3>`;
         html += `<table class="cobranza-ruta-table">
                     <thead>
                         <tr>
                             <th>Cliente</th>
+                            <th>Estado</th>
                             <th>ID Crédito</th>
                             <th title="Pago semanal de referencia">Pago Sem. (Ref)</th>
                             <th>Saldo Rest.</th>
@@ -3060,13 +3075,31 @@ function renderizarCobranzaRuta(data, container) {
                         </tr>
                     </thead>
                     <tbody>`;
+
         creditos.forEach(cred => {
-            const linkId = cred.firestoreId; 
-            totalPoblacion += cred.pagoSemanal;
+            const linkId = cred.firestoreId;
+            
+            // Lógica de pagos (de la petición anterior)
+            const pagoReferencia = cred.pagoSemanalReferencia !== undefined ? cred.pagoSemanalReferencia : (cred.pagoSemanal || 0);
+            const pagoAcumulado = cred.pagoSemanalAcumulado !== undefined ? cred.pagoSemanalAcumulado : (cred.pagoSemanal || 0);
+            totalPoblacion += pagoReferencia;
+
+            // ===================================
+            // --- 🚀 NUEVA LÓGICA PARA EL BADGE DE ESTADO ---
+            // ===================================
+            const estado = cred.estadoCredito || 'desconocido';
+            const estadoClase = `status-${estado.replace(/\s/g, '-')}`;
+            // Usamos info-value para que coincida con "Gestión de Clientes"
+            const estadoHTML = `<span class="info-value ${estadoClase}">${estado.toUpperCase()}</span>`;
+            // ===================================
+
             html += `<tr>
                         <td>${cred.nombreCliente}<br><small>${cred.curpCliente}</small></td>
+                        
+                        <td>${estadoHTML}</td>
+
                         <td>${cred.historicalIdCredito}</td>
-                        <td class="monto-pago" title="Pago semanal sugerido">$${cred.pagoSemanal.toFixed(2)}</td>
+                        <td class="monto-pago" title="Pago semanal sugerido">$${pagoReferencia.toFixed(2)}</td>
                         <td>$${cred.saldoRestante.toFixed(2)}</td>
                         <td>
                             <input 
@@ -3075,7 +3108,7 @@ function renderizarCobranzaRuta(data, container) {
                                 min="0" 
                                 step="0.01" 
                                 placeholder="0.00"
-                                value="${cred.pagoSemanal.toFixed(2)}"
+                                value="${pagoAcumulado.toFixed(2)}"
                                 data-id-link="${linkId}" 
                                 data-saldo-max="${cred.saldoRestante.toFixed(2)}"
                             >
@@ -3092,18 +3125,22 @@ function renderizarCobranzaRuta(data, container) {
                         </td>
                        </tr>`;
         });
+
         totalGeneralCalculado += totalPoblacion;
         html += `</tbody>
                   <tfoot>
                        <tr>
-                           <td colspan="2"><b>Total Sugerido:</b></td>
+                           <td colspan="3"><b>Total Sugerido:</b></td>
                            <td><b>$${totalPoblacion.toFixed(2)}</b></td>
+                           
                            <td colspan="3"></td>
                        </tr>
                   </tfoot>
                  </table>`;
         html += `</div>`;
     });
+    
+    // CORRECCIÓN: Este bloque estaba incompleto en tu copia, lo restauré.
     const resumenGeneral = `
         <div class="info-grid card" style="background: #eef; padding: 15px; margin-bottom: 20px;">
             <div class="info-item">
@@ -3124,8 +3161,14 @@ function renderizarCobranzaRuta(data, container) {
             </div>
         </div>
     `;
+
     container.innerHTML = resumenGeneral + html;
+    
+    // ===================================
+    // --- 🚀 CSS MODIFICADO ---
+    // ===================================
     const style = document.createElement('style');
+    // CORRECCIÓN: Limpiado de caracteres invisibles
     style.textContent = `
         .poblacion-group { margin-bottom: 20px; padding: 15px; background: #fff; border: 1px solid #eee; }
         .poblacion-group h3 { margin-bottom: 10px; font-size: 1.1em; color: var(--primary); border-bottom: 1px solid #eee; padding-bottom: 5px;}
@@ -3134,11 +3177,41 @@ function renderizarCobranzaRuta(data, container) {
         .cobranza-ruta-table thead th { background: #f8f9fa; font-weight: bold; }
         .cobranza-ruta-table tbody tr:nth-child(even) { background: #f8f9fa; }
         .cobranza-ruta-table tfoot td { font-weight: bold; background: #e9ecef; }
-        .cobranza-ruta-table td:nth-child(3), .cobranza-ruta-table th:nth-child(3),
-        .cobranza-ruta-table td:nth-child(4), .cobranza-ruta-table th:nth-child(4) { text-align: right; }
-        .cobranza-ruta-table th:nth-child(5) { text-align: center; width: 120px; }
-        .cobranza-ruta-table td:nth-child(5) { text-align: center; width: 120px; } 
+
+        /* --- 🚀 AÑADIDO: Estilos para el badge de Estado (Col 2) --- */
+        .cobranza-ruta-table td:nth-child(2), .cobranza-ruta-table th:nth-child(2) { 
+            text-align: center;
+            font-size: 0.9em; 
+        }
+        .cobranza-ruta-table .info-value {
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-weight: bold;
+            color: #333;
+            background-color: #eee;
+            display: inline-block;
+            min-width: 60px;
+        }
+        .cobranza-ruta-table .status-al-corriente { background-color: #d4edda; color: #155724; }
+        .cobranza-ruta-table .status-atrasado { background-color: #fff3cd; color: #856404; }
+        .cobranza-ruta-table .status-cobranza { background-color: #f8d7da; color: #721c24; }
+        .cobranza-ruta-table .status-juridico { background-color: #d6d8db; color: #1b1e21; }
+        .cobranza-ruta-table .status-liquidado { background-color: #d1ecf1; color: #0c5460; }
+        .cobranza-ruta-table .status-desconocido { background-color: #e2e3e5; color: #383d41; }
+        /* --- Fin Estilos Badge --- */
+
+
+        /* --- 🚀 AJUSTADO: Selectores nth-child recorridos (eran 3 y 4, ahora 4 y 5) --- */
+        .cobranza-ruta-table td:nth-child(4), .cobranza-ruta-table th:nth-child(4),
+        .cobranza-ruta-table td:nth-child(5), .cobranza-ruta-table th:nth-child(5) { text-align: right; }
+        
+        /* --- 🚀 AJUSTADO: Selector nth-child recorrido (era 5, ahora 6) --- */
+        .cobranza-ruta-table th:nth-child(6) { text-align: center; width: 120px; }
+        .cobranza-ruta-table td:nth-child(6) { text-align: center; width: 120px; } 
+        
+        /* --- 🚀 AJUSTADO: last-child ahora es la columna 7 (sin cambios en la regla) --- */
         .cobranza-ruta-table th:last-child, .cobranza-ruta-table td:last-child { text-align: center; width: 60px; }
+        
         .pago-grupal-input { text-align: right; font-weight: bold; padding: 4px 6px; max-width: 110px; } 
         .cobranza-ruta-table input[type="checkbox"] { width: 18px; height: 18px; }
     `;
@@ -6137,6 +6210,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
