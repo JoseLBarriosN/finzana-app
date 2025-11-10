@@ -2675,7 +2675,7 @@ async function handleCalcularCobranzaRuta() {
     currentSearchOperation = Date.now();
     const operationId = currentSearchOperation;
     showButtonLoading(btnCalcular, true, 'Calculando...');
-    showFixedProgress(5, `Calculando cobranza para ruta ${userRuta}...`);
+    showFixedProgress(5, `Calculando cobranza para ruta ${userRuta}...`); 
     statusPagoGrupo.innerHTML = `Buscando poblaciones para la ruta ${userRuta}...`;
     statusPagoGrupo.className = 'status-message status-info';
     container.innerHTML = '';
@@ -2685,10 +2685,9 @@ async function handleCalcularCobranzaRuta() {
     if (btnRegistrar) btnRegistrar.classList.add('hidden');
 
     try {
-
         statusPagoGrupo.textContent = `Buscando poblaciones asignadas a ruta ${userRuta}...`;
         let poblacionesQuery = db.collection('poblaciones')
-                                     .where('ruta', '==', userRuta);    
+                                     .where('ruta', '==', userRuta);     
         if (!esAdminConAccesoTotal) {
             poblacionesQuery = poblacionesQuery.where('office', '==', userOffice);
         }
@@ -2698,12 +2697,14 @@ async function handleCalcularCobranzaRuta() {
         if (nombresPoblacionesDeLaRuta.length === 0) { 
             throw new Error(`No se encontraron poblaciones asignadas a la ruta ${userRuta}` + (esAdminConAccesoTotal ? '.' : ` en tu oficina (${userOffice}).`)); 
         }
-        
         console.log(`Poblaciones encontradas para la ruta ${userRuta}:`, nombresPoblacionesDeLaRuta);
         showFixedProgress(20, `Buscando clientes en ${nombresPoblacionesDeLaRuta.length} poblaciones...`);
         const clientesDeLasPoblaciones = [];
-        const MAX_IN_VALUES = 10;
+        const MAX_IN_VALUES = 10; 
+
         for (let i = 0; i < nombresPoblacionesDeLaRuta.length; i += MAX_IN_VALUES) {
+            if (operationId !== currentSearchOperation) throw new Error("Operación cancelada");
+
             const chunkPoblaciones = nombresPoblacionesDeLaRuta.slice(i, i + MAX_IN_VALUES);
             let clientesQuery = db.collection('clientes')
                                     .where('poblacion_grupo', 'in', chunkPoblaciones);
@@ -2727,7 +2728,7 @@ async function handleCalcularCobranzaRuta() {
         let clientesConErrores = 0;
         const totalClientes = clientesDeLasPoblaciones.length;
         for (const [index, cliente] of clientesDeLasPoblaciones.entries()) {
-            if (operationId !== currentSearchOperation) throw new Error("Operación cancelada");            
+            if (operationId !== currentSearchOperation) throw new Error("Operación cancelada");
             const progress = 40 + Math.round(((index + 1) / totalClientes) * 50);
             showFixedProgress(progress, `Procesando cliente ${index + 1} de ${totalClientes}...`);
             if (!nombresPoblacionesDeLaRuta.includes(cliente.poblacion_grupo)) { continue; }
@@ -2737,7 +2738,7 @@ async function handleCalcularCobranzaRuta() {
                 continue;
             }
 
-            const creditoActivo = await database.buscarCreditoActivoPorCliente(cliente.curp, clienteOffice);            
+            const creditoActivo = await database.buscarCreditoActivoPorCliente(cliente.curp, clienteOffice);             
             if (creditoActivo) {
                 const pagos = await database.getPagosPorCredito(creditoActivo.historicalIdCredito || creditoActivo.id, creditoActivo.office);
                 pagos.sort((a, b) => (parsearFecha(b.fecha)?.getTime() || 0) - (parsearFecha(a.fecha)?.getTime() || 0));
@@ -2758,10 +2759,9 @@ async function handleCalcularCobranzaRuta() {
                     if (saldoRestante < 0.01) {
                         montoAPagarFinal = 0.00;
                     }
-                    
+ 
                     poblacionesEncontradasSet.add(cliente.poblacion_grupo);
-                    totalGeneralACobrar += pagoSemanalRef; 
-                    
+                    totalGeneralACobrar += pagoSemanalRef;                 
                     creditosPendientes.push({
                         firestoreId: creditoActivo.id,
                         historicalIdCredito: creditoActivo.historicalIdCredito || creditoActivo.id,
@@ -2802,7 +2802,6 @@ async function handleCalcularCobranzaRuta() {
         renderizarCobranzaRuta(cobranzaRutaData, container);
         if (btnGuardar) btnGuardar.classList.remove('hidden');
         if (btnRegistrar) btnRegistrar.classList.remove('hidden');
-
         showFixedProgress(100, 'Cálculo completado');
         let msgExito = `Cálculo completado: ${creditosPendientes.length} créditos encontrados.`;
         if (clientesConErrores > 0) msgExito += ` (${clientesConErrores} créditos omitidos por errores).`;
@@ -2812,22 +2811,30 @@ async function handleCalcularCobranzaRuta() {
         console.error("Error al calcular cobranza de ruta:", error);
         if (error.message === "Operación cancelada") {
             showStatus('status_pago_grupo', 'Cálculo cancelado por el usuario.', 'warning');
+            if (placeholder) {
+                placeholder.textContent = 'Cálculo cancelado.';
+                placeholder.classList.remove('hidden');
+            }
         } else {
             showStatus('status_pago_grupo', `Error: ${error.message}`, 'error');
+            if (placeholder) {
+                placeholder.textContent = `Error al calcular: ${error.message}`;
+                placeholder.classList.remove('hidden');
+            }
         }
-        if (placeholder) {
-            placeholder.textContent = `Error al calcular: ${error.message}`;
-            placeholder.classList.remove('hidden');
-        }       
+
         container.innerHTML = '';
         cobranzaRutaData = null;
         if (btnGuardar) btnGuardar.classList.add('hidden');
         if (btnRegistrar) btnRegistrar.classList.add('hidden');
     
     } finally {
-        cargaEnProgreso = false;
+        if (operationId === currentSearchOperation) {
+            cargaEnProgreso = false;
+        }
+
         showButtonLoading(btnCalcular, false);
-        setTimeout(hideFixedProgress, 2000);
+        setTimeout(hideFixedProgress, 2000); // Oculta la barra de progreso
         console.log('Cálculo de ruta finalizado. Temporizador de inactividad REACTIVADO.');
         resetInactivityTimer();
     }
@@ -6141,6 +6148,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
