@@ -1108,8 +1108,6 @@ body.has-connection-status .progress-container-fixed {
     border-radius: 10px;
     transition: width 0.3s ease, background 0.3s ease;
     width: 0%;
-    flex: 1;
-    margin: 0 15px;
 }
 
 .progress-text-fixed {
@@ -2075,7 +2073,3 @@ tr.pago-registrado-exito td, tr.pago-registrado-error td {
     }
     
 }
-
-
-
-
