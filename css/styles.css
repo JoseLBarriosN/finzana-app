@@ -1117,10 +1117,11 @@ body.has-connection-status .progress-container-fixed {
     color: var(--dark);
     font-weight: 500;
     min-width: 200px;
-    text-align: center;
+    text-align: left;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    padding-left: 5px;
 }
 
 .btn-cancelar-carga-fixed {
@@ -2067,4 +2068,5 @@ tr.pago-registrado-exito td, tr.pago-registrado-error td {
 }
     
 }
+
 
