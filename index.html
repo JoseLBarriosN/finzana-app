@@ -1115,7 +1115,9 @@
 
     <div id="progress-container-fixed" class="progress-container-fixed hidden">
         <div id="progress-text-fixed" class="progress-text-fixed"></div>
-        <div id="progress-bar-fixed" class="progress-bar-fixed" style="width: 0%;"></div>
+        <div class="progress-bar-wrapper">
+            <div id="progress-bar-fixed" class="progress-bar-fixed" style="width: 0%;"></div>
+        </div>    
         <button id="btn-cancelar-carga-fixed" class="btn-cancelar-carga-fixed" title="Cancelar operación">
             <i class="fas fa-times"></i>
         </button>
@@ -1142,3 +1144,4 @@
     <script src="js/app.js"></script>
 </body>
 </html>
+
