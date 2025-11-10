@@ -2651,12 +2651,14 @@ async function handleMontoPagoChange() {
 async function handleCalcularCobranzaRuta() {
     console.log('Temporizador de inactividad PAUSADO para cálculo de ruta.');
     clearTimeout(inactivityTimer);
+
     const statusPagoGrupo = document.getElementById('status_pago_grupo');
     const btnCalcular = document.getElementById('btn-calcular-cobranza-ruta');
     const btnGuardar = document.getElementById('btn-guardar-cobranza-offline');
     const btnRegistrar = document.getElementById('btn-registrar-pagos-offline');
     const container = document.getElementById('cobranza-ruta-container');
-    const placeholder = document.getElementById('cobranza-ruta-placeholder');    
+    const placeholder = document.getElementById('cobranza-ruta-placeholder');
+    
     if (!currentUserData || !currentUserData.ruta || !currentUserData.office || currentUserData.office === 'AMBAS') {
         showStatus('status_pago_grupo', 'Error: Debes tener una ruta y oficina única asignada para usar esta función.', 'error');
         resetInactivityTimer();
@@ -2671,11 +2673,14 @@ async function handleCalcularCobranzaRuta() {
     const userRuta = currentUserData.ruta;
     const userOffice = currentUserData.office;
     const esAdminConAccesoTotal = (currentUserData?.role === 'Super Admin' || currentUserData?.role === 'Gerencia');
+
     cargaEnProgreso = true;
     currentSearchOperation = Date.now();
     const operationId = currentSearchOperation;
+
     showButtonLoading(btnCalcular, true, 'Calculando...');
-    showFixedProgress(5, `Calculando cobranza para ruta ${userRuta}...`); 
+    showFixedProgress(5, `Calculando cobranza para ruta ${userRuta}...`);
+
     statusPagoGrupo.innerHTML = `Buscando poblaciones para la ruta ${userRuta}...`;
     statusPagoGrupo.className = 'status-message status-info';
     container.innerHTML = '';
@@ -2686,32 +2691,26 @@ async function handleCalcularCobranzaRuta() {
 
     try {
         statusPagoGrupo.textContent = `Buscando poblaciones asignadas a ruta ${userRuta}...`;
-        let poblacionesQuery = db.collection('poblaciones')
-                                     .where('ruta', '==', userRuta);     
+        let poblacionesQuery = db.collection('poblaciones').where('ruta', '==', userRuta);
         if (!esAdminConAccesoTotal) {
             poblacionesQuery = poblacionesQuery.where('office', '==', userOffice);
         }
-
         const poblacionesSnapshot = await poblacionesQuery.get();
         const nombresPoblacionesDeLaRuta = poblacionesSnapshot.docs.map(doc => doc.data().nombre);
         if (nombresPoblacionesDeLaRuta.length === 0) { 
             throw new Error(`No se encontraron poblaciones asignadas a la ruta ${userRuta}` + (esAdminConAccesoTotal ? '.' : ` en tu oficina (${userOffice}).`)); 
         }
-        console.log(`Poblaciones encontradas para la ruta ${userRuta}:`, nombresPoblacionesDeLaRuta);
+
         showFixedProgress(20, `Buscando clientes en ${nombresPoblacionesDeLaRuta.length} poblaciones...`);
         const clientesDeLasPoblaciones = [];
         const MAX_IN_VALUES = 10; 
-
         for (let i = 0; i < nombresPoblacionesDeLaRuta.length; i += MAX_IN_VALUES) {
             if (operationId !== currentSearchOperation) throw new Error("Operación cancelada");
-
             const chunkPoblaciones = nombresPoblacionesDeLaRuta.slice(i, i + MAX_IN_VALUES);
-            let clientesQuery = db.collection('clientes')
-                                    .where('poblacion_grupo', 'in', chunkPoblaciones);
+            let clientesQuery = db.collection('clientes').where('poblacion_grupo', 'in', chunkPoblaciones);
             if (!esAdminConAccesoTotal) {
                 clientesQuery = clientesQuery.where('office', '==', userOffice);
             }
-
             const clientesSnapshot = await clientesQuery.get();
             clientesSnapshot.docs.forEach(doc => {
                 clientesDeLasPoblaciones.push({ id: doc.id, ...doc.data() });
@@ -2727,58 +2726,74 @@ async function handleCalcularCobranzaRuta() {
         let totalGeneralACobrar = 0;
         let clientesConErrores = 0;
         const totalClientes = clientesDeLasPoblaciones.length;
+
         for (const [index, cliente] of clientesDeLasPoblaciones.entries()) {
-            if (operationId !== currentSearchOperation) throw new Error("Operación cancelada");
+            if (operationId !== currentSearchOperation) throw new Error("Operación cancelada");            
             const progress = 40 + Math.round(((index + 1) / totalClientes) * 50);
             showFixedProgress(progress, `Procesando cliente ${index + 1} de ${totalClientes}...`);
+
             if (!nombresPoblacionesDeLaRuta.includes(cliente.poblacion_grupo)) { continue; }
+
             const clienteOffice = cliente.office; 
             if (!clienteOffice) {
                 console.warn(`Cliente ${cliente.curp} omitido por no tener oficina asignada.`);
                 continue;
             }
 
-            const creditoActivo = await database.buscarCreditoActivoPorCliente(cliente.curp, clienteOffice);             
-            if (creditoActivo) {
-                const pagos = await database.getPagosPorCredito(creditoActivo.historicalIdCredito || creditoActivo.id, creditoActivo.office);
-                pagos.sort((a, b) => (parsearFecha(b.fecha)?.getTime() || 0) - (parsearFecha(a.fecha)?.getTime() || 0));
-                const estadoCalc = _calcularEstadoCredito(creditoActivo, pagos);
-                if (estadoCalc && estadoCalc.estado !== 'liquidado' && estadoCalc.pagoSemanal > 0.01) {
-                    const pagoSemanalRef = estadoCalc.pagoSemanal;
-                    const semanasAtraso = estadoCalc.semanasAtraso || 0;
-                    const saldoRestante = estadoCalc.saldoRestante;
-                    let montoAcumulado;
-                    if (semanasAtraso > 0) {
-                        montoAcumulado = semanasAtraso * pagoSemanalRef;
-                    } else {
-                        montoAcumulado = pagoSemanalRef;
-                    }
-                    const tolerancia = 0.015; 
-                    let montoAPagarFinal = Math.min(montoAcumulado, saldoRestante + tolerancia);
-                    montoAPagarFinal = Math.max(0, parseFloat(montoAPagarFinal.toFixed(2))); 
-                    if (saldoRestante < 0.01) {
-                        montoAPagarFinal = 0.00;
-                    }
- 
-                    poblacionesEncontradasSet.add(cliente.poblacion_grupo);
-                    totalGeneralACobrar += pagoSemanalRef;                 
-                    creditosPendientes.push({
-                        firestoreId: creditoActivo.id,
-                        historicalIdCredito: creditoActivo.historicalIdCredito || creditoActivo.id,
-                        nombreCliente: cliente.nombre,
-                        curpCliente: cliente.curp,
-                        pagoSemanalAcumulado: montoAPagarFinal,
-                        pagoSemanalReferencia: pagoSemanalRef,
-                        saldoRestante: estadoCalc.saldoRestante,
-                        estadoCredito: estadoCalc.estado,
-                        office: creditoActivo.office
-                    });
+            
+            const todosLosCreditos = await database.buscarCreditosPorCliente(cliente.curp, clienteOffice);
 
-                } else if (!estadoCalc) { 
-                    console.warn(`Error al calcular estado para crédito ${creditoActivo.id}`);
-                    clientesConErrores++;
+            if (todosLosCreditos && todosLosCreditos.length > 0) {
+                
+                for (const credito of todosLosCreditos) {
+                    
+                    const pagos = await database.getPagosPorCredito(credito.historicalIdCredito || credito.id, credito.office);
+                    pagos.sort((a, b) => (parsearFecha(b.fecha)?.getTime() || 0) - (parsearFecha(a.fecha)?.getTime() || 0));
+                    const estadoCalc = _calcularEstadoCredito(credito, pagos);
+
+                    if (estadoCalc && estadoCalc.estado !== 'liquidado' && estadoCalc.pagoSemanal > 0.01) {
+                        
+                        const pagoSemanalRef = estadoCalc.pagoSemanal;
+                        const semanasAtraso = estadoCalc.semanasAtraso || 0;
+                        const saldoRestante = estadoCalc.saldoRestante;
+                        let montoAcumulado;
+                        if (semanasAtraso > 0) {
+                            montoAcumulado = semanasAtraso * pagoSemanalRef;
+                        } else {
+                            montoAcumulado = pagoSemanalRef;
+                        }
+                        const tolerancia = 0.015; 
+                        let montoAPagarFinal = Math.min(montoAcumulado, saldoRestante + tolerancia);
+                        montoAPagarFinal = Math.max(0, parseFloat(montoAPagarFinal.toFixed(2))); 
+                        if (saldoRestante < 0.01) {
+                            montoAPagarFinal = 0.00;
+                        }
+
+                        poblacionesEncontradasSet.add(cliente.poblacion_grupo);
+                        totalGeneralACobrar += pagoSemanalRef; 
+                        
+                        creditosPendientes.push({
+                            firestoreId: credito.id,
+                            historicalIdCredito: credito.historicalIdCredito || credito.id,
+                            nombreCliente: cliente.nombre,
+                            curpCliente: cliente.curp,
+                            pagoSemanalAcumulado: montoAPagarFinal,
+                            pagoSemanalReferencia: pagoSemanalRef,
+                            saldoRestante: estadoCalc.saldoRestante,
+                            estadoCredito: estadoCalc.estado,
+                            office: credito.office
+                        });
+                        
+                        break; 
+
+                    } else if (!estadoCalc) { 
+                        console.warn(`Error al calcular estado para crédito ${credito.id}`);
+                        clientesConErrores++;
+                    }
+            
                 }
             }
+      
         }
 
         if (creditosPendientes.length === 0) { 
@@ -2802,6 +2817,7 @@ async function handleCalcularCobranzaRuta() {
         renderizarCobranzaRuta(cobranzaRutaData, container);
         if (btnGuardar) btnGuardar.classList.remove('hidden');
         if (btnRegistrar) btnRegistrar.classList.remove('hidden');
+
         showFixedProgress(100, 'Cálculo completado');
         let msgExito = `Cálculo completado: ${creditosPendientes.length} créditos encontrados.`;
         if (clientesConErrores > 0) msgExito += ` (${clientesConErrores} créditos omitidos por errores).`;
@@ -2809,6 +2825,7 @@ async function handleCalcularCobranzaRuta() {
     
     } catch (error) {
         console.error("Error al calcular cobranza de ruta:", error);
+
         if (error.message === "Operación cancelada") {
             showStatus('status_pago_grupo', 'Cálculo cancelado por el usuario.', 'warning');
             if (placeholder) {
@@ -2822,7 +2839,7 @@ async function handleCalcularCobranzaRuta() {
                 placeholder.classList.remove('hidden');
             }
         }
-
+        
         container.innerHTML = '';
         cobranzaRutaData = null;
         if (btnGuardar) btnGuardar.classList.add('hidden');
@@ -2832,7 +2849,7 @@ async function handleCalcularCobranzaRuta() {
         if (operationId === currentSearchOperation) {
             cargaEnProgreso = false;
         }
-
+        
         showButtonLoading(btnCalcular, false);
         setTimeout(hideFixedProgress, 2000); // Oculta la barra de progreso
         console.log('Cálculo de ruta finalizado. Temporizador de inactividad REACTIVADO.');
@@ -6148,6 +6165,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
