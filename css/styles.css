@@ -2038,22 +2038,21 @@ tr.pago-registrado-exito td, tr.pago-registrado-error td {
 }
 
 .color-picker-container input[type="color"] {
-    width: 40px;  /* Ancho fijo */
-    height: 40px; /* Alto fijo */
-    padding: 0;   /* Quitar padding default */
+    width: 40px;
+    height: 40px;
+    padding: 0;
     border: 2px solid var(--border-color);
     border-radius: 8px;
     cursor: pointer;
-    -webkit-appearance: none; /* Quitar apariencia de sistema */
+    -webkit-appearance: none;
     -moz-appearance: none;
     appearance: none;
-    background-color: transparent; /* Quitar fondo default */
+    background-color: transparent;
 }
 
-/* Estilo para el cuadro de color interno (Chrome/Edge/Safari) */
 .color-picker-container input[type="color"]::-webkit-color-swatch-wrapper {
     padding: 0;
-    border-radius: 6px; /* Radio interno */
+    border-radius: 6px;
 }
 
 .color-picker-container input[type="color"]::-webkit-color-swatch {
@@ -2061,13 +2060,22 @@ tr.pago-registrado-exito td, tr.pago-registrado-error td {
     border-radius: 6px;
 }
 
-/* Estilo para el cuadro de color interno (Firefox) */
 .color-picker-container input[type="color"]::-moz-color-swatch {
     border: none;
     border-radius: 6px;
 }
+
+.progress-bar-wrapper {
+    flex: 1;
+    margin: 0 15px;
+    background: #e0e0e0;
+    border-radius: 10px;
+    height: 8px;
+    overflow: hidden;
+    }
     
 }
+
 
 
 
