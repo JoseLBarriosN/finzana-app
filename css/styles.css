@@ -1041,7 +1041,7 @@ select {
     border-bottom: 1px solid #e0e0e0;
     transition: top 0.3s ease;
     display: grid;
-    grid-template-columns: auto auto 1fr;
+    grid-template-columns: auto 1fr auto;
     align-items: center;
     gap: 15px;
 }
@@ -1109,14 +1109,39 @@ body.has-connection-status .progress-container-fixed {
     width: 0%;
 }
 
+    .progress-spacer {
+    width: 30px; 
+    height: 30px;
+    flex-shrink: 0;
+}
+
+    @media (max-width: 768px) {
+    .progress-container-fixed {
+        height: 50px;
+        padding: 0 10px;
+        gap: 10px;
+    }
+    .btn-cancelar-carga-fixed {
+        width: 25px;
+        height: 25px;
+    }
+    .progress-spacer {
+        width: 25px;
+        height: 25px;
+    }
+    .progress-text-fixed {
+        font-size: 12px;
+    }
+
 .progress-text-fixed {
     font-size: 14px;
     color: var(--dark);
     font-weight: 500;
-    text-align: left;
+    text-align: center;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    width: 100%;
     padding-center: 0;
 }
 
@@ -1141,6 +1166,15 @@ body.has-connection-status .progress-container-fixed {
         background: #e64a2e;
         transform: scale(1.1);
     }
+
+    .progress-center-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+}
+
 
 .filtros-usuarios {
     background: #f8f9fa;
@@ -2068,10 +2102,13 @@ tr.pago-registrado-exito td, tr.pago-registrado-error td {
     border-radius: 10px;
     height: 8px;
     overflow: hidden;
-    margin: 0;
+    margin-top: 5px;
+    width: 100%;
+    max-width: 400px;
     }
     
 }
+
 
 
 
