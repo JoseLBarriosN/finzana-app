@@ -342,7 +342,7 @@ function aplicarPermisosUI(role) {
         document.querySelectorAll('.menu-card').forEach(card => card.style.display = 'none');
         return;
     }
-    // 1. Definir permisos del menú
+    
     const permisosMenu = {
         'Super Admin': ['all'],
         'Gerencia': ['all'],
@@ -350,7 +350,7 @@ function aplicarPermisosUI(role) {
             'view-gestion-clientes', 'view-cliente', 'view-colocacion', 'view-cobranza',
             'view-pago-grupo', 'view-reportes', 'view-reportes-avanzados',
             'view-usuarios', 'view-importar', 'view-configuracion',
-            'view-gestion-efectivo'
+            'view-gestion-efectivo', 'view-reporte-contable'
         ],
         'Área comercial': [
             'view-gestion-clientes',
@@ -358,19 +358,15 @@ function aplicarPermisosUI(role) {
             'view-colocacion',
             'view-cobranza',
             'view-pago-grupo',
-            'view-registrar-gasto' // <-- AÑADIDO
+            'view-registrar-gasto'
         ],
         'default': []
     };
 
-    // Mapeo (admin -> Administrador)
     const userRoleKey = role === 'admin' ? 'Administrador' : role;
     const userPerms = permisosMenu[userRoleKey] || permisosMenu['default'];
-
-    // Ocultar/Mostrar ítems del Menú Principal
     document.querySelectorAll('.menu-card').forEach(card => {
         const view = card.getAttribute('data-view');
-        // Mostrar si tiene 'all' o la vista específica está en sus permisos
         if (userPerms.includes('all') || userPerms.includes(view)) {
             card.style.display = 'block';
         } else {
@@ -378,13 +374,13 @@ function aplicarPermisosUI(role) {
         }
     });
 
-    // 2. Ajustar filtros y UI basados en la OFICINA del usuario
     const userOffice = currentUserData.office;
     const filtrosOffice = [
         '#sucursal_filtro', '#sucursal_filtro_reporte', '#grafico_sucursal',
         '#office_cliente', '#nueva-poblacion-sucursal', '#nueva-ruta-sucursal',
         '#filtro-sucursal-usuario',
-        '#nuevo-sucursal'
+        '#nuevo-sucursal',
+        '#reporte-contable-sucursal'
     ];
 
     const esAdminConAccesoTotal = (userRoleKey === 'Super Admin' || userRoleKey === 'Gerencia');
@@ -396,33 +392,30 @@ function aplicarPermisosUI(role) {
                 el.disabled = true;
             }
         });
+        
         _actualizarDropdownGrupo('grupo_filtro', userOffice, 'Todos');
         _actualizarDropdownGrupo('grupo_filtro_reporte', userOffice, 'Todos');
         _actualizarDropdownGrupo('grafico_grupo', userOffice, 'Todos');
+        const officeClienteSelect = document.getElementById('office_cliente');
+        if (officeClienteSelect) {
+             handleOfficeChangeForClientForm.call(officeClienteSelect);
+        }
+        
+        const nuevoSucursalSelect = document.getElementById('nuevo-sucursal');
+        if (nuevoSucursalSelect) {
+            _cargarRutasParaUsuario(userOffice);
+        }
+        
+        const reporteSucursalSelect = document.getElementById('reporte-contable-sucursal');
+        if (reporteSucursalSelect) {
+            handleSucursalReporteContableChange.call(reporteSucursalSelect);
+        }
+
     } else {
         filtrosOffice.forEach(selector => {
             const el = document.querySelector(selector);
             if (el) {
                 el.disabled = false;
-                if (esAdminConAccesoTotal && userOffice && userOffice !== 'AMBAS') {
-                    if (el.value !== userOffice) {
-                        el.value = userOffice;
-                        if (el.id === 'sucursal_filtro') _actualizarDropdownGrupo('grupo_filtro', userOffice, 'Todos');
-                        if (el.id === 'sucursal_filtro_reporte') _actualizarDropdownGrupo('grupo_filtro_reporte', userOffice, 'Todos');
-                        if (el.id === 'grafico_sucursal') _actualizarDropdownGrupo('grafico_grupo', userOffice, 'Todos');
-                        if (el.id === 'office_cliente') handleOfficeChangeForClientForm.call(el);
-                        if (el.id === 'nuevo-sucursal') _cargarRutasParaUsuario(userOffice);
-                    }
-                } else if (!userOffice || userOffice === 'AMBAS') {
-                     if (!['office_cliente', 'nueva-poblacion-sucursal', 'nueva-ruta-sucursal', 'nuevo-sucursal'].includes(el.id)) {
-                          if (el.value !== '') {
-                              el.value = '';
-                              if (el.id === 'sucursal_filtro') _actualizarDropdownGrupo('grupo_filtro', '', 'Todos');
-                              if (el.id === 'sucursal_filtro_reporte') _actualizarDropdownGrupo('grupo_filtro_reporte', '', 'Todos');
-                              if (el.id === 'grafico_sucursal') _actualizarDropdownGrupo('grafico_grupo', '', 'Todos');
-                          }
-                     }
-                }
             }
         });
          if (!userOffice || userOffice === 'AMBAS') {
@@ -432,14 +425,13 @@ function aplicarPermisosUI(role) {
          }
     }
 
-    // 3. Ajustar UI específica (ej. CURP editable)
     const curpInput = document.getElementById('curp_cliente');
     if (curpInput) {
         const puedeEditarCURP = ['Super Admin', 'Gerencia', 'Administrador'].includes(userRoleKey);
-        curpInput.readOnly = !puedeEditarCURP;
+        curpInput.readOnly = !puedeEditarCURP && (editingClientId !== null);
         const curpFieldNote = curpInput.closest('.form-group')?.querySelector('.field-note');
         if (curpFieldNote) {
-            curpFieldNote.style.display = puedeEditarCURP ? 'block' : 'none';
+            curpFieldNote.style.display = (editingClientId !== null) ? 'block' : 'none'; 
         }
     }
 
@@ -1705,7 +1697,7 @@ async function handleImport() {
     }
 }
 
-
+// Formato de Clientes
 function resetClientForm() {
     editingClientId = null;
     const form = document.getElementById('form-cliente');
@@ -1714,26 +1706,24 @@ function resetClientForm() {
     if (titulo) titulo.textContent = 'Registrar Cliente';
     const submitButton = document.querySelector('#form-cliente button[type="submit"]');
     if (submitButton) submitButton.innerHTML = '<i class="fas fa-save"></i> Guardar Cliente';
-
-    // Volver a aplicar permisos de UI al resetear
     if (currentUserData) aplicarPermisosUI(currentUserData.role);
-
     const curpInput = document.getElementById('curp_cliente');
     if (curpInput) {
-        // La readonly se establece en aplicarPermisosUI
+        curpInput.readOnly = false; 
         validarCURP(curpInput);
     }
-
+  
     const officeInput = document.getElementById('office_cliente');
     if (officeInput && !officeInput.disabled) {
-        officeInput.value = 'GDL'; // Resetear a GDL si no está bloqueado por rol
+        officeInput.value = 'GDL';
     }
 
-    handleOfficeChangeForClientForm.call(document.getElementById('office_cliente') || { value: 'GDL' });
+    handleOfficeChangeForClientForm.call(document.getElementById('office_cliente') || { value: officeInput.value });
+    
     showStatus('status_cliente', '', 'info');
 }
 
-
+// Manejar formato de Clienes
 async function handleClientForm(e) {
     e.preventDefault();
     const curpInput = document.getElementById('curp_cliente');
@@ -6187,6 +6177,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
