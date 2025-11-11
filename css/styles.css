@@ -1935,6 +1935,11 @@ body.has-connection-status #progress-container-fixed {
     margin: 0;
 }
 
+#progress-container-fixed > #btn-cancelar-carga-fixed {
+    grid-column: 1;
+    align-self: center;
+}
+
 .progress-center-content {
     display: flex;
     flex-direction: column;
@@ -2023,4 +2028,5 @@ body.has-connection-status #progress-container-fixed {
   80% { top: 0; opacity: 1; }     /* Permanece visible 3.2s */
   100% { top: -60px; opacity: 0; } /* Se desliza hacia arriba y desaparece (en 0.8s) */
 }
+
 
