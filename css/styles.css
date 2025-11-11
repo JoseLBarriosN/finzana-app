@@ -1024,12 +1024,32 @@ select {
     display: flex !important;
 }
 
+.connection-status {
+    padding: 10px 12px;
+    height: 40px; 
+    text-align: center;
+    font-weight: 600;
+    color: white;
+    font-size: 14px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: fixed;
+    left: 0;
+    width: 100%;
+    z-index: 10001;
+    top: -60px;
+    opacity: 0;
+    transition: top 0.5s ease, opacity 0.5s ease;
+}
+
 .connection-status.online {
     background-color: var(--success);
     color: white;
     display: flex !important;
-    opacity: 0;
-    top: -60px;
+    top: 0;
+    opacity: 1;
     animation: fade-in-out-sutil 4s ease-out forwards; 
 }
 
@@ -2003,3 +2023,4 @@ body.has-connection-status #progress-container-fixed {
   80% { top: 0; opacity: 1; }     /* Permanece visible 3.2s */
   100% { top: -60px; opacity: 0; } /* Se desliza hacia arriba y desaparece (en 0.8s) */
 }
+
