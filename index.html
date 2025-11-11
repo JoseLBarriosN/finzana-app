@@ -462,7 +462,6 @@
                     </div>
                 </div>
             </div>
-            
             <div id="view-cliente" class="view hidden">
                 <div class="view-header">
                     <h2>Registrar Cliente</h2>
@@ -1113,16 +1112,21 @@
         <div id="processing-message" class="processing-message">Procesando...</div>
     </div>
 
-        <div id="progress-container-fixed" class="progress-container-fixed hidden">
-            <div id="progress-text-fixed" class="progress-text-fixed"></div>
+    <div id="progress-container-fixed" class="progress-container-fixed hidden">
     
-        <div class="progress-bar-wrapper"> 
-            <div id="progress-bar-fixed" class="progress-bar-fixed" style="width: 0%;"></div> 
-        </div>
-
         <button id="btn-cancelar-carga-fixed" class="btn-cancelar-carga-fixed" title="Cancelar operación">
             <i class="fas fa-times"></i>
         </button>
+
+        <div class="progress-center-content">
+            <div id="progress-text-fixed" class="progress-text-fixed">Cargando...</div>
+            <div class="progress-bar-wrapper"> 
+                <div id="progress-bar-fixed" class="progress-bar-fixed" style="width: 0%;"></div> 
+            </div>
+        </div>
+
+        <div class="progress-spacer"></div>
+
     </div>
 
     <div id="generic-modal" class="modal-overlay hidden">
@@ -1145,6 +1149,7 @@
     <script src="js/app.js"></script>
 </body>
 </html>
+
 
 
 
