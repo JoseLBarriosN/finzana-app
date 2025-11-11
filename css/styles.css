@@ -1177,6 +1177,15 @@ body.has-connection-status .progress-container-fixed {
     overflow: hidden;
 }
 
+    .progress-bar-wrapper {
+    background: #e0e0e0;
+    border-radius: 10px;
+    height: 8px;
+    overflow: hidden;
+    margin-top: 5px;
+    width: 100%;
+    max-width: 400px;
+}
 
 .filtros-usuarios {
     background: #f8f9fa;
@@ -2099,20 +2108,5 @@ tr.pago-registrado-exito td, tr.pago-registrado-error td {
     border-radius: 8px;
 }
 
-.progress-bar-wrapper {
-    background: #e0e0e0;
-    border-radius: 10px;
-    height: 8px;
-    overflow: hidden;
-    margin-top: 5px;
-    width: 100%;
-    max-width: 400px;
-    }
     
 }
-
-
-
-
-
-
