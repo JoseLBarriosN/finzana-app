@@ -2020,13 +2020,133 @@ body.has-connection-status #progress-container-fixed {
     }
 }
 
-/* =============================================
-   FIX PARA MENSAJE DE CONEXIÓN ATASCADO
-   ============================================= */
 @keyframes fade-in-out-sutil {
-  0% { top: 0; opacity: 1; }     /* Entra y se muestra */
-  80% { top: 0; opacity: 1; }     /* Permanece visible 3.2s */
-  100% { top: -60px; opacity: 0; } /* Se desliza hacia arriba y desaparece (en 0.8s) */
+  0% { top: 0; opacity: 1; }
+  80% { top: 0; opacity: 1; }
+  100% { top: -60px; opacity: 0; }
 }
+
+/* =============================================
+   NUEVA BARRA DE PROGRESO (Faltante)
+   ============================================= */
+
+.progress-container-nuevo {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 60px; /* Altura fija en escritorio */
+    background: white;
+    box-shadow: var(--box-shadow);
+    z-index: 10002; /* Encima del status de conexión */
+    border-bottom: 1px solid var(--border-color);
+    transition: top 0.3s ease;
+    
+    /* === LA ALINEACIÓN === */
+    display: flex;
+    align-items: center;
+    padding: 0 15px;
+    gap: 15px;
+}
+
+/* 1. Botón de Cancelar (Izquierda) */
+.btn-cancelar-nuevo {
+    /* Forzamos el estilo redondo que querías */
+    width: 35px;
+    height: 35px;
+    border-radius: 50% !important; /* Forzar redondez */
+    padding: 0 !important; /* Ignorar el padding de .btn */
+    font-size: 16px;
+    flex-shrink: 0; /* Evita que se encoja */
+}
+
+.btn-cancelar-nuevo .fa-times {
+    margin: 0; /* Centra el ícono (quita el 'gap' de .btn) */
+}
+
+/* 2. Contenido de Progreso (Centro/Derecha) */
+.progress-content-nuevo {
+    flex-grow: 1; /* Ocupa todo el espacio restante */
+    display: flex;
+    flex-direction: column;
+    min-width: 0; /* Evita que el texto desborde el flexbox */
+}
+
+.progress-text-nuevo {
+    font-size: 14px;
+    color: var(--dark);
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 5px;
+}
+
+.progress-bar-wrapper-nuevo {
+    width: 100%;
+    height: 10px;
+    background: #e9ecef; /* Usamos un color de tu tema */
+    border-radius: var(--border-radius);
+    overflow: hidden;
+}
+
+.progress-bar-nuevo {
+    height: 100%;
+    /* Usamos los colores de tu tema */
+    background: linear-gradient(90deg, var(--primary), var(--secondary));
+    border-radius: var(--border-radius);
+    transition: width 0.3s ease;
+    width: 0%;
+}
+
+/* === LÓGICA DE POSICIONAMIENTO === */
+
+/* Ajuste si la barra de conexión está activa */
+body.has-connection-status .progress-container-nuevo {
+    top: 50px; /* Baja 50px si la conexión se muestra */
+}
+/* Empujamos el padding del body (reemplaza la lógica anterior) */
+body.has-progress {
+    padding-top: calc(60px + 20px) !important;
+}
+body.has-connection-status.has-progress {
+    padding-top: calc(60px + 50px + 20px) !important;
+}
+
+
+/* === AJUSTES PARA MÓVIL === */
+@media (max-width: 768px) {
+    .progress-container-nuevo {
+        height: 50px;
+        padding: 0 10px;
+        gap: 10px;
+    }
+
+    .btn-cancelar-nuevo {
+        width: 30px;
+        height: 30px;
+        font-size: 14px;
+    }
+
+    .progress-text-nuevo {
+        font-size: 12px;
+    }
+
+    .progress-bar-wrapper-nuevo {
+        height: 8px;
+    }
+
+    /* Lógica de padding en móvil */
+    body.has-connection-status .progress-container-nuevo {
+        top: 40px;
+    }
+    body.has-progress {
+        padding-top: calc(50px + 20px) !important;
+    }
+    body.has-connection-status.has-progress {
+        padding-top: calc(50px + 40px + 20px) !important;
+    }
+}
+
 
 
