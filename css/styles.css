@@ -1142,7 +1142,7 @@ body.has-connection-status .progress-container-fixed {
     overflow: hidden;
     text-overflow: ellipsis;
     width: 100%;
-    padding-center: 0;
+    padding: 0;
 }
 
 .btn-cancelar-carga-fixed {
@@ -2108,6 +2108,7 @@ tr.pago-registrado-exito td, tr.pago-registrado-error td {
     }
     
 }
+
 
 
 
