@@ -17,6 +17,7 @@ let grupoDePagoActual = null; // Para la nueva función de pago grupal
 let currentChart = null; // Para la nueva función de gráficos
 let cobranzaRutaData = null;
 let dropdownUpdateInProgress = false; // Prevenir actualizaciones duplicadas
+let clienteParaCredito = null;
 const OFFLINE_STORAGE_KEY = 'cobranza_ruta_';
 
 /** Parsea de forma robusta una fecha que puede ser un string (ISO 8601, yyyy-mm-dd, etc.) **/
@@ -454,12 +455,14 @@ function aplicarPermisosUI(role) {
 // FUNCIONES MOVIDAS ANTES DE DOMContentLoaded
 // =============================================
 
-// --- Funciones de Gestión de Clientes --- //
 async function loadClientesTable() {
     if (cargaEnProgreso) {
         showStatus('status_gestion_clientes', 'Ya hay una búsqueda en progreso. Por favor, espera.', 'warning');
         return;
     }
+
+    clearTimeout(inactivityTimer);
+    
     cargaEnProgreso = true;
     currentSearchOperation = Date.now();
     const operationId = currentSearchOperation;
@@ -724,11 +727,15 @@ function limpiarFiltrosReportes() {
     showStatus('status_reportes_avanzados', 'Filtros limpiados. Selecciona nuevos criterios y genera el reporte.', 'info');
 }
 
+//** Reportes Avanzados **//
 async function loadAdvancedReports() {
     if (cargaEnProgreso) {
         showStatus('status_reportes_avanzados', 'Ya hay una generación de reporte en progreso. Espera a que termine.', 'warning');
         return;
     }
+
+    clearTimeout(inactivityTimer);
+    
     cargaEnProgreso = true;
     currentSearchOperation = Date.now();
     const operationId = currentSearchOperation;
@@ -2271,6 +2278,7 @@ async function handleSearchClientForCredit() {
     const statusColocacion = document.getElementById('status_colocacion');
     const formColocacion = document.getElementById('form-colocacion');
     const btnBuscar = document.getElementById('btnBuscarCliente_colocacion');
+    clienteParaCredito = null;
 
     if (!validarFormatoCURP(curp)) {
         showStatus('status_colocacion', 'El CURP debe tener 18 caracteres y formato válido.', 'error');
@@ -2290,6 +2298,8 @@ async function handleSearchClientForCredit() {
             showFixedProgress(100, 'Cliente no encontrado');
             throw new Error('CURP aún no registrado. Hay que generar el registro del cliente primero.');
         }
+
+        clienteParaCredito = cliente;
 
         showFixedProgress(70, 'Verificando elegibilidad...');
         statusColocacion.innerHTML = 'Cliente encontrado. Verificando elegibilidad para crédito...';
@@ -2355,9 +2365,14 @@ async function handleCreditForm(e) {
     e.preventDefault();
     const submitButton = e.target.querySelector('button[type="submit"]');
     const statusColocacion = document.getElementById('status_colocacion');
-
     const curpAvalInput = document.getElementById('curpAval_colocacion');
     const curpAval = curpAvalInput.value.trim().toUpperCase();
+
+    if (!clienteParaCredito || clienteParaCredito.curp !== document.getElementById('curp_colocacion').value.trim().toUpperCase()) {
+         showStatus('status_colocacion', 'Error: Se perdieron los datos del cliente. Por favor, busca al cliente de nuevo.', 'error');
+         return;    
+    }
+    
     const creditoData = {
         curpCliente: document.getElementById('curp_colocacion').value.trim().toUpperCase(),
         tipo: document.getElementById('tipo_colocacion').value,
@@ -2367,7 +2382,6 @@ async function handleCreditForm(e) {
         nombreAval: document.getElementById('nombreAval_colocacion').value.trim()
     };
 
-    // *** CORRECCIÓN: Calcular monto total y saldo basado en reglas de interés ***
     let interesRate = 0;
     if (creditoData.plazo === 14) interesRate = 0.40;
     else if (creditoData.plazo === 13) interesRate = 0.30;
@@ -2381,7 +2395,7 @@ async function handleCreditForm(e) {
         showStatus('status_colocacion', 'Error: Todos los campos del crédito son obligatorios (Monto, Plazo, Tipo, Nombre Aval).', 'error');
         return;
     }
-    // *** CORRECCIÓN: Validar regla de renovación ***
+    
     if ((creditoData.tipo === 'renovacion' || creditoData.tipo === 'reingreso') && creditoData.plazo !== 14) {
         showStatus('status_colocacion', 'Error: Las renovaciones y reingresos solo pueden ser a 14 semanas.', 'error');
         return;
@@ -3217,6 +3231,9 @@ async function handleGenerarGrafico() {
         showStatus('status_graficos', 'Ya hay una operación en progreso. Por favor, espera.', 'warning');
         return;
     }
+
+    clearTimeout(inactivityTimer);
+    
     cargaEnProgreso = true;
     showProcessingOverlay(true, 'Generando datos para el gráfico...');
     showButtonLoading('#btn-generar-grafico', true, 'Generando...');
@@ -6165,6 +6182,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
