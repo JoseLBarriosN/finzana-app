@@ -1043,7 +1043,7 @@ select {
     display: grid;
     grid-template-columns: auto auto 1fr;
     align-items: center;
-    gap: 10px;
+    gap: 15px;
 }
 
 .connection-status {
@@ -1117,7 +1117,7 @@ body.has-connection-status .progress-container-fixed {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    padding-left: 0;
+    padding-center: 0;
 }
 
 .btn-cancelar-carga-fixed {
@@ -1134,6 +1134,7 @@ body.has-connection-status .progress-container-fixed {
     transition: all 0.3s ease;
     font-size: 12px;
     flex-shrink: 0;
+    margin-left: 0;
 }
 
     .btn-cancelar-carga-fixed:hover {
@@ -2067,8 +2068,10 @@ tr.pago-registrado-exito td, tr.pago-registrado-error td {
     border-radius: 10px;
     height: 8px;
     overflow: hidden;
+    margin: 0;
     }
     
 }
+
 
 
