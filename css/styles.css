@@ -1133,6 +1133,8 @@ body.has-connection-status .progress-container-fixed {
         font-size: 12px;
     }
 
+}
+
 .progress-text-fixed {
     font-size: 14px;
     color: var(--dark);
@@ -2108,6 +2110,7 @@ tr.pago-registrado-exito td, tr.pago-registrado-error td {
     }
     
 }
+
 
 
 
