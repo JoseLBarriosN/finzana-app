@@ -1112,20 +1112,21 @@
         <div id="processing-message" class="processing-message">Procesando...</div>
     </div>
 
-    <div id="progress-container-fixed" class="progress-container-fixed hidden">
+    <div id="progress-container-fixed" class="progress-container-nuevo hidden">
     
-        <button id="btn-cancelar-carga-fixed" class="btn-cancelar-carga-fixed" title="Cancelar operación">
-            <i class="fas fa-times"></i>
-        </button>
-
-        <div class="progress-center-content">
-            <div id="progress-text-fixed" class="progress-text-fixed">Cargando...</div>
-            <div class="progress-bar-wrapper"> </div>
+    <button id="btn-cancelar-carga-fixed" class="btn btn-danger btn-cancelar-nuevo" title="Cancelar operación">
+        <i class="fas fa-times"></i>
+    </button>
+    
+    <div class="progress-content-nuevo">
+        <div id="progress-text-fixed" class="progress-text-nuevo">Cargando... 0%</div>
+        
+        <div class="progress-bar-wrapper-nuevo">
+            <div id="progress-bar-fixed" class="progress-bar-nuevo" style="width: 0%;"></div>
         </div>
-
-        <div class="progress-spacer"></div>
-
     </div>
+
+</div>
 
     <div id="generic-modal" class="modal-overlay hidden">
         <div class="modal-content">
@@ -1147,6 +1148,7 @@
     <script src="js/app.js"></script>
 </body>
 </html>
+
 
 
 
