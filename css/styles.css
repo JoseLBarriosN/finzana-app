@@ -34,32 +34,6 @@ body {
     transition: padding-top 0.3s ease; /* Transición para padding */
 }
 
-/* =============================================
-   LÓGICA DE PADDING SUPERIOR CONSOLIDADA
-   ============================================= */
-body {
-    padding-top: 20px;
-}
-
-/* Escritorio */
-body.has-connection-status:not(.has-progress) { padding-top: calc(50px + 20px); }
-body.has-progress:not(.has-connection-status) { padding-top: calc(60px + 20px); }
-body.has-connection-status.has-progress { padding-top: calc(110px + 20px); }
-
-/* Móvil */
-@media (max-width: 768px) {
-    body {
-        padding-top: 20px;
-    }
-    body.has-connection-status:not(.has-progress) { padding-top: calc(40px + 20px); }
-    body.has-progress:not(.has-connection-status) { padding-top: calc(50px + 20px); }
-    body.has-connection-status.has-progress { padding-top: calc(90px + 20px); }
-}
-/* =============================================
-   FIN LÓGICA PADDING
-   ============================================= */
-
-
 .hidden {
     display: none !important;
 }
@@ -1023,170 +997,6 @@ select {
         margin-bottom: 5px;
     }
 
-/* =============================================
-   FIX: BARRA DE PROGRESO Y STATUS DE CONEXIÓN
-   ============================================= */
-
-/* 1. Barra de Progreso (Encima de todo) */
-.progress-container-fixed {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 60px;
-    background: white;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-    z-index: 10002;
-    padding: 0 20px;
-    border-bottom: 1px solid #e0e0e0;
-    transition: top 0.3s ease;
-    display: grid;
-    grid-template-columns: auto 1fr auto;
-    align-items: center;
-    gap: 15px;
-}
-
-.connection-status {
-    padding: 10px 12px;
-    height: 40px; 
-    text-align: center;
-    font-weight: 600;
-    color: white;
-    font-size: 14px;
-    transition: all 0.5s ease;
-    animation: fadeIn 0.5s;
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    z-index: 10001; /* <-- VALOR MÁS BAJO (DEBAJO) */
-    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 10001;
-}
-
-/* 3. Lógica de Ocultamiento */
-/* Cuando el progreso está activo, el status de conexión se oculta */
-body.has-progress .connection-status {
-    display: none !important;
-}
-/* Cuando el status de conexión está activo, la barra de progreso baja */
-body.has-connection-status .progress-container-fixed {
-    top: 50px; /* Altura del connection-status (escritorio) */
-}
-
-/* Ajustes de altura para barras en móvil */
-@media (max-width: 768px) {
-    .progress-container-fixed {
-        height: 50px;
-        padding: 0 10px;
-    }
-    .connection-status {
-        height: 40px;
-    }
-    body.has-connection-status .progress-container-fixed {
-        top: 40px; /* Altura del connection-status (móvil) */
-    }
-    .progress-text-fixed {
-        font-size: 12px;
-        min-width: 120px;
-    }
-    .btn-cancelar-carga-fixed {
-        width: 25px;
-        height: 25px;
-    }
-}
-/* ----- FIN DEL FIX ----- */
-
-
-#progress-bar-fixed {
-    height: 8px;
-    background: linear-gradient(90deg, var(--primary), var(--secondary));
-    border-radius: 10px;
-    transition: width 0.3s ease, background 0.3s ease;
-    width: 0%;
-}
-
-    .progress-spacer {
-    width: 30px; 
-    height: 30px;
-    flex-shrink: 0;
-}
-
-    @media (max-width: 768px) {
-    .progress-container-fixed {
-        height: 50px;
-        padding: 0 10px;
-        gap: 10px;
-    }
-    .btn-cancelar-carga-fixed {
-        width: 25px;
-        height: 25px;
-    }
-    .progress-spacer {
-        width: 25px;
-        height: 25px;
-    }
-    .progress-text-fixed {
-        font-size: 12px;
-    }
-
-}
-
-.progress-text-fixed {
-    font-size: 14px;
-    color: var(--dark);
-    font-weight: 500;
-    text-align: center;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    width: 100%;
-    padding: 0;
-}
-
-.btn-cancelar-carga-fixed {
-    background: var(--danger);
-    color: white;
-    border: none;
-    border-radius: 50%;
-    width: 30px;
-    height: 30px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    transition: all 0.3s ease;
-    font-size: 12px;
-    flex-shrink: 0;
-    margin-left: 0;
-}
-
-    .btn-cancelar-carga-fixed:hover {
-        background: #e64a2e;
-        transform: scale(1.1);
-    }
-
-    .progress-center-content {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    overflow: hidden;
-}
-
-    .progress-bar-wrapper {
-    background: #e0e0e0;
-    border-radius: 10px;
-    height: 8px;
-    overflow: hidden;
-    margin-top: 5px;
-    width: 100%;
-    max-width: 400px;
-}
-
 .filtros-usuarios {
     background: #f8f9fa;
     padding: 20px;
@@ -1216,7 +1026,11 @@ body.has-connection-status .progress-container-fixed {
 
 .connection-status.online {
     background-color: var(--success);
+    color: white;
     display: flex !important;
+    opacity: 0;
+    top: -60px;
+    animation: fade-in-out-sutil 4s ease-out forwards; 
 }
 
 .modal-overlay {
@@ -2045,68 +1859,147 @@ tr.pago-registrado-exito td, tr.pago-registrado-error td {
     }
 }
 
-@media (max-width: 480px) {
-    .configuracion-container {
-        padding: 10px;
-    }
-    
-    .poblacion-card,
-    .ruta-card {
-        padding: 15px;
-    }
-    
-    .poblacion-actions,
-    .ruta-actions {
-        flex-direction: column;
-    }
-    
-    .btn-asignar-ruta,
-    .btn-editar-ruta,
-    .btn-eliminar-poblacion {
-        width: 100%;
-    }
+body.has-progress {
+    padding-top: calc(60px + 20px) !important;
+}
+body.has-connection-status:not(.has-progress) {
+    padding-top: calc(50px + 20px) !important;
+}
+body.has-connection-status.has-progress {
+    padding-top: calc(60px + 50px + 20px) !important;
+}
 
-    /* =============================================
-   ESTILOS PARA SELECTORES DE COLOR (GRÁFICOS)
-   ============================================= */
-
-.color-picker-container {
-    display: flex;
-    gap: 10px;
+#progress-container-fixed {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 60px;
+    background: white;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    z-index: 10002;
+    border-bottom: 1px solid #e0e0e0;
+    transition: top 0.3s ease;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
     align-items: center;
-    flex-wrap: wrap; /* Para que se ajusten en móvil */
-    padding-top: 5px;
+    gap: 15px;
+    padding: 0 20px;
 }
 
-.color-picker-container input[type="color"] {
-    -webkit-appearance: none;
-    -moz-appearance: none;
-    appearance: none;
-    width: 40px;
-    height: 40px;
-    padding: 0;
+body.has-connection-status #progress-container-fixed {
+    top: 50px;
+}
+
+#btn-cancelar-carga-fixed {
+    background: var(--danger);
+    color: white;
     border: none;
-    background-color: transparent;
+    border-radius: 50%;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     cursor: pointer;
+    transition: all 0.3s ease;
+    font-size: 12px;
+    flex-shrink: 0;
+    padding: 0; 
+}
+#btn-cancelar-carga-fixed:hover {
+    background: #e64a2e;
+    transform: scale(1.1);
+}
+#btn-cancelar-carga-fixed .fa-times {
+    margin: 0;
 }
 
-.color-picker-container input[type="color"]::-webkit-color-swatch-wrapper {
+.progress-center-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+}
+
+#progress-text-fixed {
+    font-size: 14px;
+    color: var(--dark);
+    font-weight: 500;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    width: 100%;
     padding: 0;
 }
 
-.color-picker-container input[type="color"]::-webkit-color-swatch {
-    width: 40px;
-    height: 40px;
-    border: 2px solid var(--border-color);
-    border-radius: 8px;
+.progress-bar-wrapper {
+    background: #e0e0e0;
+    border-radius: 10px;
+    height: 8px;
+    overflow: hidden;
+    margin-top: 5px;
+    width: 100%;
+    max-width: 400px;
 }
 
-.color-picker-container input[type="color"]::-moz-color-swatch {
-    width: 40px;
-    height: 40px;
-    border: 2px solid var(--border-color);
-    border-radius: 8px;
+#progress-bar-fixed {
+    height: 8px;
+    background: linear-gradient(90deg, var(--primary), var(--secondary));
+    border-radius: 10px;
+    transition: width 0.3s ease, background 0.3s ease;
+    width: 0%;
 }
 
+.progress-spacer {
+    width: 30px; 
+    height: 30px;
+    flex-shrink: 0;
+}
+
+@media (max-width: 768px) {
+    body.has-progress {
+        padding-top: calc(50px + 20px) !important;
+    }
+    body.has-connection-status:not(.has-progress) {
+        padding-top: calc(40px + 20px) !important;
+    }
+    body.has-connection-status.has-progress {
+        padding-top: calc(50px + 40px + 20px) !important;
+    }
+
+    #progress-container-fixed {
+        height: 50px;
+        padding: 0 10px;
+        gap: 10px;
+    }
     
+    body.has-connection-status #progress-container-fixed {
+        top: 40px;
+    }
+
+    #btn-cancelar-carga-fixed {
+        width: 25px;
+        height: 25px;
+    }
+
+    .progress-spacer {
+        width: 25px;
+        height: 25px;
+    }
+
+    #progress-text-fixed {
+        font-size: 12px;
+    }
+}
+
+/* =============================================
+   FIX PARA MENSAJE DE CONEXIÓN ATASCADO
+   ============================================= */
+@keyframes fade-in-out-sutil {
+  0% { top: 0; opacity: 1; }     /* Entra y se muestra */
+  80% { top: 0; opacity: 1; }     /* Permanece visible 3.2s */
+  100% { top: -60px; opacity: 0; } /* Se desliza hacia arriba y desaparece (en 0.8s) */
 }
