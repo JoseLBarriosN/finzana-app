@@ -689,7 +689,7 @@ const database = {
         }
     },
 
-    // EN database.js - REEMPLAZA ESTA FUNCIÓN
+    // Agregar Pago //
     agregarPago: async (pagoData, userEmail, firestoreCreditoId) => {
         try {
             const creditoRef = db.collection('creditos').doc(firestoreCreditoId);
@@ -708,8 +708,6 @@ const database = {
                 let nuevoSaldo = saldoActual - pagoData.monto;
                 if (nuevoSaldo < 0.01) nuevoSaldo = 0;
                 const nuevoEstadoDB = (nuevoSaldo === 0) ? 'liquidado' : 'activo';
-
-                // 1. Actualizar el crédito
                 transaction.update(creditoRef, {
                     saldo: nuevoSaldo,
                     estado: nuevoEstadoDB,
@@ -717,10 +715,9 @@ const database = {
                     fechaModificacion: new Date().toISOString()
                 });
 
-                // 2. Crear el documento de pago
                 const pagoRef = db.collection('pagos').doc();
                 transaction.set(pagoRef, {
-                    idCredito: pagoData.idCredito, // Historical ID
+                    idCredito: pagoData.idCredito,
                     monto: pagoData.monto,
                     tipoPago: pagoData.tipoPago,
                     fecha: new Date().toISOString(),
@@ -730,26 +727,14 @@ const database = {
                     curpCliente: credito.curpCliente,
                     grupo: credito.poblacion_grupo
                 });
-
-                // =============================================
-                // *** INICIO: NUEVA LÓGICA DE COMISIÓN POR PAGO ***
-                // =============================================
-                
-                // Reglas:
-                // 1. No genera comisión si es crédito de comisionista (plazo 10)
-                // 2. Genera $10 si es 'normal' o 'extraordinario' (asumimos 'adelantado')
-                // 3. Reglas de "morosa" o "domicilio diferente" no son detectables aquí.
                 
                 const esCreditoComisionista = (credito.plazo === 10);
-                const esTipoPagoComisionable = (pagoData.tipoPago === 'normal' || pagoData.tipoPago === 'extraordinario' || pagoData.tipoPago === 'grupal'); // Incluimos 'grupal'
-
+                const esTipoPagoComisionable = (pagoData.tipoPago === 'normal' || pagoData.tipoPago === 'extraordinario' || pagoData.tipoPago === 'grupal'); 
                 if (!esCreditoComisionista && esTipoPagoComisionable) {
                     const comisionRef = db.collection('comisiones').doc();
-                    
-                    // Asumimos que la comisión es para el 'creadoPor' del crédito (el agente original)
                     const userIdComisionista = credito.creadoPor; 
                     
-                    if (userIdComisionista) { // Solo registrar si sabemos a quién comisionar
+                    if (userIdComisionista) { 
                         transaction.set(comisionRef, {
                             userId: userIdComisionista,
                             fecha: new Date().toISOString(),
@@ -762,12 +747,10 @@ const database = {
                             office: credito.office
                         });
                     } else {
-                         console.warn(`No se pudo registrar comisión para pago ${pagoRef.id} - falta 'creadoPor' en el crédito ${firestoreCreditoId}`);
+                        console.warn(`No se pudo registrar comisión para pago ${pagoRef.id} - falta 'creadoPor' en el crédito ${firestoreCreditoId}`);
                     }
                 }
-                // =============================================
-                // *** FIN: NUEVA LÓGICA ***
-                // =============================================
+               
             });
             return { success: true, message: 'Pago registrado.' };
         } catch (error) {
@@ -1709,6 +1692,7 @@ const database = {
         }
     }
 }; // Fin del objeto database
+
 
 
 
