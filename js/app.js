@@ -5530,18 +5530,22 @@ async function handleGenerarReporteContable() {
     const wrapper = document.getElementById('reporte-contable-wrapper');
     
     showButtonLoading(btnGenerar, true, 'Generando...');
-    showStatus(statusEl, 'Buscando movimientos de efectivo...', 'info');
+    showStatus(statusEl, 'Buscando movimientos y comisiones...', 'info');
+    showFixedProgress(10, 'Buscando movimientos y comisiones...');
+    
     wrapper.classList.add('hidden');
     btnImprimir.classList.add('hidden');
 
-    // Cachear selectores de agentes
     const agenteOptions = Array.from(document.getElementById('reporte-contable-agente').options);
     const agenteMap = new Map(agenteOptions.map(opt => [opt.value, opt.text]));
-    // Asegurar que el admin/agente actual esté (por si acaso)
     if(currentUserData) {
         agenteMap.set(currentUserData.id, currentUserData.name);
     }
 
+    cargaEnProgreso = true; 
+    currentSearchOperation = Date.now();
+    const operationId = currentSearchOperation;
+    clearTimeout(inactivityTimer);
 
     try {
         const filtros = {
@@ -5554,17 +5558,20 @@ async function handleGenerarReporteContable() {
         if (!filtros.office) throw new Error("Debes seleccionar una sucursal.");
         if (!filtros.fechaInicio || !filtros.fechaFin) throw new Error("Debes seleccionar un rango de fechas.");
 
-        // Usar la nueva función de database.js
+        showFixedProgress(40, 'Consultando base de datos...');
         const resultado = await database.getMovimientosParaReporte(filtros);
+        
+        if (operationId !== currentSearchOperation) throw new Error("Operación cancelada");
         if (!resultado.success) throw new Error(resultado.message);
 
         const movimientos = resultado.data;
 
-        // --- Procesar y Agrupar Datos ---
-        let totalEntregas = 0; // ENTREGA_INICIAL (+)
-        let totalColocacion = 0; // COLOCACION (-)
-        let totalGastos = 0; // GASTO (-)
-        let totalPagos = 0; // PAGO (Esto no existe en el flujo actual, pero lo dejamos por si acaso)
+        showFixedProgress(80, 'Procesando y agrupando datos...');
+        
+        let totalEntregas = 0;
+        let totalColocacion = 0;  
+        let totalGastos = 0;   
+        let totalComisiones = 0; 
         let balanceFinal = 0;
 
         const movimientosPorAgente = {};
@@ -5577,46 +5584,36 @@ async function handleGenerarReporteContable() {
             movimientosPorAgente[agenteId].push(mov);
 
             const monto = mov.monto || 0;
-            balanceFinal += monto; // Suma directa (positivos suman, negativos restan)
+            balanceFinal += monto;
 
-            switch (mov.tipo) {
-                case 'ENTREGA_INICIAL':
-                    totalEntregas += monto;
-                    break;
-                case 'COLOCACION':
-                    totalColocacion += monto; // Es negativo, así que suma
-                    break;
-                case 'GASTO':
-                    totalGastos += monto; // Es negativo, así que suma
-                    break;
-                // case 'PAGO': // Los pagos (entradas) no están en 'movimientos_efectivo'
-                //     totalPagos += monto;
-                //     break;
+            if (mov.tipo === 'ENTREGA_INICIAL') {
+                totalEntregas += monto;
+            } else if (mov.tipo === 'COLOCACION') {
+                totalColocacion += monto;
+            } else if (mov.tipo === 'GASTO') {
+                totalGastos += monto;
+            } else if (mov.tipo && mov.tipo.startsWith('COMISION')) {
+                totalComisiones += monto;
             }
         });
-
-        // --- Renderizar HTML ---
         
-        // Header
         const agenteSeleccionado = filtros.userId ? (agenteMap.get(filtros.userId) || filtros.userId) : 'Todos los Agentes';
         document.getElementById('reporte-contable-titulo').textContent = `Reporte de Flujo de Efectivo - ${filtros.office}`;
         document.getElementById('reporte-contable-subtitulo').textContent = 
             `Periodo: ${formatDateForDisplay(parsearFecha(filtros.fechaInicio))} al ${formatDateForDisplay(parsearFecha(filtros.fechaFin))} | Agente: ${agenteSeleccionado}`;
 
-        // Resumen
         const resumenEl = document.getElementById('reporte-contable-resumen');
         resumenEl.innerHTML = `
             <div class="info-item"><span class="info-label">Total Entregado (Admin -> Agente):</span><span class="info-value" style="color: var(--success);">$${totalEntregas.toLocaleString('es-MX', {minimumFractionDigits: 2})}</span></div>
+            <div class="info-item"><span class="info-label">Total Comisiones (Automáticas):</span><span class="info-value" style="color: var(--success);">$${totalComisiones.toLocaleString('es-MX', {minimumFractionDigits: 2})}</span></div>
             <div class="info-item"><span class="info-label">Total Colocado (Agente -> Cliente):</span><span class="info-value" style="color: var(--danger);">$${totalColocacion.toLocaleString('es-MX', {minimumFractionDigits: 2})}</span></div>
-            <div class="info-item"><span class="info-label">Total Gastos (Agente):</span><span class="info-value" style="color: var(--warning);">$${totalGastos.toLocaleString('es-MX', {minimumFractionDigits: 2})}</span></div>
-            <div class="info-item"><span class="info-label">Balance Final (Entregas - Salidas):</span><span class="info-value" style="font-weight: bold; color: ${balanceFinal >= 0 ? 'var(--success)' : 'var(--danger)'};">$${balanceFinal.toLocaleString('es-MX', {minimumFractionDigits: 2})}</span></div>
+            <div class="info-item"><span class="info-label">Total Gastos (Manuales):</span><span class="info-value" style="color: var(--warning);">$${totalGastos.toLocaleString('es-MX', {minimumFractionDigits: 2})}</span></div>
+            <div class="info-item"><span class="info-label">Balance Final (Entradas - Salidas):</span><span class="info-value" style="font-weight: bold; color: ${balanceFinal >= 0 ? 'var(--success)' : 'var(--danger)'};">$${balanceFinal.toLocaleString('es-MX', {minimumFractionDigits: 2})}</span></div>
         `;
 
-        // Detalle
         const detalleEl = document.getElementById('reporte-contable-detalle');
         let detalleHtml = '';
 
-        // Agrupar por Agente si 'Todos' fue seleccionado
         if (!filtros.userId) {
             for (const agenteId in movimientosPorAgente) {
                 const nombreAgente = agenteMap.get(agenteId) || agenteId;
@@ -5624,7 +5621,6 @@ async function handleGenerarReporteContable() {
                 detalleHtml += renderTablaMovimientos(movimientosPorAgente[agenteId]);
             }
         } else {
-            // Solo mostrar la tabla del agente seleccionado
             detalleHtml += renderTablaMovimientos(movimientos);
         }
 
@@ -5632,15 +5628,24 @@ async function handleGenerarReporteContable() {
 
         wrapper.classList.remove('hidden');
         btnImprimir.classList.remove('hidden');
-        showStatus(statusEl, `Reporte generado con ${movimientos.length} movimientos. Listo para imprimir.`, 'success');
+        showFixedProgress(100, 'Reporte generado');
+        showStatus(statusEl, `Reporte generado con ${movimientos.length} movimientos (incl. comisiones). Listo para imprimir.`, 'success');
 
     } catch (error) {
-        console.error("Error generando reporte contable:", error);
-        showStatus(statusEl, `Error: ${error.message}`, 'error');
+        if (error.message === "Operación cancelada") {
+            showStatus(statusEl, 'Reporte cancelado por el usuario.', 'warning');
+        } else {
+            console.error("Error generando reporte contable:", error);
+            showStatus(statusEl, `Error: ${error.message}`, 'error');
+        }
         wrapper.classList.add('hidden');
         btnImprimir.classList.add('hidden');
+        hideFixedProgress();
     } finally {
+        if (operationId === currentSearchOperation) cargaEnProgreso = false;
         showButtonLoading(btnGenerar, false);
+        setTimeout(hideFixedProgress, 2000);
+        resetInactivityTimer();
     }
 }
 
@@ -6182,6 +6187,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
