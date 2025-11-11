@@ -4856,21 +4856,19 @@ const popularDropdown = (elementId, options, placeholder, isObjectValueKey = fal
 async function handleOfficeChangeForClientForm() {
     const office = this.value || document.getElementById('office_cliente')?.value;
     console.log(`handleOfficeChangeForClientForm: Office = ${office}`);
+    const rutaSelect = document.getElementById('ruta_cliente');
+    const poblacionSelect = document.getElementById('poblacion_grupo_cliente');
+    if (!rutaSelect || !poblacionSelect) return;
+    const userRole = currentUserData?.role;
+    const userRuta = currentUserData?.ruta;
+    const esAreaComercialConRuta = (userRole === 'Área comercial' && userRuta);
+    poblacionSelect.innerHTML = '<option value="">Cargando poblaciones...</option>';
+    rutaSelect.innerHTML = '<option value="">Cargando rutas...</option>';
 
     try {
-        const [poblaciones, rutas] = await Promise.all([
-            database.obtenerPoblaciones(office),
-            database.obtenerRutas(office)
-        ]);
-
-        const poblacionesNombres = poblaciones.map(p => p.nombre).sort();
-        const rutasNombres = rutas.map(r => r.nombre).sort();
-
-        console.log(`Poblaciones para ${office}:`, poblacionesNombres.length);
-        console.log(`Rutas para ${office}:`, rutasNombres.length);
-
-        // Si estamos editando, cargar todas las opciones disponibles
+     
         if (editingClientId) {
+            console.log("Modo EDICIÓN: Cargando todas las poblaciones y rutas.");
             const [todasPoblacionesDB, todasRutasDB] = await Promise.all([
                 database.obtenerPoblaciones(),
                 database.obtenerRutas()
@@ -4880,13 +4878,47 @@ async function handleOfficeChangeForClientForm() {
 
             popularDropdown('poblacion_grupo_cliente', todasPoblacionesNombres, 'Selecciona población/grupo');
             popularDropdown('ruta_cliente', todasRutasNombres, 'Selecciona una ruta');
-        } else {
-            popularDropdown('poblacion_grupo_cliente', poblacionesNombres, 'Selecciona población/grupo');
-            popularDropdown('ruta_cliente', rutasNombres, 'Selecciona una ruta');
+            
+            rutaSelect.disabled = false; 
+            
+            return; 
         }
+        
+        const poblacionesDeOficina = await database.obtenerPoblaciones(office);
+        
+        if (esAreaComercialConRuta) {
+            console.log(`Modo NUEVO (Área Comercial): Filtrando por ruta ${userRuta}`);   
+            const poblacionesFiltradas = poblacionesDeOficina
+                .filter(p => p.ruta === userRuta)
+                .map(p => p.nombre)
+                .sort();
+
+            if (poblacionesFiltradas.length === 0) {
+                 console.warn(`El usuario de Área Comercial no tiene poblaciones asignadas a su ruta '${userRuta}' en la oficina '${office}'.`);
+                 showStatus('status_cliente', `Advertencia: No hay poblaciones asignadas a tu ruta (${userRuta}) en esta oficina. Contacta a un administrador.`, 'warning');
+            }
+
+            popularDropdown('poblacion_grupo_cliente', poblacionesFiltradas, 'Selecciona población de tu ruta');
+            popularDropdown('ruta_cliente', [userRuta], userRuta);
+            
+            rutaSelect.value = userRuta;
+            rutaSelect.disabled = true;
+
+        } else {
+            
+            console.log("Modo NUEVO (Admin/Otros): Cargando todas las rutas y poblaciones de la oficina.");
+            const rutasDeOficina = await database.obtenerRutas(office);
+            const poblacionesNombres = poblacionesDeOficina.map(p => p.nombre).sort();
+            const rutasNombres = rutasDeOficina.map(r => r.nombre).sort();
+
+            popularDropdown('poblacion_grupo_cliente', poblacionesNombres, 'Selecciona población/grupo');
+            popularDropdown('ruta_cliente', rutasNombres, 'Selecciona una ruta');  
+            rutaSelect.disabled = false;
+        }
+
     } catch (error) {
         console.error('Error en handleOfficeChangeForClientForm:', error);
-        // En caso de error, cargar listas vacías
+        showStatus('status_cliente', 'Error al cargar poblaciones o rutas.', 'error');
         popularDropdown('poblacion_grupo_cliente', [], 'Error al cargar');
         popularDropdown('ruta_cliente', [], 'Error al cargar');
     }
@@ -6177,6 +6209,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
