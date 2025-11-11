@@ -1646,27 +1646,56 @@ const database = {
     getMovimientosParaReporte: async (filtros) => {
         try {
             if (!filtros.office || filtros.office === 'AMBAS') {
-                // Requiere una oficina específica para reportes contables
                 throw new Error("Se requiere una oficina específica (GDL o LEON) para el reporte contable.");
             }
-            let query = db.collection('movimientos_efectivo').where('office', '==', filtros.office);
+            
+            let queryMovimientos = db.collection('movimientos_efectivo').where('office', '==', filtros.office);
+            let queryComisiones = db.collection('comisiones').where('office', '==', filtros.office);
 
             if (filtros.userId) {
-                query = query.where('userId', '==', filtros.userId);
+                queryMovimientos = queryMovimientos.where('userId', '==', filtros.userId);
+                queryComisiones = queryComisiones.where('userId', '==', filtros.userId);
             }
             if (filtros.fechaInicio) {
-                query = query.where('fecha', '>=', filtros.fechaInicio + 'T00:00:00Z');
+                const fechaInicioISO = filtros.fechaInicio + 'T00:00:00Z';
+                queryMovimientos = queryMovimientos.where('fecha', '>=', fechaInicioISO);
+                queryComisiones = queryComisiones.where('fecha', '>=', fechaInicioISO);
             }
             if (filtros.fechaFin) {
-                query = query.where('fecha', '<=', filtros.fechaFin + 'T23:59:59Z');
+                const fechaFinISO = filtros.fechaFin + 'T23:59:59Z';
+                queryMovimientos = queryMovimientos.where('fecha', '<=', fechaFinISO);
+                queryComisiones = queryComisiones.where('fecha', '<=', fechaFinISO);
             }
 
-            const snapshot = await query.orderBy('fecha', 'desc').get();
-            return { success: true, data: snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) };
+            const [movimientosSnap, comisionesSnap] = await Promise.all([
+                queryMovimientos.get(),
+                queryComisiones.get()
+            ]);
+
+            const movimientos = movimientosSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            const comisiones = comisionesSnap.docs.map(doc => {
+                const data = doc.data();
+                return {
+                    id: doc.id,
+                    userId: data.userId,
+                    fecha: data.fecha,
+                    tipo: `COMISION_${data.tipo}`,
+                    monto: data.montoComision,
+                    descripcion: data.descripcion || `Comisión por ${data.tipo}`,
+                    registradoPor: data.registradoPor || 'sistema',
+                    office: data.office
+                };
+            });
+
+            const resultados = [...movimientos, ...comisiones];
+            resultados.sort((a, b) => (parsearFecha(a.fecha)?.getTime() || 0) - (parsearFecha(b.fecha)?.getTime() || 0)); 
+
+            return { success: true, data: resultados };
+            
         } catch (error) {
             console.error("Error obteniendo movimientos para reporte:", error);
             if (error.message.includes("requires an index")) {
-                console.warn(">>> Firestore requiere un índice en 'movimientos_efectivo': office ASC, userId ASC, fecha DESC (o similar)");
+                console.warn(">>> Firestore requiere índices en 'movimientos_efectivo' Y 'comisiones': office(ASC), userId(ASC), fecha(DESC)");
             }
             return { success: false, message: error.message, data: [] };
         }
@@ -1692,6 +1721,7 @@ const database = {
         }
     }
 }; // Fin del objeto database
+
 
 
 
