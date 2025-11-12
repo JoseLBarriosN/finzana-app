@@ -3890,7 +3890,6 @@ async function cargarInterfazRutas(officeFiltro) {
 
         console.log(`Se obtuvieron ${rutas.length} rutas`);
         
-        // 1. Construir el Header
         const headerHTML = `
             <div class="config-header">
                 <h3>Rutas (${rutas.length})</h3>
@@ -3906,7 +3905,6 @@ async function cargarInterfazRutas(officeFiltro) {
             </div>
         `;
 
-        // 2. Mostrar estado vacío si no hay datos
         if (rutas.length === 0) {
             container.innerHTML = headerHTML + `
                 <div class="empty-state">
@@ -3919,7 +3917,6 @@ async function cargarInterfazRutas(officeFiltro) {
             return;
         }
 
-        // 3. Agrupar rutas por oficina
         const rutasPorOficina = {};
         const oficinasAMostrar = [];
 
@@ -3933,7 +3930,6 @@ async function cargarInterfazRutas(officeFiltro) {
             oficinasAMostrar.push('GDL', 'LEON', 'OTROS');
         }
 
-        // 4. Construir HTML de la lista
         let html = headerHTML + `<div class="rutas-grid">`;
 
         for (const office of oficinasAMostrar) {
@@ -3950,15 +3946,14 @@ async function cargarInterfazRutas(officeFiltro) {
                     html += `<h4 class="office-title">${officeTitle} (${rutasOffice.length})</h4>`;
                 }
                 html += `<div class="rutas-list">`;
-                
-                // Ordenar alfabéticamente
                 rutasOffice.sort((a,b) => (a.nombre || '').localeCompare(b.nombre || ''));
                 
                 rutasOffice.forEach(ruta => {
                     html += crearTarjetaRuta(ruta);
                 });
-                
-                html += `</div></div>`;
+
+                html += `</div>`;
+                html += `</div>`;
             }
         }
 
@@ -6143,6 +6138,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
