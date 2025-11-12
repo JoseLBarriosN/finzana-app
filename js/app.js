@@ -3579,7 +3579,7 @@ async function loadConfiguracion() {
         console.log("🔧 Configurando tabs...");
         setupNuevosTabsConfiguracion();
         
-        showStatus(statusEl, '✅ Catálogos cargados correctamente', 'success');
+        showStatus(statusEl, '✅ Poblaciones y rutas cargadas correctamente', 'success');
         console.log("🎉 loadConfiguracion - COMPLETADO EXITOSAMENTE");
         
     } catch (error) {
@@ -5860,13 +5860,11 @@ async function loadConfiguracion() {
     console.log("🚀 EJECUTANDO loadConfiguracion - INICIO");
     const statusEl = 'status_configuracion';
     
-    // 1. Verificar permisos de acceso
     if (!currentUserData || !['Super Admin', 'Gerencia', 'Administrador'].includes(currentUserData.role)) {
         showStatus(statusEl, 'No tienes permisos para acceder a esta sección.', 'error');
         return;
     }
 
-    // Determinar filtro de oficina
     let officeFiltro = null;
     if (currentUserData.role === 'Administrador' && currentUserData.office && currentUserData.office !== 'AMBAS') {
         officeFiltro = currentUserData.office;
@@ -5884,9 +5882,9 @@ async function loadConfiguracion() {
         
         console.log("🔧 Configurando tabs y event listeners...");
         setupNuevosTabsConfiguracion();
-        configurarEventListenersConfiguracion(); // ← AÑADIR ESTA LÍNEA
+        configurarEventListenersConfiguracion();
         
-        showStatus(statusEl, '✅ Catálogos cargados correctamente', 'success');
+        showStatus(statusEl, '✅ Poblaciones y rutas cargadas correctamente', 'success');
         console.log("🎉 loadConfiguracion - COMPLETADO EXITOSAMENTE");
         
     } catch (error) {
@@ -6145,6 +6143,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
