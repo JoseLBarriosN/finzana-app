@@ -4965,19 +4965,11 @@ async function _cargarRutasParaUsuario(office) {
  * Inicializa todos los dropdowns estáticos y dinámicos al cargar la app.
  */
 async function inicializarDropdowns() {
-    console.log('===> Inicializando dropdowns...');
-    const userOffice = currentUserData?.office;
-    console.log(`===> Oficina del usuario actual: ${userOffice}`);
-
+    console.log('===> Inicializando dropdowns ESTÁTICOS...');
+    
     try {
-        // Cargar poblaciones y rutas
-        const [poblaciones, rutas] = await Promise.all([
-            database.obtenerPoblaciones(userOffice),
-            database.obtenerRutas(userOffice)
-        ]);
-        
-        const todasLasRutas = [...new Set(rutas.map(r => r.nombre))].sort();
-        console.log(`===> Rutas encontradas: ${todasLasRutas.length}`, todasLasRutas);
+        // --- YA NO CARGAMOS POBLACIONES NI RUTAS AQUÍ ---
+        // const [poblaciones, rutas] = await Promise.all(...) <-- ELIMINADO
 
         const tiposCredito = ['NUEVO', 'RENOVACION', 'REINGRESO'];
         const montos = [3000, 3500, 4000, 4500, 5000, 6000, 7000, 8000, 9000, 10000];
@@ -4997,21 +4989,6 @@ async function inicializarDropdowns() {
             { value: 'colocacion_vs_recuperacion', text: 'Colocación vs. Recuperación' }
         ];
 
-        // --- Dropdowns de Grupo/Población ---
-        const filtroOfficeInicial = (userOffice && userOffice !== 'AMBAS') ? userOffice : '';
-        console.log(`===> Filtro oficina inicial para grupos: '${filtroOfficeInicial}'`);
-
-        // Inicializar dropdowns de grupos
-        await _actualizarDropdownGrupo('grupo_filtro', filtroOfficeInicial, 'Todos');
-        await _actualizarDropdownGrupo('grupo_filtro_reporte', filtroOfficeInicial, 'Todos');
-        await _actualizarDropdownGrupo('grafico_grupo', filtroOfficeInicial, 'Todos');
-
-        // --- Dropdowns Rutas ---
-        // CORRECCIÓN: Usar todasLasRutas en lugar de arrays vacíos
-        popularDropdown('ruta_filtro_reporte', todasLasRutas, 'Todas');
-        popularDropdown('ruta_cliente', todasLasRutas, 'Selecciona una ruta'); // CORREGIDO
-        popularDropdown('nuevo-ruta', todasLasRutas, '-- Sin asignar --'); // CORREGIDO
-
         // --- Dropdowns estáticos ---
         popularDropdown('tipo_colocacion', tiposCredito.map(t => ({ value: t.toLowerCase(), text: t })), 'Selecciona tipo', true);
         popularDropdown('monto_colocacion', montos.map(m => ({ value: m, text: `$${m.toLocaleString()}` })), 'Selecciona monto', true);
@@ -5026,15 +5003,19 @@ async function inicializarDropdowns() {
         popularDropdown('tipo_pago_filtro_reporte', tiposPago.map(t => ({ value: t, text: t.toUpperCase() })), 'Todos', true);
         popularDropdown('grafico_tipo_reporte', tiposReporteGrafico, 'Selecciona un reporte', true);
 
-        // Dropdowns de Cliente (se cargarán dinámicamente cuando cambie la oficina)
-        const poblacionesNombres = [...new Set(poblaciones.map(p => p.nombre))].sort();
-        popularDropdown('poblacion_grupo_cliente', poblacionesNombres, 'Selecciona población/grupo');
-        popularDropdown('ruta_cliente', todasLasRutas, 'Selecciona una ruta');
+        // --- Dropdowns dinámicos (se dejan vacíos, se cargarán en showView) ---
+        popularDropdown('poblacion_grupo_cliente', [], 'Selecciona población/grupo');
+        popularDropdown('ruta_cliente', [], 'Selecciona una ruta');
+        popularDropdown('ruta_filtro_reporte', [], 'Todos');
+        popularDropdown('nuevo-ruta', [], '-- Sin asignar --');
+        popularDropdown('grupo_filtro', [], 'Todos');
+        popularDropdown('grupo_filtro_reporte', [], 'Todos');
+        popularDropdown('grafico_grupo', [], 'Todos');
 
-        console.log('===> Dropdowns inicializados correctamente');
+        console.log('===> Dropdowns ESTATICOS inicializados correctamente');
 
     } catch (error) {
-        console.error('Error inicializando dropdowns:', error);
+        console.error('Error inicializando dropdowns estáticos:', error);
     }
 }
 
@@ -5056,146 +5037,101 @@ function showView(viewId) {
         targetView.classList.remove('hidden');
         console.log(`Vista ${viewId} mostrada.`);
         
+        // ===================================
+        // --- 🚀 INICIO DE LA CORRECCIÓN (LAZY LOADING) ---
+        // ===================================
+        const userOffice = currentUserData?.office;
+        const filtroOfficeInicial = (userOffice && userOffice !== 'AMBAS') ? userOffice : '';
+
         // Ejecutar código específico para cada vista usando IIFE async
         (async () => {
+            // Usamos una variable para evitar cargas duplicadas si el usuario hace clic rápido
+            if (targetView.dataset.loaded === 'true') return; 
+
             switch(viewId) {
                 case 'view-configuracion':
                     console.log('🚀 EJECUTANDO loadConfiguracion AUTOMÁTICAMENTE');
                     await loadConfiguracion();
+                    targetView.dataset.loaded = 'true'; // Marcar como cargado
                     break;
                     
                 case 'view-reportes':
                     await loadBasicReports(currentUserData?.office);
+                    // No necesita dropdowns dinámicos
                     break;
                     
                 case 'view-reportes-avanzados':
                     inicializarVistaReportesAvanzados();
+                    // ✅ Cargar dropdowns dinámicos SÓLO AHORA
+                    console.log('===> Cargando dropdowns para Reportes Avanzados...');
+                    await _actualizarDropdownGrupo('grupo_filtro_reporte', filtroOfficeInicial, 'Todos');
+                    const rutasReportes = (await database.obtenerRutas(filtroOfficeInicial)).map(r => r.nombre).sort();
+                    popularDropdown('ruta_filtro_reporte', rutasReportes, 'Todas');
+                    targetView.dataset.loaded = 'true'; // Marcar como cargado
                     break;
                     
                 case 'view-gestion-clientes':
                     inicializarVistaGestionClientes();
+                    // ✅ Cargar dropdowns dinámicos SÓLO AHORA
+                    console.log('===> Cargando dropdowns para Gestión Clientes...');
+                    await _actualizarDropdownGrupo('grupo_filtro', filtroOfficeInicial, 'Todos');
+                    targetView.dataset.loaded = 'true'; // Marcar como cargado
                     break;
                     
                 case 'view-cliente':
-                    if (!editingClientId) { resetClientForm(); }
-                    break;
-                    
-                case 'view-colocacion':
-                    document.getElementById('curp_colocacion').value = '';
-                    document.getElementById('form-colocacion').classList.add('hidden');
-                    showStatus('status_colocacion', 'Ingresa la CURP del cliente para buscar.', 'info');
-                    document.getElementById('plazo_colocacion').disabled = false;
-                    document.getElementById('tipo_colocacion').disabled = false;
-                    break;
-                    
-                case 'view-cobranza':
-                    document.getElementById('idCredito_cobranza').value = '';
-                    document.getElementById('form-cobranza').classList.add('hidden');
-                    showStatus('status_cobranza', 'Ingresa el ID del crédito (histórico) para buscar.', 'info');
-                    creditoActual = null;
-                    break;
-                    
-                case 'view-pago-grupo':
-                    // Tu código existente para pago grupal (sin await)
-                    const statusPagoGrupo = document.getElementById('status_pago_grupo');
-                    const btnCalcular = document.getElementById('btn-calcular-cobranza-ruta');
-                    const btnGuardar = document.getElementById('btn-guardar-cobranza-offline');
-                    const btnRegistrar = document.getElementById('btn-registrar-pagos-offline');
-                    const container = document.getElementById('cobranza-ruta-container');
-                    const placeholder = document.getElementById('cobranza-ruta-placeholder');
-
-                    container.innerHTML = '';
-                    placeholder.classList.remove('hidden');
-                    placeholder.textContent = 'Presiona "Calcular Cobranza" (requiere conexión) o carga una lista guardada si estás offline.';
-                    btnGuardar.classList.add('hidden');
-                    btnRegistrar.classList.add('hidden');
-                    cobranzaRutaData = null;
-
-                    if (!currentUserData || !currentUserData.ruta || !currentUserData.office || currentUserData.office === 'AMBAS') {
-                        showStatus('status_pago_grupo', 'Debes tener una ruta y oficina única asignada.', 'warning');
-                        btnCalcular.disabled = true;
-                        placeholder.textContent = 'Función no disponible: Ruta/Oficina no asignada.';
-                        break;
-                    }
-
-                    if (navigator.onLine) {
-                        showStatus('status_pago_grupo', `Listo para calcular cobranza de ruta ${currentUserData.ruta}.`, 'info');
-                        btnCalcular.disabled = false;
+                    // resetClientForm ya llama a handleOfficeChangeForClientForm,
+                    // que carga los dropdowns necesarios para esa vista.
+                    if (!editingClientId) { 
+                        resetClientForm(); 
                     } else {
-                        showStatus('status_pago_grupo', `Modo Offline. Buscando lista guardada para ruta ${currentUserData.ruta}...`, 'info');
-                        btnCalcular.disabled = true;
-                        const key = OFFLINE_STORAGE_KEY + currentUserData.ruta;
-                        const savedDataString = localStorage.getItem(key);
-
-                        if (savedDataString) {
-                            try {
-                                const savedData = JSON.parse(savedDataString);
-                                if (savedData.ruta === currentUserData.ruta && savedData.office === currentUserData.office && savedData.data) {
-                                    cobranzaRutaData = savedData.data;
-                                    renderizarCobranzaRuta(cobranzaRutaData, container);
-                                    btnRegistrar.classList.remove('hidden');
-                                    placeholder.classList.add('hidden');
-                                    const timestamp = savedData.timestamp ? new Date(savedData.timestamp).toLocaleString() : 'desconocida';
-                                    showStatus('status_pago_grupo', `Lista offline cargada (guardada el ${timestamp})...`, 'success');
-                                } else {
-                                    throw new Error("Datos guardados inválidos o de otra oficina.");
-                                }
-                            } catch (error) {
-                                console.error("Error cargando datos offline:", error);
-                                showStatus('status_pago_grupo', `Error al cargar datos guardados: ${error.message}. Intenta conectarte y generar una nueva lista.`, 'error');
-                                placeholder.textContent = 'Error al cargar lista guardada.';
-                            }
-                        } else {
-                            showStatus('status_pago_grupo', `No se encontró lista guardada para ruta ${currentUserData.ruta}. Conéctate para generar una.`, 'warning');
-                            placeholder.textContent = 'No hay lista guardada para uso offline.';
-                        }
+                        // Si está editando, forzamos la recarga de dropdowns
+                        handleOfficeChangeForClientForm.call(document.getElementById('office_cliente'));
                     }
+                    targetView.dataset.loaded = 'true'; // Marcar como cargado
                     break;
-                    
+                
                 case 'view-reportes-graficos':
                     const hoyGraf = new Date();
                     const haceUnAnio = new Date(hoyGraf.getFullYear() - 1, hoyGraf.getMonth(), hoyGraf.getDate() + 1);
                     document.getElementById('grafico_fecha_inicio').value = haceUnAnio.toISOString().split('T')[0];
                     document.getElementById('grafico_fecha_fin').value = hoyGraf.toISOString().split('T')[0];
-                    handleSucursalGraficoChange.call(document.getElementById('grafico_sucursal') || { value: '' });
+                    
+                    // handleSucursalGraficoChange carga los dropdowns necesarios
+                    handleSucursalGraficoChange.call(document.getElementById('grafico_sucursal') || { value: filtroOfficeInicial });
+                    
                     if (currentChart) {
                         currentChart.destroy();
                         currentChart = null;
                     }
                     document.getElementById('grafico-container').innerHTML = '';
                     showStatus('status_graficos', 'Selecciona los filtros y genera un gráfico.', 'info');
-                    break;
-                    
-                case 'view-importar':
-                    document.getElementById('office-select').value = 'GDL';
-                    handleOfficeChange.call(document.getElementById('office-select'));
-                    break;
-                    
-                case 'view-registrar-gasto':
-                    const fechaGastoInput = document.getElementById('gasto-fecha');
-                    if (fechaGastoInput) {
-                        fechaGastoInput.value = new Date().toISOString().split('T')[0];
-                    }
-                    showStatus('status_registrar_gasto', '', 'info');
-                    document.getElementById('form-registrar-gasto').reset();
-                    if (fechaGastoInput) {
-                        fechaGastoInput.value = new Date().toISOString().split('T')[0];
-                    }
+                    targetView.dataset.loaded = 'true'; // Marcar como cargado
                     break;
                     
                 case 'view-gestion-efectivo':
                     await loadGestionEfectivo();
+                    targetView.dataset.loaded = 'true'; // Marcar como cargado
                     break;
                     
                 case 'view-reporte-contable':
                     await inicializarVistaReporteContable();
+                    targetView.dataset.loaded = 'true'; // Marcar como cargado
                     break;
-                    
+
+                // Vistas que no necesitan carga de datos dinámicos
+                case 'view-colocacion':
+                case 'view-cobranza':
+                case 'view-pago-grupo':
+                case 'view-importar':
+                case 'view-registrar-gasto':
                 case 'view-usuarios':
-                    inicializarVistaUsuarios();
+                    // 'inicializarVistaUsuarios' es rápido, no necesita lazy loading
+                    if (viewId === 'view-usuarios') inicializarVistaUsuarios(); 
+                    // 'resetClientForm' (en data-view click) maneja 'view-cliente'
                     break;
             }
         })();
+        // --- 🔚 FIN DE LA CORRECCIÓN ---
         
     } else {
         console.error(`Error: No se encontró la vista con ID ${viewId}`);
@@ -6209,6 +6145,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
