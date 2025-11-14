@@ -1865,7 +1865,10 @@ const database = {
             console.error("Error eliminando pago:", error);
             return { success: false, message: `Error: ${error.message}` };
         }
-    },
+    }
+
+};
+
 
 
 
