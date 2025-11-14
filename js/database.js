@@ -1719,8 +1719,7 @@ const database = {
             console.error("Error agregando comisión:", error);
             return { success: false, message: `Error: ${error.message}` };
         }
-    }
-};
+    };
 
 // EN database.js - AÑADE ESTAS FUNCIONES DENTRO DEL OBJETO 'database = {'
 
@@ -1867,6 +1866,7 @@ const database = {
             return { success: false, message: `Error: ${error.message}` };
         }
     },
+
 
 
 
