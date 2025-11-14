@@ -1720,7 +1720,154 @@ const database = {
             return { success: false, message: `Error: ${error.message}` };
         }
     }
-}; // Fin del objeto database
+};
+
+// EN database.js - AÑADE ESTAS FUNCIONES DENTRO DEL OBJETO 'database = {'
+
+    /**
+     * Actualiza campos de un documento de CRÉDITO.
+     * ADVERTENCIA: No recalcula saldos ni totales.
+     */
+    actualizarCredito: async (creditoId, dataToUpdate) => {
+        try {
+            dataToUpdate.fechaModificacion = new Date().toISOString();
+            await db.collection('creditos').doc(creditoId).update(dataToUpdate);
+            return { success: true, message: 'Crédito actualizado.' };
+        } catch (error) {
+            console.error("Error actualizando crédito:", error);
+            return { success: false, message: `Error: ${error.message}` };
+        }
+    },
+
+    /**
+     * Elimina un CRÉDITO y todos sus PAGOS, COMISIONES y MOVIMIENTOS asociados.
+     */
+    eliminarCredito: async (creditoId, historicalId, office) => {
+        try {
+            if (!creditoId || !historicalId || !office) {
+                throw new Error("Datos insuficientes (creditoId, historicalId, office) para eliminar.");
+            }
+            
+            const batch = db.batch();
+            
+            // 1. Marcar el crédito para eliminar
+            const creditoRef = db.collection('creditos').doc(creditoId);
+            batch.delete(creditoRef);
+            
+            // 2. Buscar y eliminar Pagos
+            const pagosSnap = await db.collection('pagos')
+                .where('idCredito', '==', historicalId)
+                .where('office', '==', office)
+                .get();
+            pagosSnap.docs.forEach(doc => batch.delete(doc.ref));
+
+            // 3. Buscar y eliminar Comisiones
+            const comisionesSnap = await db.collection('comisiones')
+                .where('creditoId', '==', creditoId)
+                .get();
+            comisionesSnap.docs.forEach(doc => batch.delete(doc.ref));
+                
+            // 4. Buscar y eliminar Movimientos de Efectivo (Colocación)
+            const movimientosSnap = await db.collection('movimientos_efectivo')
+                .where('creditoId', '==', creditoId)
+                .get();
+            movimientosSnap.docs.forEach(doc => batch.delete(doc.ref));
+
+            // Ejecutar el batch
+            await batch.commit();
+            
+            return { 
+                success: true, 
+                message: 'Crédito eliminado.',
+                pagosEliminados: pagosSnap.size
+            };
+            
+        } catch (error) {
+            console.error("Error eliminando crédito y asociados:", error);
+            return { success: false, message: `Error: ${error.message}` };
+        }
+    },
+
+    /**
+     * Actualiza un PAGO y recalcula el saldo del crédito en una transacción.
+     */
+    actualizarPago: async (pagoId, creditoId, dataToUpdate, diferenciaMonto) => {
+        try {
+            const creditoRef = db.collection('creditos').doc(creditoId);
+            const pagoRef = db.collection('pagos').doc(pagoId);
+            
+            await db.runTransaction(async (transaction) => {
+                const creditoDoc = await transaction.get(creditoRef);
+                if (!creditoDoc.exists) throw new Error("Crédito no encontrado.");
+                
+                const credito = creditoDoc.data();
+                
+                // Aplicar la diferencia al saldo
+                // Si nuevoMonto > montoOriginal, diferenciaMonto es POSITIVO.
+                // El saldo debe DISMINUIR.
+                let nuevoSaldo = (credito.saldo || 0) - diferenciaMonto;
+                if (nuevoSaldo < 0.01) nuevoSaldo = 0;
+                
+                const nuevoEstado = (nuevoSaldo === 0) ? 'liquidado' : 'activo';
+
+                // Actualizar Saldo del Crédito
+                transaction.update(creditoRef, {
+                    saldo: nuevoSaldo,
+                    estado: nuevoEstado
+                });
+                
+                // Actualizar el Pago
+                dataToUpdate.saldoDespues = nuevoSaldo; // Actualizar el saldo histórico del pago
+                transaction.update(pagoRef, dataToUpdate);
+            });
+            
+            return { success: true, message: 'Pago actualizado.' };
+        } catch (error) {
+            console.error("Error actualizando pago:", error);
+            return { success: false, message: `Error: ${error.message}` };
+        }
+    },
+
+    /**
+     * Elimina un PAGO y REEMBOLSA el monto al saldo del crédito en una transacción.
+     */
+    eliminarPago: async (pagoId, creditoId, montoAReembolsar, office) => {
+        try {
+            const creditoRef = db.collection('creditos').doc(creditoId);
+            const pagoRef = db.collection('pagos').doc(pagoId);
+            let historicalIdCredito = ''; // Para devolverlo a la UI
+
+            await db.runTransaction(async (transaction) => {
+                const creditoDoc = await transaction.get(creditoRef);
+                if (!creditoDoc.exists) throw new Error("Crédito no encontrado.");
+                
+                const credito = creditoDoc.data();
+                historicalIdCredito = credito.historicalIdCredito || '';
+                
+                // Reembolsar el monto al saldo
+                let nuevoSaldo = (credito.saldo || 0) + montoAReembolsar;
+                
+                // Actualizar Saldo del Crédito
+                transaction.update(creditoRef, {
+                    saldo: nuevoSaldo,
+                    estado: 'activo' // Forzar a 'activo' ya que no puede estar 'liquidado'
+                });
+                
+                // Eliminar el Pago
+                transaction.delete(pagoRef);
+            });
+            
+            return { 
+                success: true, 
+                message: 'Pago eliminado y saldo recalculado.',
+                historicalIdCredito: historicalIdCredito // Devolver para refrescar el modal
+            };
+        } catch (error) {
+            console.error("Error eliminando pago:", error);
+            return { success: false, message: `Error: ${error.message}` };
+        }
+    },
+
 
 
 
