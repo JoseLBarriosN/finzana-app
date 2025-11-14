@@ -2351,6 +2351,7 @@ async function handleSearchClientForCredit() {
 }
 
 
+// CREDIT FORM
 async function handleCreditForm(e) {
     e.preventDefault();
     const submitButton = e.target.querySelector('button[type="submit"]');
@@ -2358,20 +2359,32 @@ async function handleCreditForm(e) {
     const curpAvalInput = document.getElementById('curpAval_colocacion');
     const curpAval = curpAvalInput.value.trim().toUpperCase();
 
+    // ===================================
+    // --- 🚀 INICIO DE LA CORRECCIÓN ---
+    // ===================================
+
+    // 1. Validar que tenemos al cliente guardado en la variable global
     if (!clienteParaCredito || clienteParaCredito.curp !== document.getElementById('curp_colocacion').value.trim().toUpperCase()) {
          showStatus('status_colocacion', 'Error: Se perdieron los datos del cliente. Por favor, busca al cliente de nuevo.', 'error');
-         return;    
+         return;
     }
-    
+
+    // 2. Crear el objeto de datos del crédito AÑADIENDO LA OFICINA
     const creditoData = {
-        curpCliente: document.getElementById('curp_colocacion').value.trim().toUpperCase(),
+        curpCliente: clienteParaCredito.curp,
+        office: clienteParaCredito.office, // <-- ¡ESTA LÍNEA ES LA CORRECCIÓN!
         tipo: document.getElementById('tipo_colocacion').value,
         monto: parseFloat(document.getElementById('monto_colocacion').value),
         plazo: parseInt(document.getElementById('plazo_colocacion').value),
         curpAval: curpAval,
         nombreAval: document.getElementById('nombreAval_colocacion').value.trim()
     };
+    
+    // --- 🔚 FIN DE LA CORRECCIÓN ---
+    // ===================================
 
+
+    // Cálculo de MontoTotal y Saldo (tu lógica existente)
     let interesRate = 0;
     if (creditoData.plazo === 14) interesRate = 0.40;
     else if (creditoData.plazo === 13) interesRate = 0.30;
@@ -2381,16 +2394,15 @@ async function handleCreditForm(e) {
     creditoData.saldo = creditoData.montoTotal;
 
 
+    // Validaciones (tu lógica existente)
     if (!creditoData.monto || creditoData.monto <= 0 || !creditoData.plazo || !creditoData.tipo || !creditoData.nombreAval) {
         showStatus('status_colocacion', 'Error: Todos los campos del crédito son obligatorios (Monto, Plazo, Tipo, Nombre Aval).', 'error');
         return;
     }
-    
     if ((creditoData.tipo === 'renovacion' || creditoData.tipo === 'reingreso') && creditoData.plazo !== 14) {
         showStatus('status_colocacion', 'Error: Las renovaciones y reingresos solo pueden ser a 14 semanas.', 'error');
         return;
     }
-
     if (!validarFormatoCURP(creditoData.curpCliente)) {
         showStatus('status_colocacion', 'Error: CURP del cliente inválido.', 'error');
         return;
@@ -2409,6 +2421,7 @@ async function handleCreditForm(e) {
     statusColocacion.className = 'status-message status-info';
 
     try {
+        // Ahora, esta llamada a 'database.agregarCredito' SÍ incluye la 'office'
         const resultado = await database.agregarCredito(creditoData, currentUser.email);
 
         if (resultado.success) {
@@ -2425,6 +2438,8 @@ async function handleCreditForm(e) {
             document.getElementById('form-colocacion').classList.add('hidden');
             document.getElementById('curp_colocacion').value = '';
             document.getElementById('nombre_colocacion').value = '';
+            
+            clienteParaCredito = null; // Limpiamos la variable global
 
         } else {
             throw new Error(resultado.message);
@@ -6616,6 +6631,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
