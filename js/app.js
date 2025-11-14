@@ -5185,7 +5185,8 @@ async function handleVerificarDuplicados() {
 // ====================================================================
 // ** FUNCIÓN PARA MOSTRAR HISTORIAL DE PAGOS **
 // ====================================================================
-async function mostrarHistorialPagos(historicalIdCredito, office) { // <-- PARÁMETRO CAMBIADO
+// EN app.js - REEMPLAZA ESTA FUNCIÓN
+async function mostrarHistorialPagos(historicalIdCredito, office) {
     const modal = document.getElementById('generic-modal');
     const modalTitle = document.getElementById('modal-title');
     const modalBody = document.getElementById('modal-body');
@@ -5200,7 +5201,6 @@ async function mostrarHistorialPagos(historicalIdCredito, office) { // <-- PARÁ
     modal.classList.remove('hidden');
 
     try {
-        // Buscar el crédito usando el ID y el OFFICE
         const creditos = await database.buscarCreditosPorHistoricalId(historicalIdCredito, { office: office });
         if (creditos.length === 0) {
             throw new Error(`No se encontró el crédito con ID histórico ${historicalIdCredito} en la sucursal ${office}.`);
@@ -5208,29 +5208,61 @@ async function mostrarHistorialPagos(historicalIdCredito, office) { // <-- PARÁ
         creditos.sort((a, b) => (parsearFecha(b.fechaCreacion)?.getTime() || 0) - (parsearFecha(a.fechaCreacion)?.getTime() || 0));
         const credito = creditos[0];
         
-        // Buscar al cliente
+        // Convertir a string JSON para pasarlo a los botones
+        const creditoJsonString = JSON.stringify(credito).replace(/'/g, "&apos;").replace(/"/g, "&quot;");
+
         const cliente = await database.buscarClientePorCURP(credito.curpCliente);
-        
-        // Buscar los pagos usando el ID y el OFFICE
         const pagos = await database.getPagosPorCredito(historicalIdCredito, office);
 
-        // *** Calcular estado y saldo REAL aquí también para mostrarlo ***
-        pagos.sort((a, b) => (parsearFecha(b.fecha)?.getTime() || 0) - (parsearFecha(a.fecha)?.getTime() || 0)); // Ordenar DESC para cálculo
+        pagos.sort((a, b) => (parsearFecha(b.fecha)?.getTime() || 0) - (parsearFecha(a.fecha)?.getTime() || 0)); 
         const estadoCalculado = _calcularEstadoCredito(credito, pagos);
-        const saldoReal = estadoCalculado ? estadoCalculado.saldoRestante : (credito.saldo || 0); // Usar calculado si es posible
+        const saldoReal = estadoCalculado ? estadoCalculado.saldoRestante : (credito.saldo || 0);
         const estadoReal = estadoCalculado ? estadoCalculado.estado : (credito.estado || 'desconocido');
 
+        // =============================================
+        // --- 🚀 INICIO LÓGICA DE PERMISOS ---
+        // =============================================
+        const role = currentUserData?.role;
+        const userOffice = currentUserData?.office;
+        const creditOffice = credito.office;
+
+        const esAdminTotal = (role === 'Super Admin' || role === 'Gerencia');
+        const esAdminOficina = (role === 'Administrador' && (userOffice === creditOffice || userOffice === 'AMBAS'));
+        const esComercialOficina = (role === 'Área comercial' && (userOffice === creditOffice || userOffice === 'AMBAS'));
+
+        // Permisos para el CRÉDITO
+        const canEditCredit = esAdminTotal || esAdminOficina;
+        const canDeleteCredit = esAdminTotal || esAdminOficina;
+
+        // Permisos para PAGOS
+        const canEditPayment = esAdminTotal || esAdminOficina || esComercialOficina; // <-- Área Comercial SÍ PUEDE EDITAR
+        const canDeletePayment = esAdminTotal || esAdminOficina; // <-- Área Comercial NO PUEDE BORRAR
+
+        let creditActionsHTML = '';
+        if (canEditCredit || canDeleteCredit) {
+            creditActionsHTML += '<div class="modal-credit-actions">';
+            if (canEditCredit) {
+                creditActionsHTML += `<button class="btn btn-sm btn-info btn-modal-action" onclick='handleEditarCredito(${creditoJsonString})'><i class="fas fa-edit"></i> Editar Crédito</button>`;
+            }
+            if (canDeleteCredit) {
+                creditActionsHTML += `<button class="btn btn-sm btn-danger btn-modal-action" onclick="handleEliminarCredito('${credito.id}', '${historicalIdCredito}', '${credito.office}')"><i class="fas fa-trash"></i> Eliminar Crédito</button>`;
+            }
+            creditActionsHTML += '</div>';
+        }
+        // --- 🔚 FIN LÓGICA DE PERMISOS ---
+        // =============================================
+
         let resumenHTML = `
-            <div class="info-grid" style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+            <div class="info-grid" style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 5px;">
                 <div class="info-item"><span class="info-label">Cliente:</span><span class="info-value">${cliente ? cliente.nombre : 'N/A'} (${credito.curpCliente})</span></div>
-                 <div class="info-item"><span class="info-label">ID Crédito (Hist.):</span><span class="info-value">${credito.historicalIdCredito || 'N/A'}</span></div>
-                 <div class="info-item"><span class="info-label">Oficina:</span><span class="info-value">${credito.office || 'N/A'}</span></div>
+                <div class="info-item"><span class="info-label">ID Crédito (Hist.):</span><span class="info-value">${credito.historicalIdCredito || 'N/A'}</span></div>
+                <div class="info-item"><span class="info-label">Oficina:</span><span class="info-value">${credito.office || 'N/A'}</span></div>
                 <div class="info-item"><span class="info-label">Monto Total:</span><span class="info-value">$${(credito.montoTotal || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
-                 <div class="info-item"><span class="info-label">Saldo Calculado:</span><span class="info-value" style="color: ${saldoReal === 0 ? 'var(--success)' : 'var(--danger)'}; font-weight: bold;">$${saldoReal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
-                 <div class="info-item"><span class="info-label">Estado Calculado:</span><span class="info-value status-${estadoReal.replace(/\s/g, '-')}">${estadoReal.toUpperCase()}</span></div>
-                 <div class="info-item"><span class="info-label">Fecha Inicio:</span><span class="info-value">${formatDateForDisplay(parsearFecha(credito.fechaCreacion))}</span></div>
+                <div class="info-item"><span class="info-label">Saldo Calculado:</span><span class="info-value" style="color: ${saldoReal === 0 ? 'var(--success)' : 'var(--danger)'}; font-weight: bold;">$${saldoReal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
+                <div class="info-item"><span class="info-label">Estado Calculado:</span><span class="info-value status-${estadoReal.replace(/\s/g, '-')}">${estadoReal.toUpperCase()}</span></div>
+                <div class="info-item"><span class="info-label">Fecha Inicio:</span><span class="info-value">${formatDateForDisplay(parsearFecha(credito.fechaCreacion))}</span></div>
             </div>
-         `;
+            ${creditActionsHTML} `;
 
         let tablaHTML = '';
         if (pagos.length === 0) {
@@ -5239,49 +5271,44 @@ async function mostrarHistorialPagos(historicalIdCredito, office) { // <-- PARÁ
             // Reordenar ASC (más antiguo primero) para calcular el saldo secuencialmente
             pagos.sort((a, b) => (parsearFecha(a.fecha)?.getTime() || 0) - (parsearFecha(b.fecha)?.getTime() || 0));
 
-            let saldoActual = credito.montoTotal || 0; // Empezar con el monto total del crédito
+            let saldoActual = credito.montoTotal || 0;
             let totalPagado = 0;
             const tableRows = pagos.map(pago => {
                 const montoPago = pago.monto || 0;
                 totalPagado += montoPago;
-                saldoActual -= montoPago; // Restar el pago al saldo actual
+                saldoActual -= montoPago; 
 
-                // Asegurar que el saldo no sea negativo (podría pasar por redondeos mínimos)
                 if (saldoActual < 0.005) {
                     saldoActual = 0;
                 }
-
                 const saldoDespuesCalculado = `$${saldoActual.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-                // Intentar obtener el saldo guardado para comparación (opcional, para debug)
-                const saldoGuardadoRaw = pago.saldoDespues;
-                let saldoGuardadoFormateado = 'N/A';
-                let discrepanciaClass = '';
-                if (typeof saldoGuardadoRaw === 'number' && !isNaN(saldoGuardadoRaw)) {
-                     saldoGuardadoFormateado = `$${saldoGuardadoRaw.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-                     // Comparar calculado vs guardado (con tolerancia)
-                     if (Math.abs(saldoActual - saldoGuardadoRaw) > 0.02) { // Tolerancia de 2 centavos
-                         discrepanciaClass = 'saldo-discrepancy'; // Clase CSS para resaltar
-                     }
+                // --- 🚀 Lógica para botones de pago ---
+                const pagoJsonString = JSON.stringify(pago).replace(/'/g, "&apos;").replace(/"/g, "&quot;");
+                let paymentActionsHTML = '<div class="action-buttons-modal">';
+                if (canEditPayment) {
+                    paymentActionsHTML += `<button class="btn btn-sm btn-info btn-modal-action" onclick='handleEditarPago(${pagoJsonString}, ${creditoJsonString})' title="Editar Pago"><i class="fas fa-edit"></i></button>`;
                 }
-
+                if (canDeletePayment) {
+                    const pagoFecha = formatDateForDisplay(parsearFecha(pago.fecha));
+                    paymentActionsHTML += `<button class="btn btn-sm btn-danger btn-modal-action" onclick="handleEliminarPago('${pago.id}', '${credito.id}', ${montoPago}, '${credito.office}', '${pagoFecha}')" title="Eliminar Pago"><i class="fas fa-trash"></i></button>`;
+                }
+                paymentActionsHTML += '</div>';
+                // --- 🚀 Fin lógica botones ---
 
                 return `
-                    <tr class="${discrepanciaClass}">
+                    <tr>
                         <td>${formatDateForDisplay(parsearFecha(pago.fecha))}</td>
                         <td>$${montoPago.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                         <td>${pago.tipoPago || 'normal'}</td>
-                        <td>
-                            ${saldoDespuesCalculado}
-                            ${saldoGuardadoFormateado !== 'N/A' && discrepanciaClass ? `<br><small class="saldo-guardado">(DB: ${saldoGuardadoFormateado})</small>` : ''}
-                        </td>
+                        <td>${saldoDespuesCalculado}</td>
                         <td>${pago.registradoPor || 'N/A'}</td>
-                    </tr>
+                        <td>${paymentActionsHTML}</td> </tr>
                 `;
             }).join('');
 
             tablaHTML = `
-                 <p style="text-align: right; font-size: 14px; color: var(--gray);">Total Pagado (suma historial): <strong style="color: var(--success);">$${totalPagado.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></p>
+                <p style="text-align: right; font-size: 14px; color: var(--gray);">Total Pagado (suma historial): <strong style="color: var(--success);">$${totalPagado.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></p>
                 <table class="payment-history-table">
                     <thead>
                         <tr>
@@ -5290,13 +5317,12 @@ async function mostrarHistorialPagos(historicalIdCredito, office) { // <-- PARÁ
                             <th>Tipo</th>
                             <th>Saldo Después (Calculado)</th>
                             <th>Registrado Por</th>
-                        </tr>
+                            <th>Acciones</th> </tr>
                     </thead>
                     <tbody>
                         ${tableRows}
                     </tbody>
-                 </table>
-                 ${document.querySelector('.saldo-discrepancy') ? '<p style="font-size: 11px; color: var(--danger); margin-top: 10px;">* Filas resaltadas indican discrepancia entre saldo calculado y saldo guardado en el pago (posiblemente por importación o edición manual).</p>' : ''}
+                </table>
             `;
         }
         modalBody.innerHTML = resumenHTML + tablaHTML;
@@ -5753,6 +5779,262 @@ function handleExportarTelefonos() {
 }
 
 // =============================================
+// *** INICIO: NUEVAS FUNCIONES (EDICIÓN/ELIMINACIÓN DE CRÉDITOS Y PAGOS) ***
+// =============================================
+
+/**
+ * Muestra el modal para editar un CRÉDITO.
+ * @param {object} credito El objeto de crédito completo (pasado como JSON string).
+ */
+function handleEditarCredito(credito) {
+    if (typeof credito === 'string') {
+        credito = JSON.parse(credito.replace(/&apos;/g, "'").replace(/&quot;/g, '"'));
+    }
+    console.log("Editando crédito:", credito);
+
+    const modalTitle = document.getElementById('modal-title');
+    const modalBody = document.getElementById('modal-body');
+
+    modalTitle.textContent = `Editar Crédito (ID: ${credito.historicalIdCredito})`;
+    modalBody.innerHTML = `
+        <form id="form-editar-credito">
+            <div class="info-grid" style="margin-bottom: 20px;">
+                <div class="form-group">
+                    <label for="edit-credito-monto">Monto Prestado ($)</label>
+                    <input type="number" id="edit-credito-monto" class="form-control" value="${credito.monto || 0}" step="0.01">
+                </div>
+                <div class="form-group">
+                    <label for="edit-credito-plazo">Plazo (Semanas)</label>
+                    <input type="number" id="edit-credito-plazo" class="form-control" value="${credito.plazo || 0}" step="1">
+                </div>
+                <div class="form-group">
+                    <label for="edit-credito-tipo">Tipo</label>
+                    <select id="edit-credito-tipo" class="form-control">
+                        <option value="nuevo" ${credito.tipo === 'nuevo' ? 'selected' : ''}>Nuevo</option>
+                        <option value="renovacion" ${credito.tipo === 'renovacion' ? 'selected' : ''}>Renovación</option>
+                        <option value="reingreso" ${credito.tipo === 'reingreso' ? 'selected' : ''}>Reingreso</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="edit-credito-fecha">Fecha Creación (YYYY-MM-DD)</label>
+                    <input type="text" id="edit-credito-fecha" class="form-control" 
+                           value="${credito.fechaCreacion ? new Date(credito.fechaCreacion).toISOString().split('T')[0] : ''}">
+                </div>
+                <div class="form-group">
+                    <label for="edit-credito-nombre-aval">Nombre Aval</label>
+                    <input type="text" id="edit-credito-nombre-aval" class="form-control" value="${credito.nombreAval || ''}">
+                </div>
+                <div class="form-group">
+                    <label for="edit-credito-curp-aval">CURP Aval</label>
+                    <input type="text" id="edit-credito-curp-aval" class="form-control" value="${credito.curpAval || ''}" maxlength="18">
+                </div>
+            </div>
+            <div id="status-edit-credito" class="status-message hidden"></div>
+            <div class="modal-actions" style="justify-content: flex-end;">
+                <button type="submit" class="btn btn-success"><i class="fas fa-save"></i> Guardar Cambios</button>
+            </div>
+        </form>
+    `;
+
+    document.getElementById('form-editar-credito').onsubmit = (e) => {
+        e.preventDefault();
+        guardarCambiosCredito(credito.id, credito.historicalIdCredito, credito.office);
+    };
+}
+
+/**
+ * Guarda los cambios de un CRÉDITO.
+ * ADVERTENCIA: Esta es una edición simple. NO recalcula el saldo total.
+ */
+async function guardarCambiosCredito(creditoId, historicalId, office) {
+    const statusEl = document.getElementById('status-edit-credito');
+    showStatus(statusEl.id, 'Guardando...', 'info');
+
+    try {
+        const fechaCreacionRaw = document.getElementById('edit-credito-fecha').value;
+        const fechaCreacionISO = fechaCreacionRaw ? new Date(fechaCreacionRaw + 'T12:00:00Z').toISOString() : null;
+        
+        if (!fechaCreacionISO) {
+            throw new Error("La fecha de creación es inválida.");
+        }
+
+        const dataToUpdate = {
+            monto: parseFloat(document.getElementById('edit-credito-monto').value),
+            plazo: parseInt(document.getElementById('edit-credito-plazo').value),
+            tipo: document.getElementById('edit-credito-tipo').value,
+            fechaCreacion: fechaCreacionISO,
+            nombreAval: document.getElementById('edit-credito-nombre-aval').value,
+            curpAval: document.getElementById('edit-credito-curp-aval').value.toUpperCase(),
+        };
+
+        // ADVERTENCIA: No se recalcula el MontoTotal ni el Saldo.
+        // Esto es solo para corregir datos.
+        
+        const resultado = await database.actualizarCredito(creditoId, dataToUpdate);
+        if (!resultado.success) throw new Error(resultado.message);
+
+        showStatus(statusEl.id, 'Crédito actualizado. Recargando historial...', 'success');
+        setTimeout(() => {
+            // Recargar el modal de historial
+            mostrarHistorialPagos(historicalId, office);
+            // Recargar la tabla principal en segundo plano
+            loadClientesTable();
+        }, 1500);
+
+    } catch (error) {
+        console.error("Error guardando crédito:", error);
+        showStatus(statusEl.id, `Error: ${error.message}`, 'error');
+    }
+}
+
+/**
+ * Muestra el modal para editar un PAGO.
+ * @param {object} pago El objeto de pago completo (pasado como JSON string).
+ * @param {object} credito El objeto de crédito asociado (pasado como JSON string).
+ */
+function handleEditarPago(pago, credito) {
+    if (typeof pago === 'string') {
+        pago = JSON.parse(pago.replace(/&apos;/g, "'").replace(/"/g, '"'));
+    }
+    if (typeof credito === 'string') {
+        credito = JSON.parse(credito.replace(/&apos;/g, "'").replace(/"/g, '"'));
+    }
+    console.log("Editando pago:", pago);
+
+    const modalTitle = document.getElementById('modal-title');
+    const modalBody = document.getElementById('modal-body');
+    const fechaPago = pago.fecha ? new Date(pago.fecha).toISOString().split('T')[0] : '';
+
+    modalTitle.textContent = `Editar Pago (ID: ${pago.id.substring(0, 8)}...)`;
+    modalBody.innerHTML = `
+        <form id="form-editar-pago">
+            <p>Crédito: <strong>${credito.historicalIdCredito}</strong> | Cliente: <strong>${credito.nombreCliente || credito.curpCliente}</strong></p>
+            <div class="info-grid" style="margin-bottom: 20px;">
+                <div class="form-group">
+                    <label for="edit-pago-monto">Monto Pagado ($)</label>
+                    <input type="number" id="edit-pago-monto" class="form-control" value="${pago.monto || 0}" step="0.01">
+                </div>
+                <div class="form-group">
+                    <label for="edit-pago-fecha">Fecha de Pago (YYYY-MM-DD)</label>
+                    <input type="text" id="edit-pago-fecha" class="form-control" value="${fechaPago}">
+                </div>
+                <div class="form-group">
+                    <label for="edit-pago-tipo">Tipo de Pago</label>
+                    <select id="edit-pago-tipo" class="form-control">
+                        <option value="normal" ${pago.tipoPago === 'normal' ? 'selected' : ''}>Normal</option>
+                        <option value="extraordinario" ${pago.tipoPago === 'extraordinario' ? 'selected' : ''}>Extraordinario</option>
+                        <option value="actualizado" ${pago.tipoPago === 'actualizado' ? 'selected' : ''}>Actualizado</option>
+                        <option value="grupal" ${pago.tipoPago === 'grupal' ? 'selected' : ''}>Grupal</option>
+                    </select>
+                </div>
+            </div>
+            <div id="status-edit-pago" class="status-message hidden"></div>
+            <div class="modal-actions" style="justify-content: flex-end;">
+                <button type="submit" class="btn btn-success"><i class="fas fa-save"></i> Guardar Cambios</button>
+            </div>
+        </form>
+    `;
+
+    document.getElementById('form-editar-pago').onsubmit = (e) => {
+        e.preventDefault();
+        guardarCambiosPago(pago.id, credito.id, pago.monto, credito.historicalIdCredito, credito.office);
+    };
+}
+
+/**
+ * Guarda los cambios de un PAGO y recalcula el saldo.
+ */
+async function guardarCambiosPago(pagoId, creditoId, montoOriginal, historicalId, office) {
+    const statusEl = document.getElementById('status-edit-pago');
+    showStatus(statusEl.id, 'Guardando y recalculando saldo...', 'info');
+
+    try {
+        const nuevoMonto = parseFloat(document.getElementById('edit-pago-monto').value);
+        const nuevaFechaRaw = document.getElementById('edit-pago-fecha').value;
+        const nuevaFechaISO = nuevaFechaRaw ? new Date(nuevaFechaRaw + 'T12:00:00Z').toISOString() : null;
+        
+        if (!nuevaFechaISO) throw new Error("La fecha de pago es inválida.");
+        if (isNaN(nuevoMonto) || nuevoMonto <= 0) throw new Error("El monto debe ser un número positivo.");
+
+        const dataToUpdate = {
+            monto: nuevoMonto,
+            fecha: nuevaFechaISO,
+            tipoPago: document.getElementById('edit-pago-tipo').value
+        };
+
+        // Calculamos la diferencia que afectará al saldo
+        const diferenciaMonto = nuevoMonto - montoOriginal;
+
+        const resultado = await database.actualizarPago(pagoId, creditoId, dataToUpdate, diferenciaMonto);
+        if (!resultado.success) throw new Error(resultado.message);
+
+        showStatus(statusEl.id, 'Pago actualizado. Recargando historial...', 'success');
+        setTimeout(() => {
+            mostrarHistorialPagos(historicalId, office);
+            loadClientesTable(); // Recargar la tabla principal
+        }, 1500);
+
+    } catch (error) {
+        console.error("Error guardando pago:", error);
+        showStatus(statusEl.id, `Error: ${error.message}`, 'error');
+    }
+}
+
+/**
+ * Confirma y elimina un CRÉDITO y todos sus pagos.
+ */
+async function handleEliminarCredito(creditoId, historicalId, office) {
+    if (!confirm(`ADVERTENCIA:\n\n¿Estás seguro de eliminar el crédito ${historicalId}?\n\nEsta acción es PERMANENTE y eliminará también TODOS sus pagos, comisiones y movimientos asociados.\n\nEsta acción NO se puede deshacer.`)) {
+        return;
+    }
+    
+    showProcessingOverlay(true, 'Eliminando crédito y todos sus registros...');
+    
+    try {
+        const resultado = await database.eliminarCredito(creditoId, historicalId, office);
+        if (!resultado.success) throw new Error(resultado.message);
+
+        showStatus('status_gestion_clientes', `Crédito ${historicalId} y ${resultado.pagosEliminados} pagos fueron eliminados.`, 'success');
+        
+    } catch (error) {
+        console.error("Error eliminando crédito:", error);
+        showStatus('status_gestion_clientes', `Error: ${error.message}`, 'error');
+    } finally {
+        document.getElementById('generic-modal').classList.add('hidden');
+        showProcessingOverlay(false);
+        await loadClientesTable(); // Recargar la tabla principal
+    }
+}
+
+/**
+ * Confirma y elimina un PAGO y recalcula el saldo.
+ */
+async function handleEliminarPago(pagoId, creditoId, monto, office, fecha) {
+    if (!confirm(`ADVERTENCIA:\n\n¿Estás seguro de eliminar este pago?\n- Monto: $${monto}\n- Fecha: ${fecha}\n\nEsta acción REEMBOLSARÁ $${monto} al saldo del crédito y NO se puede deshacer.`)) {
+        return;
+    }
+    
+    showProcessingOverlay(true, 'Eliminando pago y recalculando saldo...');
+
+    try {
+        const resultado = await database.eliminarPago(pagoId, creditoId, monto, office);
+        if (!resultado.success) throw new Error(resultado.message);
+
+        showProcessingOverlay(false);
+        // Recargar el modal para mostrar el estado actualizado
+        const historicalId = resultado.historicalIdCredito || ''; // La DB debe devolver esto
+        mostrarHistorialPagos(historicalId, office);
+        loadClientesTable(); // Recargar la tabla principal
+
+    } catch (error) {
+        console.error("Error eliminando pago:", error);
+        showProcessingOverlay(false);
+        // Mostrar el error dentro del modal
+        document.getElementById('modal-body').innerHTML = `<p class="status-message status-error">Error: ${error.message}</p>`;
+    }
+}
+
+// =============================================
 // CONFIGURACIÓN DE EVENT LISTENERS PARA CONFIGURACIÓN
 // =============================================
 
@@ -6138,6 +6420,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
