@@ -2025,3 +2025,30 @@ body.has-connection-status #progress-container-fixed {
   80% { top: 0; opacity: 1; }
   100% { top: -60px; opacity: 0; }
 }
+
+/* =============================================
+   ESTILOS PARA ACCIONES EN MODAL DE PAGOS
+   ============================================= */
+
+/* Contenedor para los botones "Editar/Eliminar Crédito" */
+.modal-credit-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end; /* Alinea a la derecha */
+    margin: -10px 0 15px 0; /* Espacio arriba/abajo */
+}
+
+/* Estilo para los botones de acción en la tabla de pagos */
+.payment-history-table .action-buttons-modal {
+    display: flex;
+    gap: 5px;
+    justify-content: center;
+}
+
+/* Botones de acción pequeños para el modal */
+.btn-modal-action {
+    padding: 4px 8px;
+    font-size: 12px;
+    border-radius: 6px;
+}
+
