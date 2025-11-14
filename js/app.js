@@ -6171,6 +6171,152 @@ async function loadConfiguracion() {
 }
 
 // =============================================
+// --- 🚀 INICIO: LÓGICA DE MFA CON YUBIKEY ---
+// =============================================
+
+/**
+ * Registra una nueva YubiKey (u otra llave WebAuthn) para el usuario actual.
+ * Guarda el ID de la credencial en Firestore.
+ */
+async function registrarYubiKey() {
+    if (!currentUserData || !currentUserData.id) {
+        alert("Error: Debes estar logueado para registrar una llave.");
+        return;
+    }
+    
+    console.log("Iniciando registro de YubiKey...");
+    showProcessingOverlay(true, "Preparando registro de llave...");
+
+    try {
+        // 1. Generar un "challenge" (desafío)
+        // En un sistema de producción, esto vendría de un servidor (Firebase Function).
+        // Para esta prueba, generamos uno en el cliente (suficientemente seguro para esto).
+        const challengeBuffer = new Uint8Array(32);
+        crypto.getRandomValues(challengeBuffer);
+
+        // 2. Crear las opciones de credencial
+        const createOptions = {
+            publicKey: {
+                // Información del "Relying Party" (tu app)
+                rp: {
+                    name: "Finzana App",
+                    id: window.location.hostname // Ej: "localhost" o "finzana.web.app"
+                },
+                // Información del usuario
+                user: {
+                    id: new TextEncoder().encode(currentUserData.id), // ID de usuario como buffer
+                    name: currentUserData.email,
+                    displayName: currentUserData.name
+                },
+                // El desafío
+                challenge: challengeBuffer,
+                // Algoritmos de cifrado que aceptamos (estándar para YubiKey)
+                pubKeyCredParams: [
+                    { type: "public-key", alg: -7 },  // ES256
+                    { type: "public-key", alg: -257 } // RS256
+                ],
+                timeout: 60000,
+                attestation: "direct"
+            }
+        };
+
+        // 3. Pedir al navegador que cree la credencial (aquí te pedirá tocar la llave)
+        const credential = await navigator.credentials.create(createOptions);
+        
+        // 4. El navegador nos devuelve un ID. ¡Este es el ID que guardamos!
+        // Necesitamos convertirlo de un ArrayBuffer a un string Base64URL para guardarlo.
+        const credentialIdBase64URL = btoa(
+            String.fromCharCode.apply(null, new Uint8Array(credential.rawId))
+        ).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+
+        console.log("Llave registrada, ID de credencial:", credentialIdBase64URL);
+        showProcessingOverlay(true, "Guardando credencial...");
+
+        // 5. Guardar el ID de la credencial en Firestore
+        await db.collection('users').doc(currentUserData.id).update({
+            yubiKeyCredentialId: credentialIdBase64URL
+        });
+        
+        // Actualizar nuestros datos locales
+        currentUserData.yubiKeyCredentialId = credentialIdBase64URL;
+
+        showProcessingOverlay(false);
+        alert("¡Éxito! Tu llave de seguridad ha sido registrada.");
+
+    } catch (error) {
+        showProcessingOverlay(false);
+        console.error("Error al registrar YubiKey:", error);
+        alert(`Error al registrar: ${error.message}`);
+    }
+}
+
+
+/**
+ * Pide la verificación de una YubiKey ya registrada.
+ * Esta función se llamará durante el inicio de sesión.
+ * DEVUELVE: true (si es exitoso) o false (si falla).
+ */
+async function verificarYubiKey() {
+    if (!currentUserData || !currentUserData.yubiKeyCredentialId) {
+        alert("Error: No hay llave de seguridad registrada para este usuario.");
+        return false;
+    }
+
+    console.log("Iniciando verificación de YubiKey...");
+    showProcessingOverlay(true, "Esperando llave de seguridad...");
+    
+    try {
+        // 1. Generar un desafío (igual que en el registro)
+        const challengeBuffer = new Uint8Array(32);
+        crypto.getRandomValues(challengeBuffer);
+
+        // 2. Convertir el ID de credencial (guardado como string) de vuelta a un ArrayBuffer
+        const credentialIdBase64URL = currentUserData.yubiKeyCredentialId;
+        const credentialIdBuffer = Uint8Array.from(
+            atob(credentialIdBase64URL.replace(/-/g, "+").replace(/_/g, "/")), 
+            c => c.charCodeAt(0)
+        ).buffer;
+
+        // 3. Crear las opciones de autenticación
+        const getOptions = {
+            publicKey: {
+                challenge: challengeBuffer,
+                rpId: window.location.hostname,
+                // Especificamos qué llave esperamos
+                allowCredentials: [{
+                    type: "public-key",
+                    id: credentialIdBuffer
+                }],
+                userVerification: "discouraged" // "preferred" si quieres PIN/Huella
+            }
+        };
+
+        // 4. Pedir al navegador que verifique la llave (aquí te pedirá tocarla)
+        const assertion = await navigator.credentials.get(getOptions);
+
+        // 5. Verificación (Simplificada)
+        // En una app real, enviarías 'assertion' a tu servidor/Firebase Function
+        // para una verificación criptográfica compleja.
+        // Para esta PRUEBA, si 'navigator.credentials.get' NO da error,
+        // confiaremos en que el usuario tocó la llave correcta.
+        
+        if (!assertion) {
+            throw new Error("La verificación falló o fue cancelada.");
+        }
+
+        console.log("¡YubiKey verificada!");
+        showProcessingOverlay(false);
+        return true; // ¡Éxito!
+
+    } catch (error) {
+        showProcessingOverlay(false);
+        console.error("Error al verificar YubiKey:", error);
+        alert(`Error de verificación: ${error.message}`);
+        return false; // Falló
+    }
+}
+
+// =============================================
 // INICIALIZACIÓN Y EVENT LISTENERS PRINCIPALES
 // =============================================
 
@@ -6186,6 +6332,7 @@ document.addEventListener('DOMContentLoaded', function () {
         const loginScreen = document.getElementById('login-screen');
         const mainApp = document.getElementById('main-app');
 
+        // Ocultar el overlay de carga inicial
         loadingOverlay.classList.add('hidden');
 
         if (user) {
@@ -6197,10 +6344,10 @@ document.addEventListener('DOMContentLoaded', function () {
                     document.getElementById('user-name').textContent = currentUserData.name || user.email;
                     document.getElementById('user-role-display').textContent = currentUserData.role || 'Rol Desconocido';
 
-                    // *** LLAMAR A inicializarDropdowns AQUÍ ***
-                    await inicializarDropdowns(); // Esperar a que terminen de cargarse
+                    // Cargar dropdowns ESTÁTICOS
+                    await inicializarDropdowns();
 
-                    // Aplicar permisos y filtros DESPUÉS de inicializar dropdowns
+                    // Aplicar permisos y filtros
                     aplicarPermisosUI(currentUserData.role);
 
                 } else {
@@ -6208,30 +6355,70 @@ document.addEventListener('DOMContentLoaded', function () {
                     document.getElementById('user-name').textContent = user.email;
                     document.getElementById('user-role-display').textContent = 'Datos Incompletos';
                     aplicarPermisosUI('default'); // Aplicar permisos por defecto
-                    // No llamar a inicializarDropdowns si los datos del usuario fallaron
                 }
 
+                // ===================================
+                // --- 🚀 INICIO: LÓGICA DE VERIFICACIÓN MFA ---
+                // ===================================
+                
+                // 1. Ocultar el login, mostrar la app (el contenedor principal)
                 loginScreen.classList.add('hidden');
                 mainApp.classList.remove('hidden');
-                showView('view-main-menu');
-                updateConnectionStatus();
-                resetInactivityTimer();
+
+                // 2. Revisar si el usuario actual REQUIERE MFA
+                if (currentUserData && currentUserData.mfaEnabled === true) {
+                    
+                    // Es tu cuenta de prueba. No mostrar el menú principal todavía.
+                    // Ocultar todas las vistas (por si acaso)
+                    document.querySelectorAll('.view').forEach(view => view.classList.add('hidden'));
+                    
+                    // Mostrar un mensaje temporal de "Verificando..."
+                    showProcessingOverlay(true, "Se requiere verificación de seguridad...");
+                    
+                    // 3. Iniciar la verificación con la llave
+                    const mfaExitoso = await verificarYubiKey(); // Llama a la nueva función
+                    
+                    if (mfaExitoso) {
+                        // ¡Éxito! El usuario tocó la llave.
+                        showProcessingOverlay(false);
+                        showView('view-main-menu'); // Mostrar el menú principal
+                        updateConnectionStatus();
+                        resetInactivityTimer();
+                    } else {
+                        // Falló (canceló, llave incorrecta, error)
+                        // Lo echamos de la sesión.
+                        showProcessingOverlay(false);
+                        alert("Falló la verificación de seguridad. Se cerrará la sesión.");
+                        auth.signOut();
+                    }
+
+                } else {
+                    // Es un usuario normal (mfaEnabled no es true)
+                    // Dejarlo entrar directamente.
+                    showView('view-main-menu');
+                    updateConnectionStatus();
+                    resetInactivityTimer();
+                }
+                // --- 🔚 FIN: LÓGICA DE VERIFICACIÓN MFA ---
+                // ===================================
 
             } catch (error) {
                 console.error("Error crítico al obtener datos del usuario:", error);
                 document.getElementById('user-name').textContent = user.email;
                 document.getElementById('user-role-display').textContent = 'Error al cargar datos';
-                // Quizás mostrar vista de error o intentar logout
+                // Ocultar app y mostrar login en caso de error crítico de carga de datos
+                mainApp.classList.add('hidden');
+                loginScreen.classList.remove('hidden');
             }
 
         } else {
+            // Esta es la lógica 'else' para cuando el usuario NO está logueado
             currentUser = null;
             currentUserData = null;
             clearTimeout(inactivityTimer);
             mainApp.classList.add('hidden');
             loginScreen.classList.remove('hidden');
 
-            // *** CORRECCIÓN: Habilitar botón de login al cerrar sesión ***
             const loginButton = document.querySelector('#login-form button[type="submit"]');
             if (loginButton) {
                 showButtonLoading(loginButton, false);
@@ -6245,6 +6432,10 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     });
 });
+
+///===========================================================///
+  ///  EVENT LISTENERS ---- DISPARADORES ///
+///===========================================================///
 
 function setupEventListeners() {
     console.log('Configurando event listeners...');
@@ -6260,6 +6451,11 @@ function setupEventListeners() {
                 auth.signOut();
             }
         });
+    }
+
+    const btnRegisterYubiKey = document.getElementById('btn-register-yubikey');
+    if (btnRegisterYubiKey) {
+        btnRegisterYubiKey.addEventListener('click', registrarYubiKey);
     }
 
     document.querySelectorAll('[data-view]').forEach(button => {
@@ -6420,6 +6616,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
