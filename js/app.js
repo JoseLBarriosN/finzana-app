@@ -5863,6 +5863,12 @@ function handleEditarCredito(credito) {
  */
 async function guardarCambiosCredito(creditoId, historicalId, office) {
     const statusEl = document.getElementById('status-edit-credito');
+    
+    if (!confirm("¿Estás seguro de que deseas GUARDAR estos cambios en el crédito?\n\nEsta acción modificará los datos permanentemente.")) {
+        showStatus(statusEl.id, 'Edición cancelada.', 'info');
+        return;
+    }
+
     showStatus(statusEl.id, 'Guardando...', 'info');
 
     try {
@@ -5881,18 +5887,13 @@ async function guardarCambiosCredito(creditoId, historicalId, office) {
             nombreAval: document.getElementById('edit-credito-nombre-aval').value,
             curpAval: document.getElementById('edit-credito-curp-aval').value.toUpperCase(),
         };
-
-        // ADVERTENCIA: No se recalcula el MontoTotal ni el Saldo.
-        // Esto es solo para corregir datos.
         
         const resultado = await database.actualizarCredito(creditoId, dataToUpdate);
         if (!resultado.success) throw new Error(resultado.message);
 
         showStatus(statusEl.id, 'Crédito actualizado. Recargando historial...', 'success');
         setTimeout(() => {
-            // Recargar el modal de historial
             mostrarHistorialPagos(historicalId, office);
-            // Recargar la tabla principal en segundo plano
             loadClientesTable();
         }, 1500);
 
@@ -5961,6 +5962,12 @@ function handleEditarPago(pago, credito) {
  */
 async function guardarCambiosPago(pagoId, creditoId, montoOriginal, historicalId, office) {
     const statusEl = document.getElementById('status-edit-pago');
+
+    if (!confirm("¿Estás seguro de que deseas GUARDAR los cambios en este pago?\n\nEsta acción modificará el pago y recalculará el saldo del crédito.")) {
+        showStatus(statusEl.id, 'Edición cancelada.', 'info');
+        return;
+    }
+
     showStatus(statusEl.id, 'Guardando y recalculando saldo...', 'info');
 
     try {
@@ -5977,16 +5984,14 @@ async function guardarCambiosPago(pagoId, creditoId, montoOriginal, historicalId
             tipoPago: document.getElementById('edit-pago-tipo').value
         };
 
-        // Calculamos la diferencia que afectará al saldo
         const diferenciaMonto = nuevoMonto - montoOriginal;
-
         const resultado = await database.actualizarPago(pagoId, creditoId, dataToUpdate, diferenciaMonto);
         if (!resultado.success) throw new Error(resultado.message);
 
         showStatus(statusEl.id, 'Pago actualizado. Recargando historial...', 'success');
         setTimeout(() => {
             mostrarHistorialPagos(historicalId, office);
-            loadClientesTable(); // Recargar la tabla principal
+            loadClientesTable();
         }, 1500);
 
     } catch (error) {
@@ -6017,7 +6022,7 @@ async function handleEliminarCredito(creditoId, historicalId, office) {
     } finally {
         document.getElementById('generic-modal').classList.add('hidden');
         showProcessingOverlay(false);
-        await loadClientesTable(); // Recargar la tabla principal
+        await loadClientesTable();
     }
 }
 
@@ -6036,15 +6041,13 @@ async function handleEliminarPago(pagoId, creditoId, monto, office, fecha) {
         if (!resultado.success) throw new Error(resultado.message);
 
         showProcessingOverlay(false);
-        // Recargar el modal para mostrar el estado actualizado
-        const historicalId = resultado.historicalIdCredito || ''; // La DB debe devolver esto
+        const historicalId = resultado.historicalIdCredito || '';
         mostrarHistorialPagos(historicalId, office);
-        loadClientesTable(); // Recargar la tabla principal
+        loadClientesTable();
 
     } catch (error) {
         console.error("Error eliminando pago:", error);
         showProcessingOverlay(false);
-        // Mostrar el error dentro del modal
         document.getElementById('modal-body').innerHTML = `<p class="status-message status-error">Error: ${error.message}</p>`;
     }
 }
@@ -6055,21 +6058,16 @@ async function handleEliminarPago(pagoId, creditoId, monto, office, fecha) {
 
 function configurarEventListenersConfiguracion() {
     console.log("🔧 Configurando event listeners para configuración...");
-    
-    // Delegación de eventos para los botones de poblaciones
     document.addEventListener('click', function(e) {
-        // Botón "Asignar Ruta" en poblaciones
         if (e.target.closest('.btn-asignar-ruta')) {
             const button = e.target.closest('.btn-asignar-ruta');
             const poblacionId = button.getAttribute('data-id');
             const poblacionNombre = button.getAttribute('data-nombre');
-            const poblacionOffice = button.getAttribute('data-office');
-            
+            const poblacionOffice = button.getAttribute('data-office');  
             console.log("📍 Asignar ruta a población:", { poblacionId, poblacionNombre, poblacionOffice });
             asignarRutaPoblacion(poblacionId, poblacionNombre, poblacionOffice);
         }
         
-        // Botón "Eliminar" en poblaciones
         if (e.target.closest('.btn-eliminar-poblacion')) {
             const button = e.target.closest('.btn-eliminar-poblacion');
             const poblacionId = button.getAttribute('data-id');
@@ -6080,7 +6078,6 @@ function configurarEventListenersConfiguracion() {
         }
     });
 
-    // Configurar búsqueda en poblaciones
     const searchPoblaciones = document.getElementById('search-poblaciones');
     if (searchPoblaciones) {
         searchPoblaciones.addEventListener('input', function() {
@@ -6631,6 +6628,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
