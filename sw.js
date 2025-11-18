@@ -2,7 +2,7 @@
 // --- Service Worker CORREGIDO ---
 // ===================================
 
-const CACHE_NAME = 'finzana-cache-v8'; 
+const CACHE_NAME = 'finzana-cache-v9'; 
 const urlsToCache = [
     '/',
     '/index.html',
@@ -98,3 +98,4 @@ self.addEventListener('fetch', event => {
         })
     );
 });
+
