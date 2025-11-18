@@ -505,23 +505,33 @@ const database = {
     // Generar crédito
     agregarCredito: async (creditoData, userEmail) => {
         try {
-         
-            // 1. Validar la oficina (AHORA ES CRUCIAL)
+            
+            // 1. Validar la oficina (AHORA ES CRUCIAL PARA LAS REGLAS DE SEGURIDAD)
             const office = creditoData.office;
             if (!office || (office !== 'GDL' && office !== 'LEON')) {
                 return { success: false, message: 'Oficina (GDL o LEON) no especificada en los datos del crédito. No se puede generar ID.' };
             }
 
-            // 2. Validaciones de elegibilidad (sin cambios)
+            // 2. Validaciones de elegibilidad
             if ((creditoData.tipo === 'renovacion' || creditoData.tipo === 'reingreso') && creditoData.plazo !== 14) {
                 return { success: false, message: 'Créditos de renovación/reingreso deben ser a 14 semanas.' };
             }
+            
+            // Validación Cliente
             const elegibilidadCliente = await database.verificarElegibilidadCliente(creditoData.curpCliente);
             if (!elegibilidadCliente.elegible) return { success: false, message: elegibilidadCliente.message };
-            const elegibilidadAval = await database.verificarElegibilidadAval(creditoData.curpAval);
+            
+            // =============================================================================
+            // --- 🚀 CORRECCIÓN AQUÍ: Se agrega 'office' como segundo parámetro ---
+            // Esto evita el error "Missing or insufficient permissions" en la DB
+            // =============================================================================
+            const elegibilidadAval = await database.verificarElegibilidadAval(creditoData.curpAval, office); 
+            
             if (!elegibilidadAval.elegible) return { success: false, message: elegibilidadAval.message };
-            const cliente = await database.buscarClientePorCURP(creditoData.curpCliente, office); // Usamos la 'office' para buscar al cliente
+            
+            const cliente = await database.buscarClientePorCURP(creditoData.curpCliente, office); 
             if (!cliente) return { success: false, message: "Cliente no encontrado en esta oficina." };
+            
             if (creditoData.plazo === 10 && !cliente.isComisionista) {
                 return { success: false, message: "Solo comisionistas pueden acceder a créditos de 10 semanas." };
             }
@@ -549,7 +559,7 @@ const database = {
             // 4. Referencia al contador de la oficina correcta
             const contadorRef = db.doc(`contadores/${office}`);
             
-            // 5. Referencia al nuevo documento de crédito (aún no existe, pero tenemos la referencia)
+            // 5. Referencia al nuevo documento de crédito
             const nuevoCreditoRef = db.collection('creditos').doc();
 
             // 6. Captura de saldo anterior (si es renovación)
@@ -572,14 +582,13 @@ const database = {
             const montoEfectivoEntregado = creditoData.monto - montoPolizaDeduccion - saldoCreditoAnterior;
 
             // 8. Ejecutar la Transacción
-            let nuevoHistoricalId = null; // Variable para guardar el ID generado
+            let nuevoHistoricalId = null; 
 
             await db.runTransaction(async (transaction) => {
                 // a. Leer el contador
                 const contadorDoc = await transaction.get(contadorRef);
                 let ultimoId;
                 if (!contadorDoc.exists) {
-                    // Si el contador no existe, lo creamos
                     console.warn(`Contador para ${office} no existía. Creando...`);
                     ultimoId = (office === 'GDL') ? 30000000 : 20000000;
                 } else {
@@ -592,8 +601,8 @@ const database = {
                 // c. Actualizar el contador
                 transaction.set(contadorRef, { ultimoId: nuevoHistoricalId }, { merge: true });
 
-                // d. Crear el nuevo crédito (AHORA con el ID histórico)
-                nuevoCreditoData.historicalIdCredito = String(nuevoHistoricalId); // <-- ¡ID ASIGNADO!
+                // d. Crear el nuevo crédito
+                nuevoCreditoData.historicalIdCredito = String(nuevoHistoricalId);
                 transaction.set(nuevoCreditoRef, nuevoCreditoData);
 
                 // e. Liquidar crédito anterior (si aplica)
@@ -1872,6 +1881,7 @@ const database = {
     }
 
 };
+
 
 
 
