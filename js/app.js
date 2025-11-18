@@ -2360,19 +2360,18 @@ async function handleCreditForm(e) {
     const curpAval = curpAvalInput.value.trim().toUpperCase();
 
     // ===================================
-    // --- 🚀 INICIO DE LA CORRECCIÓN ---
+    // 1. VALIDAR CLIENTE Y SESIÓN
     // ===================================
-
-    // 1. Validar que tenemos al cliente guardado en la variable global
     if (!clienteParaCredito || clienteParaCredito.curp !== document.getElementById('curp_colocacion').value.trim().toUpperCase()) {
          showStatus('status_colocacion', 'Error: Se perdieron los datos del cliente. Por favor, busca al cliente de nuevo.', 'error');
          return;
     }
 
-    // 2. Crear el objeto de datos del crédito AÑADIENDO LA OFICINA
+    // 2. PREPARAR DATOS DEL CRÉDITO
+    // Es vital que 'office' venga del cliente cargado para cumplir las reglas de seguridad
     const creditoData = {
         curpCliente: clienteParaCredito.curp,
-        office: clienteParaCredito.office, // <-- ¡ESTA LÍNEA ES LA CORRECCIÓN!
+        office: clienteParaCredito.office, // <--- DATO CRÍTICO PARA PERMISOS
         tipo: document.getElementById('tipo_colocacion').value,
         monto: parseFloat(document.getElementById('monto_colocacion').value),
         plazo: parseInt(document.getElementById('plazo_colocacion').value),
@@ -2380,11 +2379,7 @@ async function handleCreditForm(e) {
         nombreAval: document.getElementById('nombreAval_colocacion').value.trim()
     };
     
-    // --- 🔚 FIN DE LA CORRECCIÓN ---
-    // ===================================
-
-
-    // Cálculo de MontoTotal y Saldo (tu lógica existente)
+    // 3. CÁLCULOS FINANCIEROS
     let interesRate = 0;
     if (creditoData.plazo === 14) interesRate = 0.40;
     else if (creditoData.plazo === 13) interesRate = 0.30;
@@ -2394,7 +2389,7 @@ async function handleCreditForm(e) {
     creditoData.saldo = creditoData.montoTotal;
 
 
-    // Validaciones (tu lógica existente)
+    // 4. VALIDACIONES DE FORMULARIO
     if (!creditoData.monto || creditoData.monto <= 0 || !creditoData.plazo || !creditoData.tipo || !creditoData.nombreAval) {
         showStatus('status_colocacion', 'Error: Todos los campos del crédito son obligatorios (Monto, Plazo, Tipo, Nombre Aval).', 'error');
         return;
@@ -2415,13 +2410,26 @@ async function handleCreditForm(e) {
         curpAvalInput.classList.remove('input-error');
     }
 
+    // UI: MOSTRAR CARGA
     showButtonLoading(submitButton, true, 'Generando...');
-    showFixedProgress(50, 'Validando y generando crédito...');
+    showFixedProgress(50, 'Validando aval y generando crédito...');
     statusColocacion.innerHTML = 'Validando elegibilidad y generando crédito...';
     statusColocacion.className = 'status-message status-info';
 
     try {
-        // Ahora, esta llamada a 'database.agregarCredito' SÍ incluye la 'office'
+        // ============================================================
+        // Verificamos el Aval pasando la OFICINA explícitamente antes de guardar.
+        // Esto evita el error de permisos dentro de database.agregarCredito
+        // ============================================================
+        
+        // Paso 1: Verificar Aval pasando la oficina
+        const checkAval = await database.verificarElegibilidadAval(creditoData.curpAval, creditoData.office);
+        
+        if (!checkAval.elegible) {
+            throw new Error(`Problema con el Aval: ${checkAval.message}`);
+        }
+
+        // Paso 2: Si el aval es válido, procedemos a crear el crédito
         const resultado = await database.agregarCredito(creditoData, currentUser.email);
 
         if (resultado.success) {
@@ -2434,12 +2442,13 @@ async function handleCreditForm(e) {
             }
             showStatus('status_colocacion', successMessage, 'success');
 
+            // Limpiar formulario
             e.target.reset();
             document.getElementById('form-colocacion').classList.add('hidden');
             document.getElementById('curp_colocacion').value = '';
             document.getElementById('nombre_colocacion').value = '';
             
-            clienteParaCredito = null; // Limpiamos la variable global
+            clienteParaCredito = null;
 
         } else {
             throw new Error(resultado.message);
@@ -2448,7 +2457,12 @@ async function handleCreditForm(e) {
     } catch (error) {
         console.error("Error en handleCreditForm:", error);
         showFixedProgress(100, 'Error al generar');
-        showStatus('status_colocacion', `Error al generar crédito: ${error.message}`, 'error');
+        
+        let msg = error.message;
+        if (msg.includes("Missing or insufficient permissions")) {
+            msg = "Error de permisos: No puedes verificar avales de otra sucursal.";
+        }
+        showStatus('status_colocacion', `Error al generar crédito: ${msg}`, 'error');
     } finally {
         showButtonLoading(submitButton, false);
         setTimeout(hideFixedProgress, 2000);
@@ -6628,6 +6642,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
