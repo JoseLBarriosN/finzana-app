@@ -742,7 +742,7 @@ input, select, textarea {
 }
 
 /* Mejoras responsive */
-@media (max-width: 768px) {
+@media (max-width: 600px) {
     .app-header, .view-header {
         flex-direction: column;
         gap: 15px;
@@ -874,7 +874,7 @@ input, select, textarea {
 }
 
 /* Mejoras para tablas en dispositivos móviles */
-@media (max-width: 768px) {
+@media (max-width: 600px) {
     .client-table, .user-table, .report-table {
         font-size: 14px;
     }
@@ -1232,7 +1232,7 @@ select {
     }
 }
 
-@media (max-width: 768px) {
+@media (max-width: 600px) {
     #grafico-container {
         min-height: 350px;
         height: 50vh;
@@ -1813,7 +1813,7 @@ tr.pago-registrado-exito td, tr.pago-registrado-error td {
     color: var(--dark);
 }
 
-@media (max-width: 768px) {
+@media (max-width: 600px) {
     .configuracion-container {
         padding: 15px;
     }
@@ -1984,7 +1984,7 @@ body.has-connection-status #progress-container-fixed {
     flex-shrink: 0;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 600px) {
     body.has-progress {
         padding-top: calc(50px + 20px) !important;
     }
@@ -2051,4 +2051,5 @@ body.has-connection-status #progress-container-fixed {
     font-size: 12px;
     border-radius: 6px;
 }
+
 
