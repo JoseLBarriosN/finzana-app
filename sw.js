@@ -1,19 +1,30 @@
-const CACHE_NAME = 'finzana-cache-v7'; // Versión incrementada para forzar la actualización
+// ===================================
+// --- Service Worker CORREGIDO ---
+// ===================================
+
+const CACHE_NAME = 'finzana-cache-v8'; 
 const urlsToCache = [
-    './',
-    './index.html',
-    './css/styles.css',
-    './js/app.js',
-    './js/database.js',
-    './firebase-config.js',
-    './offline.html',
-    './assets/logo.png',
-    './assets/logo_192.png',
-    './assets/logo_512.png',
+    '/',
+    '/index.html',
+    '/css/styles.css',
+    '/js/app.js',
+    '/js/database.js',
+    '/firebase-config.js',
+    '/offline.html',
+    '/assets/logo.png',
+    '/assets/logo_192.png',
+    '/assets/logo_512.png',
     'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css',
     'https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js',
     'https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js',
     'https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js'
+];
+
+const CRITICAL_FILES = [
+    '/css/styles.css',
+    '/js/app.js',
+    '/js/database.js',
+    '/firebase-config.js'
 ];
 
 self.addEventListener('install', event => {
@@ -23,7 +34,7 @@ self.addEventListener('install', event => {
                 console.log('Cache abierta y guardando archivos de la app');
                 return cache.addAll(urlsToCache);
             })
-            .then(() => self.skipWaiting()) // Forzar activación del nuevo SW
+            .then(() => self.skipWaiting())
     );
 });
 
@@ -38,29 +49,40 @@ self.addEventListener('activate', event => {
                     }
                 })
             );
-        }).then(() => self.clients.claim()) // Tomar control inmediato
+        }).then(() => self.clients.claim())
     );
 });
 
+// ===================================
+// ---  EVENTO FETCH (CORREGIDO) ---
+// ===================================
 self.addEventListener('fetch', event => {
     const requestUrl = new URL(event.request.url);
 
-    // Ignorar peticiones de Firebase para que su propio SDK offline funcione
     if (requestUrl.hostname.includes('googleapis.com')) {
         return;
     }
 
-    // Para peticiones de navegación (abrir la app), ir a la red primero.
-    // Si falla, usar el caché. Esto asegura que siempre tengas la última versión si hay internet.
-    if (event.request.mode === 'navigate') {
+    if (event.request.mode === 'navigate' || CRITICAL_FILES.some(file => requestUrl.pathname === file)) {
         event.respondWith(
-            fetch(event.request).catch(() => caches.match(event.request.url))
+            fetch(event.request)
+                .then(networkResponse => {
+                    if (networkResponse.status === 200) {
+                        return caches.open(CACHE_NAME).then(cache => {
+                            cache.put(event.request, networkResponse.clone());
+                            return networkResponse;
+                        });
+                    }
+                    return networkResponse;
+                })
+                .catch(() => {
+                    console.log(`[SW] Red falló para ${requestUrl.pathname}, sirviendo desde caché.`);
+                    return caches.match(event.request);
+                })
         );
         return;
     }
 
-    // Para otros recursos (CSS, JS, imágenes), usar "Stale-While-Revalidate"
-    // Carga instantáneamente desde el caché, y actualiza en segundo plano.
     event.respondWith(
         caches.open(CACHE_NAME).then(cache => {
             return cache.match(event.request).then(cachedResponse => {
