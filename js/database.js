@@ -462,24 +462,25 @@ const database = {
         }
     },
 
-    verificarElegibilidadAval: async (curpAval) => {
+    verificarElegibilidadAval: async (curpAval, office = null) => {
         if (!curpAval || curpAval.trim() === '') return { elegible: true };
 
         try {
-            const snapshot = await db.collection('creditos')
-                .where('curpAval', '==', curpAval.toUpperCase())
-                .get();
+            let query = db.collection('creditos').where('curpAval', '==', curpAval.toUpperCase());
+            if (office && office !== 'AMBAS') {
+                query = query.where('office', '==', office);
+            }
+
+            const snapshot = await query.get();
 
             if (snapshot.empty) return { elegible: true };
 
             for (const doc of snapshot.docs) {
                 const credito = doc.data();
-                // Omitir créditos liquidados (por estado o saldo)
                 if (credito.estado === 'liquidado' || (credito.saldo !== undefined && credito.saldo <= 0.01)) {
                     continue;
                 }
 
-                // Si el crédito avalado aún tiene saldo pendiente
                 if (credito.saldo !== undefined && credito.saldo > 0.01) {
                     if (!credito.montoTotal || credito.montoTotal <= 0) {
                         return { elegible: false, message: `Aval respalda crédito ${credito.historicalIdCredito || doc.id} con datos inconsistentes.` };
@@ -494,6 +495,9 @@ const database = {
             return { elegible: true };
         } catch (error) {
             console.error("Error verificando elegibilidad del aval:", error);
+            if (error.code === 'permission-denied') {
+                 return { elegible: false, message: "Permisos insuficientes para verificar historial del aval en esta oficina." };
+            }
             return { elegible: false, message: "Error al consultar BD para aval." };
         }
     },
@@ -1868,6 +1872,7 @@ const database = {
     }
 
 };
+
 
 
 
