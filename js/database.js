@@ -1880,8 +1880,24 @@ const database = {
         }
     }
 
-    // --- NUEVO: Para Hoja de Corte ---
-    obtenerDatosHojaCorte: async (fecha, userOffice) => {
+    // Obtiene las poblaciones filtradas por Ruta y Oficina (Para el checkbox)
+    obtenerPoblacionesPorRuta: async (ruta, office) => {
+        try {
+            let query = db.collection('poblaciones').where('ruta', '==', ruta);
+                        if (office && office !== 'AMBAS') {
+                query = query.where('office', '==', office);
+            }
+            
+            const snapshot = await query.get();
+            return snapshot.docs.map(doc => doc.data()).sort((a,b) => a.nombre.localeCompare(b.nombre));
+        } catch (error) {
+            console.error("Error obteniendo poblaciones por ruta:", error);
+            return [];
+        }
+    },
+
+    // Obtiene TODOS los movimientos financieros del día para la Hoja de Corte
+    obtenerDatosHojaCorte: async (fecha, userOffice, userId = null) => {
         const fechaInicio = new Date(fecha + 'T00:00:00Z').toISOString();
         const fechaFin = new Date(fecha + 'T23:59:59Z').toISOString();
         
@@ -1892,7 +1908,10 @@ const database = {
             let qMovs = db.collection('movimientos_efectivo')
                 .where('fecha', '>=', fechaInicio)
                 .where('fecha', '<=', fechaFin);
+            
             if (userOffice && userOffice !== 'AMBAS') qMovs = qMovs.where('office', '==', userOffice);
+            if (userId) qMovs = qMovs.where('userId', '==', userId);
+            
             promises.push(qMovs.get());
 
             // 2. Pagos (Cobranza - Entradas)
@@ -1907,67 +1926,19 @@ const database = {
                 .where('fecha', '>=', fechaInicio)
                 .where('fecha', '<=', fechaFin);
             if (userOffice && userOffice !== 'AMBAS') qComis = qComis.where('office', '==', userOffice);
+            if (userId) qComis = qComis.where('userId', '==', userId);
             promises.push(qComis.get());
-
             const [snapMovs, snapPagos, snapComis] = await Promise.all(promises);
-            const movimientos = snapMovs.docs.map(d => ({...d.data(), origen: 'MOVIMIENTO'}));
-            const pagos = snapPagos.docs.map(d => ({
-                ...d.data(), 
-                origen: 'COBRANZA', 
-                tipo: 'PAGO',
-                descripcion: `Cobro a ${d.data().nombreCliente || 'Cliente'} (${d.data().tipoPago})`,
-                monto: d.data().monto
-            }));
-            const comisiones = snapComis.docs.map(d => ({
-                ...d.data(), 
-                origen: 'COMISION', 
-                tipo: 'COMISION', 
-                monto: -Math.abs(d.data().montoComision || 0)
-            })); 
+            const movimientos = snapMovs.docs.map(d => ({...d.data(), categoria: 'MOVIMIENTO', rawDate: d.data().fecha}));
+            let pagosDocs = snapPagos.docs.map(d => ({...d.data(), categoria: 'COBRANZA', tipo: 'PAGO', rawDate: d.data().fecha}));
+            const comisiones = snapComis.docs.map(d => ({...d.data(), categoria: 'COMISION', tipo: 'COMISION', rawDate: d.data().fecha})); 
 
-            return [...movimientos, ...pagos, ...comisiones];
+            return [...movimientos, ...pagosDocs, ...comisiones];
 
         } catch (error) {
-            console.error("Error obteniendo datos hoja de corte:", error);
-            throw error;
+            console.error("Error hoja corte:", error);
+            return [];
         }
     },
 
-    // --- Selector de poblaciones en Pago Grupal --- //
-    obtenerPoblacionesPorRuta: async (ruta, office) => {
-        try {
-            let query = db.collection('poblaciones').where('ruta', '==', ruta);
-            if (office && office !== 'AMBAS') {
-                query = query.where('office', '==', office);
-            }
-            const snapshot = await query.get();
-            return snapshot.docs
-                .map(doc => doc.data().nombre)
-                .sort((a, b) => a.localeCompare(b));
-        } catch (e) {
-            console.error("Error obteniendo poblaciones por ruta:", e);
-            return [];
-        }
-    }
-
 };
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
