@@ -2850,33 +2850,86 @@ async function handleCalcularCobranzaRuta() {
 //** Inicializar Vista de Pago Grupal ** //
 
 async function inicializarVistaPagoGrupal() {
+    console.log("Iniciando vista Pago Grupal...");
+    
     const containerChecks = document.getElementById('checkboxes-poblaciones-container');
     const cardSelector = document.getElementById('selector-poblaciones-card');
     const btnCalcular = document.getElementById('btn-calcular-seleccion');
+    
+    // Botones de acción flotantes
+    const btnGuardar = document.getElementById('btn-guardar-cobranza-offline');
+    const btnRegistrar = document.getElementById('btn-registrar-pagos-offline');
+    
+    // Contenedores
     const containerResultados = document.getElementById('cobranza-ruta-container');
     const placeholder = document.getElementById('cobranza-ruta-placeholder');
+
+    // 1. Resetear vista
+    if(containerResultados) containerResultados.innerHTML = '';
+    if(placeholder) placeholder.classList.remove('hidden');
+    if(cardSelector) cardSelector.classList.add('hidden');
     
-    // Reset visual
-    containerResultados.innerHTML = '';
-    cardSelector.classList.add('hidden');
-    placeholder.classList.remove('hidden');
-    
-    if (!currentUserData || !currentUserData.ruta || !currentUserData.office) {
-        showStatus('status_pago_grupo', 'Error: Usuario sin ruta u oficina asignada.', 'error');
+    // Ocultar botones de acción al inicio (aparecerán tras calcular o cargar)
+    if(btnGuardar) btnGuardar.classList.add('hidden');
+    if(btnRegistrar) btnRegistrar.classList.add('hidden');
+
+    // 2. Validar Usuario
+    if (!currentUserData || !currentUserData.ruta) {
+        showStatus('status_pago_grupo', 'Error: Tu usuario no tiene una RUTA asignada.', 'error');
         return;
     }
 
-    // Mostrar panel de selección
+    // 3. LÓGICA OFFLINE / DATOS GUARDADOS
+    // Verificamos si hay datos guardados en LocalStorage
+    const keyOffline = OFFLINE_STORAGE_KEY + currentUserData.ruta;
+    const datosGuardadosStr = localStorage.getItem(keyOffline);
+    let datosGuardados = null;
+    if (datosGuardadosStr) {
+        try { datosGuardados = JSON.parse(datosGuardadosStr); } catch(e) {}
+    }
+
+    // Si estamos OFFLINE o si el usuario quiere, cargamos lo local
+    if (!navigator.onLine) {
+        showStatus('status_pago_grupo', 'Modo Offline detectado.', 'warning');
+        
+        if (datosGuardados && datosGuardados.data) {
+            // Ocultar selector (no podemos calcular offline)
+            cardSelector.classList.add('hidden');
+            placeholder.classList.add('hidden');
+            
+            // Renderizar directo lo guardado
+            cobranzaRutaData = datosGuardados.data;
+            renderizarCobranzaRuta(cobranzaRutaData, containerResultados);
+            
+            // Mostrar botón de registrar
+            if(btnRegistrar) btnRegistrar.classList.remove('hidden');
+            
+            const fechaGuardado = new Date(datosGuardados.timestamp).toLocaleString();
+            showStatus('status_pago_grupo', `Mostrando datos guardados localmente (${fechaGuardado}).`, 'success');
+        } else {
+            placeholder.classList.remove('hidden');
+            placeholder.innerHTML = '<p>No tienes conexión y no hay datos guardados para esta ruta.</p>';
+        }
+        return; // Terminamos aquí si es offline
+    }
+
+    // 4. LÓGICA ONLINE (Cálculo Nuevo)
+    // Si hay internet, mostramos el selector para generar un cálculo fresco
     cardSelector.classList.remove('hidden');
     containerChecks.innerHTML = '<div class="spinner"></div> Cargando poblaciones...';
-    btnCalcular.disabled = true;
+    if(btnCalcular) btnCalcular.disabled = true;
+
+    // Si existen datos guardados previos, avisamos pero dejamos calcular de nuevo
+    if (datosGuardados) {
+        showStatus('status_pago_grupo', 'Tienes conexión. Puedes generar un nuevo cálculo o usar el offline si perdieras la red.', 'info');
+    }
 
     try {
         const poblaciones = await database.obtenerPoblacionesPorRuta(currentUserData.ruta, currentUserData.office);
         
         containerChecks.innerHTML = '';
         if (poblaciones.length === 0) {
-            containerChecks.innerHTML = '<p>No se encontraron poblaciones asignadas a tu ruta y oficina.</p>';
+            containerChecks.innerHTML = `<p>No se encontraron poblaciones para la ruta <strong>${currentUserData.ruta}</strong>.</p>`;
             return;
         }
 
@@ -2891,33 +2944,37 @@ async function inicializarVistaPagoGrupal() {
         `;
         containerChecks.appendChild(allDiv);
 
-        // Checkboxes por Población
+        // Checkboxes individuales
         poblaciones.forEach(pob => {
-            const wrapper = document.createElement('div');
-            wrapper.className = 'poblacion-check-item'; // Puedes agregar estilo CSS si quieres
-            wrapper.innerHTML = `
+            const div = document.createElement('div');
+            div.style.display = "inline-block";
+            div.style.marginRight = "15px";
+            div.style.marginBottom = "5px";
+            div.innerHTML = `
                 <label style="cursor:pointer;">
                     <input type="checkbox" class="poblacion-check" value="${pob.nombre}" checked> 
                     ${pob.nombre}
                 </label>
             `;
-            containerChecks.appendChild(wrapper);
+            containerChecks.appendChild(div);
         });
 
-        // Lógica "Seleccionar Todas"
+        // Evento Select All
         document.getElementById('check-all-poblaciones').addEventListener('change', function(e) {
             document.querySelectorAll('.poblacion-check').forEach(chk => chk.checked = e.target.checked);
         });
 
-        // Configurar Botón Calcular
-        btnCalcular.disabled = false;
-        btnCalcular.onclick = handleCalcularCobranzaRuta;
-
-        showStatus('status_pago_grupo', `Ruta: ${currentUserData.ruta}. Selecciona las poblaciones a cobrar.`, 'info');
+        // Activar botón calcular
+        if(btnCalcular) {
+            btnCalcular.disabled = false;
+            const newBtn = btnCalcular.cloneNode(true);
+            btnCalcular.parentNode.replaceChild(newBtn, btnCalcular);
+            newBtn.addEventListener('click', handleCalcularCobranzaRuta);
+        }
 
     } catch (error) {
         console.error(error);
-        containerChecks.innerHTML = '<p class="text-danger">Error cargando poblaciones.</p>';
+        containerChecks.innerHTML = '<p class="status-error">Error al cargar las poblaciones.</p>';
     }
 }
 
@@ -4481,60 +4538,8 @@ function showView(viewId) {
                 break;
                 
             case 'view-pago-grupo':
-                // Tu código existente para pago grupal
-                const statusPagoGrupo = document.getElementById('status_pago_grupo');
-                const btnCalcular = document.getElementById('btn-calcular-cobranza-ruta');
-                const btnGuardar = document.getElementById('btn-guardar-cobranza-offline');
-                const btnRegistrar = document.getElementById('btn-registrar-pagos-offline');
-                const container = document.getElementById('cobranza-ruta-container');
-                const placeholder = document.getElementById('cobranza-ruta-placeholder');
-
-                container.innerHTML = '';
-                placeholder.classList.remove('hidden');
-                placeholder.textContent = 'Presiona "Calcular Cobranza" (requiere conexión) o carga una lista guardada si estás offline.';
-                btnGuardar.classList.add('hidden');
-                btnRegistrar.classList.add('hidden');
-                cobranzaRutaData = null;
-
-                if (!currentUserData || !currentUserData.ruta || !currentUserData.office || currentUserData.office === 'AMBAS') {
-                    showStatus('status_pago_grupo', 'Debes tener una ruta y oficina única asignada.', 'warning');
-                    btnCalcular.disabled = true;
-                    placeholder.textContent = 'Función no disponible: Ruta/Oficina no asignada.';
-                    break;
-                }
-
-                if (navigator.onLine) {
-                    showStatus('status_pago_grupo', `Listo para calcular cobranza de ruta ${currentUserData.ruta}.`, 'info');
-                    btnCalcular.disabled = false;
-                } else {
-                    showStatus('status_pago_grupo', `Modo Offline. Buscando lista guardada para ruta ${currentUserData.ruta}...`, 'info');
-                    btnCalcular.disabled = true;
-                    const key = OFFLINE_STORAGE_KEY + currentUserData.ruta;
-                    const savedDataString = localStorage.getItem(key);
-
-                    if (savedDataString) {
-                        try {
-                            const savedData = JSON.parse(savedDataString);
-                            if (savedData.ruta === currentUserData.ruta && savedData.office === currentUserData.office && savedData.data) {
-                                cobranzaRutaData = savedData.data;
-                                renderizarCobranzaRuta(cobranzaRutaData, container);
-                                btnRegistrar.classList.remove('hidden');
-                                placeholder.classList.add('hidden');
-                                const timestamp = savedData.timestamp ? new Date(savedData.timestamp).toLocaleString() : 'desconocida';
-                                showStatus('status_pago_grupo', `Lista offline cargada (guardada el ${timestamp})...`, 'success');
-                            } else {
-                                throw new Error("Datos guardados inválidos o de otra oficina.");
-                            }
-                        } catch (error) {
-                            console.error("Error cargando datos offline:", error);
-                            showStatus('status_pago_grupo', `Error al cargar datos guardados: ${error.message}. Intenta conectarte y generar una nueva lista.`, 'error');
-                            placeholder.textContent = 'Error al cargar lista guardada.';
-                        }
-                    } else {
-                        showStatus('status_pago_grupo', `No se encontró lista guardada para ruta ${currentUserData.ruta}. Conéctate para generar una.`, 'warning');
-                        placeholder.textContent = 'No hay lista guardada para uso offline.';
-                    }
-                }
+                console.log("Cargando vista Pago Grupal...");
+                inicializarVistaPagoGrupal(); 
                 break;
                 
             case 'view-reportes-graficos':
@@ -6754,5 +6759,6 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
