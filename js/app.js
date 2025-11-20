@@ -351,6 +351,7 @@ function aplicarPermisosUI(role) {
             'view-pago-grupo', 'view-reportes', 'view-reportes-avanzados',
             'view-usuarios', 'view-importar', 'view-configuracion',
             'view-gestion-efectivo', 'view-reporte-contable'
+            'view-hoja-corte'
         ],
         'Área comercial': [
             'view-gestion-clientes',
@@ -4496,102 +4497,122 @@ function showView(viewId) {
         targetView.classList.remove('hidden');
         console.log(`Vista ${viewId} mostrada.`);
         
-        // EJECUTAR CÓDIGO ESPECÍFICO PARA CADA VISTA
-        switch(viewId) {
-            case 'view-configuracion':
-                console.log('🚀 EJECUTANDO loadConfiguracion AUTOMÁTICAMENTE');
-                // Pequeño delay para asegurar que el DOM esté listo
-                setTimeout(() => {
-                    loadConfiguracion();
-                }, 100);
-                break;
+        // Ejecutar código específico (Lazy Loading corregido)
+        (async () => {
+            // Si la vista ya cargó sus datos dinámicos, evitamos recargar (opcional)
+            // Para vistas transaccionales como Pagos, a veces es mejor recargar.
+            // if (targetView.dataset.loaded === 'true') return; 
+
+            switch(viewId) {
+                case 'view-configuracion':
+                    console.log('🚀 Cargando configuración...');
+                    await loadConfiguracion();
+                    targetView.dataset.loaded = 'true';
+                    break;
+                    
+                case 'view-reportes':
+                    await loadBasicReports(currentUserData?.office);
+                    break;
+                    
+                case 'view-reportes-avanzados':
+                    inicializarVistaReportesAvanzados();
+                    // Cargar dropdowns dinámicos si es necesario
+                    const userOffice = currentUserData?.office;
+                    const filtroOffice = (userOffice && userOffice !== 'AMBAS') ? userOffice : '';
+                    await _actualizarDropdownGrupo('grupo_filtro_reporte', filtroOffice, 'Todos');
+                    const rutasReportes = (await database.obtenerRutas(filtroOffice)).map(r => r.nombre).sort();
+                    popularDropdown('ruta_filtro_reporte', rutasReportes, 'Todas');
+                    break;
+                    
+                case 'view-gestion-clientes':
+                    inicializarVistaGestionClientes();
+                    const officeCli = (currentUserData?.office && currentUserData?.office !== 'AMBAS') ? currentUserData.office : '';
+                    await _actualizarDropdownGrupo('grupo_filtro', officeCli, 'Todos');
+                    break;
+                    
+                case 'view-cliente':
+                    if (!editingClientId) { 
+                        resetClientForm(); 
+                    } else {
+                        // Si edita, forzar recarga de dropdowns correctos
+                        const officeSelect = document.getElementById('office_cliente');
+                        if(officeSelect) handleOfficeChangeForClientForm.call(officeSelect);
+                    }
+                    break;
                 
-            case 'view-reportes':
-                loadBasicReports(currentUserData?.office);
-                break;
+                case 'view-pago-grupo':
+                    // *** CORRECCIÓN PRINCIPAL AQUÍ ***
+                    console.log("Inicializando Pago Grupal...");
+                    await inicializarVistaPagoGrupal(); 
+                    break;
                 
-            case 'view-reportes-avanzados':
-                inicializarVistaReportesAvanzados();
-                break;
-                
-            case 'view-gestion-clientes':
-                inicializarVistaGestionClientes();
-                break;
-                
-            case 'view-cliente':
-                if (!editingClientId) { resetClientForm(); }
-                break;
-                
-            case 'view-colocacion':
-                document.getElementById('curp_colocacion').value = '';
-                document.getElementById('form-colocacion').classList.add('hidden');
-                showStatus('status_colocacion', 'Ingresa la CURP del cliente para buscar.', 'info');
-                document.getElementById('plazo_colocacion').disabled = false;
-                document.getElementById('tipo_colocacion').disabled = false;
-                break;
-                
-            case 'view-cobranza':
-                document.getElementById('idCredito_cobranza').value = '';
-                document.getElementById('form-cobranza').classList.add('hidden');
-                showStatus('status_cobranza', 'Ingresa el ID del crédito (histórico) para buscar.', 'info');
-                creditoActual = null;
-                break;
-                
-            case 'view-pago-grupo':
-                console.log("Cargando vista Pago Grupal...");
-                inicializarVistaPagoGrupal(); 
-                break;
-                
-            case 'view-reportes-graficos':
-                const hoyGraf = new Date();
-                const haceUnAnio = new Date(hoyGraf.getFullYear() - 1, hoyGraf.getMonth(), hoyGraf.getDate() + 1);
-                document.getElementById('grafico_fecha_inicio').value = haceUnAnio.toISOString().split('T')[0];
-                document.getElementById('grafico_fecha_fin').value = hoyGraf.toISOString().split('T')[0];
-                handleSucursalGraficoChange.call(document.getElementById('grafico_sucursal') || { value: '' });
-                if (currentChart) {
-                    currentChart.destroy();
-                    currentChart = null;
-                }
-                document.getElementById('grafico-container').innerHTML = '';
-                showStatus('status_graficos', 'Selecciona los filtros y genera un gráfico.', 'info');
-                break;
-                
-            case 'view-importar':
-                document.getElementById('office-select').value = 'GDL';
-                handleOfficeChange.call(document.getElementById('office-select'));
-                break;
-                
-            case 'view-registrar-gasto':
-                const fechaGastoInput = document.getElementById('gasto-fecha');
-                if (fechaGastoInput) {
-                    fechaGastoInput.value = new Date().toISOString().split('T')[0];
-                }
-                showStatus('status_registrar_gasto', '', 'info');
-                document.getElementById('form-registrar-gasto').reset();
-                if (fechaGastoInput) {
-                    fechaGastoInput.value = new Date().toISOString().split('T')[0];
-                }
-                break;
-                
-            case 'view-gestion-efectivo':
-                loadGestionEfectivo();
-                break;
-                
-            case 'view-reporte-contable':
-                inicializarVistaReporteContable();
-                break;
-                
-            case 'view-usuarios':
-                inicializarVistaUsuarios();
-                break;
-        }
+                case 'view-hoja-corte':
+                    // Inicialización simple para hoja de corte
+                    const fechaCorte = document.getElementById('corte-fecha');
+                    if(fechaCorte) fechaCorte.value = new Date().toISOString().split('T')[0];
+                    const containerResumen = document.getElementById('corte-resumen-cards');
+                    if(containerResumen) containerResumen.innerHTML = '';
+                    const tbodyCorte = document.querySelector('#tabla-corte-detalle tbody');
+                    if(tbodyCorte) tbodyCorte.innerHTML = '<tr><td colspan="6" style="text-align:center;">Selecciona fecha y genera corte.</td></tr>';
+                    break;
+
+                case 'view-reportes-graficos':
+                    const hoyGraf = new Date();
+                    const haceUnAnio = new Date(hoyGraf.getFullYear() - 1, hoyGraf.getMonth(), hoyGraf.getDate() + 1);
+                    document.getElementById('grafico_fecha_inicio').value = haceUnAnio.toISOString().split('T')[0];
+                    document.getElementById('grafico_fecha_fin').value = hoyGraf.toISOString().split('T')[0];
+                    
+                    const officeGraf = (currentUserData?.office && currentUserData?.office !== 'AMBAS') ? currentUserData.office : '';
+                    handleSucursalGraficoChange.call(document.getElementById('grafico_sucursal') || { value: officeGraf });
+                    
+                    if (currentChart) {
+                        currentChart.destroy();
+                        currentChart = null;
+                    }
+                    document.getElementById('grafico-container').innerHTML = '';
+                    showStatus('status_graficos', 'Selecciona los filtros y genera un gráfico.', 'info');
+                    break;
+                    
+                case 'view-gestion-efectivo':
+                    await loadGestionEfectivo();
+                    break;
+                    
+                case 'view-reporte-contable':
+                    await inicializarVistaReporteContable();
+                    break;
+
+                case 'view-colocacion':
+                    // Resetear formulario de colocación
+                    document.getElementById('curp_colocacion').value = '';
+                    document.getElementById('form-colocacion').classList.add('hidden');
+                    showStatus('status_colocacion', 'Ingresa la CURP del cliente para buscar.', 'info');
+                    break;
+
+                case 'view-cobranza':
+                    // Resetear formulario de cobranza
+                    document.getElementById('idCredito_cobranza').value = '';
+                    document.getElementById('form-cobranza').classList.add('hidden');
+                    showStatus('status_cobranza', 'Ingresa el ID del crédito (histórico) para buscar.', 'info');
+                    creditoActual = null;
+                    break;
+
+                case 'view-usuarios':
+                    inicializarVistaUsuarios();
+                    break;
+            }
+        })();
         
     } else {
         console.error(`Error: No se encontró la vista con ID ${viewId}`);
-        const fallbackView = document.getElementById('view-main-menu');
-        if (fallbackView) fallbackView.classList.remove('hidden');
+        // Fallback al menú
+        const menu = document.getElementById('view-main-menu');
+        if(menu) menu.classList.remove('hidden');
     }
 }
+
+//========================================
+//             ShowStatus
+//========================================
 
 function showStatus(elementId, message, type) {
     const element = document.getElementById(elementId);
@@ -6748,6 +6769,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
