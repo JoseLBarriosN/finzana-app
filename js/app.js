@@ -350,7 +350,7 @@ function aplicarPermisosUI(role) {
             'view-gestion-clientes', 'view-cliente', 'view-colocacion', 'view-cobranza',
             'view-pago-grupo', 'view-reportes', 'view-reportes-avanzados',
             'view-usuarios', 'view-importar', 'view-configuracion',
-            'view-gestion-efectivo', 'view-reporte-contable'
+            'view-gestion-efectivo', 'view-reporte-contable',
             'view-hoja-corte'
         ],
         'Área comercial': [
@@ -6769,6 +6769,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
