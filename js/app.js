@@ -612,60 +612,82 @@ async function renderFilaTablaClientes(tbody, cliente, credito, filtroEstado) {
 
     if (credito) {
         const historicalId = credito.historicalIdCredito || credito.id;
-        // Obtener pagos para estado real
+        
+        // Obtener pagos y ordenarlos para calcular estado y obtener fecha último pago
         const pagos = await database.getPagosPorCredito(historicalId, credito.office);
         pagos.sort((a, b) => (parsearFecha(b.fecha)?.getTime() || 0) - (parsearFecha(a.fecha)?.getTime() || 0));
-        const estadoCalc = _calcularEstadoCredito(credito, pagos);
         
-        // Aplicar filtro de estado "calculado" si existe
-        if (filtroEstado && estadoCalc.estado !== filtroEstado) return; // Saltar si no coincide
+        const estadoCalc = _calcularEstadoCredito(credito, pagos);
+        const ultimoPago = pagos.length > 0 ? pagos[0] : null;
 
+        // Aplicar filtro de estado "calculado" si existe en los filtros de UI
+        if (filtroEstado && estadoCalc.estado !== filtroEstado) return; 
+
+        // --- DISEÑO RESTAURADO (Estilo original) ---
+        const fechaInicioCredito = formatDateForDisplay(parsearFecha(credito.fechaCreacion));
+        const fechaUltimoPago = formatDateForDisplay(ultimoPago ? parsearFecha(ultimoPago.fecha) : null);
         const estadoClase = `status-${estadoCalc.estado.replace(/\s/g, '-')}`;
-        const fechaInicio = formatDateForDisplay(parsearFecha(credito.fechaCreacion));
+        const estadoHTML = `<span class="info-value ${estadoClase}">${estadoCalc.estado.toUpperCase()}</span>`;
+        const semanasPagadas = estadoCalc.semanasPagadas || 0;
         
         infoCreditoHTML = `
-            <div class="credito-info-compact">
-                <div><strong>ID:</strong> ${historicalId}</div>
-                <div><strong>Fecha:</strong> ${fechaInicio}</div>
-                <div><strong>Estado:</strong> <span class="info-value ${estadoClase}">${estadoCalc.estado.toUpperCase()}</span></div>
-                <div><strong>Saldo:</strong> $${estadoCalc.saldoRestante.toFixed(2)}</div>
-                <div><strong>Semanas Pag:</strong> ${estadoCalc.semanasPagadas}/${credito.plazo}</div>
-                <button class="btn btn-sm btn-outline-primary mt-1" onclick="mostrarHistorialPagos('${historicalId}', '${credito.office}')">
-                    <i class="fas fa-receipt"></i> Historial
+            <div class="credito-info">
+                <div class="info-grid">
+                    <div class="info-item"><span class="info-label">ID Crédito (Hist):</span><span class="info-value">${historicalId}</span></div>
+                    <div class="info-item"><span class="info-label">Estado:</span>${estadoHTML}</div>
+                    <div class="info-item"><span class="info-label">Saldo Actual:</span><span class="info-value">$${estadoCalc.saldoRestante.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
+                    <div class="info-item"><span class="info-label">Semanas Pagadas:</span><span class="info-value">${semanasPagadas} de ${credito.plazo || '?'}</span></div>
+                    ${estadoCalc.semanasAtraso > 0 ? `<div class="info-item"><span class="info-label">Semanas Atraso:</span><span class="info-value">${estadoCalc.semanasAtraso}</span></div>` : ''}
+                    <div class="info-item"><span class="info-label">Último Pago:</span><span class="info-value">${fechaUltimoPago}</span></div>
+                    <div class="info-item"><span class="info-label">Nombre Aval:</span><span class="info-value">${credito.nombreAval || 'N/A'}</span></div>
+                    <div class="info-item"><span class="info-label">CURP Aval:</span><span class="info-value">${credito.curpAval || 'N/A'}</span></div>
+                </div>
+                <button class="btn btn-sm btn-info" onclick="mostrarHistorialPagos('${historicalId}', '${credito.office}')" style="width: 100%; margin-top: 10px;">
+                    <i class="fas fa-receipt"></i> Ver Historial de Pagos (${pagos.length})
                 </button>
-            </div>
-        `;
+            </div>`;
+            
     } else {
-        // Cliente sin crédito
-        infoCreditoHTML = `<span class="badge" style="background:#ddd; color:#555; padding:5px 10px; border-radius:15px;">Sin Crédito Activo</span>`;
+        // Cliente sin crédito (Mantenemos esto simple para diferenciar)
+        infoCreditoHTML = `<div style="padding: 15px; text-align: center; background: #f8f9fa; border-radius: 8px; border: 1px dashed #ccc;">
+            <span style="color: #6c757d; font-style: italic;">Cliente registrado sin crédito activo actualmente.</span>
+        </div>`;
     }
 
     const clienteJson = JSON.stringify(cliente).replace(/'/g, "&apos;").replace(/"/g, "&quot;");
-    const comisionistaBadge = cliente.isComisionista ? '<span title="Comisionista" style="color:gold;">★</span>' : '';
+    const comisionistaBadge = cliente.isComisionista ? '<span class="comisionista-badge-cliente" title="Comisionista">★</span>' : '';
+    const fechaRegistro = formatDateForDisplay(parsearFecha(cliente.fechaRegistro || cliente.fechaCreacion));
 
     const tr = document.createElement('tr');
     tr.innerHTML = `
         <td>
-            <div style="font-weight:bold;">${cliente.office}</div>
-            <small>${cliente.poblacion_grupo}</small><br>
-            <small style="color:var(--primary);">Ruta: ${cliente.ruta}</small>
+            <b>${cliente.office || 'N/A'}</b><br>
+            <small>Reg: ${fechaRegistro}</small>
         </td>
         <td>${cliente.curp}</td>
         <td>
             ${cliente.nombre} ${comisionistaBadge}<br>
-            <a href="tel:${cliente.telefono}"><i class="fas fa-phone"></i> ${cliente.telefono || '-'}</a>
+            <a href="tel:${cliente.telefono}" class="tel-link" style="font-size: 0.85em; color: var(--primary); text-decoration: none;">
+                <i class="fas fa-phone"></i> ${cliente.telefono || 'N/A'}
+            </a>
         </td>
-        <td>${cliente.domicilio}</td>
+        <td>
+            <div style="font-weight: bold;">${cliente.poblacion_grupo || 'N/A'}</div>
+            <div style="font-size: 0.85em; color: gray;">Ruta: ${cliente.ruta || 'N/A'}</div>
+            <div style="font-size: 0.8em; margin-top:4px; border-top:1px solid #eee;">Dom: ${cliente.domicilio || ''}</div>
+        </td>
         <td>${infoCreditoHTML}</td>
         <td class="action-buttons">
-             <button class="btn btn-sm btn-info" onclick='editCliente(${clienteJson})' title="Editar"><i class="fas fa-edit"></i></button>
-             <button class="btn btn-sm btn-danger" onclick="deleteCliente('${cliente.id}', '${cliente.nombre}')" title="Eliminar"><i class="fas fa-trash"></i></button>
+             <button class="btn btn-sm btn-info" onclick='editCliente(${clienteJson})' title="Editar Cliente"><i class="fas fa-edit"></i></button>
+             <button class="btn btn-sm btn-danger" onclick="deleteCliente('${cliente.id}', '${cliente.nombre}')" title="Eliminar Cliente"><i class="fas fa-trash"></i></button>
         </td>
     `;
     tbody.appendChild(tr);
 }
 
-//**INICIALIZAR VISTA GESTION DE CLIENTES**//
+//**
+//INICIALIZAR VISTA GESTION DE CLIENTES
+//**
 function inicializarVistaGestionClientes() {
     const tbody = document.getElementById('tabla-clientes');
     if (tbody) {
@@ -6732,4 +6754,5 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
