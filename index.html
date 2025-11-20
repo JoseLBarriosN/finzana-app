@@ -664,6 +664,17 @@
 
                 <div id="status_pago_grupo" class="status-message" style="margin-top: 15px;"></div>
 
+                <div id="selector-poblaciones-card" class="card hidden" style="margin-bottom: 20px; padding: 15px; border-left: 4px solid var(--primary);">
+                    <h4 style="margin-top:0;"><i class="fas fa-map-marked-alt"></i> Selecciona Poblaciones para Cobro:</h4>
+                    <div id="checkboxes-poblaciones-container" style="display: flex; flex-wrap: wrap; gap: 15px; margin: 15px 0;">
+                        </div>
+                    <div style="text-align: right;">
+                        <button id="btn-calcular-seleccion" class="btn btn-primary">
+                            <i class="fas fa-calculator"></i> Calcular Cobranza Seleccionada
+                        </button>
+                    </div>
+                </div>
+                
                 <div id="cobranza-ruta-container" style="margin-top: 20px;">
                     <p id="cobranza-ruta-placeholder">Presiona "Calcular Cobranza" (requiere conexión) o carga una lista guardada si estás offline.</p>
                 </div>
@@ -1143,6 +1154,50 @@
         </div>
     </div>
 
+    <div id="view-hoja-corte" class="view hidden">
+        <div class="view-header">
+            <h2><i class="fas fa-cash-register"></i> Hoja de Corte (Cuadre de Caja)</h2>
+        </div>
+    
+        <div class="card filters-card">
+            <div class="filters-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));">
+                <div class="form-group">
+                    <label>Fecha de Corte:</label>
+                    <input type="date" id="corte-fecha" class="form-control">
+                </div>
+                <div class="form-group" style="display: flex; align-items: flex-end;">
+                    <button id="btn-generar-corte" class="btn btn-primary" style="width: 100%;">
+                        <i class="fas fa-sync"></i> Generar Corte
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div id="corte-resumen-cards" class="dashboard-grid" style="margin-bottom: 20px;">
+            </div>
+
+        <div class="card">
+            <h3>Desglose de Movimientos</h3>
+            <div class="table-responsive">
+                <table class="table" id="tabla-corte-detalle">
+                    <thead>
+                        <tr>
+                            <th>Hora</th>
+                            <th>Concepto</th>
+                            <th>Descripción</th>
+                            <th>Entrada (+)</th>
+                            <th>Salida (-)</th>
+                            <th>Ref.</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td colspan="6" style="text-align:center;">Selecciona una fecha y genera el corte.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
@@ -1151,6 +1206,7 @@
     <script src="js/app.js"></script>
 </body>
 </html>
+
 
 
 
