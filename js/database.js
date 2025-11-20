@@ -1880,7 +1880,78 @@ const database = {
         }
     }
 
+    // --- NUEVO: Para Hoja de Corte ---
+    obtenerDatosHojaCorte: async (fecha, userOffice) => {
+        const fechaInicio = new Date(fecha + 'T00:00:00Z').toISOString();
+        const fechaFin = new Date(fecha + 'T23:59:59Z').toISOString();
+        
+        try {
+            const promises = [];
+            
+            // 1. Movimientos Efectivo (Gastos, Colocación, Entradas Iniciales)
+            let qMovs = db.collection('movimientos_efectivo')
+                .where('fecha', '>=', fechaInicio)
+                .where('fecha', '<=', fechaFin);
+            if (userOffice && userOffice !== 'AMBAS') qMovs = qMovs.where('office', '==', userOffice);
+            promises.push(qMovs.get());
+
+            // 2. Pagos (Cobranza - Entradas)
+            let qPagos = db.collection('pagos')
+                .where('fecha', '>=', fechaInicio)
+                .where('fecha', '<=', fechaFin);
+            if (userOffice && userOffice !== 'AMBAS') qPagos = qPagos.where('office', '==', userOffice);
+            promises.push(qPagos.get());
+
+            // 3. Comisiones (Salidas)
+            let qComis = db.collection('comisiones')
+                .where('fecha', '>=', fechaInicio)
+                .where('fecha', '<=', fechaFin);
+            if (userOffice && userOffice !== 'AMBAS') qComis = qComis.where('office', '==', userOffice);
+            promises.push(qComis.get());
+
+            const [snapMovs, snapPagos, snapComis] = await Promise.all(promises);
+            const movimientos = snapMovs.docs.map(d => ({...d.data(), origen: 'MOVIMIENTO'}));
+            const pagos = snapPagos.docs.map(d => ({
+                ...d.data(), 
+                origen: 'COBRANZA', 
+                tipo: 'PAGO',
+                descripcion: `Cobro a ${d.data().nombreCliente || 'Cliente'} (${d.data().tipoPago})`,
+                monto: d.data().monto
+            }));
+            const comisiones = snapComis.docs.map(d => ({
+                ...d.data(), 
+                origen: 'COMISION', 
+                tipo: 'COMISION', 
+                monto: -Math.abs(d.data().montoComision || 0)
+            })); 
+
+            return [...movimientos, ...pagos, ...comisiones];
+
+        } catch (error) {
+            console.error("Error obteniendo datos hoja de corte:", error);
+            throw error;
+        }
+    },
+
+    // --- Selector de poblaciones en Pago Grupal --- //
+    obtenerPoblacionesPorRuta: async (ruta, office) => {
+        try {
+            let query = db.collection('poblaciones').where('ruta', '==', ruta);
+            if (office && office !== 'AMBAS') {
+                query = query.where('office', '==', office);
+            }
+            const snapshot = await query.get();
+            return snapshot.docs
+                .map(doc => doc.data().nombre)
+                .sort((a, b) => a.localeCompare(b));
+        } catch (e) {
+            console.error("Error obteniendo poblaciones por ruta:", e);
+            return [];
+        }
+    }
+
 };
+
 
 
 
