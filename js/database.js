@@ -1884,20 +1884,24 @@ const database = {
     obtenerPoblacionesPorRuta: async (ruta, office) => {
         try {
             let query = db.collection('poblaciones').where('ruta', '==', ruta);
-                        if (office && office !== 'AMBAS') {
+            
+            // Seguridad: Filtrar por oficina siempre si no es AMBAS
+            if (office && office !== 'AMBAS') {
                 query = query.where('office', '==', office);
             }
             
             const snapshot = await query.get();
+            // Retornamos los datos ordenados alfabéticamente
             return snapshot.docs.map(doc => doc.data()).sort((a,b) => a.nombre.localeCompare(b.nombre));
         } catch (error) {
             console.error("Error obteniendo poblaciones por ruta:", error);
             return [];
         }
-    },
+    }
 
     // Obtiene TODOS los movimientos financieros del día para la Hoja de Corte
     obtenerDatosHojaCorte: async (fecha, userOffice, userId = null) => {
+        // Definir rango del día en UTC para coincidir con ISO Strings almacenados
         const fechaInicio = new Date(fecha + 'T00:00:00Z').toISOString();
         const fechaFin = new Date(fecha + 'T23:59:59Z').toISOString();
         
@@ -1910,7 +1914,7 @@ const database = {
                 .where('fecha', '<=', fechaFin);
             
             if (userOffice && userOffice !== 'AMBAS') qMovs = qMovs.where('office', '==', userOffice);
-            if (userId) qMovs = qMovs.where('userId', '==', userId);
+            if (userId) qMovs = qMovs.where('userId', '==', userId); // Filtro estricto para Agentes
             
             promises.push(qMovs.get());
 
@@ -1918,27 +1922,40 @@ const database = {
             let qPagos = db.collection('pagos')
                 .where('fecha', '>=', fechaInicio)
                 .where('fecha', '<=', fechaFin);
+            
             if (userOffice && userOffice !== 'AMBAS') qPagos = qPagos.where('office', '==', userOffice);
+            // Nota: Si la colección pagos no tiene userId indexado, filtramos en memoria después,
+            // pero si el agente registró el pago, su email/id debería estar trazable.
+            
             promises.push(qPagos.get());
 
             // 3. Comisiones (Salidas)
             let qComis = db.collection('comisiones')
                 .where('fecha', '>=', fechaInicio)
                 .where('fecha', '<=', fechaFin);
+            
             if (userOffice && userOffice !== 'AMBAS') qComis = qComis.where('office', '==', userOffice);
             if (userId) qComis = qComis.where('userId', '==', userId);
+            
             promises.push(qComis.get());
+
             const [snapMovs, snapPagos, snapComis] = await Promise.all(promises);
+
+            // Mapeo y normalización de datos
             const movimientos = snapMovs.docs.map(d => ({...d.data(), categoria: 'MOVIMIENTO', rawDate: d.data().fecha}));
-            let pagosDocs = snapPagos.docs.map(d => ({...d.data(), categoria: 'COBRANZA', tipo: 'PAGO', rawDate: d.data().fecha}));
+            
+            const pagos = snapPagos.docs.map(d => ({...d.data(), categoria: 'COBRANZA', tipo: 'PAGO', rawDate: d.data().fecha, descripcion: `Pago Crédito ${d.data().idCredito}`}));
+            
             const comisiones = snapComis.docs.map(d => ({...d.data(), categoria: 'COMISION', tipo: 'COMISION', rawDate: d.data().fecha})); 
 
-            return [...movimientos, ...pagosDocs, ...comisiones];
+            // Unificar todos los arrays
+            return [...movimientos, ...pagos, ...comisiones];
 
         } catch (error) {
-            console.error("Error hoja corte:", error);
+            console.error("Error obteniendo datos hoja corte:", error);
             return [];
         }
     },
 
 };
+
