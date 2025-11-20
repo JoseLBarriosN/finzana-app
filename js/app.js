@@ -6727,6 +6727,9 @@ function setupEventListeners() {
     const btnGenerarCorte = document.getElementById('btn-generar-corte');
     if(btnGenerarCorte) {
     btnGenerarCorte.addEventListener('click', loadHojaCorte);
+
+    }
 }
 
 console.log('app.js cargado correctamente y listo.');
+
