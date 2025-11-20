@@ -1878,7 +1878,7 @@ const database = {
             console.error("Error eliminando pago:", error);
             return { success: false, message: `Error: ${error.message}` };
         }
-    }
+    },
 
     // Obtiene las poblaciones filtradas por Ruta y Oficina (Para el checkbox)
     obtenerPoblacionesPorRuta: async (ruta, office) => {
@@ -1897,7 +1897,7 @@ const database = {
             console.error("Error obteniendo poblaciones por ruta:", error);
             return [];
         }
-    }
+    },
 
     // Obtiene TODOS los movimientos financieros del día para la Hoja de Corte
     obtenerDatosHojaCorte: async (fecha, userOffice, userId = null) => {
@@ -1958,4 +1958,5 @@ const database = {
     },
 
 };
+
 
