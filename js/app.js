@@ -6310,63 +6310,52 @@ async function loadHojaCorte() {
     }
 
     showProcessingOverlay(true, 'Generando corte de caja...');
-    containerResumen.innerHTML = '';
-    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">Cargando...</td></tr>';
+    if (containerResumen) containerResumen.innerHTML = '';
+    if (tbody) tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">Cargando...</td></tr>';
 
     try {
-        // Lógica de Seguridad para el Filtro
-        // Admin/Gerencia: Ve todo de la oficina.
-        // Área Comercial: Ve SOLO sus movimientos (filtro por userId).
         const esAgente = currentUserData.role === 'Área comercial';
         const userIdFiltro = esAgente ? currentUserData.id : null;
         
+        // Asegúrate de que esta función exista en database.js
         const datos = await database.obtenerDatosHojaCorte(fecha, currentUserData.office, userIdFiltro);
 
-        // Variables para totales
         let totalEntradas = 0;
         let totalSalidas = 0;
-        
         let subCobranza = 0;
         let subColocacion = 0;
         let subGastos = 0;
         let subComisiones = 0;
         let subEntregas = 0;
 
-        // Procesar datos para tabla y totales
         const filasRenderizadas = datos.map(item => {
             let monto = 0;
             let esEntrada = false; 
             let concepto = '';
 
-            // Normalizar según categoría
-            if (item.categoria === 'COBRANZA') { // Pagos recibidos
+            if (item.categoria === 'COBRANZA') {
                 monto = item.monto || 0;
                 esEntrada = true;
                 concepto = 'COBRANZA';
                 subCobranza += monto;
-            } 
-            else if (item.categoria === 'COMISION') { // Comisiones pagadas (Salida de caja)
+            } else if (item.categoria === 'COMISION') {
                 monto = Math.abs(item.monto || item.montoComision || 0);
                 esEntrada = false;
                 concepto = 'COMISIÓN';
                 subComisiones += monto;
-            } 
-            else { // Movimientos Efectivo
+            } else {
                 const rawMonto = item.monto || 0;
-                
-                if (item.tipo === 'COLOCACION') { // Salida dinero al cliente
+                if (item.tipo === 'COLOCACION') {
                     monto = Math.abs(rawMonto);
                     esEntrada = false;
                     concepto = 'COLOCACIÓN';
                     subColocacion += monto;
-                } 
-                else if (item.tipo === 'GASTO') { // Salida gasto operativo
+                } else if (item.tipo === 'GASTO') {
                     monto = Math.abs(rawMonto);
                     esEntrada = false;
                     concepto = 'GASTO';
                     subGastos += monto;
-                } 
-                else if (item.tipo === 'ENTREGA_INICIAL') { // Entrada dinero del admin
+                } else if (item.tipo === 'ENTREGA_INICIAL') {
                     monto = Math.abs(rawMonto);
                     esEntrada = true;
                     concepto = 'FONDEO';
@@ -6377,7 +6366,6 @@ async function loadHojaCorte() {
             if (esEntrada) totalEntradas += monto;
             else totalSalidas += monto;
 
-            // Retornar objeto para ordenar
             return {
                 hora: new Date(item.rawDate),
                 concepto: concepto,
@@ -6388,54 +6376,54 @@ async function loadHojaCorte() {
             };
         });
 
-        // Ordenar por hora
         filasRenderizadas.sort((a, b) => a.hora - b.hora);
-
-        // Renderizar Resumen
         const balance = totalEntradas - totalSalidas;
-        
-        containerResumen.innerHTML = `
-            <div class="card" style="border-left: 5px solid var(--info);">
-                <h5 style="color:gray;">Efectivo Disponible</h5>
-                <h2 style="color:var(--dark);">$${balance.toLocaleString('es-MX', {minimumFractionDigits: 2})}</h2>
-            </div>
-            <div class="card" style="border-left: 5px solid var(--success);">
-                <h5 style="color:gray;">Entradas</h5>
-                <h3 style="color:var(--success);">$${totalEntradas.toLocaleString('es-MX', {minimumFractionDigits: 2})}</h3>
-                <small>Cobranza: $${subCobranza.toLocaleString()}</small><br>
-                <small>Fondeo: $${subEntregas.toLocaleString()}</small>
-            </div>
-            <div class="card" style="border-left: 5px solid var(--danger);">
-                <h5 style="color:gray;">Salidas</h5>
-                <h3 style="color:var(--danger);">$${totalSalidas.toLocaleString('es-MX', {minimumFractionDigits: 2})}</h3>
-                <small>Colocación: $${subColocacion.toLocaleString()}</small><br>
-                <small>Comisiones: $${subComisiones.toLocaleString()}</small><br>
-                <small>Gastos: $${subGastos.toLocaleString()}</small>
-            </div>
-        `;
 
-        // Renderizar Tabla
-        if (filasRenderizadas.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">No hay movimientos registrados en esta fecha.</td></tr>';
-        } else {
-            let htmlRows = '';
-            filasRenderizadas.forEach(row => {
-                const horaStr = row.hora.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-                const entradaStr = row.esEntrada ? `$${row.monto.toFixed(2)}` : '-';
-                const salidaStr = !row.esEntrada ? `$${row.monto.toFixed(2)}` : '-';
-                
-                htmlRows += `
-                    <tr>
-                        <td>${horaStr}</td>
-                        <td><span class="badge" style="background:${row.esEntrada ? '#d4edda' : '#f8d7da'}; color:${row.esEntrada ? '#155724' : '#721c24'};">${row.concepto}</span></td>
-                        <td>${row.descripcion}</td>
-                        <td style="color:var(--success); font-weight:bold;">${entradaStr}</td>
-                        <td style="color:var(--danger); font-weight:bold;">${salidaStr}</td>
-                        <td><small>${row.ref}</small></td>
-                    </tr>
-                `;
-            });
-            tbody.innerHTML = htmlRows;
+        if (containerResumen) {
+            containerResumen.innerHTML = `
+                <div class="card" style="border-left: 5px solid var(--info);">
+                    <h5 style="color:gray;">Efectivo en Mano</h5>
+                    <h2 style="color:var(--dark);">$${balance.toLocaleString('es-MX', {minimumFractionDigits: 2})}</h2>
+                </div>
+                <div class="card" style="border-left: 5px solid var(--success);">
+                    <h5 style="color:gray;">Entradas</h5>
+                    <h3 style="color:var(--success);">$${totalEntradas.toLocaleString('es-MX', {minimumFractionDigits: 2})}</h3>
+                    <small>Cobranza: $${subCobranza.toLocaleString()}</small><br>
+                    <small>Fondeo: $${subEntregas.toLocaleString()}</small>
+                </div>
+                <div class="card" style="border-left: 5px solid var(--danger);">
+                    <h5 style="color:gray;">Salidas</h5>
+                    <h3 style="color:var(--danger);">$${totalSalidas.toLocaleString('es-MX', {minimumFractionDigits: 2})}</h3>
+                    <small>Colocación: $${subColocacion.toLocaleString()}</small><br>
+                    <small>Comisiones: $${subComisiones.toLocaleString()}</small><br>
+                    <small>Gastos: $${subGastos.toLocaleString()}</small>
+                </div>
+            `;
+        }
+
+        if (tbody) {
+            if (filasRenderizadas.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">No hay movimientos registrados.</td></tr>';
+            } else {
+                let htmlRows = '';
+                filasRenderizadas.forEach(row => {
+                    const horaStr = row.hora.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                    const entradaStr = row.esEntrada ? `$${row.monto.toFixed(2)}` : '-';
+                    const salidaStr = !row.esEntrada ? `$${row.monto.toFixed(2)}` : '-';
+                    
+                    htmlRows += `
+                        <tr>
+                            <td>${horaStr}</td>
+                            <td><span class="badge" style="background:${row.esEntrada ? '#d4edda' : '#f8d7da'}; color:${row.esEntrada ? '#155724' : '#721c24'};">${row.concepto}</span></td>
+                            <td>${row.descripcion}</td>
+                            <td style="color:var(--success); font-weight:bold;">${entradaStr}</td>
+                            <td style="color:var(--danger); font-weight:bold;">${salidaStr}</td>
+                            <td><small>${row.ref}</small></td>
+                        </tr>
+                    `;
+                });
+                tbody.innerHTML = htmlRows;
+            }
         }
 
     } catch (error) {
@@ -6756,9 +6744,11 @@ function setupEventListeners() {
     btnGenerarCorte.addEventListener('click', loadHojaCorte);
 
     }
+    
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
