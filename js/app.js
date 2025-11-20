@@ -454,21 +454,21 @@ async function loadClientesTable() {
     }
 
     clearTimeout(inactivityTimer);
-    
     cargaEnProgreso = true;
     currentSearchOperation = Date.now();
     const operationId = currentSearchOperation;
 
     const tbody = document.getElementById('tabla-clientes');
-    tbody.innerHTML = '<tr><td colspan="6">Buscando...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">Buscando clientes...</td></tr>';
     showButtonLoading('#btn-aplicar-filtros', true, 'Buscando...');
     showFixedProgress(10, 'Iniciando búsqueda...');
 
     try {
         const esAdminConAccesoTotal = (currentUserData?.role === 'Super Admin' || currentUserData?.role === 'Gerencia');
-        const oficinaSeleccionada = document.getElementById('sucursal_filtro')?.value || '';
+        const userRole = currentUserData?.role;
+        
+        // --- CONFIGURACIÓN DE FILTROS CON SEGURIDAD ESTRICTA ---
         const filtros = {
-            office: oficinaSeleccionada,
             curp: document.getElementById('curp_filtro')?.value?.trim() || '',
             nombre: document.getElementById('nombre_filtro')?.value?.trim() || '',
             idCredito: document.getElementById('id_credito_filtro')?.value?.trim() || '',
@@ -476,184 +476,193 @@ async function loadClientesTable() {
             curpAval: document.getElementById('curp_aval_filtro')?.value?.trim() || '',
             plazo: document.getElementById('plazo_filtro')?.value || '',
             grupo: document.getElementById('grupo_filtro')?.value || '',
+            soloComisionistas: document.getElementById('comisionista_filtro')?.checked || false,
+            
+            // Permisos de Oficina
             userOffice: esAdminConAccesoTotal ? null : currentUserData?.office,
-            soloComisionistas: document.getElementById('comisionista_filtro')?.checked || false
+            office: document.getElementById('sucursal_filtro')?.value || '',
+            
+            // Permisos de Ruta (Forzado para Área Comercial)
+            ruta: (userRole === 'Área comercial') ? currentUserData?.ruta : null
         };
-
-        const hayFiltros = Object.values(filtros).some((val, index) => {
-            const key = Object.keys(filtros)[index];
-            if (key === 'userOffice') return false; 
-            if (typeof val === 'string') {
-                return val.trim() !== '';
-            }
-            if (typeof val === 'boolean') {
-                return val === true;
-            }
-            return false;
-        });
-
-        if (!hayFiltros) {
-            tbody.innerHTML = '<tr><td colspan="6">Por favor, especifica al menos un criterio de búsqueda.</td></tr>';
-            throw new Error("Búsqueda vacía");
+        
+        // Validación de seguridad: Agente sin ruta
+        if (userRole === 'Área comercial' && !currentUserData?.ruta) {
+            throw new Error("Error de Permisos: Tu usuario de Área Comercial no tiene una ruta asignada.");
         }
 
-        let creditosAMostrar = [];
-        const clientesMap = new Map();
-        showFixedProgress(25, 'Obteniendo datos base...');
+        showFixedProgress(30, 'Consultando base de datos...');
+
+        // Lógica diferenciada: Si busca por ID crédito vs Búsqueda general
+        let resultadosFinales = [];
 
         if (filtros.idCredito) {
-            creditosAMostrar = await database.buscarCreditosPorHistoricalId(filtros.idCredito, { userOffice: filtros.userOffice, office: filtros.office });
-        } else if (filtros.curp || filtros.nombre || filtros.grupo || filtros.office) {
-            const clientesIniciales = await database.buscarClientes(filtros);
-                let clientesFiltrados = clientesIniciales;
-            if (filtros.soloComisionistas) {
-            clientesFiltrados = clientesIniciales.filter(c => c.isComisionista === true);
-        }
-
-            if (operationId !== currentSearchOperation) throw new Error("Búsqueda cancelada");
-            if (clientesFiltrados.length === 0) throw new Error("No se encontraron clientes.");
-
-        showFixedProgress(40, `Buscando créditos para ${clientesFiltrados.length} clientes...`);
-
-        let progress = 40;
-        for (const [index, cliente] of clientesFiltrados.entries()) {
-            if (operationId !== currentSearchOperation) throw new Error("Búsqueda cancelada");
-            clientesMap.set(cliente.curp, cliente);
-                const creditosDelCliente = await database.buscarCreditosPorCliente(cliente.curp, filtros.userOffice);
-                creditosAMostrar.push(...creditosDelCliente);
-                progress = 40 + Math.round((index / clientesFiltrados.length) * 30);
-            showFixedProgress(progress, `Revisando cliente ${index + 1} de ${clientesFiltrados.length}`);
-        }
+            // Búsqueda específica por Crédito
+            const creditos = await database.buscarCreditosPorHistoricalId(filtros.idCredito, { 
+                userOffice: filtros.userOffice, 
+                office: filtros.office 
+            });
             
-        } else if (filtros.curpAval || filtros.plazo || filtros.estado) {
-            showFixedProgress(40, `Buscando créditos por filtros...`);
-            creditosAMostrar = await database.buscarCreditos(filtros);
-        } else {
-            tbody.innerHTML = '<tr><td colspan="6">Combinación de filtros no soportada o vacía.</td></tr>';
-            throw new Error("Filtros inválidos");
-        }
-
-        if (operationId !== currentSearchOperation) throw new Error("Búsqueda cancelada");
-        if (creditosAMostrar.length === 0) throw new Error("No se encontraron créditos que coincidan con los filtros iniciales.");
-
-        showFixedProgress(70, `Procesando ${creditosAMostrar.length} créditos...`);
-        tbody.innerHTML = '';
-        let resultadosEncontrados = 0;
-        let creditosProcesados = 0;
-
-        creditosAMostrar.sort((a, b) => (parsearFecha(b.fechaCreacion)?.getTime() || 0) - (parsearFecha(a.fechaCreacion)?.getTime() || 0));
-
-        for (const credito of creditosAMostrar) {
-            if (operationId !== currentSearchOperation) throw new Error("Búsqueda cancelada");
-
-            creditosProcesados++;
-            const progress = 70 + Math.round((creditosProcesados / creditosAMostrar.length) * 30);
-            showFixedProgress(progress, `Procesando crédito ${creditosProcesados} de ${creditosAMostrar.length}...`);
-            let cliente = clientesMap.get(credito.curpCliente);
-            if (!cliente) {
-                cliente = await database.buscarClientePorCURP(credito.curpCliente, filtros.userOffice);
-                if (cliente) {
-                    clientesMap.set(cliente.curp, cliente);
-                } else {
-                    cliente = { id: null, nombre: 'Cliente no encontrado', curp: credito.curpCliente, poblacion_grupo: credito.poblacion_grupo || 'N/A', office: credito.office || 'N/A', isComisionista: false };
-                    console.warn(`No se encontró cliente para CURP ${credito.curpCliente} asociado al crédito ID Firestore ${credito.id}`);
+            for (const cred of creditos) {
+                const cliente = await database.buscarClientePorCURP(cred.curpCliente, filtros.userOffice);
+                if(cliente) {
+                    // Verificar filtro de ruta si es agente
+                    if (userRole === 'Área comercial' && cliente.ruta !== filtros.ruta) continue;
+                    
+                    resultadosFinales.push({ cliente, credito: cred });
                 }
             }
 
-            const historicalId = credito.historicalIdCredito || credito.id;
-            const pagos = await database.getPagosPorCredito(historicalId, credito.office);
-            pagos.sort((a, b) => (parsearFecha(b.fecha)?.getTime() || 0) - (parsearFecha(a.fecha)?.getTime() || 0));
-            const ultimoPago = pagos.length > 0 ? pagos[0] : null;
+        } else {
+            // Búsqueda general de Clientes
+            // database.buscarClientes debe respetar el filtro 'ruta' que pasamos
+            const clientesEncontrados = await database.buscarClientes(filtros);
 
-            const estadoCalculado = _calcularEstadoCredito(credito, pagos);
-
-            if (!estadoCalculado) {
-                console.warn(`No se pudo calcular el estado para el crédito ID Firestore ${credito.id} (Histórico: ${historicalId})`);
-                continue;
+            if (clientesEncontrados.length === 0) {
+                throw new Error("No se encontraron clientes con los criterios seleccionados.");
             }
 
-            if (filtros.estado && estadoCalculado.estado !== filtros.estado) continue;
-            if (filtros.plazo && credito.plazo != filtros.plazo) continue;
-            if (filtros.curpAval && (!credito.curpAval || !credito.curpAval.toUpperCase().includes(filtros.curpAval.toUpperCase()))) continue;
-            if (filtros.office && cliente.office !== filtros.office) continue;
-            if (filtros.grupo && cliente.poblacion_grupo !== filtros.grupo) continue;
-            if (filtros.curp && !filtros.curp.includes(',') && cliente.curp !== filtros.curp.toUpperCase()) continue;
-            if (filtros.nombre && !(cliente.nombre || '').toLowerCase().includes(filtros.nombre.toLowerCase())) continue;
+            showFixedProgress(50, `Analizando ${clientesEncontrados.length} clientes...`);
+            
+            for (const [index, cliente] of clientesEncontrados.entries()) {
+                if (operationId !== currentSearchOperation) throw new Error("Cancelado");
 
-            resultadosEncontrados++;
+                // Verificar filtro de comisionista
+                if (filtros.soloComisionistas && !cliente.isComisionista) continue;
 
-            const fechaInicioCredito = formatDateForDisplay(parsearFecha(credito.fechaCreacion));
-            const fechaUltimoPago = formatDateForDisplay(ultimoPago ? parsearFecha(ultimoPago.fecha) : null);
-            const comisionistaBadge = cliente.isComisionista ? '<span class="comisionista-badge-cliente" title="Comisionista">★</span>' : '';
-            const estadoClase = `status-${estadoCalculado.estado.replace(/\s/g, '-')}`;
-            const estadoHTML = `<span class="info-value ${estadoClase}">${estadoCalculado.estado.toUpperCase()}</span>`;
-            const semanasPagadas = estadoCalculado.semanasPagadas || 0;
-            const saldoRestante = estadoCalculado.saldoRestante;
-            const infoCreditoHTML = `
-                <div class="credito-info">
-                    <div class="info-grid">
-                        <div class="info-item"><span class="info-label">ID Crédito (Hist):</span><span class="info-value">${historicalId}</span></div>
-                        <div class="info-item"><span class="info-label">Estado:</span>${estadoHTML}</div>
-                        <div class="info-item"><span class="info-label">Saldo Actual:</span><span class="info-value">$${saldoRestante.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
-                        <div class="info-item"><span class="info-label">Semanas Pagadas:</span><span class="info-value">${semanasPagadas} de ${credito.plazo || '?'}</span></div>
-                        ${estadoCalculado.semanasAtraso > 0 ? `<div class="info-item"><span class="info-label">Semanas Atraso:</span><span class="info-value">${estadoCalculado.semanasAtraso}</span></div>` : ''}
-                        <div class="info-item"><span class="info-label">Último Pago:</span><span class="info-value">${fechaUltimoPago}</span></div>
-                        <div class="info-item"><span class="info-label">Nombre Aval:</span><span class="info-value">${credito.nombreAval || 'N/A'}</span></div>
-                         <div class="info-item"><span class="info-label">CURP Aval:</span><span class="info-value">${credito.curpAval || 'N/A'}</span></div>
-                    </div>
-                    <button class="btn btn-sm btn-info" onclick="mostrarHistorialPagos('${historicalId}', '${credito.office}')" style="width: 100%; margin-top: 10px;">
-                        <i class="fas fa-receipt"></i> Ver Historial de Pagos (${pagos.length})
-                    </button>
-                </div>`;
+                // Buscar Créditos del Cliente
+                const creditosCliente = await database.buscarCreditosPorCliente(cliente.curp, filtros.userOffice);
 
-            const clienteJsonString = JSON.stringify(cliente).replace(/'/g, "&apos;").replace(/"/g, "&quot;");
+                if (creditosCliente.length > 0) {
+                    // Si tiene créditos, mostramos una fila por cada crédito (o filtrados por estado)
+                    let tieneCreditosVisibles = false;
+                    
+                    // Ordenar créditos por fecha (más reciente primero)
+                    creditosCliente.sort((a, b) => (parsearFecha(b.fechaCreacion)?.getTime() || 0) - (parsearFecha(a.fechaCreacion)?.getTime() || 0));
 
-            const rowHTML = `
-                <tr>
-                    <td><b>${cliente.office || 'N/A'}</b><br><small>Inicio Créd.: ${fechaInicioCredito}</small></td>
-                    <td>${cliente.curp}</td>
-                    <td>${cliente.nombre} ${comisionistaBadge}</td>
-                    <td>${cliente.poblacion_grupo}</td>
-                    <td>${infoCreditoHTML}</td>
-                    <td class="action-buttons">
-                        ${cliente.id ? `<button class="btn btn-sm btn-info" onclick='editCliente(${clienteJsonString})' title="Editar Cliente"><i class="fas fa-edit"></i></button>` : ''}
-                        ${cliente.id ? `<button class="btn btn-sm btn-danger" onclick="deleteCliente('${cliente.id}', '${cliente.nombre}')" title="Eliminar Cliente"><i class="fas fa-trash"></i></button>` : ''}
-                        </td>
-                </tr>`;
-            tbody.insertAdjacentHTML('beforeend', rowHTML);
+                    for (const credito of creditosCliente) {
+                        // Filtros adicionales de crédito (Estado, Plazo, Aval)
+                        if (filtros.plazo && credito.plazo != filtros.plazo) continue;
+                        if (filtros.curpAval && (!credito.curpAval || !credito.curpAval.includes(filtros.curpAval))) continue;
+                        
+                        // Para estado necesitamos calcularlo primero, o usar el guardado. 
+                        // Usaremos el guardado para filtrado rápido, cálculo real en render.
+                        // Pero si el usuario pide filtro de estado exacto, lo ideal es calcularlo.
+                        // Para optimizar, aquí pasamos si cumple los filtros estáticos y calculamos abajo.
+                        
+                        resultadosFinales.push({ cliente, credito: credito });
+                        tieneCreditosVisibles = true;
+                    }
+                    
+                    // Si se filtraron todos los créditos pero el cliente existe y no se pidieron filtros específicos de crédito exclusivos
+                    // mostramos al cliente solo? No, si filtró por "Crédito Activo" y no tiene, no se muestra.
+                    // Pero el requerimiento dice "ver clientes aunque no se les genere crédito".
+                    // Si NO aplicó filtros de crédito específicos (plazo, estado, aval), mostramos al cliente.
+                    if (!tieneCreditosVisibles && !filtros.plazo && !filtros.estado && !filtros.curpAval) {
+                         resultadosFinales.push({ cliente, credito: null });
+                    }
+
+                } else {
+                    // Si NO tiene créditos, y no estamos filtrando por propiedades de crédito
+                    if (!filtros.plazo && !filtros.estado && !filtros.curpAval && !filtros.idCredito) {
+                        resultadosFinales.push({ cliente, credito: null });
+                    }
+                }
+                
+                // Actualizar progreso UI cada 10 clientes
+                if(index % 10 === 0) showFixedProgress(50 + Math.floor((index/clientesEncontrados.length)*40), 'Procesando...');
+            }
         }
 
-        if (resultadosEncontrados === 0) {
-            tbody.innerHTML = '<tr><td colspan="6">No se encontraron créditos que coincidan con todos los criterios de filtro aplicados.</td></tr>';
-        }
+        if (operationId !== currentSearchOperation) throw new Error("Cancelado");
 
-        showFixedProgress(100, `Búsqueda completada: ${resultadosEncontrados} resultados encontrados.`);
+        // Renderizar Tabla
+        tbody.innerHTML = '';
+        if (resultadosFinales.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6">No se encontraron registros coincidentes.</td></tr>';
+        } else {
+            // Renderizar filas
+            for (const item of resultadosFinales) {
+                await renderFilaTablaClientes(tbody, item.cliente, item.credito, filtros.estado);
+            }
+        }
+        
+        showFixedProgress(100, `Mostrando ${resultadosFinales.length} resultados.`);
 
     } catch (error) {
-        if (error.message === "Búsqueda cancelada") {
-            tbody.innerHTML = '<tr><td colspan="6">Búsqueda cancelada por el usuario.</td></tr>';
-            showStatus('status_gestion_clientes', 'Búsqueda cancelada.', 'info');
-        } else if (error.message === "Búsqueda vacía" || error.message === "Filtros inválidos") {
-            tbody.innerHTML = '<tr><td colspan="6">Por favor, especifica al menos un criterio de búsqueda válido.</td></tr>';
-            showStatus('status_gestion_clientes', 'Especifica filtros para buscar.', 'warning');
-        } else if (error.message === "No se encontraron clientes.") {
-            tbody.innerHTML = '<tr><td colspan="6">No se encontraron clientes que coincidan con los filtros iniciales.</td></tr>';
-            showStatus('status_gestion_clientes', 'No se encontraron clientes.', 'info');
-        } else if (error.message === "No se encontraron créditos que coincidan con los filtros iniciales.") {
-            tbody.innerHTML = '<tr><td colspan="6">No se encontraron créditos para los clientes/filtros especificados.</td></tr>';
-            showStatus('status_gestion_clientes', 'No se encontraron créditos asociados.', 'info');
+        if (error.message === "Cancelado") {
+            tbody.innerHTML = '<tr><td colspan="6">Búsqueda cancelada.</td></tr>';
         } else {
             console.error('Error en loadClientesTable:', error);
-            tbody.innerHTML = `<tr><td colspan="6">Error al cargar los datos: ${error.message}. Revisa la consola para más detalles.</td></tr>`;
-            showStatus('status_gestion_clientes', `Error: ${error.message}`, 'error');
+            tbody.innerHTML = `<tr><td colspan="6">Mensaje: ${error.message}</td></tr>`;
+            showStatus('status_gestion_clientes', error.message, 'warning');
         }
     } finally {
         if (operationId === currentSearchOperation) {
             cargaEnProgreso = false;
             showButtonLoading('#btn-aplicar-filtros', false);
-            setTimeout(hideFixedProgress, 2000);
+            setTimeout(hideFixedProgress, 1500);
         }
     }
+}
+
+// [NUEVA FUNCIÓN AUXILIAR] Renderizado de fila (Pégala después de loadClientesTable)
+async function renderFilaTablaClientes(tbody, cliente, credito, filtroEstado) {
+    let infoCreditoHTML = '';
+
+    if (credito) {
+        const historicalId = credito.historicalIdCredito || credito.id;
+        // Obtener pagos para estado real
+        const pagos = await database.getPagosPorCredito(historicalId, credito.office);
+        pagos.sort((a, b) => (parsearFecha(b.fecha)?.getTime() || 0) - (parsearFecha(a.fecha)?.getTime() || 0));
+        const estadoCalc = _calcularEstadoCredito(credito, pagos);
+        
+        // Aplicar filtro de estado "calculado" si existe
+        if (filtroEstado && estadoCalc.estado !== filtroEstado) return; // Saltar si no coincide
+
+        const estadoClase = `status-${estadoCalc.estado.replace(/\s/g, '-')}`;
+        const fechaInicio = formatDateForDisplay(parsearFecha(credito.fechaCreacion));
+        
+        infoCreditoHTML = `
+            <div class="credito-info-compact">
+                <div><strong>ID:</strong> ${historicalId}</div>
+                <div><strong>Fecha:</strong> ${fechaInicio}</div>
+                <div><strong>Estado:</strong> <span class="info-value ${estadoClase}">${estadoCalc.estado.toUpperCase()}</span></div>
+                <div><strong>Saldo:</strong> $${estadoCalc.saldoRestante.toFixed(2)}</div>
+                <div><strong>Semanas Pag:</strong> ${estadoCalc.semanasPagadas}/${credito.plazo}</div>
+                <button class="btn btn-sm btn-outline-primary mt-1" onclick="mostrarHistorialPagos('${historicalId}', '${credito.office}')">
+                    <i class="fas fa-receipt"></i> Historial
+                </button>
+            </div>
+        `;
+    } else {
+        // Cliente sin crédito
+        infoCreditoHTML = `<span class="badge" style="background:#ddd; color:#555; padding:5px 10px; border-radius:15px;">Sin Crédito Activo</span>`;
+    }
+
+    const clienteJson = JSON.stringify(cliente).replace(/'/g, "&apos;").replace(/"/g, "&quot;");
+    const comisionistaBadge = cliente.isComisionista ? '<span title="Comisionista" style="color:gold;">★</span>' : '';
+
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+        <td>
+            <div style="font-weight:bold;">${cliente.office}</div>
+            <small>${cliente.poblacion_grupo}</small><br>
+            <small style="color:var(--primary);">Ruta: ${cliente.ruta}</small>
+        </td>
+        <td>${cliente.curp}</td>
+        <td>
+            ${cliente.nombre} ${comisionistaBadge}<br>
+            <a href="tel:${cliente.telefono}"><i class="fas fa-phone"></i> ${cliente.telefono || '-'}</a>
+        </td>
+        <td>${cliente.domicilio}</td>
+        <td>${infoCreditoHTML}</td>
+        <td class="action-buttons">
+             <button class="btn btn-sm btn-info" onclick='editCliente(${clienteJson})' title="Editar"><i class="fas fa-edit"></i></button>
+             <button class="btn btn-sm btn-danger" onclick="deleteCliente('${cliente.id}', '${cliente.nombre}')" title="Eliminar"><i class="fas fa-trash"></i></button>
+        </td>
+    `;
+    tbody.appendChild(tr);
 }
 
 //**INICIALIZAR VISTA GESTION DE CLIENTES**//
@@ -1728,14 +1737,27 @@ async function handleClientForm(e) {
     e.preventDefault();
     const curpInput = document.getElementById('curp_cliente');
     const curp = curpInput.value.trim().toUpperCase();
+    const telefonoInput = document.getElementById('telefono_cliente');
+    const telefono = telefonoInput.value.trim();
     const submitButton = e.target.querySelector('button[type="submit"]');
 
+    // Validación CURP
     if (!validarFormatoCURP(curp)) {
-        showStatus('status_cliente', 'El formato del CURP es incorrecto (debe tener 18 caracteres y seguir el patrón).', 'error');
+        showStatus('status_cliente', 'El formato del CURP es incorrecto (debe tener 18 caracteres).', 'error');
         curpInput.classList.add('input-error');
         return;
     } else {
         curpInput.classList.remove('input-error');
+    }
+
+    // VALIDACIÓN OBLIGATORIA DE TELÉFONO
+    if (!telefono || telefono.length < 10) {
+        showStatus('status_cliente', 'El teléfono es obligatorio y debe tener al menos 10 dígitos.', 'error');
+        telefonoInput.classList.add('input-error');
+        telefonoInput.focus();
+        return;
+    } else {
+        telefonoInput.classList.remove('input-error');
     }
 
     const clienteData = {
@@ -1744,7 +1766,7 @@ async function handleClientForm(e) {
         nombre: document.getElementById('nombre_cliente').value.trim(),
         domicilio: document.getElementById('domicilio_cliente').value.trim(),
         cp: document.getElementById('cp_cliente').value.trim(),
-        telefono: document.getElementById('telefono_cliente').value.trim(),
+        telefono: telefono,
         poblacion_grupo: document.getElementById('poblacion_grupo_cliente').value,
         ruta: document.getElementById('ruta_cliente').value,
         isComisionista: document.getElementById('comisionista_cliente').checked
@@ -1761,12 +1783,13 @@ async function handleClientForm(e) {
     try {
         let resultado;
         if (editingClientId) {
+            // Verificación de seguridad al editar CURP
             if (!curpInput.readOnly) {
                 const clienteOriginal = await database.obtenerClientePorId(editingClientId);
                 if (clienteOriginal && clienteOriginal.curp !== curp) {
                     const existeNuevoCURP = await database.buscarClientePorCURP(curp);
                     if (existeNuevoCURP) {
-                        throw new Error(`La nueva CURP (${curp}) ya pertenece a otro cliente (${existeNuevoCURP.nombre}).`);
+                        throw new Error(`La nueva CURP (${curp}) ya pertenece a otro cliente.`);
                     }
                 }
             }
@@ -1780,10 +1803,10 @@ async function handleClientForm(e) {
             if (!isOnline) {
                 successMessage += ' (Datos guardados localmente, se sincronizarán al conectar).';
             }
-            showStatus('status_gestion_clientes', successMessage, 'success'); // Mostrar mensaje en la tabla
-            resetClientForm(); // Limpiar el formulario
-            showView('view-gestion-clientes'); // Volver a la tabla
-            // loadClientesTable(); // No recargar automáticamente, dejar que el usuario filtre si lo necesita
+            showStatus('status_gestion_clientes', successMessage, 'success');
+            resetClientForm();
+            showView('view-gestion-clientes');
+            // No recargamos la tabla automáticamente para no perder filtros del usuario, él decidirá cuándo buscar de nuevo.
         } else {
             throw new Error(resultado.message || 'Ocurrió un error desconocido.');
         }
@@ -2682,211 +2705,197 @@ async function handleMontoPagoChange() {
 // SECCIÓN DE PAGO GRUPAL
 // =============================================
 async function handleCalcularCobranzaRuta() {
-    console.log('Temporizador de inactividad PAUSADO para cálculo de ruta.');
+    console.log('Iniciando cálculo de ruta seleccionada...');
     clearTimeout(inactivityTimer);
-
+    
     const statusPagoGrupo = document.getElementById('status_pago_grupo');
-    const btnCalcular = document.getElementById('btn-calcular-cobranza-ruta');
-    const btnGuardar = document.getElementById('btn-guardar-cobranza-offline');
-    const btnRegistrar = document.getElementById('btn-registrar-pagos-offline');
     const container = document.getElementById('cobranza-ruta-container');
     const placeholder = document.getElementById('cobranza-ruta-placeholder');
-    
-    if (!currentUserData || !currentUserData.ruta || !currentUserData.office || currentUserData.office === 'AMBAS') {
-        showStatus('status_pago_grupo', 'Error: Debes tener una ruta y oficina única asignada para usar esta función.', 'error');
-        resetInactivityTimer();
-        return;
-    }
-    if (!navigator.onLine) {
-        showStatus('status_pago_grupo', 'Error: Se necesita conexión a internet para calcular la cobranza de la ruta.', 'error');
-        resetInactivityTimer();
-        return;
-    }
+    const btnGuardar = document.getElementById('btn-guardar-cobranza-offline');
+    const btnRegistrar = document.getElementById('btn-registrar-pagos-offline');
 
-    const userRuta = currentUserData.ruta;
-    const userOffice = currentUserData.office;
-    const esAdminConAccesoTotal = (currentUserData?.role === 'Super Admin' || currentUserData?.role === 'Gerencia');
+    // 1. Obtener Poblaciones Seleccionadas
+    const checkboxes = document.querySelectorAll('.poblacion-check:checked');
+    const poblacionesSeleccionadas = Array.from(checkboxes).map(cb => cb.value);
+
+    if (poblacionesSeleccionadas.length === 0) {
+        showStatus('status_pago_grupo', 'Por favor selecciona al menos una población.', 'warning');
+        return;
+    }
 
     cargaEnProgreso = true;
     currentSearchOperation = Date.now();
     const operationId = currentSearchOperation;
 
-    showButtonLoading(btnCalcular, true, 'Calculando...');
-    showFixedProgress(5, `Calculando cobranza para ruta ${userRuta}...`);
-
-    statusPagoGrupo.innerHTML = `Buscando poblaciones para la ruta ${userRuta}...`;
-    statusPagoGrupo.className = 'status-message status-info';
+    showProcessingOverlay(true, `Calculando cobranza para ${poblacionesSeleccionadas.length} poblaciones...`);
     container.innerHTML = '';
-    if (placeholder) placeholder.classList.add('hidden');
-    cobranzaRutaData = {};
-    if (btnGuardar) btnGuardar.classList.add('hidden');
-    if (btnRegistrar) btnRegistrar.classList.add('hidden');
+    placeholder.classList.add('hidden');
+    if(btnGuardar) btnGuardar.classList.add('hidden');
+    if(btnRegistrar) btnRegistrar.classList.add('hidden');
 
     try {
-        statusPagoGrupo.textContent = `Buscando poblaciones asignadas a ruta ${userRuta}...`;
-        let poblacionesQuery = db.collection('poblaciones').where('ruta', '==', userRuta);
-        if (!esAdminConAccesoTotal) {
-            poblacionesQuery = poblacionesQuery.where('office', '==', userOffice);
-        }
-        const poblacionesSnapshot = await poblacionesQuery.get();
-        const nombresPoblacionesDeLaRuta = poblacionesSnapshot.docs.map(doc => doc.data().nombre);
-        if (nombresPoblacionesDeLaRuta.length === 0) { 
-            throw new Error(`No se encontraron poblaciones asignadas a la ruta ${userRuta}` + (esAdminConAccesoTotal ? '.' : ` en tu oficina (${userOffice}).`)); 
-        }
-
-        showFixedProgress(20, `Buscando clientes en ${nombresPoblacionesDeLaRuta.length} poblaciones...`);
-        const clientesDeLasPoblaciones = [];
-        const MAX_IN_VALUES = 10; 
-        for (let i = 0; i < nombresPoblacionesDeLaRuta.length; i += MAX_IN_VALUES) {
-            if (operationId !== currentSearchOperation) throw new Error("Operación cancelada");
-            const chunkPoblaciones = nombresPoblacionesDeLaRuta.slice(i, i + MAX_IN_VALUES);
-            let clientesQuery = db.collection('clientes').where('poblacion_grupo', 'in', chunkPoblaciones);
-            if (!esAdminConAccesoTotal) {
-                clientesQuery = clientesQuery.where('office', '==', userOffice);
-            }
-            const clientesSnapshot = await clientesQuery.get();
-            clientesSnapshot.docs.forEach(doc => {
-                clientesDeLasPoblaciones.push({ id: doc.id, ...doc.data() });
-            });
-        }
-        if (clientesDeLasPoblaciones.length === 0) { 
-            throw new Error(`No se encontraron clientes en las poblaciones de la ruta ${userRuta}` + (esAdminConAccesoTotal ? '.' : ` asignados a tu oficina (${userOffice}).`)); 
-        }
-
-        showFixedProgress(40, `Procesando ${clientesDeLasPoblaciones.length} clientes...`);
+        const userOffice = currentUserData.office;
         let creditosPendientes = [];
-        let poblacionesEncontradasSet = new Set();
-        let totalGeneralACobrar = 0;
         let clientesConErrores = 0;
-        const totalClientes = clientesDeLasPoblaciones.length;
 
-        for (const [index, cliente] of clientesDeLasPoblaciones.entries()) {
-            if (operationId !== currentSearchOperation) throw new Error("Operación cancelada");            
-            const progress = 40 + Math.round(((index + 1) / totalClientes) * 50);
-            showFixedProgress(progress, `Procesando cliente ${index + 1} de ${totalClientes}...`);
-
-            if (!nombresPoblacionesDeLaRuta.includes(cliente.poblacion_grupo)) { continue; }
-
-            const clienteOffice = cliente.office; 
-            if (!clienteOffice) {
-                console.warn(`Cliente ${cliente.curp} omitido por no tener oficina asignada.`);
-                continue;
-            }
-
+        // 2. Buscar Clientes en las poblaciones seleccionadas (por lotes de 10 para no exceder límite de Firestore)
+        const MAX_IN = 10;
+        for (let i = 0; i < poblacionesSeleccionadas.length; i += MAX_IN) {
+            if (operationId !== currentSearchOperation) throw new Error("Operación cancelada");
             
-            const todosLosCreditos = await database.buscarCreditosPorCliente(cliente.curp, clienteOffice);
+            const chunk = poblacionesSeleccionadas.slice(i, i + MAX_IN);
+            const clientesSnapshot = await db.collection('clientes')
+                .where('poblacion_grupo', 'in', chunk)
+                .where('office', '==', userOffice) // Seguridad estricta
+                .get();
 
-            if (todosLosCreditos && todosLosCreditos.length > 0) {
+            const clientesDelChunk = clientesSnapshot.docs.map(doc => ({id: doc.id, ...doc.data()}));
+
+            // 3. Procesar clientes del lote
+            for (const cliente of clientesDelChunk) {
+                // Buscar créditos del cliente
+                const creditos = await database.buscarCreditosPorCliente(cliente.curp, userOffice);
                 
-                for (const credito of todosLosCreditos) {
-                    
-                    const pagos = await database.getPagosPorCredito(credito.historicalIdCredito || credito.id, credito.office);
+                for (const credito of creditos) {
+                    const histId = credito.historicalIdCredito || credito.id;
+                    const pagos = await database.getPagosPorCredito(histId, userOffice);
                     pagos.sort((a, b) => (parsearFecha(b.fecha)?.getTime() || 0) - (parsearFecha(a.fecha)?.getTime() || 0));
+                    
                     const estadoCalc = _calcularEstadoCredito(credito, pagos);
 
+                    // Filtro: Solo mostramos si NO está liquidado y tiene pago semanal > 0
                     if (estadoCalc && estadoCalc.estado !== 'liquidado' && estadoCalc.pagoSemanal > 0.01) {
                         
+                        // Lógica de Monto Sugerido (Tu lógica original)
                         const pagoSemanalRef = estadoCalc.pagoSemanal;
                         const semanasAtraso = estadoCalc.semanasAtraso || 0;
-                        const saldoRestante = estadoCalc.saldoRestante;
-                        let montoAcumulado;
-                        if (semanasAtraso > 0) {
-                            montoAcumulado = semanasAtraso * pagoSemanalRef;
-                        } else {
-                            montoAcumulado = pagoSemanalRef;
-                        }
-                        const tolerancia = 0.015; 
-                        let montoAPagarFinal = Math.min(montoAcumulado, saldoRestante + tolerancia);
-                        montoAPagarFinal = Math.max(0, parseFloat(montoAPagarFinal.toFixed(2))); 
-                        if (saldoRestante < 0.01) {
-                            montoAPagarFinal = 0.00;
-                        }
+                        let montoAcumulado = (semanasAtraso > 0) ? semanasAtraso * pagoSemanalRef : pagoSemanalRef;
+                        let montoAPagarFinal = Math.min(montoAcumulado, estadoCalc.saldoRestante + 0.015);
+                        montoAPagarFinal = Math.max(0, parseFloat(montoAPagarFinal.toFixed(2)));
 
-                        poblacionesEncontradasSet.add(cliente.poblacion_grupo);
-                        totalGeneralACobrar += pagoSemanalRef; 
-                        
                         creditosPendientes.push({
                             firestoreId: credito.id,
-                            historicalIdCredito: credito.historicalIdCredito || credito.id,
+                            historicalIdCredito: histId,
                             nombreCliente: cliente.nombre,
                             curpCliente: cliente.curp,
-                            pagoSemanalAcumulado: montoAPagarFinal,
+                            pagoSemanalAcumulado: montoAPagarFinal, // Sugerido
                             pagoSemanalReferencia: pagoSemanalRef,
                             saldoRestante: estadoCalc.saldoRestante,
                             estadoCredito: estadoCalc.estado,
+                            poblacion_grupo: cliente.poblacion_grupo,
                             office: credito.office
                         });
-                        
-                        break; 
 
-                    } else if (!estadoCalc) { 
-                        console.warn(`Error al calcular estado para crédito ${credito.id}`);
+                    } else if (!estadoCalc) {
                         clientesConErrores++;
                     }
-            
                 }
             }
-      
         }
 
-        if (creditosPendientes.length === 0) { 
-            if (clientesConErrores > 0) {
-                throw new Error(`Se encontraron ${clientesDeLasPoblaciones.length} clientes, pero ${clientesConErrores} créditos tienen datos inconsistentes.`);
-            }
-            throw new Error('No se encontraron créditos con cobranza pendiente para esta ruta y oficina.'); 
+        if (creditosPendientes.length === 0) {
+            throw new Error("No hay cobros pendientes en las poblaciones seleccionadas.");
         }
 
-        showFixedProgress(95, 'Agrupando y renderizando resultados...');
+        // 4. Agrupar Datos
         cobranzaRutaData = {};
         creditosPendientes.forEach(cred => {
-            const clienteDelCredito = clientesDeLasPoblaciones.find(c => c.curp === cred.curpCliente);
-            const grupo = clienteDelCredito ? clienteDelCredito.poblacion_grupo : 'Desconocido';
-            if (!cobranzaRutaData[grupo]) {
-                cobranzaRutaData[grupo] = [];
-            }
+            const grupo = cred.poblacion_grupo || 'Sin Grupo';
+            if (!cobranzaRutaData[grupo]) cobranzaRutaData[grupo] = [];
             cobranzaRutaData[grupo].push(cred);
         });
 
+        // 5. Renderizar
         renderizarCobranzaRuta(cobranzaRutaData, container);
-        if (btnGuardar) btnGuardar.classList.remove('hidden');
-        if (btnRegistrar) btnRegistrar.classList.remove('hidden');
 
-        showFixedProgress(100, 'Cálculo completado');
-        let msgExito = `Cálculo completado: ${creditosPendientes.length} créditos encontrados.`;
-        if (clientesConErrores > 0) msgExito += ` (${clientesConErrores} créditos omitidos por errores).`;
-        showStatus('status_pago_grupo', msgExito, 'success');       
-    
+        if(btnGuardar) btnGuardar.classList.remove('hidden');
+        if(btnRegistrar) btnRegistrar.classList.remove('hidden');
+        showStatus('status_pago_grupo', `Cálculo completado: ${creditosPendientes.length} créditos.`, 'success');
+
     } catch (error) {
-        console.error("Error al calcular cobranza de ruta:", error);
-
-        if (error.message === "Operación cancelada") {
-            showStatus('status_pago_grupo', 'Cálculo cancelado por el usuario.', 'warning');
-            if (placeholder) {
-                placeholder.textContent = 'Cálculo cancelado.';
-                placeholder.classList.remove('hidden');
-            }
-        } else {
-            showStatus('status_pago_grupo', `Error: ${error.message}`, 'error');
-            if (placeholder) {
-                placeholder.textContent = `Error al calcular: ${error.message}`;
-                placeholder.classList.remove('hidden');
-            }
+        console.error("Error calculando ruta:", error);
+        showStatus('status_pago_grupo', `Error: ${error.message}`, 'error');
+        if (error.message.includes("No hay cobros")) {
+            container.innerHTML = `<div style="text-align:center; padding:20px;">${error.message}</div>`;
         }
-        
-        container.innerHTML = '';
-        cobranzaRutaData = null;
-        if (btnGuardar) btnGuardar.classList.add('hidden');
-        if (btnRegistrar) btnRegistrar.classList.add('hidden');
-    
     } finally {
-        if (operationId === currentSearchOperation) {
-            cargaEnProgreso = false;
-        }
-        
-        showButtonLoading(btnCalcular, false);
-        setTimeout(hideFixedProgress, 2000); // Oculta la barra de progreso
-        console.log('Cálculo de ruta finalizado. Temporizador de inactividad REACTIVADO.');
+        cargaEnProgreso = false;
+        showProcessingOverlay(false);
         resetInactivityTimer();
+    }
+}
+
+//** Inicializar Vista de Pago Grupal ** //
+
+async function inicializarVistaPagoGrupal() {
+    const containerChecks = document.getElementById('checkboxes-poblaciones-container');
+    const cardSelector = document.getElementById('selector-poblaciones-card');
+    const btnCalcular = document.getElementById('btn-calcular-seleccion');
+    const containerResultados = document.getElementById('cobranza-ruta-container');
+    const placeholder = document.getElementById('cobranza-ruta-placeholder');
+    
+    // Reset visual
+    containerResultados.innerHTML = '';
+    cardSelector.classList.add('hidden');
+    placeholder.classList.remove('hidden');
+    
+    if (!currentUserData || !currentUserData.ruta || !currentUserData.office) {
+        showStatus('status_pago_grupo', 'Error: Usuario sin ruta u oficina asignada.', 'error');
+        return;
+    }
+
+    // Mostrar panel de selección
+    cardSelector.classList.remove('hidden');
+    containerChecks.innerHTML = '<div class="spinner"></div> Cargando poblaciones...';
+    btnCalcular.disabled = true;
+
+    try {
+        const poblaciones = await database.obtenerPoblacionesPorRuta(currentUserData.ruta, currentUserData.office);
+        
+        containerChecks.innerHTML = '';
+        if (poblaciones.length === 0) {
+            containerChecks.innerHTML = '<p>No se encontraron poblaciones asignadas a tu ruta y oficina.</p>';
+            return;
+        }
+
+        // Checkbox "Seleccionar Todas"
+        const allDiv = document.createElement('div');
+        allDiv.style.width = "100%";
+        allDiv.style.marginBottom = "10px";
+        allDiv.innerHTML = `
+            <label style="font-weight:bold; cursor:pointer; color:var(--primary);">
+                <input type="checkbox" id="check-all-poblaciones" checked> SELECCIONAR TODAS
+            </label>
+        `;
+        containerChecks.appendChild(allDiv);
+
+        // Checkboxes por Población
+        poblaciones.forEach(pob => {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'poblacion-check-item'; // Puedes agregar estilo CSS si quieres
+            wrapper.innerHTML = `
+                <label style="cursor:pointer;">
+                    <input type="checkbox" class="poblacion-check" value="${pob.nombre}" checked> 
+                    ${pob.nombre}
+                </label>
+            `;
+            containerChecks.appendChild(wrapper);
+        });
+
+        // Lógica "Seleccionar Todas"
+        document.getElementById('check-all-poblaciones').addEventListener('change', function(e) {
+            document.querySelectorAll('.poblacion-check').forEach(chk => chk.checked = e.target.checked);
+        });
+
+        // Configurar Botón Calcular
+        btnCalcular.disabled = false;
+        btnCalcular.onclick = handleCalcularCobranzaRuta;
+
+        showStatus('status_pago_grupo', `Ruta: ${currentUserData.ruta}. Selecciona las poblaciones a cobrar.`, 'info');
+
+    } catch (error) {
+        console.error(error);
+        containerChecks.innerHTML = '<p class="text-danger">Error cargando poblaciones.</p>';
     }
 }
 
@@ -2895,148 +2904,82 @@ async function handleCalcularCobranzaRuta() {
  * (ya sea calculada online o cargada offline). Funciona offline.
  */
 async function handleRegistroPagoGrupal() {
-    const statusPagoGrupo = document.getElementById('status_pago_grupo');
-    const container = document.getElementById('cobranza-ruta-container');
-    const checkboxes = container.querySelectorAll('.pago-grupal-check:checked');
+    const statusPagoGrupo = document.getElementById('status_pago_grupo');
+    const container = document.getElementById('cobranza-ruta-container');
+    
+    // Obtener solo los marcados
+    const checkboxes = container.querySelectorAll('.pago-grupal-check:checked');
 
-    if (!cobranzaRutaData || Object.keys(cobranzaRutaData).length === 0) {
-        showStatus('status_pago_grupo', 'Error: No hay datos de cobranza cargados (calculados o de offline) para registrar.', 'error');
-        return;
-    }
-    if (!checkboxes || checkboxes.length === 0) {
-        showStatus('status_pago_grupo', 'No hay pagos seleccionados para registrar.', 'warning');
-        return;
-    }
-    // 2. Lógica de Filtrado y Validación
-    const pagosAProcesar = [];
-    const erroresValidacion = [];
-    // Limpiar errores visuales previos
-    container.querySelectorAll('.pago-grupal-input').forEach(input => input.closest('tr')?.classList.remove('pago-registrado-error'));
+    if (checkboxes.length === 0) {
+        showStatus('status_pago_grupo', 'No has seleccionado ningún pago para registrar.', 'warning');
+        return;
+    }
 
-    checkboxes.forEach(checkbox => {
-        // Obtenemos los datos del checkbox
-        const idLink = checkbox.getAttribute('data-id-link');
-        const firestoreId = checkbox.getAttribute('data-firestore-id');
-        const histId = checkbox.getAttribute('data-hist-id');
-        const nombreCliente = checkbox.getAttribute('data-nombre');
-        // Buscamos el input de monto correspondiente usando el idLink
-        const inputElement = container.querySelector(`.pago-grupal-input[data-id-link="${idLink}"]`);
-        if (!inputElement) {
-            erroresValidacion.push(`Cliente ${nombreCliente}: No se encontró el campo de monto.`);
-            checkbox.closest('tr')?.classList.add('pago-registrado-error');
-            return;
-        }
-        // Obtenemos el monto y el saldo máximo DESDE EL INPUT
-        const montoPago = parseFloat(inputElement.value);
-        const saldoMax = parseFloat(inputElement.getAttribute('data-saldo-max'));
-        const tolerancia = 0.015;
-        // Validar monto
-        if (isNaN(montoPago) || montoPago <= 0) {
-            erroresValidacion.push(`Cliente ${nombreCliente}: El monto a pagar es inválido o es cero.`);
-            inputElement.closest('tr')?.classList.add('pago-registrado-error');
-            return; 
-        }
-        // Validación de sobrepago
-        if (montoPago > saldoMax + tolerancia) {
-            erroresValidacion.push(`Cliente ${nombreCliente}: El pago $${montoPago.toFixed(2)} excede el saldo $${saldoMax.toFixed(2)}.`);
-            inputElement.closest('tr')?.classList.add('pago-registrado-error');
-            return;
-        }
-        // Encontrar la oficina
-        let office = null;
-        for (const pob in cobranzaRutaData) {
-            const cred = cobranzaRutaData[pob].find(c => c.firestoreId === firestoreId);
-            if (cred) {
-                office = cred.office;
-                break;
-            }
-        }
-        if (montoPago > 0 && firestoreId && histId && office) {
-            pagosAProcesar.push({
-                inputElement: inputElement,
-                checkboxElement: checkbox,
-                pagoData: { idCredito: histId, monto: montoPago, tipoPago: 'grupal' },
-                firestoreId: firestoreId,
-                nombreCliente: nombreCliente
-            });
-        } else {
-            erroresValidacion.push(`Datos incompletos para ${nombreCliente || firestoreId}.`);
-            inputElement.closest('tr')?.classList.add('pago-registrado-error');
-        }
-    });
-    // --- Fin Lógica de Filtrado ---
-    if (pagosAProcesar.length === 0) {
-        let msg = 'No hay pagos seleccionados para registrar.';
-        if (erroresValidacion.length > 0) {
-            msg += ` Se encontraron ${erroresValidacion.length} errores: ${erroresValidacion[0]}`;
-        }
-        showStatus('status_pago_grupo', msg, 'warning');
-        return;
-    }
+    if (!confirm(`¿Estás seguro de registrar ${checkboxes.length} pagos?`)) return;
 
-    if (erroresValidacion.length > 0) {
-        if (!confirm(`Se encontraron ${erroresValidacion.length} errores (ej: sobrepagos). ¿Deseas continuar y registrar solo los ${pagosAProcesar.length} pagos válidos?`)) {
-            return;
-        }
-    }
+    showProcessingOverlay(true, `Registrando ${checkboxes.length} pagos...`);
+    let exitosos = 0;
+    let errores = 0;
 
-    showProcessingOverlay(true, `Registrando ${pagosAProcesar.length} pagos...`);
-    statusPagoGrupo.innerHTML = `Registrando ${pagosAProcesar.length} pagos seleccionados...`;
-    statusPagoGrupo.className = 'status-message status-info';
+    // Procesamiento en serie para asegurar orden (puede cambiarse a Promise.all para velocidad)
+    for (const cb of checkboxes) {
+        const idLink = cb.getAttribute('data-id-link');
+        const firestoreId = cb.getAttribute('data-firestore-id');
+        const histId = cb.getAttribute('data-hist-id');
+        const nombre = cb.getAttribute('data-nombre');
 
-    let pagosRegistrados = 0;
-    const erroresRegistro = [];
-    const promesasPagos = [];
-    pagosAProcesar.forEach(pago => {
-        promesasPagos.push(
-            database.agregarPago(pago.pagoData, currentUser.email, pago.firestoreId)
-                .then(resultado => {
-                    if (resultado.success) {
-                        pagosRegistrados++;
-                        pago.inputElement.disabled = true;
-                        pago.checkboxElement.checked = false;
-                        pago.checkboxElement.disabled = true;
-                        pago.inputElement.closest('tr')?.classList.add('pago-registrado-exito');
-                    } else {
-                        erroresRegistro.push(`Cliente ${pago.nombreCliente}: ${resultado.message}`);
-                        pago.inputElement.closest('tr')?.classList.add('pago-registrado-error');
-                    }
-                })
-                .catch(error => {
-                    erroresRegistro.push(`Cliente ${pago.nombreCliente}: ${error.message}`);
-                    pago.inputElement.closest('tr')?.classList.add('pago-registrado-error');
-                })
-        );
-    });
+        const inputMonto = container.querySelector(`.pago-grupal-input[data-id-link="${idLink}"]`);
+        const selectTipo = container.querySelector(`.pago-grupal-tipo[data-id-link="${idLink}"]`); // NUEVO
 
-    try {
-        await Promise.all(promesasPagos);
+        const monto = parseFloat(inputMonto.value);
+        const tipoPago = selectTipo ? selectTipo.value : 'grupal'; // NUEVO
+        const saldoMax = parseFloat(inputMonto.getAttribute('data-saldo-max'));
 
-        // --- INICIO DE LA CORRECCIÓN ---
-        let finalMessage = `Registro completado: ${pagosRegistrados} pagos registrados exitosamente.`;
-        let finalStatusType = 'success';
-        if (erroresRegistro.length > 0) {
-            finalMessage += ` ${erroresRegistro.length} pagos fallaron. Revisa la lista y la consola para detalles.`;
-            finalStatusType = (pagosRegistrados > 0) ? 'warning' : 'error';
-            console.error("Errores durante registro de pagos:", erroresRegistro);
-        }
+        // Validaciones individuales
+        if (monto <= 0 || isNaN(monto)) {
+            console.warn(`Monto inválido para ${nombre}`);
+            errores++;
+            continue;
+        }
+        if (monto > (saldoMax + 0.05)) {
+            console.warn(`Monto excesivo para ${nombre}`);
+            inputMonto.style.borderColor = 'red';
+            errores++;
+            continue;
+        }
 
-        showStatus('status_pago_grupo', finalMessage, finalStatusType);
-        const style = document.createElement('style');
-        style.textContent = `
-            tr.pago-registrado-exito { opacity: 0.5; background-color: #d4edda !important; }
-            tr.pago-registrado-exito input { background-color: #c3e6cb !important; }
-            tr.pago-registrado-error { background-color: #f8d7da !important; }
-            tr.pago-registrado-exito td, tr.pago-registrado-error td { text-decoration: line-through; }
-        `;
-        document.head.appendChild(style);
-        // --- FIN DE LA CORRECCIÓN ---
-    } catch (error) {
-        console.error("Error crítico al procesar pagos:", error);
-        showStatus('status_pago_grupo', `Error crítico durante el registro: ${error.message}`, 'error');
-    } finally {
-        showProcessingOverlay(false);
-    }
+        try {
+            const pagoData = {
+                idCredito: histId,
+                monto: monto,
+                tipoPago: tipoPago // Usamos el tipo seleccionado
+            };
+
+            // database.agregarPago maneja comisiones internamente según 'tipoPago'
+            const result = await database.agregarPago(pagoData, currentUser.email, firestoreId);
+
+            if (result.success) {
+                exitosos++;
+                // Deshabilitar fila visualmente
+                cb.checked = false;
+                cb.disabled = true;
+                inputMonto.disabled = true;
+                selectTipo.disabled = true;
+                cb.closest('tr').style.backgroundColor = '#d4edda';
+                cb.closest('tr').style.opacity = '0.6';
+            } else {
+                throw new Error(result.message);
+            }
+
+        } catch (error) {
+            console.error(`Error pago ${nombre}:`, error);
+            errores++;
+            cb.closest('tr').style.backgroundColor = '#f8d7da';
+        }
+    }
+
+    showProcessingOverlay(false);
+    showStatus('status_pago_grupo', `Proceso terminado. Registrados: ${exitosos}. Errores: ${errores}.`, exitosos > 0 ? 'success' : 'error');
 }
 
 /**
@@ -3095,112 +3038,96 @@ async function loadBasicReports(userOffice = null) {
  */
 function renderizarCobranzaRuta(data, container) {
     if (!data || Object.keys(data).length === 0) {
-        container.innerHTML = '<p>No hay datos de cobranza para mostrar.</p>';
+        container.innerHTML = '<p>No hay datos para mostrar.</p>';
         return;
     }
 
     let html = '';
-    let totalGeneralCalculado = 0;
-    const poblacionesOrdenadas = Object.keys(data).sort();
+    const grupos = Object.keys(data).sort();
 
-    poblacionesOrdenadas.forEach(poblacion => {
-        const creditos = data[poblacion];
-        let totalPoblacion = 0;
-
-        html += `<div class="poblacion-group card">`;
-        html += `<h3>Población: ${poblacion} (${creditos.length} clientes)</h3>`;
-        html += `<table class="cobranza-ruta-table">
-                    <thead>
-                        <tr>
-                            <th>Cliente</th>
-                            <th>Estado</th>
-                            <th>ID Crédito</th>
-                            <th title="Pago semanal de referencia">Pago Sem. (Ref)</th>
-                            <th>Saldo Rest.</th>
-                            <th>Monto a Pagar</th>
-                            <th>Pagar</th>
-                        </tr>
-                    </thead>
-                    <tbody>`;
+    grupos.forEach(grupo => {
+        const creditos = data[grupo];
+        html += `
+            <div class="poblacion-group card" style="margin-bottom: 20px;">
+                <div style="background-color: #f0f2f5; padding: 10px; border-bottom: 1px solid #ddd; display:flex; justify-content:space-between; align-items:center;">
+                    <h4 style="margin:0;">${grupo} <span style="font-weight:normal; font-size:0.9em;">(${creditos.length} clientes)</span></h4>
+                    <label><input type="checkbox" class="check-group-all" data-grupo="${grupo}"> Marcar Todos</label>
+                </div>
+                <div class="table-responsive">
+                    <table class="cobranza-ruta-table" data-grupo="${grupo}">
+                        <thead>
+                            <tr>
+                                <th>Cliente</th>
+                                <th>Estado</th>
+                                <th>Saldo</th>
+                                <th style="min-width: 160px;">Pago y Tipo</th>
+                                <th>Registrar</th>
+                            </tr>
+                        </thead>
+                        <tbody>`;
 
         creditos.forEach(cred => {
             const linkId = cred.firestoreId;
-            const pagoReferencia = cred.pagoSemanalReferencia !== undefined ? cred.pagoSemanalReferencia : (cred.pagoSemanal || 0);
-            const pagoAcumulado = cred.pagoSemanalAcumulado !== undefined ? cred.pagoSemanalAcumulado : (cred.pagoSemanal || 0);
-            totalPoblacion += pagoReferencia;
-            const estado = cred.estadoCredito || 'desconocido';
-            const estadoClase = `status-${estado.replace(/\s/g, '-')}`;
-            const estadoHTML = `<span class="info-value ${estadoClase}">${estado.toUpperCase()}</span>`;
+            const montoSugerido = cred.pagoSemanalAcumulado;
+            const estadoClase = `status-${cred.estadoCredito.replace(/\s/g, '-')}`;
 
-            html += `<tr>
-                        <td>${cred.nombreCliente}<br><small>${cred.curpCliente}</small></td>
-                        
-                        <td>${estadoHTML}</td>
-
-                        <td>${cred.historicalIdCredito}</td>
-                        <td class="monto-pago" title="Pago semanal sugerido">$${pagoReferencia.toFixed(2)}</td>
-                        <td>$${cred.saldoRestante.toFixed(2)}</td>
-                        <td>
-                            <input 
-                                type="number" 
-                                class="pago-grupal-input" 
-                                min="0" 
-                                step="0.01" 
-                                placeholder="0.00"
-                                value="${pagoAcumulado.toFixed(2)}"
-                                data-id-link="${linkId}" 
-                                data-saldo-max="${cred.saldoRestante.toFixed(2)}"
-                            >
-                        </td>
-                        <td class="checkbox-cell">
-                            <input 
-                                type="checkbox" 
-                                class="pago-grupal-check" 
-                                data-id-link="${linkId}"
-                                data-firestore-id="${cred.firestoreId}"
-                                data-hist-id="${cred.historicalIdCredito}" 
-                                data-nombre="${cred.nombreCliente}"
-                            >
-                        </td>
-                       </tr>`;
+            html += `
+                <tr>
+                    <td>
+                        <strong>${cred.nombreCliente}</strong><br>
+                        <small>${cred.curpCliente}</small><br>
+                        <small style="color:gray;">ID: ${cred.historicalIdCredito}</small>
+                    </td>
+                    <td>
+                        <span class="info-value ${estadoClase}">${cred.estadoCredito.toUpperCase()}</span>
+                    </td>
+                    <td>$${cred.saldoRestante.toFixed(2)}</td>
+                    <td class="input-cell">
+                        <div style="display: flex; flex-direction: column; gap: 5px;">
+                             <select class="pago-grupal-tipo form-control-sm" data-id-link="${linkId}" style="width: 100%;">
+                                <option value="grupal" selected>Pago Grupal</option>
+                                <option value="normal">Pago Normal</option>
+                                <option value="extraordinario">Extraordinario</option>
+                                <option value="actualizado">Actualizado</option>
+                             </select>
+                             <div style="display:flex; align-items:center; gap:5px;">
+                                <span style="font-weight:bold;">$</span>
+                                <input type="number" class="pago-grupal-input form-control-sm" 
+                                    value="${montoSugerido.toFixed(2)}" 
+                                    data-id-link="${linkId}"
+                                    data-saldo-max="${cred.saldoRestante}"
+                                    style="width: 100%;">
+                             </div>
+                        </div>
+                    </td>
+                    <td class="checkbox-cell">
+                        <input type="checkbox" class="pago-grupal-check" 
+                            data-id-link="${linkId}" 
+                            data-firestore-id="${cred.firestoreId}"
+                            data-hist-id="${cred.historicalIdCredito}"
+                            data-nombre="${cred.nombreCliente}">
+                    </td>
+                </tr>
+            `;
         });
 
-        totalGeneralCalculado += totalPoblacion;
-        html += `</tbody>
-                  <tfoot>
-                       <tr>
-                           <td colspan="3"><b>Total Sugerido:</b></td>
-                           <td><b>$${totalPoblacion.toFixed(2)}</b></td>
-                           <td colspan="3"></td>
-                       </tr>
-                  </tfoot>
-                 </table>`;
-        html += `</div>`;
+        html += `</tbody></table></div></div>`;
     });
-    
-    const resumenGeneral = `
-        <div class="info-grid card" style="background: #eef; padding: 15px; margin-bottom: 20px;">
-            <div class="info-item">
-                <span class="info-label">Ruta:</span>
-                <span class="info-value">${currentUserData?.ruta || 'N/A'}</span>
-            </div>
-             <div class="info-item">
-                <span class="info-label">Total Poblaciones:</span>
-                <span class="info-value">${poblacionesOrdenadas.length}</span>
-            </div>
-            <div class="info-item">
-                <span class="info-label">Total Clientes Pendientes:</span>
-                <span class="info-value">${poblacionesOrdenadas.reduce((sum, pob) => sum + data[pob].length, 0)}</span>
-            </div>
-            <div class="info-item">
-                <span class="info-label">Total Semanal Sugerido:</span>
-                <span class="info-value" style="font-size: 1.1em; font-weight: bold;">$${totalGeneralCalculado.toFixed(2)}</span>
-            </div>
-        </div>
-    `;
 
-    container.innerHTML = resumenGeneral + html;
+    container.innerHTML = html;
 
+    // Listener para "Marcar Todos del Grupo"
+    container.querySelectorAll('.check-group-all').forEach(chk => {
+        chk.addEventListener('change', (e) => {
+            const grp = e.target.getAttribute('data-grupo');
+            const table = container.querySelector(`table[data-grupo="${grp}"]`);
+            if(table) {
+                table.querySelectorAll('.pago-grupal-check').forEach(cb => {
+                    if (!cb.disabled) cb.checked = e.target.checked;
+                });
+            }
+        });
+    });
 }
 
 /**
@@ -6341,6 +6268,162 @@ async function verificarYubiKey() {
         return false; // Falló
     }
 }
+// =========================
+// ** Hoja de Corte ** 
+// =========================
+async function loadHojaCorte() {
+    const fechaInput = document.getElementById('corte-fecha');
+    const fecha = fechaInput.value;
+    const containerResumen = document.getElementById('corte-resumen-cards');
+    const tbody = document.querySelector('#tabla-corte-detalle tbody');
+
+    if (!fecha) {
+        alert('Por favor selecciona una fecha.');
+        return;
+    }
+
+    showProcessingOverlay(true, 'Generando corte de caja...');
+    containerResumen.innerHTML = '';
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">Cargando...</td></tr>';
+
+    try {
+        // Lógica de Seguridad para el Filtro
+        // Admin/Gerencia: Ve todo de la oficina.
+        // Área Comercial: Ve SOLO sus movimientos (filtro por userId).
+        const esAgente = currentUserData.role === 'Área comercial';
+        const userIdFiltro = esAgente ? currentUserData.id : null;
+        
+        const datos = await database.obtenerDatosHojaCorte(fecha, currentUserData.office, userIdFiltro);
+
+        // Variables para totales
+        let totalEntradas = 0;
+        let totalSalidas = 0;
+        
+        let subCobranza = 0;
+        let subColocacion = 0;
+        let subGastos = 0;
+        let subComisiones = 0;
+        let subEntregas = 0;
+
+        // Procesar datos para tabla y totales
+        const filasRenderizadas = datos.map(item => {
+            let monto = 0;
+            let esEntrada = false; 
+            let concepto = '';
+
+            // Normalizar según categoría
+            if (item.categoria === 'COBRANZA') { // Pagos recibidos
+                monto = item.monto || 0;
+                esEntrada = true;
+                concepto = 'COBRANZA';
+                subCobranza += monto;
+            } 
+            else if (item.categoria === 'COMISION') { // Comisiones pagadas (Salida de caja)
+                monto = Math.abs(item.monto || item.montoComision || 0);
+                esEntrada = false;
+                concepto = 'COMISIÓN';
+                subComisiones += monto;
+            } 
+            else { // Movimientos Efectivo
+                const rawMonto = item.monto || 0;
+                
+                if (item.tipo === 'COLOCACION') { // Salida dinero al cliente
+                    monto = Math.abs(rawMonto);
+                    esEntrada = false;
+                    concepto = 'COLOCACIÓN';
+                    subColocacion += monto;
+                } 
+                else if (item.tipo === 'GASTO') { // Salida gasto operativo
+                    monto = Math.abs(rawMonto);
+                    esEntrada = false;
+                    concepto = 'GASTO';
+                    subGastos += monto;
+                } 
+                else if (item.tipo === 'ENTREGA_INICIAL') { // Entrada dinero del admin
+                    monto = Math.abs(rawMonto);
+                    esEntrada = true;
+                    concepto = 'FONDEO';
+                    subEntregas += monto;
+                }
+            }
+
+            if (esEntrada) totalEntradas += monto;
+            else totalSalidas += monto;
+
+            // Retornar objeto para ordenar
+            return {
+                hora: new Date(item.rawDate),
+                concepto: concepto,
+                descripcion: item.descripcion || '-',
+                monto: monto,
+                esEntrada: esEntrada,
+                ref: item.registradoPor || 'Sys'
+            };
+        });
+
+        // Ordenar por hora
+        filasRenderizadas.sort((a, b) => a.hora - b.hora);
+
+        // Renderizar Resumen
+        const balance = totalEntradas - totalSalidas;
+        
+        containerResumen.innerHTML = `
+            <div class="card" style="border-left: 5px solid var(--info);">
+                <h5 style="color:gray;">Efectivo Disponible</h5>
+                <h2 style="color:var(--dark);">$${balance.toLocaleString('es-MX', {minimumFractionDigits: 2})}</h2>
+            </div>
+            <div class="card" style="border-left: 5px solid var(--success);">
+                <h5 style="color:gray;">Entradas</h5>
+                <h3 style="color:var(--success);">$${totalEntradas.toLocaleString('es-MX', {minimumFractionDigits: 2})}</h3>
+                <small>Cobranza: $${subCobranza.toLocaleString()}</small><br>
+                <small>Fondeo: $${subEntregas.toLocaleString()}</small>
+            </div>
+            <div class="card" style="border-left: 5px solid var(--danger);">
+                <h5 style="color:gray;">Salidas</h5>
+                <h3 style="color:var(--danger);">$${totalSalidas.toLocaleString('es-MX', {minimumFractionDigits: 2})}</h3>
+                <small>Colocación: $${subColocacion.toLocaleString()}</small><br>
+                <small>Comisiones: $${subComisiones.toLocaleString()}</small><br>
+                <small>Gastos: $${subGastos.toLocaleString()}</small>
+            </div>
+        `;
+
+        // Renderizar Tabla
+        if (filasRenderizadas.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">No hay movimientos registrados en esta fecha.</td></tr>';
+        } else {
+            let htmlRows = '';
+            filasRenderizadas.forEach(row => {
+                const horaStr = row.hora.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                const entradaStr = row.esEntrada ? `$${row.monto.toFixed(2)}` : '-';
+                const salidaStr = !row.esEntrada ? `$${row.monto.toFixed(2)}` : '-';
+                
+                htmlRows += `
+                    <tr>
+                        <td>${horaStr}</td>
+                        <td><span class="badge" style="background:${row.esEntrada ? '#d4edda' : '#f8d7da'}; color:${row.esEntrada ? '#155724' : '#721c24'};">${row.concepto}</span></td>
+                        <td>${row.descripcion}</td>
+                        <td style="color:var(--success); font-weight:bold;">${entradaStr}</td>
+                        <td style="color:var(--danger); font-weight:bold;">${salidaStr}</td>
+                        <td><small>${row.ref}</small></td>
+                    </tr>
+                `;
+            });
+            tbody.innerHTML = htmlRows;
+        }
+
+    } catch (error) {
+        console.error("Error Hoja Corte:", error);
+        alert("Error al generar el corte: " + error.message);
+    } finally {
+        showProcessingOverlay(false);
+    }
+}
+
+// LISTENER para botón Generar Corte
+const btnGenerarCorte = document.getElementById('btn-generar-corte');
+if(btnGenerarCorte) {
+    btnGenerarCorte.addEventListener('click', loadHojaCorte);
+}
 
 // =============================================
 // INICIALIZACIÓN Y EVENT LISTENERS PRINCIPALES
@@ -6638,31 +6721,12 @@ function setupEventListeners() {
     if (sucursalReporteContable) sucursalReporteContable.addEventListener('change', handleSucursalReporteContableChange);
 
     const btnExportarTelefonos = document.getElementById('btn-exportar-telefonos');
-    if (btnExportarTelefonos) btnExportarTelefonos.addEventListener('click', handleExportarTelefonos);    
+    if (btnExportarTelefonos) btnExportarTelefonos.addEventListener('click', handleExportarTelefonos); 
+
+    // LISTENER para botón Generar Corte
+    const btnGenerarCorte = document.getElementById('btn-generar-corte');
+    if(btnGenerarCorte) {
+    btnGenerarCorte.addEventListener('click', loadHojaCorte);
 }
 
 console.log('app.js cargado correctamente y listo.');
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
