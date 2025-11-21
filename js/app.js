@@ -359,7 +359,9 @@ function aplicarPermisosUI(role) {
             'view-colocacion',
             'view-cobranza',
             'view-pago-grupo',
-            'view-registrar-gasto'
+            'view-registrar-gasto',
+            'view-hoja-corte'
+            
         ],
         'default': []
     };
@@ -6852,6 +6854,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
