@@ -702,73 +702,98 @@ const database = {
         }
     },
 
-    // Agregar Pago //
-    agregarPago: async (pagoData, userEmail, firestoreCreditoId) => {
+    /**
+     * Registra un nuevo pago, actualiza el saldo del crédito y 
+     * registra la COMISIÓN (salida) si corresponde.
+     */
+    async agregarPago(pagoData, emailUsuario, firestoreIdCredito) {
         try {
-            const creditoRef = db.collection('creditos').doc(firestoreCreditoId);
+            // 1. Referencias necesarias
+            const creditoRef = db.collection('creditos').doc(firestoreIdCredito);
+            const pagosRef = db.collection('pagos').doc();
+            
+            // Usamos una transacción o batch para asegurar consistencia
+            // En este caso, Batch es eficiente para operaciones offline
+            const batch = db.batch();
 
-            await db.runTransaction(async (transaction) => {
-                const creditoDoc = await transaction.get(creditoRef);
-                if (!creditoDoc.exists) throw new Error("El crédito asociado no existe.");
-                const credito = creditoDoc.data();
+            // 2. Obtener datos actuales del crédito para saber su oficina y saldo
+            const doc = await creditoRef.get();
+            if (!doc.exists) {
+                throw new Error("No se encontró el crédito especificado.");
+            }
+            const credito = doc.data();
+            const saldoActual = credito.saldo !== undefined ? credito.saldo : credito.montoTotal;
+            const officeCredito = credito.office || 'GDL'; // Fallback por seguridad
 
-                const saldoActual = credito.saldo || 0;
-                const tolerancia = 0.015;
-                if (pagoData.monto > saldoActual + tolerancia) {
-                    throw new Error(`Monto del pago ($${pagoData.monto.toFixed(2)}) excede saldo restante ($${saldoActual.toFixed(2)}).`);
-                }
+            // 3. Preparar datos del PAGO (Entrada de dinero)
+            // Aseguramos que la fecha sea ISO
+            const fechaISO = new Date().toISOString();
+            
+            const nuevoPago = {
+                id: pagosRef.id,
+                idCredito: pagoData.idCredito, // ID Histórico
+                firestoreIdCredito: firestoreIdCredito,
+                monto: parseFloat(pagoData.monto),
+                fecha: fechaISO,
+                tipoPago: pagoData.tipoPago || 'normal',
+                registradoPor: emailUsuario,
+                office: officeCredito, // Importante para la hoja de corte
+                origen: pagoData.origen || 'manual' // 'ruta_offline' o 'manual'
+            };
 
-                let nuevoSaldo = saldoActual - pagoData.monto;
-                if (nuevoSaldo < 0.01) nuevoSaldo = 0;
-                const nuevoEstadoDB = (nuevoSaldo === 0) ? 'liquidado' : 'activo';
-                transaction.update(creditoRef, {
-                    saldo: nuevoSaldo,
-                    estado: nuevoEstadoDB,
-                    modificadoPor: userEmail,
-                    fechaModificacion: new Date().toISOString()
-                });
+            // 4. Calcular nuevo saldo
+            const nuevoSaldo = parseFloat((saldoActual - nuevoPago.monto).toFixed(2));
 
-                const pagoRef = db.collection('pagos').doc();
-                transaction.set(pagoRef, {
-                    idCredito: pagoData.idCredito,
-                    monto: pagoData.monto,
-                    tipoPago: pagoData.tipoPago,
-                    fecha: new Date().toISOString(),
-                    saldoDespues: nuevoSaldo,
-                    registradoPor: userEmail,
-                    office: credito.office,
-                    curpCliente: credito.curpCliente,
-                    grupo: credito.poblacion_grupo
-                });
-                
-                const esCreditoComisionista = (credito.plazo === 10);
-                const esTipoPagoComisionable = (pagoData.tipoPago === 'normal' || pagoData.tipoPago === 'extraordinario' || pagoData.tipoPago === 'grupal'); 
-                if (!esCreditoComisionista && esTipoPagoComisionable) {
-                    const comisionRef = db.collection('comisiones').doc();
-                    const userIdComisionista = credito.creadoPor; 
-                    
-                    if (userIdComisionista) { 
-                        transaction.set(comisionRef, {
-                            userId: userIdComisionista,
-                            fecha: new Date().toISOString(),
-                            tipo: 'PAGO',
-                            montoComision: 10,
-                            descripcion: `Comisión por ${pagoData.tipoPago} a crédito ${pagoData.idCredito}`,
-                            creditoId: firestoreCreditoId,
-                            pagoId: pagoRef.id,
-                            registradoPor: userEmail,
-                            office: credito.office
-                        });
-                    } else {
-                        console.warn(`No se pudo registrar comisión para pago ${pagoRef.id} - falta 'creadoPor' en el crédito ${firestoreCreditoId}`);
-                    }
-                }
-               
+            // 5. Agendar operaciones en el Batch
+            
+            // A) Guardar el Pago
+            batch.set(pagosRef, nuevoPago);
+
+            // B) Actualizar el Crédito
+            batch.update(creditoRef, {
+                saldo: nuevoSaldo,
+                fechaUltimoPago: fechaISO,
+                // Si el saldo llega a 0 (o muy cerca), marcamos como liquidado
+                ...(nuevoSaldo < 0.05 ? { estado: 'liquidado' } : {})
             });
-            return { success: true, message: 'Pago registrado.' };
+
+            // C) LÓGICA DE COMISIÓN (NUEVO)
+            // Si el frontend nos envió una comisión generada (> 0), creamos el registro de SALIDA
+            if (pagoData.comisionGenerada && pagoData.comisionGenerada > 0) {
+                
+                const movimientoRef = db.collection('movimientos_efectivo').doc();
+                
+                const nuevaComision = {
+                    id: movimientoRef.id,
+                    tipo: 'COMISION_PAGO', // Diferente a 'COLOCACION'
+                    categoria: 'COMISION', // Etiqueta para agrupar en Hoja de Corte
+                    monto: -Math.abs(pagoData.comisionGenerada), // NEGATIVO porque es SALIDA de dinero de la mano del agente
+                    descripcion: `Comisión cobro crédito ${pagoData.idCredito}`,
+                    fecha: fechaISO,
+                    userId: currentUserData ? currentUserData.id : null, // ID del agente que cobra
+                    registradoPor: emailUsuario,
+                    office: officeCredito,
+                    creditoIdAsociado: firestoreIdCredito
+                };
+
+                batch.set(movimientoRef, nuevaComision);
+                console.log(`💰 Comisión de $${pagoData.comisionGenerada} agendada para registro.`);
+            }
+
+            // 6. Ejecutar todo junto
+            await batch.commit();
+
+            // Retornamos datos útiles para la UI
+            return { 
+                success: true, 
+                message: "Pago registrado correctamente",
+                nuevoSaldo: nuevoSaldo,
+                historicalIdCredito: pagoData.idCredito
+            };
+
         } catch (error) {
-            console.error("Error al registrar pago: ", error);
-            return { success: false, message: `Error: ${error.message}` };
+            console.error("Error en agregarPago:", error);
+            return { success: false, message: error.message };
         }
     },
 
@@ -1975,6 +2000,7 @@ const database = {
     },
 
 };
+
 
 
 
