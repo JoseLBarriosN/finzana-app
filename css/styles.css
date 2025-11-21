@@ -2052,4 +2052,75 @@ body.has-connection-status #progress-container-fixed {
     border-radius: 6px;
 }
 
+/* --- Estilos para el Selector de Poblaciones (Pago Grupal) --- */
+.poblacion-selector-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); /* Responsivo */
+    gap: 15px;
+    margin: 15px 0;
+}
+
+.poblacion-select-card {
+    background: #fff;
+    border: 2px solid #e0e0e0;
+    border-radius: 10px;
+    padding: 15px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: relative;
+    overflow: hidden;
+}
+
+/* Estilo cuando está seleccionado */
+.poblacion-select-card.selected {
+    border-color: var(--primary); /* Tu color verde */
+    background-color: #e8f5e9; /* Verde muy clarito */
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+}
+
+.poblacion-select-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+.poblacion-select-card input[type="checkbox"] {
+    /* Ocultar el checkbox nativo feo, pero mantenerlo funcional */
+    position: absolute;
+    opacity: 0; 
+    cursor: pointer;
+    height: 0;
+    width: 0;
+}
+
+.poblacion-name {
+    font-weight: 600;
+    color: #333;
+    font-size: 0.95rem;
+}
+
+.check-icon {
+    color: #ccc;
+    font-size: 1.2rem;
+}
+
+.poblacion-select-card.selected .check-icon {
+    color: var(--primary);
+    transform: scale(1.1);
+}
+
+/* Botón de "Seleccionar Todas" más bonito */
+.select-all-container {
+    background: #f8f9fa;
+    padding: 10px 15px;
+    border-radius: 8px;
+    margin-bottom: 15px;
+    border: 1px dashed #ccc;
+    display: inline-block;
+    width: 100%;
+}
+
+
 
