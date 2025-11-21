@@ -3274,19 +3274,20 @@ function renderizarCobranzaRuta(data, container) {
                         
                         <div class="comision-container" id="comision-box-${linkId}" style="font-size: 0.85em; color: #28a745; display: flex; align-items: center; justify-content: flex-end; gap: 5px;">
                             <i class="fas fa-hand-holding-usd"></i> Comisión: 
-                            <strong id="comision-val-${linkId}">$${comisionInicial}</strong>
+                            <strong id="comision-val-${linkId}">$${(plazo !== 10 && montoSugerido > 0) ? 10 : 0}</strong>
                         </div>
                     </td>
 
                     <td class="checkbox-cell" style="text-align:center; vertical-align:middle;">
                         <input type="checkbox" class="pago-grupal-check" 
+                            id="check-${linkId}"
                             data-id-link="${linkId}" 
                             data-firestore-id="${cred.firestoreId}"
                             data-hist-id="${cred.historicalIdCredito}"
                             data-nombre="${cred.nombreCliente}"
                             checked
-                            style="width:20px; height:20px; cursor:pointer;">
-                    </td>
+                            style="width:20px; height:20px; cursor:pointer;"
+                            onchange="recalcularComision('${linkId}')"> </td>
                 </tr>
             `;
         });
@@ -3296,14 +3297,19 @@ function renderizarCobranzaRuta(data, container) {
 
     container.innerHTML = html;
 
-    // Re-aplicar listeners de grupo
+    // Re-aplicar listeners de "Marcar Todos" (MODIFICADO PARA ACTUALIZAR VISUALES)
     container.querySelectorAll('.check-group-all').forEach(chk => {
         chk.addEventListener('change', (e) => {
             const grp = e.target.getAttribute('data-grupo');
             const table = container.querySelector(`table[data-grupo="${grp}"]`);
             if(table) {
                 table.querySelectorAll('.pago-grupal-check').forEach(cb => {
-                    if (!cb.disabled) cb.checked = e.target.checked;
+                    if (!cb.disabled) {
+                        cb.checked = e.target.checked;
+                        // Disparamos el recalculo manualmente para cada fila
+                        const idLink = cb.getAttribute('data-id-link');
+                        recalcularComision(idLink);
+                    }
                 });
             }
         });
@@ -3316,39 +3322,60 @@ function recalcularComision(idLink) {
     const row = document.getElementById(`row-${idLink}`);
     const select = row.querySelector('.pago-grupal-tipo');
     const inputMonto = row.querySelector('.pago-grupal-input');
+    const checkbox = row.querySelector('.pago-grupal-check'); // Obtenemos el checkbox
+    
     const labelComision = document.getElementById(`comision-val-${idLink}`);
     const boxComision = document.getElementById(`comision-box-${idLink}`);
 
     const tipo = select.value;
     const monto = parseFloat(inputMonto.value) || 0;
     const plazo = parseInt(row.getAttribute('data-plazo'));
+    const isChecked = checkbox.checked;
 
     let comision = 0;
 
+    // --- CAMBIO VISUAL FILA ---
+    // Si está desmarcado, hacemos la fila un poco transparente
+    if (!isChecked) {
+        row.style.opacity = '0.5';
+        row.style.backgroundColor = '#f9f9f9';
+        // Deshabilitar inputs visualmente para reforzar
+        select.disabled = true;
+        inputMonto.disabled = true;
+    } else {
+        row.style.opacity = '1';
+        row.style.backgroundColor = '#fff';
+        select.disabled = false;
+        inputMonto.disabled = false;
+    }
+
     // --- REGLAS DE NEGOCIO ---
     
+    // 0. Si NO está seleccionado -> NO hay comisión (ni pago)
+    if (!isChecked) {
+        comision = 0;
+    }
     // 1. Crédito de 10 semanas (Comisionista) -> NUNCA genera comisión
-    if (plazo === 10) {
+    else if (plazo === 10) {
         comision = 0;
     }
     // 2. Si el monto es 0 o negativo (Falta de pago) -> No genera comisión
     else if (monto <= 0) {
         comision = 0;
     }
-    // 3. Tipos que generan comisión
-    // "Normal" (Pago regular) y "Extraordinario" (Adelantado)
+    // 3. Tipos que generan comisión ($10)
     else if (tipo === 'normal' || tipo === 'extraordinario') {
         comision = 10;
     }
-    // 4. "Actualizado" (Falta por pago adelantado previo o regularización) -> No genera
+    // 4. "Actualizado" -> No genera
     else if (tipo === 'actualizado') {
         comision = 0;
     }
 
-    // Actualizar UI
+    // Actualizar UI Texto
     labelComision.textContent = `$${comision}`;
     
-    // Feedback visual (Gris si es 0, Verde si es 10)
+    // Feedback visual Texto (Gris si es 0 o desmarcado, Verde si es 10)
     if (comision > 0) {
         boxComision.style.color = '#28a745'; // Verde
         labelComision.style.fontWeight = 'bold';
@@ -6825,6 +6852,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
