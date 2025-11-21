@@ -656,60 +656,40 @@
                     <button class="btn btn-secondary" data-view="view-main-menu">
                         <i class="fas fa-arrow-left"></i> Volver al Menú
                     </button>
-            </div>
+                </div>
 
-            <div id="status_pago_grupo" class="status-message hidden"></div>
+                <div id="status_pago_grupo" class="status-message hidden"></div>
 
                 <div id="selector-poblaciones-card" class="card hidden" style="margin-bottom: 20px; padding: 15px; border-left: 4px solid var(--primary);">
                     <h4 style="margin-top:0; border-bottom: 1px solid #eee; padding-bottom: 10px;">
                         <i class="fas fa-map-marked-alt"></i> 1. Selecciona Poblaciones para Cobro
                     </h4>
-                <div id="checkboxes-poblaciones-container" style="display: flex; flex-wrap: wrap; gap: 15px; margin: 15px 0;">
-                    <p>Cargando poblaciones...</p>
-                </div>
-        
-            <div style="text-align: right;">
-                <button id="btn-calcular-seleccion" class="btn btn-primary">
-                    <i class="fas fa-calculator"></i> 2. Calcular Cobranza
-                </button>
-            </div>
-            </div>
-
-            <div id="cobranza-ruta-placeholder" class="placeholder-content">
-                <i class="fas fa-route fa-3x"></i>
-                <p>Selecciona las poblaciones arriba y presiona "Calcular Cobranza" para comenzar.</p>
-            </div>
-
-            <div id="cobranza-ruta-container"></div>
-
-            <div class="floating-actions">
-                <button id="btn-guardar-cobranza-offline" class="btn btn-warning hidden" title="Guardar lista para modo sin conexión">
-                    <i class="fas fa-save"></i> Guardar Offline
-                </button>
-                <button id="btn-registrar-pagos-offline" class="btn btn-success hidden" title="Registrar todos los pagos seleccionados">
-                    <i class="fas fa-check-double"></i> Registrar Pagos
-                </button>
-            </div>
-        </div>
-    
-    <div id="status_pago_grupo" class="status-message hidden"></div>
-
-                <div id="selector-poblaciones-card" class="card hidden" style="margin-bottom: 20px; padding: 15px; border-left: 4px solid var(--primary);">
-                    <h4 style="margin-top:0;"><i class="fas fa-map-marked-alt"></i> Selecciona Poblaciones para Cobro:</h4>
                     <div id="checkboxes-poblaciones-container" style="display: flex; flex-wrap: wrap; gap: 15px; margin: 15px 0;">
-                        </div>
+                        <p>Cargando poblaciones...</p>
+                    </div>
                     <div style="text-align: right;">
                         <button id="btn-calcular-seleccion" class="btn btn-primary">
-                            <i class="fas fa-calculator"></i> Calcular Cobranza Seleccionada
+                            <i class="fas fa-calculator"></i> 2. Calcular Cobranza
                         </button>
                     </div>
                 </div>
-                
-                <div id="cobranza-ruta-container" style="margin-top: 20px;">
-                    <p id="cobranza-ruta-placeholder">Presiona "Calcular Cobranza" (requiere conexión) o carga una lista guardada si estás offline.</p>
+
+                <div id="cobranza-ruta-placeholder" class="placeholder-content">
+                    <i class="fas fa-route fa-3x"></i>
+                    <p>Selecciona las poblaciones arriba y presiona "Calcular Cobranza" para comenzar.</p>
+                </div>
+
+                <div id="cobranza-ruta-container"></div>
+
+                <div class="floating-actions">
+                    <button id="btn-guardar-cobranza-offline" class="btn btn-warning hidden" title="Guardar lista para modo sin conexión">
+                        <i class="fas fa-save"></i> Guardar Offline
+                    </button>
+                    <button id="btn-registrar-pagos-offline" class="btn btn-success hidden" title="Registrar todos los pagos seleccionados">
+                        <i class="fas fa-check-double"></i> Registrar Pagos
+                    </button>
                 </div>
             </div>
-
             <div id="view-reportes" class="view hidden">
                 <div class="view-header">
                     <h2>Reportes del Sistema</h2>
@@ -766,7 +746,6 @@
                     <h2>Reportes Avanzados</h2>
                     <button class="btn btn-secondary" data-view="view-main-menu"><i class="fas fa-arrow-left"></i> Volver al Menú</button>
                 </div>
-
                 <div class="advanced-filters">
                     <h3>Filtros de Reporte</h3>
                     <div id="filtros-reportes-avanzados" class="filtros-grid">
@@ -780,33 +759,23 @@
                         </div>
                         <div class="form-group">
                             <label for="grupo_filtro_reporte">Grupo/Población</label>
-                            <select id="grupo_filtro_reporte">
-                                <option value="">Todos</option>
-                            </select>
+                            <select id="grupo_filtro_reporte"><option value="">Todos</option></select>
                         </div>
                         <div class="form-group">
                             <label for="ruta_filtro_reporte">Ruta</label>
-                            <select id="ruta_filtro_reporte">
-                                <option value="">Todas</option>
-                            </select>
+                            <select id="ruta_filtro_reporte"><option value="">Todas</option></select>
                         </div>
                         <div class="form-group">
                             <label for="tipo_credito_filtro_reporte">Tipo de Crédito</label>
-                            <select id="tipo_credito_filtro_reporte">
-                                <option value="">Todos</option>
-                            </select>
+                            <select id="tipo_credito_filtro_reporte"><option value="">Todos</option></select>
                         </div>
                         <div class="form-group">
                             <label for="estado_credito_filtro_reporte">Estado de Crédito (DB)</label>
-                            <select id="estado_credito_filtro_reporte">
-                                <option value="">Todos</option>
-                            </select>
+                            <select id="estado_credito_filtro_reporte"><option value="">Todos</option></select>
                         </div>
                         <div class="form-group">
                             <label for="tipo_pago_filtro_reporte">Tipo de Pago</label>
-                            <select id="tipo_pago_filtro_reporte">
-                                <option value="">Todos</option>
-                            </select>
+                            <select id="tipo_pago_filtro_reporte"><option value="">Todos</option></select>
                         </div>
                         <div class="form-group">
                             <label for="curp_filtro_reporte">CURP Cliente</label>
@@ -817,7 +786,6 @@
                             <input type="text" id="id_credito_filtro_reporte" placeholder="Filtrar por ID histórico...">
                         </div>
                     </div>
-
                     <div class="filter-section">
                         <div class="filter-section-title">Rango de Fechas</div>
                         <div class="date-range">
@@ -831,49 +799,25 @@
                             </div>
                         </div>
                     </div>
-
                     <div class="filtros-actions">
-                        <button id="btn-aplicar-filtros-reportes" class="btn btn-primary">
-                            <i class="fas fa-search"></i> Generar Reporte
-                        </button>
-                        <button id="btn-limpiar-filtros-reportes" class="btn btn-secondary">
-                            <i class="fas fa-times"></i> Limpiar Filtros
-                        </button>
+                        <button id="btn-aplicar-filtros-reportes" class="btn btn-primary"><i class="fas fa-search"></i> Generar Reporte</button>
+                        <button id="btn-limpiar-filtros-reportes" class="btn btn-secondary"><i class="fas fa-times"></i> Limpiar Filtros</button>
                     </div>
                 </div>
-
                 <div id="estadisticas-reporte"></div>
-
                 <div class="export-buttons">
-                    <button id="btn-exportar-csv" class="btn btn-success">
-                        <i class="fas fa-file-csv"></i> Exportar CSV
-                    </button>
-                    <button id="btn-exportar-pdf" class="btn btn-danger">
-                        <i class="fas fa-file-pdf"></i> Exportar PDF
-                    </button>
+                    <button id="btn-exportar-csv" class="btn btn-success"><i class="fas fa-file-csv"></i> Exportar CSV</button>
+                    <button id="btn-exportar-pdf" class="btn btn-danger"><i class="fas fa-file-pdf"></i> Exportar PDF</button>
                 </div>
-
                 <div id="status_reportes_avanzados"></div>
-
                 <table class="report-table">
                     <thead>
                         <tr>
-                            <th>Tipo</th>
-                            <th>CURP</th>
-                            <th>Nombre</th>
-                            <th>Grupo/Población</th>
-                            <th>Ruta</th>
-                            <th>Sucursal</th>
-                            <th>Fecha</th>
-                            <th>Tipo Operación</th>
-                            <th>Monto</th>
-                            <th>Saldo</th>
+                            <th>Tipo</th><th>CURP</th><th>Nombre</th><th>Grupo/Población</th><th>Ruta</th><th>Sucursal</th><th>Fecha</th><th>Tipo Operación</th><th>Monto</th><th>Saldo</th>
                         </tr>
                     </thead>
                     <tbody id="tabla-reportes_avanzados">
-                        <tr>
-                            <td colspan="10">Aplica los filtros para generar el reporte.</td>
-                        </tr>
+                        <tr><td colspan="10">Aplica los filtros para generar el reporte.</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -883,7 +827,6 @@
                     <h2>Reportes con Gráficos</h2>
                     <button class="btn btn-secondary" data-view="view-main-menu"><i class="fas fa-arrow-left"></i> Volver al Menú</button>
                 </div>
-
                 <div class="advanced-filters">
                     <h3>Filtros del Reporte</h3>
                     <div class="filtros-grid">
@@ -918,30 +861,19 @@
                         </div>
                         <div class="form-group">
                             <label for="grafico_grupo">Grupo / Población</label>
-                            <select id="grafico_grupo">
-                                <option value="">Todos</option>
-                            </select>
+                            <select id="grafico_grupo"><option value="">Todos</option></select>
                         </div>
                     </div>
                     <div class="filter-section">
                         <div class="filter-section-title">Rango de Fechas del Reporte</div>
                         <div class="date-range">
-                            <div class="form-group">
-                                <label for="grafico_fecha_inicio">Fecha Inicio</label>
-                                <input type="date" id="grafico_fecha_inicio">
-                            </div>
-                            <div class="form-group">
-                                <label for="grafico_fecha_fin">Fecha Fin</label>
-                                <input type="date" id="grafico_fecha_fin">
-                            </div>
+                            <div class="form-group"><label for="grafico_fecha_inicio">Fecha Inicio</label><input type="date" id="grafico_fecha_inicio"></div>
+                            <div class="form-group"><label for="grafico_fecha_fin">Fecha Fin</label><input type="date" id="grafico_fecha_fin"></div>
                         </div>
                     </div>
                     <div class="filtros-actions">
-                        <button id="btn-generar-grafico" class="btn btn-primary">
-                            <i class="fas fa-chart-area"></i> Generar Gráfico
-                        </button>
+                        <button id="btn-generar-grafico" class="btn btn-primary"><i class="fas fa-chart-area"></i> Generar Gráfico</button>
                     </div>
-
                     <div class="form-group">
                         <label for="grafico-colores-container">Colores Personalizados (opcional):</label>
                         <div id="grafico-colores-container" class="color-picker-container">
@@ -953,13 +885,9 @@
                         </div>
                         <small class="field-note">Selecciona los colores para tu gráfico.</small>
                     </div>
-                    
                 </div>
-
                 <div class="card" style="margin-top: 20px;">
-                    <div class="card-header">
-                        Resultado del Gráfico
-                    </div>
+                    <div class="card-header">Resultado del Gráfico</div>
                     <div class="card-body">
                         <div id="grafico-container"></div>
                         <div id="status_graficos" class="status-message">Selecciona los filtros para generar un gráfico.</div>
@@ -999,18 +927,14 @@
                     <h2>Gestión de Efectivo de Agentes</h2>
                     <button class="btn btn-secondary" data-view="view-main-menu"><i class="fas fa-arrow-left"></i> Volver al Menú</button>
                 </div>
-
                 <div class="view-content-wrapper" style="width: 100%; display: flex; flex-direction: column; align-items: center;">
-
                     <div class="form-container" style="max-width: 1000px; width: 100%; margin: 20px 0;">
                         <div class="card" style="margin-bottom: 20px;">
                             <h3>Registrar Entrega de Efectivo</h3>
                             <form id="form-registrar-entrega" class="form-inline">
                                 <div class="form-group" style="flex: 2;">
                                     <label for="entrega-agente">Agente (Área Comercial)</label>
-                                    <select id="entrega-agente" required>
-                                        <option value="">Cargando agentes...</option>
-                                    </select>
+                                    <select id="entrega-agente" required><option value="">Cargando agentes...</option></select>
                                 </div>
                                 <div class="form-group" style="flex: 1;">
                                     <label for="entrega-monto">Monto Entregado</label>
@@ -1024,15 +948,12 @@
                             </form>
                             <div id="status_registrar_entrega" class="status-message hidden"></div>
                         </div>
-
                         <div class="card" style="margin-bottom: 20px;">
                             <h3>Buscar Movimientos de Agente</h3>
                             <div id="filtros-gestion-efectivo" class="filtros-grid form-inline">
                                 <div class="form-group" style="flex: 2;">
                                     <label for="filtro-agente">Agente (Área Comercial)</label>
-                                    <select id="filtro-agente" required>
-                                        <option value="">Cargando agentes...</option>
-                                    </select>
+                                    <select id="filtro-agente" required><option value="">Cargando agentes...</option></select>
                                 </div>
                                 <div class="form-group" style="flex: 1;">
                                     <label for="filtro-fecha-inicio-efectivo">Fecha Inicio</label>
@@ -1045,43 +966,35 @@
                                 <button id="btn-buscar-movimientos" class="btn btn-primary"><i class="fas fa-search"></i> Buscar Movimientos</button>
                             </div>
                         </div>
-                    </div>
-                    <div id="resultados-gestion-efectivo" class="hidden" style="max-width: 1200px; width: 100%;">
-                        <div id="balance-container" class="card info-grid" style="background: #f8f9fa; padding: 15px; margin-bottom: 20px;">
-                            <div class="info-item"><span class="info-label">Agente:</span><span id="balance-agente" class="info-value">...</span></div>
-                            <div class="info-item"><span class="info-label">Total Entregado:</span><span id="balance-entregado" class="info-value" style="color: var(--success);">...</span></div>
-                            <div class="info-item"><span class="info-label">Total Gastos:</span><span id="balance-gastos" class="info-value" style="color: var(--danger);">...</span></div>
-                            <div class="info-item"><span class="info-label">Total Colocado:</span><span id="balance-colocado" class="info-value" style="color: var(--warning);">...</span></div>
-                            <div class="info-item"><span class="info-label">Balance Esperado:</span><span id="balance-final" class="info-value" style="font-weight: bold; font-size: 1.1em;">...</span></div>
+                        <div id="resultados-gestion-efectivo" class="hidden" style="max-width: 1200px; width: 100%;">
+                            <div id="balance-container" class="card info-grid" style="background: #f8f9fa; padding: 15px; margin-bottom: 20px;">
+                                <div class="info-item"><span class="info-label">Agente:</span><span id="balance-agente" class="info-value">...</span></div>
+                                <div class="info-item"><span class="info-label">Total Entregado:</span><span id="balance-entregado" class="info-value" style="color: var(--success);">...</span></div>
+                                <div class="info-item"><span class="info-label">Total Gastos:</span><span id="balance-gastos" class="info-value" style="color: var(--danger);">...</span></div>
+                                <div class="info-item"><span class="info-label">Total Colocado:</span><span id="balance-colocado" class="info-value" style="color: var(--warning);">...</span></div>
+                                <div class="info-item"><span class="info-label">Balance Esperado:</span><span id="balance-final" class="info-value" style="font-weight: bold; font-size: 1.1em;">...</span></div>
+                            </div>
+                            <h4>Historial de Movimientos</h4>
+                            <div class="table-responsive">
+                                <table class="report-table">
+                                    <thead>
+                                        <tr><th>Fecha</th><th>Tipo</th><th>Monto</th><th>Descripción</th><th>Registrado Por</th></tr>
+                                    </thead>
+                                    <tbody id="tabla-movimientos-efectivo">
+                                        <tr><td colspan="5">Selecciona un agente y rango de fechas.</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
+                    </div>
+                </div>
+            </div>
 
-                        <h4>Historial de Movimientos</h4>
-                        <div class="table-responsive">
-                            <table class="report-table">
-                                <thead>
-                                    <tr>
-                                        <th>Fecha</th>
-                                        <th>Tipo</th>
-                                        <th>Monto</th>
-                                        <th>Descripción</th>
-                                        <th>Registrado Por</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="tabla-movimientos-efectivo">
-                                    <tr><td colspan="5">Selecciona un agente y rango de fechas.</td></tr>
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-            
             <div id="view-reporte-contable" class="view hidden">
                 <div class="view-header">
                     <h2>Reporte Contable de Efectivo</h2>
-                    <button class="btn btn-secondary btn-no-print" data-view="view-main-menu">
-                        <i class="fas fa-arrow-left"></i> Volver al Menú
-                    </button>
+                    <button class="btn btn-secondary btn-no-print" data-view="view-main-menu"><i class="fas fa-arrow-left"></i> Volver al Menú</button>
                 </div>
-
                 <div class="card advanced-filters btn-no-print">
                     <h3>Filtros del Reporte</h3>
                     <div class="filtros-grid">
@@ -1095,9 +1008,7 @@
                         </div>
                         <div class="form-group">
                             <label for="reporte-contable-agente">Agente (Opcional)</label>
-                            <select id="reporte-contable-agente">
-                                <option value="">Todos los Agentes</option>
-                            </select>
+                            <select id="reporte-contable-agente"><option value="">Todos los Agentes</option></select>
                         </div>
                         <div class="form-group">
                             <label for="reporte-contable-fecha-inicio">Fecha Inicio</label>
@@ -1109,52 +1020,36 @@
                         </div>
                     </div>
                     <div class="filtros-actions">
-                        <button id="btn-generar-reporte-contable" class="btn btn-primary">
-                            <i class="fas fa-search"></i> Generar Reporte
-                        </button>
-                        <button id="btn-imprimir-reporte-contable" class="btn btn-success hidden">
-                            <i class="fas fa-print"></i> Confirmar e Imprimir
-                        </button>
+                        <button id="btn-generar-reporte-contable" class="btn btn-primary"><i class="fas fa-search"></i> Generar Reporte</button>
+                        <button id="btn-imprimir-reporte-contable" class="btn btn-success hidden"><i class="fas fa-print"></i> Confirmar e Imprimir</button>
                     </div>
                 </div>
-
                 <div id="status_reporte_contable" class="status-message hidden"></div>
-
                 <div id="reporte-contable-wrapper" class="hidden">
                     <div id="reporte-contable-contenido" class="card" style="padding: 20px;">
                         <div id="reporte-contable-header" style="text-align: center; margin-bottom: 20px;">
                             <h3 id="reporte-contable-titulo">Reporte de Flujo de Efectivo</h3>
                             <p id="reporte-contable-subtitulo" style="font-size: 14px; color: #555;">(Selecciona filtros para generar)</p>
                         </div>
-                        
                         <h4>Resumen de Flujos</h4>
                         <div id="reporte-contable-resumen" class="info-grid" style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px;"></div>
-
                         <h4>Detalle de Movimientos</h4>
                         <div id="reporte-contable-detalle"></div>
-
                         <div id="reporte-contable-footer" style="margin-top: 50px; padding-top: 20px; border-top: 1px solid #ccc; display: flex; justify-content: space-around; text-align: center;">
-                            <div>
-                                <p>_________________________</p>
-                                <p><strong>Elaboró</strong></p>
-                                <p>(Administrador)</p>
-                            </div>
-                            <div>
-                                <p>_________________________</p>
-                                <p><strong>Recibió</strong></p>
-                                <p>(Agente / Gerencia)</p>
-                            </div>
+                            <div><p>_________________________</p><p><strong>Elaboró</strong></p><p>(Administrador)</p></div>
+                            <div><p>_________________________</p><p><strong>Recibió</strong></p><p>(Agente / Gerencia)</p></div>
                         </div>
                     </div>
                 </div>
-            </div> <div id="view-hoja-corte" class="view hidden">
+            </div>
+
+            <div id="view-hoja-corte" class="view hidden">
                 <div class="view-header">
                     <h2><i class="fas fa-cash-register"></i> Hoja de Corte (Cuadre de Caja)</h2>
                     <button class="btn btn-secondary" data-view="view-main-menu">
                         <i class="fas fa-arrow-left"></i> Volver al Menú
                     </button>
                 </div>
-                
                 <div class="card filters-card">
                     <div class="filters-grid" style="display: flex; gap: 15px; align-items: flex-end;">
                         <div class="form-group" style="flex: 1;">
@@ -1168,9 +1063,7 @@
                         </div>
                     </div>
                 </div>
-
                 <div id="corte-resumen-cards" class="dashboard-grid" style="margin-bottom: 20px;"></div>
-
                 <div class="card">
                     <h3>Desglose de Movimientos</h3>
                     <div class="table-responsive">
@@ -1192,29 +1085,24 @@
                     </div>
                 </div>
                 <div id="status_hoja_corte" class="status-message hidden"></div>
-            </div> 
-           </div> 
-        </div>      
-        </main> 
-    </div>
-    
-    <div id="processing-overlay" class="processing-overlay hidden">
+            </div>
+
+        </main> </div> <div id="processing-overlay" class="processing-overlay hidden">
         <div class="processing-spinner"></div>
         <div id="processing-message" class="processing-message">Procesando...</div>
     </div>
 
     <div id="progress-container-fixed" class="progress-container-nuevo hidden">
-        <button id="btn-cancelar-carga-fixed" class="btn btn-danger btn-cancelar-nuevo" title="Cancelar operación">  
+        <button id="btn-cancelar-carga-fixed" class="btn btn-danger btn-cancelar-nuevo" title="Cancelar operación">
             <i class="fas fa-times"></i>
-        </button> 
+        </button>
         <div class="progress-content-nuevo">
-            <div id="progress-text-fixed" class="progress-text-nuevo">Cargando... 0%</div>    
+            <div id="progress-text-fixed" class="progress-text-nuevo">Cargando... 0%</div>
             <div class="progress-bar-wrapper-nuevo">
-            <div id="progress-bar-fixed" class="progress-bar-nuevo" style="width: 0%;"></div> 
-         </div>   
+                <div id="progress-bar-fixed" class="progress-bar-nuevo" style="width: 0%;"></div>
+            </div>
+        </div>
     </div>
-        
-</div>
 
     <div id="generic-modal" class="modal-overlay hidden">
         <div class="modal-content">
@@ -1236,9 +1124,3 @@
     <script src="js/app.js"></script>
 </body>
 </html>
-
-
-
-
-
-
