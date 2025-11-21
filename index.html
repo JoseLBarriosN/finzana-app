@@ -653,37 +653,44 @@
             <div id="view-pago-grupo" class="view hidden">
                 <div class="view-header">
                     <h2><i class="fas fa-users"></i> Pago Grupal / Ruta</h2>
-                </div>
+                    <button class="btn btn-secondary" data-view="view-main-menu">
+                        <i class="fas fa-arrow-left"></i> Volver al Menú
+                    </button>
+            </div>
+
+            <div id="status_pago_grupo" class="status-message hidden"></div>
 
                 <div id="selector-poblaciones-card" class="card hidden" style="margin-bottom: 20px; padding: 15px; border-left: 4px solid var(--primary);">
                     <h4 style="margin-top:0; border-bottom: 1px solid #eee; padding-bottom: 10px;">
                         <i class="fas fa-map-marked-alt"></i> 1. Selecciona Poblaciones para Cobro
                     </h4>
-                    <div id="checkboxes-poblaciones-container" style="display: flex; flex-wrap: wrap; gap: 15px; margin: 15px 0;">
-                        </div>
-                    <div style="text-align: right;">
-                        <button id="btn-calcular-seleccion" class="btn btn-primary">
-                            <i class="fas fa-calculator"></i> 2. Calcular Cobranza
-                        </button>
-                    </div>
+                <div id="checkboxes-poblaciones-container" style="display: flex; flex-wrap: wrap; gap: 15px; margin: 15px 0;">
+                    <p>Cargando poblaciones...</p>
                 </div>
+        
+            <div style="text-align: right;">
+                <button id="btn-calcular-seleccion" class="btn btn-primary">
+                    <i class="fas fa-calculator"></i> 2. Calcular Cobranza
+                </button>
+            </div>
+            </div>
 
-                <div id="cobranza-ruta-placeholder" class="placeholder-content">
-                    <i class="fas fa-route fa-3x"></i>
-                    <p>Selecciona poblaciones y calcula la cobranza para comenzar.</p>
-                </div>
+            <div id="cobranza-ruta-placeholder" class="placeholder-content">
+                <i class="fas fa-route fa-3x"></i>
+                <p>Selecciona las poblaciones arriba y presiona "Calcular Cobranza" para comenzar.</p>
+            </div>
 
-                <div id="cobranza-ruta-container">
-                    </div>
+            <div id="cobranza-ruta-container"></div>
 
-                <div class="floating-actions">
-                    <button id="btn-guardar-cobranza-offline" class="btn btn-warning hidden" title="Guardar lista para modo sin conexión">
-                        <i class="fas fa-save"></i> Guardar Offline
-                    </button>
-                    <button id="btn-registrar-pagos-offline" class="btn btn-success hidden" title="Registrar todos los pagos seleccionados">
-                        <i class="fas fa-check-double"></i> Registrar Pagos
-                    </button>
-                </div>
+            <div class="floating-actions">
+                <button id="btn-guardar-cobranza-offline" class="btn btn-warning hidden" title="Guardar lista para modo sin conexión">
+                    <i class="fas fa-save"></i> Guardar Offline
+                </button>
+                <button id="btn-registrar-pagos-offline" class="btn btn-success hidden" title="Registrar todos los pagos seleccionados">
+                    <i class="fas fa-check-double"></i> Registrar Pagos
+                </button>
+            </div>
+        </div>
     
     <div id="status_pago_grupo" class="status-message hidden"></div>
 
@@ -1234,5 +1241,6 @@
     <script src="js/app.js"></script>
 </body>
 </html>
+
 
 
