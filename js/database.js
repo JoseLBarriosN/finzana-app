@@ -1881,21 +1881,38 @@ const database = {
     },
 
     // Obtiene las poblaciones filtradas por Ruta y Oficina (Para el checkbox)
-    obtenerPoblacionesPorRuta: async (ruta, office) => {
+    async obtenerPoblacionesPorRuta(ruta, office) {
+        console.log(`📡 DB: Buscando poblaciones para Ruta: "${ruta}" en Oficina: "${office}"`);
         try {
-            let query = db.collection('poblaciones').where('ruta', '==', ruta);
+            let query = db.collection('poblaciones');
             
-            // Seguridad: Filtrar por oficina siempre si no es AMBAS
+            // Filtro 1: Por Ruta (Obligatorio)
+            query = query.where('ruta', '==', ruta);
+
+            // Filtro 2: Por Oficina (Si aplica, para seguridad)
             if (office && office !== 'AMBAS') {
                 query = query.where('office', '==', office);
             }
-            
+
             const snapshot = await query.get();
-            // Retornamos los datos ordenados alfabéticamente
-            return snapshot.docs.map(doc => doc.data()).sort((a,b) => a.nombre.localeCompare(b.nombre));
+            
+            if (snapshot.empty) {
+                console.warn("⚠️ DB: No se encontraron poblaciones para esta ruta.");
+                return [];
+            }
+
+            const poblaciones = snapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }));
+
+            console.log(`✅ DB: ${poblaciones.length} poblaciones encontradas.`);
+            return poblaciones;
+
         } catch (error) {
-            console.error("Error obteniendo poblaciones por ruta:", error);
-            return [];
+            console.error("❌ DB Error en obtenerPoblacionesPorRuta:", error);
+            // Devolvemos array vacío para no romper la UI, pero mostramos error
+            throw error; 
         }
     },
 
@@ -1958,5 +1975,6 @@ const database = {
     },
 
 };
+
 
 
