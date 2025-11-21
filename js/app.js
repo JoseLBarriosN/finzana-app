@@ -2851,21 +2851,19 @@ async function handleCalcularCobranzaRuta() {
 //** Inicializar Vista de Pago Grupal ** //
 
 async function inicializarVistaPagoGrupal() {
-    console.log("🚀 INICIANDO VISTA PAGO GRUPAL (Depuración)");
+    console.log("🚀 INICIANDO VISTA PAGO GRUPAL (Diseño Mejorado)");
     
     const containerChecks = document.getElementById('checkboxes-poblaciones-container');
     const cardSelector = document.getElementById('selector-poblaciones-card');
     const btnCalcular = document.getElementById('btn-calcular-seleccion');
     const statusPago = document.getElementById('status_pago_grupo');
     
-    // Botones y contenedores
     const btnGuardar = document.getElementById('btn-guardar-cobranza-offline');
     const btnRegistrar = document.getElementById('btn-registrar-pagos-offline');
     const containerResultados = document.getElementById('cobranza-ruta-container');
     const placeholder = document.getElementById('cobranza-ruta-placeholder');
 
-    // 1. RESETEAR VISTA Y FORZAR VISIBILIDAD INICIAL
-    // Esto asegura que la tarjeta se vea aunque haya errores después
+    // 1. LIMPIEZA Y RESETEO DE UI
     if (cardSelector) cardSelector.classList.remove('hidden'); 
     if (placeholder) placeholder.classList.remove('hidden');
     if (containerResultados) containerResultados.innerHTML = '';
@@ -2874,95 +2872,140 @@ async function inicializarVistaPagoGrupal() {
         statusPago.className = 'status-message hidden';
     }
     
-    // Ocultar botones de acción al inicio
+    // Ocultar botones flotantes al inicio
     if(btnGuardar) btnGuardar.classList.add('hidden');
     if(btnRegistrar) btnRegistrar.classList.add('hidden');
 
-    // 2. DIAGNÓSTICO DE USUARIO EN CONSOLA
-    console.log("👤 Datos de usuario actual:", currentUserData);
-
+    // 2. VALIDACIÓN DE USUARIO
     if (!currentUserData) {
-        showStatus('status_pago_grupo', 'Error crítico: No se han cargado los datos del usuario.', 'error');
+        showStatus('status_pago_grupo', 'Error: No se han cargado los datos del usuario.', 'error');
         return;
     }
 
-    // 3. MANEJO ESPECIAL PARA SUPER ADMIN / GERENCIA (Sin ruta asignada)
-    // Si eres Admin y no tienes ruta, intentaremos cargar TODAS las poblaciones o pedir que se asigne una.
+    // 3. LÓGICA OFFLINE (Prioridad: si no hay red, cargar local)
+    const keyOffline = OFFLINE_STORAGE_KEY + (currentUserData.ruta || 'sin_ruta');
+    const datosGuardadosStr = localStorage.getItem(keyOffline);
+    let datosGuardados = null;
+    if (datosGuardadosStr) {
+        try { datosGuardados = JSON.parse(datosGuardadosStr); } catch(e) {}
+    }
+
+    if (!navigator.onLine) {
+        showStatus('status_pago_grupo', 'Modo Offline detectado.', 'warning');
+        
+        if (datosGuardados && datosGuardados.data) {
+            // En offline con datos, ocultamos el selector y mostramos la tabla directa
+            cardSelector.classList.add('hidden');
+            placeholder.classList.add('hidden');
+            
+            cobranzaRutaData = datosGuardados.data;
+            renderizarCobranzaRuta(cobranzaRutaData, containerResultados); // Usa la nueva renderización con comisiones
+            
+            if(btnRegistrar) btnRegistrar.classList.remove('hidden');
+            
+            const fechaGuardado = new Date(datosGuardados.timestamp).toLocaleString();
+            showStatus('status_pago_grupo', `Mostrando datos guardados localmente (${fechaGuardado}).`, 'success');
+        } else {
+            placeholder.classList.remove('hidden');
+            placeholder.innerHTML = '<p class="text-danger">No tienes conexión y no hay datos guardados para esta ruta.</p>';
+        }
+        return; // Fin del flujo Offline
+    }
+
+    // 4. LÓGICA ONLINE (Carga de Poblaciones)
     let rutaUsuario = currentUserData.ruta;
     let officeUsuario = currentUserData.office;
 
     if (!rutaUsuario) {
+        // Manejo para Admins sin ruta (aviso)
         if (currentUserData.role === 'Super Admin' || currentUserData.role === 'Gerencia') {
-            console.warn("⚠️ Usuario Admin sin ruta. Se requiere lógica de selección de ruta (Próximamente).");
-            showStatus('status_pago_grupo', 'Aviso: Eres Administrador y no tienes una ruta fija asignada en tu perfil. Asigna una ruta a tu usuario para probar esta vista.', 'warning');
-            // Por ahora detenemos aquí para Admins sin ruta para evitar errores de DB
-            if(containerChecks) containerChecks.innerHTML = '<p class="text-danger">⚠️ Perfil de Administrador sin ruta asignada en Base de Datos.</p>';
-            return; 
+             showStatus('status_pago_grupo', 'Eres Admin sin ruta asignada. Asigna una ruta en tu perfil para probar.', 'warning');
+             if(containerChecks) containerChecks.innerHTML = '<p class="text-center text-muted">⚠️ Admin sin ruta asignada.</p>';
+             return;
         } else {
-            showStatus('status_pago_grupo', 'Error: Tu usuario (Área Comercial) no tiene una RUTA asignada en la base de datos.', 'error');
-            if(containerChecks) containerChecks.innerHTML = '<p class="text-danger">🚫 Sin ruta asignada.</p>';
+            showStatus('status_pago_grupo', 'Error: Tu usuario no tiene una RUTA asignada.', 'error');
             return;
         }
     }
 
-    // 4. LÓGICA DE CARGA DE POBLACIONES
-    if (containerChecks) containerChecks.innerHTML = '<div class="spinner"></div> Cargando poblaciones de la ruta: <strong>' + rutaUsuario + '</strong>...';
+    // Mostrar spinner de carga
+    if (containerChecks) containerChecks.innerHTML = '<div style="text-align:center; padding:20px;"><div class="spinner"></div><p>Cargando poblaciones de la ruta: <strong>' + rutaUsuario + '</strong>...</p></div>';
     if (btnCalcular) btnCalcular.disabled = true;
 
     try {
-        console.log(`📡 Consultando DB para Ruta: ${rutaUsuario}, Oficina: ${officeUsuario}`);
-        
-        // Llamada a la base de datos
+        // Llamada a DB
         const poblaciones = await database.obtenerPoblacionesPorRuta(rutaUsuario, officeUsuario);
         
-        console.log(`✅ Poblaciones recibidas: ${poblaciones.length}`);
-
         containerChecks.innerHTML = ''; // Limpiar spinner
 
         if (poblaciones.length === 0) {
-            containerChecks.innerHTML = `<p>No se encontraron poblaciones asignadas a la ruta <strong>${rutaUsuario}</strong> en la oficina <strong>${officeUsuario}</strong>.</p>`;
+            containerChecks.innerHTML = `<p class="text-center">No se encontraron poblaciones para la ruta <strong>${rutaUsuario}</strong>.</p>`;
             return;
         }
 
-        // Checkbox "Seleccionar Todas"
+        // --- CONSTRUCCIÓN DE LA INTERFAZ MEJORADA ---
+
+        // A. Botón "Seleccionar Todas" (Estilizado)
         const allDiv = document.createElement('div');
-        allDiv.style.width = "100%";
-        allDiv.style.marginBottom = "10px";
-        allDiv.style.paddingBottom = "5px";
-        allDiv.style.borderBottom = "1px solid #eee";
+        allDiv.className = 'select-all-container';
         allDiv.innerHTML = `
-            <label style="font-weight:bold; cursor:pointer; color:var(--primary);">
-                <input type="checkbox" id="check-all-poblaciones" checked> SELECCIONAR TODAS
+            <label style="font-weight:bold; cursor:pointer; color:var(--primary); display:flex; align-items:center; gap:10px; margin:0;">
+                <input type="checkbox" id="check-all-poblaciones" checked style="width:18px; height:18px; cursor:pointer;"> 
+                <span>SELECCIONAR TODAS LAS POBLACIONES</span>
             </label>
         `;
         containerChecks.appendChild(allDiv);
 
-        // Checkboxes individuales
+        // B. Contenedor Grid para las Tarjetas
+        const gridDiv = document.createElement('div');
+        gridDiv.className = 'poblacion-selector-grid';
+
+        // C. Generar Tarjetas Individuales
         poblaciones.forEach(pob => {
-            const div = document.createElement('div');
-            div.className = 'poblacion-item'; // Clase para CSS si quieres
-            div.style.display = "inline-block";
-            div.style.marginRight = "15px";
-            div.style.marginBottom = "8px";
+            const label = document.createElement('label');
+            label.className = 'poblacion-select-card selected'; // Inician seleccionadas
             
-            div.innerHTML = `
-                <label style="cursor:pointer;">
-                    <input type="checkbox" class="poblacion-check" value="${pob.nombre}" checked> 
-                    ${pob.nombre}
-                </label>
+            label.innerHTML = `
+                <input type="checkbox" class="poblacion-check" value="${pob.nombre}" checked> 
+                <span class="poblacion-name">${pob.nombre}</span>
+                <i class="fas fa-check-circle check-icon"></i>
             `;
-            containerChecks.appendChild(div);
+
+            // Listener individual para efecto visual (toggle clase 'selected')
+            const checkbox = label.querySelector('input');
+            checkbox.addEventListener('change', function() {
+                if(this.checked) {
+                    label.classList.add('selected');
+                } else {
+                    label.classList.remove('selected');
+                }
+                
+                // Sincronizar el "Seleccionar Todas"
+                const allChecks = document.querySelectorAll('.poblacion-check');
+                const allChecked = Array.from(allChecks).every(c => c.checked);
+                document.getElementById('check-all-poblaciones').checked = allChecked;
+            });
+
+            gridDiv.appendChild(label);
         });
 
-        // Listener para "Seleccionar Todas"
+        containerChecks.appendChild(gridDiv);
+
+        // D. Listener Maestro para "Seleccionar Todas"
         document.getElementById('check-all-poblaciones').addEventListener('change', function(e) {
-            document.querySelectorAll('.poblacion-check').forEach(chk => chk.checked = e.target.checked);
+            const isChecked = e.target.checked;
+            document.querySelectorAll('.poblacion-select-card').forEach(card => {
+                const input = card.querySelector('input');
+                input.checked = isChecked;
+                // Actualizar visualmente la tarjeta
+                if(isChecked) card.classList.add('selected');
+                else card.classList.remove('selected');
+            });
         });
 
         // Activar botón calcular
         if(btnCalcular) {
             btnCalcular.disabled = false;
-            // Clonar para limpiar listeners viejos
             const newBtn = btnCalcular.cloneNode(true);
             btnCalcular.parentNode.replaceChild(newBtn, btnCalcular);
             newBtn.addEventListener('click', handleCalcularCobranzaRuta);
@@ -2971,19 +3014,19 @@ async function inicializarVistaPagoGrupal() {
     } catch (error) {
         console.error("❌ Error cargando poblaciones:", error);
         if(containerChecks) containerChecks.innerHTML = `<p class="status-error">Error al cargar datos: ${error.message}</p>`;
-        showStatus('status_pago_grupo', `Error de conexión o base de datos: ${error.message}`, 'error');
+        showStatus('status_pago_grupo', `Error de conexión: ${error.message}`, 'error');
     }
 }
 
 /**
- * Registra los pagos individuales marcados en la lista de cobranza por ruta
- * (ya sea calculada online o cargada offline). Funciona offline.
+ * Registra los pagos seleccionados en la lista de ruta.
+ * Captura el monto, el tipo de pago y la comisión calculada visualmente.
  */
 async function handleRegistroPagoGrupal() {
     const statusPagoGrupo = document.getElementById('status_pago_grupo');
     const container = document.getElementById('cobranza-ruta-container');
     
-    // Obtener solo los marcados
+    // 1. Obtener solo los checkboxes marcados
     const checkboxes = container.querySelectorAll('.pago-grupal-check:checked');
 
     if (checkboxes.length === 0) {
@@ -2991,71 +3034,113 @@ async function handleRegistroPagoGrupal() {
         return;
     }
 
-    if (!confirm(`¿Estás seguro de registrar ${checkboxes.length} pagos?`)) return;
+    if (!confirm(`¿Estás seguro de registrar ${checkboxes.length} pagos?\n\nSe registrarán los montos y las comisiones mostradas en pantalla.`)) {
+        return;
+    }
 
-    showProcessingOverlay(true, `Registrando ${checkboxes.length} pagos...`);
+    showProcessingOverlay(true, `Procesando ${checkboxes.length} transacciones...`);
+    
     let exitosos = 0;
     let errores = 0;
 
-    // Procesamiento en serie para asegurar orden (puede cambiarse a Promise.all para velocidad)
+    // 2. Procesar pago por pago
+    // Usamos un bucle for...of para manejar las promesas secuencialmente (más seguro para transacciones de caja)
     for (const cb of checkboxes) {
-        const idLink = cb.getAttribute('data-id-link');
+        const idLink = cb.getAttribute('data-id-link'); // ID de Firestore para vincular inputs
         const firestoreId = cb.getAttribute('data-firestore-id');
         const histId = cb.getAttribute('data-hist-id');
         const nombre = cb.getAttribute('data-nombre');
 
+        // Obtener elementos del DOM de esa fila específica
         const inputMonto = container.querySelector(`.pago-grupal-input[data-id-link="${idLink}"]`);
-        const selectTipo = container.querySelector(`.pago-grupal-tipo[data-id-link="${idLink}"]`); // NUEVO
+        const selectTipo = container.querySelector(`.pago-grupal-tipo[data-id-link="${idLink}"]`);
+        const labelComision = document.getElementById(`comision-val-${idLink}`); // El <span> con el valor calculado
 
+        // Extraer valores
         const monto = parseFloat(inputMonto.value);
-        const tipoPago = selectTipo ? selectTipo.value : 'grupal'; // NUEVO
+        const tipoPago = selectTipo ? selectTipo.value : 'normal';
         const saldoMax = parseFloat(inputMonto.getAttribute('data-saldo-max'));
+        
+        // Extraer la comisión calculada (quitamos el signo de pesos)
+        let comisionGenerada = 0;
+        if (labelComision) {
+            comisionGenerada = parseFloat(labelComision.textContent.replace('$', '').trim()) || 0;
+        }
 
-        // Validaciones individuales
+        // --- Validaciones Individuales ---
         if (monto <= 0 || isNaN(monto)) {
-            console.warn(`Monto inválido para ${nombre}`);
+            console.warn(`Salto: Monto inválido para ${nombre}`);
             errores++;
+            // Marcar visualmente el error
+            inputMonto.style.border = '2px solid red';
             continue;
         }
-        if (monto > (saldoMax + 0.05)) {
-            console.warn(`Monto excesivo para ${nombre}`);
-            inputMonto.style.borderColor = 'red';
-            errores++;
-            continue;
+
+        // Validación suave de sobrepago (puedes quitarla si permites saldo a favor)
+        if (monto > (saldoMax + 0.5)) { // +0.50 de tolerancia por redondeos
+            console.warn(`Advertencia: Monto excede saldo para ${nombre}`);
+            // No detenemos, pero marcamos
+            inputMonto.style.borderColor = '#ffc107'; 
         }
 
         try {
+            // Construir objeto de datos
             const pagoData = {
                 idCredito: histId,
                 monto: monto,
-                tipoPago: tipoPago // Usamos el tipo seleccionado
+                tipoPago: tipoPago,
+                // ENVIAMOS LA COMISIÓN AL BACKEND
+                // database.agregarPago deberá leer esto y crear el movimiento de salida si > 0
+                comisionGenerada: comisionGenerada,
+                origen: 'ruta_offline' // Marca para saber de dónde vino
             };
 
-            // database.agregarPago maneja comisiones internamente según 'tipoPago'
+            // Llamada a la base de datos
             const result = await database.agregarPago(pagoData, currentUser.email, firestoreId);
 
             if (result.success) {
                 exitosos++;
-                // Deshabilitar fila visualmente
+                
+                // --- Feedback Visual de Éxito ---
+                // 1. Deshabilitar controles para evitar doble envío
                 cb.checked = false;
                 cb.disabled = true;
                 inputMonto.disabled = true;
                 selectTipo.disabled = true;
-                cb.closest('tr').style.backgroundColor = '#d4edda';
-                cb.closest('tr').style.opacity = '0.6';
+                
+                // 2. Cambiar estilo de la fila (Verde clarito)
+                const fila = cb.closest('tr');
+                fila.style.backgroundColor = '#d4edda';
+                fila.style.transition = 'background-color 0.5s';
+                
+                // 3. Actualizar estado visual (opcional, cambiar texto)
+                const estadoCell = fila.cells[1]; // Asumiendo que la columna 1 es estado
+                if(estadoCell) estadoCell.innerHTML = '<span class="badge badge-success">PAGADO</span>';
+
             } else {
                 throw new Error(result.message);
             }
 
         } catch (error) {
-            console.error(`Error pago ${nombre}:`, error);
+            console.error(`Error registrando pago de ${nombre}:`, error);
             errores++;
-            cb.closest('tr').style.backgroundColor = '#f8d7da';
+            // Feedback Visual de Error (Rojo clarito)
+            const fila = cb.closest('tr');
+            fila.style.backgroundColor = '#f8d7da';
+            showStatus('status_pago_grupo', `Error en ${nombre}: ${error.message}`, 'error');
         }
     }
 
     showProcessingOverlay(false);
-    showStatus('status_pago_grupo', `Proceso terminado. Registrados: ${exitosos}. Errores: ${errores}.`, exitosos > 0 ? 'success' : 'error');
+
+    // Mensaje Final
+    if (exitosos > 0 && errores === 0) {
+        showStatus('status_pago_grupo', `¡Éxito! Se registraron ${exitosos} pagos correctamente.`, 'success');
+    } else if (exitosos > 0 && errores > 0) {
+        showStatus('status_pago_grupo', `Proceso finalizado con advertencias. Registrados: ${exitosos}. Errores: ${errores}. Revisa las filas rojas.`, 'warning');
+    } else if (errores > 0) {
+        showStatus('status_pago_grupo', `Fallaron todos los intentos (${errores}). Revisa tu conexión.`, 'error');
+    }
 }
 
 /**
@@ -3108,13 +3193,11 @@ async function loadBasicReports(userOffice = null) {
 }
 
 /**
- * Renderiza la lista de cobranza agrupada por población en el contenedor especificado.
- * @param {object} data Objeto con poblaciones como claves y arrays de créditos como valores.
- * @param {HTMLElement} container Elemento HTML donde se renderizará la lista.
+ * Renderiza la tabla de cobros con lógica de COMISIONES en tiempo real.
  */
 function renderizarCobranzaRuta(data, container) {
     if (!data || Object.keys(data).length === 0) {
-        container.innerHTML = '<p>No hay datos para mostrar.</p>';
+        container.innerHTML = '<p style="text-align:center; padding:20px;">No hay datos para mostrar.</p>';
         return;
     }
 
@@ -3123,21 +3206,23 @@ function renderizarCobranzaRuta(data, container) {
 
     grupos.forEach(grupo => {
         const creditos = data[grupo];
+        
+        // Header del Grupo
         html += `
-            <div class="poblacion-group card" style="margin-bottom: 20px;">
-                <div style="background-color: #f0f2f5; padding: 10px; border-bottom: 1px solid #ddd; display:flex; justify-content:space-between; align-items:center;">
-                    <h4 style="margin:0;">${grupo} <span style="font-weight:normal; font-size:0.9em;">(${creditos.length} clientes)</span></h4>
-                    <label><input type="checkbox" class="check-group-all" data-grupo="${grupo}"> Marcar Todos</label>
+            <div class="poblacion-group card" style="margin-bottom: 20px; border: 1px solid #dee2e6;">
+                <div style="background-color: #f8f9fa; padding: 12px; border-bottom: 1px solid #ddd; display:flex; justify-content:space-between; align-items:center;">
+                    <h4 style="margin:0; color:var(--primary);"><i class="fas fa-map-marker-alt"></i> ${grupo} <span style="font-weight:normal; font-size:0.8em; color:#666;">(${creditos.length} clientes)</span></h4>
+                    <label style="cursor:pointer; font-weight:bold;"><input type="checkbox" class="check-group-all" data-grupo="${grupo}" checked> Marcar Todos</label>
                 </div>
                 <div class="table-responsive">
-                    <table class="cobranza-ruta-table" data-grupo="${grupo}">
-                        <thead>
+                    <table class="cobranza-ruta-table table table-hover" data-grupo="${grupo}" style="margin-bottom:0;">
+                        <thead style="background:#fff;">
                             <tr>
-                                <th>Cliente</th>
-                                <th>Estado</th>
-                                <th>Saldo</th>
-                                <th style="min-width: 160px;">Pago y Tipo</th>
-                                <th>Registrar</th>
+                                <th style="width:25%">Cliente</th>
+                                <th style="width:15%">Estado</th>
+                                <th style="width:15%">Saldo</th>
+                                <th style="width:35%">Pago y Comisión</th>
+                                <th style="width:10%; text-align:center;">Registrar</th>
                             </tr>
                         </thead>
                         <tbody>`;
@@ -3146,42 +3231,61 @@ function renderizarCobranzaRuta(data, container) {
             const linkId = cred.firestoreId;
             const montoSugerido = cred.pagoSemanalAcumulado;
             const estadoClase = `status-${cred.estadoCredito.replace(/\s/g, '-')}`;
+            // Guardamos el plazo en un atributo data para usarlo en la lógica de comisión
+            const plazo = cred.plazo || 14; // Default a 14 si no viene, pero debería venir del backend
+
+            // Calculo inicial de comisión (asumiendo pago normal > 0)
+            const comisionInicial = (plazo !== 10 && montoSugerido > 0) ? 10 : 0;
 
             html += `
-                <tr>
+                <tr class="fila-cobro" data-plazo="${plazo}" id="row-${linkId}">
                     <td>
                         <strong>${cred.nombreCliente}</strong><br>
-                        <small>${cred.curpCliente}</small><br>
-                        <small style="color:gray;">ID: ${cred.historicalIdCredito}</small>
+                        <small class="text-muted">${cred.curpCliente}</small><br>
+                        <small style="color:#888;">ID: ${cred.historicalIdCredito}</small>
+                        ${plazo === 10 ? '<span class="badge badge-warning" style="font-size:0.7em; margin-left:5px;">10 SEM</span>' : ''}
                     </td>
                     <td>
                         <span class="info-value ${estadoClase}">${cred.estadoCredito.toUpperCase()}</span>
                     </td>
                     <td>$${cred.saldoRestante.toFixed(2)}</td>
+                    
                     <td class="input-cell">
-                        <div style="display: flex; flex-direction: column; gap: 5px;">
-                             <select class="pago-grupal-tipo form-control-sm" data-id-link="${linkId}" style="width: 100%;">
-                                <option value="grupal" selected>Pago Grupal</option>
-                                <option value="normal">Pago Normal</option>
-                                <option value="extraordinario">Extraordinario</option>
-                                <option value="actualizado">Actualizado</option>
-                             </select>
-                             <div style="display:flex; align-items:center; gap:5px;">
-                                <span style="font-weight:bold;">$</span>
+                        <div style="display: flex; gap: 5px; margin-bottom: 5px;">
+                            <select class="pago-grupal-tipo form-control-sm" 
+                                    data-id-link="${linkId}" 
+                                    style="width: 60%; font-weight:bold;"
+                                    onchange="recalcularComision('${linkId}')">
+                                <option value="normal" selected>Normal</option>
+                                <option value="extraordinario">Extraordinario (Adelanto)</option>
+                                <option value="actualizado">Actualizado (Sin Comisión)</option>
+                            </select>
+                            
+                            <div style="position:relative; width: 40%;">
+                                <span style="position:absolute; left:5px; top:4px; color:#666;">$</span>
                                 <input type="number" class="pago-grupal-input form-control-sm" 
                                     value="${montoSugerido.toFixed(2)}" 
                                     data-id-link="${linkId}"
                                     data-saldo-max="${cred.saldoRestante}"
-                                    style="width: 100%;">
-                             </div>
+                                    style="padding-left: 15px; width: 100%;"
+                                    oninput="recalcularComision('${linkId}')">
+                            </div>
+                        </div>
+                        
+                        <div class="comision-container" id="comision-box-${linkId}" style="font-size: 0.85em; color: #28a745; display: flex; align-items: center; justify-content: flex-end; gap: 5px;">
+                            <i class="fas fa-hand-holding-usd"></i> Comisión: 
+                            <strong id="comision-val-${linkId}">$${comisionInicial}</strong>
                         </div>
                     </td>
-                    <td class="checkbox-cell">
+
+                    <td class="checkbox-cell" style="text-align:center; vertical-align:middle;">
                         <input type="checkbox" class="pago-grupal-check" 
                             data-id-link="${linkId}" 
                             data-firestore-id="${cred.firestoreId}"
                             data-hist-id="${cred.historicalIdCredito}"
-                            data-nombre="${cred.nombreCliente}">
+                            data-nombre="${cred.nombreCliente}"
+                            checked
+                            style="width:20px; height:20px; cursor:pointer;">
                     </td>
                 </tr>
             `;
@@ -3192,7 +3296,7 @@ function renderizarCobranzaRuta(data, container) {
 
     container.innerHTML = html;
 
-    // Listener para "Marcar Todos del Grupo"
+    // Re-aplicar listeners de grupo
     container.querySelectorAll('.check-group-all').forEach(chk => {
         chk.addEventListener('change', (e) => {
             const grp = e.target.getAttribute('data-grupo');
@@ -3204,6 +3308,54 @@ function renderizarCobranzaRuta(data, container) {
             }
         });
     });
+}
+
+// --- FUNCIÓN NUEVA: LÓGICA DE NEGOCIO DE COMISIONES ---
+// Esta función se llama automáticamente al cambiar el select o el monto
+function recalcularComision(idLink) {
+    const row = document.getElementById(`row-${idLink}`);
+    const select = row.querySelector('.pago-grupal-tipo');
+    const inputMonto = row.querySelector('.pago-grupal-input');
+    const labelComision = document.getElementById(`comision-val-${idLink}`);
+    const boxComision = document.getElementById(`comision-box-${idLink}`);
+
+    const tipo = select.value;
+    const monto = parseFloat(inputMonto.value) || 0;
+    const plazo = parseInt(row.getAttribute('data-plazo'));
+
+    let comision = 0;
+
+    // --- REGLAS DE NEGOCIO ---
+    
+    // 1. Crédito de 10 semanas (Comisionista) -> NUNCA genera comisión
+    if (plazo === 10) {
+        comision = 0;
+    }
+    // 2. Si el monto es 0 o negativo (Falta de pago) -> No genera comisión
+    else if (monto <= 0) {
+        comision = 0;
+    }
+    // 3. Tipos que generan comisión
+    // "Normal" (Pago regular) y "Extraordinario" (Adelantado)
+    else if (tipo === 'normal' || tipo === 'extraordinario') {
+        comision = 10;
+    }
+    // 4. "Actualizado" (Falta por pago adelantado previo o regularización) -> No genera
+    else if (tipo === 'actualizado') {
+        comision = 0;
+    }
+
+    // Actualizar UI
+    labelComision.textContent = `$${comision}`;
+    
+    // Feedback visual (Gris si es 0, Verde si es 10)
+    if (comision > 0) {
+        boxComision.style.color = '#28a745'; // Verde
+        labelComision.style.fontWeight = 'bold';
+    } else {
+        boxComision.style.color = '#6c757d'; // Gris
+        labelComision.style.fontWeight = 'normal';
+    }
 }
 
 /**
@@ -6673,6 +6825,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
