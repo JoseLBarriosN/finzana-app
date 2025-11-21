@@ -4479,130 +4479,152 @@ async function eliminarRuta(id, nombre, office) {
 
 
 // =============================================
-// FUNCIONES DE VISTA Y AUXILIARES GENERALES
+// FUNCIÓN SHOWVIEW (ÚNICA Y DEFINITIVA)
 // =============================================
-
-function showView(viewId) {
-    console.log(`Navegando a vista: ${viewId}`);
+async function showView(viewId) {
+    console.log(`🚀 Navegando a: ${viewId}`);
     
-    // Ocultar todas las vistas
+    // 1. Ocultar todas las vistas
     document.querySelectorAll('.view').forEach(view => view.classList.add('hidden'));
     
+    // 2. Mostrar la vista objetivo
     const targetView = document.getElementById(viewId);
-    if (targetView) {
-        targetView.classList.remove('hidden');
-        console.log(`Vista ${viewId} mostrada.`);
-        
-        // Ejecutar código específico (Lazy Loading corregido)
-        (async () => {
-            // Si la vista ya cargó sus datos dinámicos, evitamos recargar (opcional)
-            // Para vistas transaccionales como Pagos, a veces es mejor recargar.
-            // if (targetView.dataset.loaded === 'true') return; 
-
-            switch(viewId) {
-                case 'view-configuracion':
-                    console.log('🚀 Cargando configuración...');
-                    await loadConfiguracion();
-                    targetView.dataset.loaded = 'true';
-                    break;
-                    
-                case 'view-reportes':
-                    await loadBasicReports(currentUserData?.office);
-                    break;
-                    
-                case 'view-reportes-avanzados':
-                    inicializarVistaReportesAvanzados();
-                    // Cargar dropdowns dinámicos si es necesario
-                    const userOffice = currentUserData?.office;
-                    const filtroOffice = (userOffice && userOffice !== 'AMBAS') ? userOffice : '';
-                    await _actualizarDropdownGrupo('grupo_filtro_reporte', filtroOffice, 'Todos');
-                    const rutasReportes = (await database.obtenerRutas(filtroOffice)).map(r => r.nombre).sort();
-                    popularDropdown('ruta_filtro_reporte', rutasReportes, 'Todas');
-                    break;
-                    
-                case 'view-gestion-clientes':
-                    inicializarVistaGestionClientes();
-                    const officeCli = (currentUserData?.office && currentUserData?.office !== 'AMBAS') ? currentUserData.office : '';
-                    await _actualizarDropdownGrupo('grupo_filtro', officeCli, 'Todos');
-                    break;
-                    
-                case 'view-cliente':
-                    if (!editingClientId) { 
-                        resetClientForm(); 
-                    } else {
-                        // Si edita, forzar recarga de dropdowns correctos
-                        const officeSelect = document.getElementById('office_cliente');
-                        if(officeSelect) handleOfficeChangeForClientForm.call(officeSelect);
+    if (!targetView) {
+        console.error(`❌ Error: No existe la vista con ID "${viewId}"`);
+        // Fallback al menú principal si falla
+        const menu = document.getElementById('view-main-menu');
+        if (menu) menu.classList.remove('hidden');
+        return;
+    }
+    targetView.classList.remove('hidden');
+    console.log(`✅ Vista ${viewId} mostrada.`);
+    
+    // 3. Lógica específica de inicialización para cada vista
+    try {
+        switch(viewId) {
+            case 'view-configuracion':
+                await loadConfiguracion();
+                break;
+                
+            case 'view-reportes':
+                // Reportes Básicos
+                loadBasicReports(currentUserData?.office);
+                break;
+                
+            case 'view-reportes-avanzados':
+                // Inicializar y cargar dropdowns dinámicos
+                inicializarVistaReportesAvanzados();
+                const officeAdv = (currentUserData?.office && currentUserData?.office !== 'AMBAS') ? currentUserData.office : '';
+                if(typeof _actualizarDropdownGrupo === 'function') {
+                    await _actualizarDropdownGrupo('grupo_filtro_reporte', officeAdv, 'Todos');
+                }
+                if(typeof popularDropdown === 'function') {
+                    const rutasRep = (await database.obtenerRutas(officeAdv)).map(r => r.nombre).sort();
+                    popularDropdown('ruta_filtro_reporte', rutasRep, 'Todas');
+                }
+                break;
+                
+            case 'view-gestion-clientes':
+                inicializarVistaGestionClientes();
+                const officeCli = (currentUserData?.office && currentUserData?.office !== 'AMBAS') ? currentUserData.office : '';
+                if(typeof _actualizarDropdownGrupo === 'function') {
+                    _actualizarDropdownGrupo('grupo_filtro', officeCli, 'Todos');
+                }
+                break;
+                
+            case 'view-cliente':
+                if (!editingClientId) { 
+                    resetClientForm(); 
+                } else {
+                    // Si estamos editando, asegurar que los dropdowns de oficina/ruta se actualicen
+                    const officeSelect = document.getElementById('office_cliente');
+                    if(officeSelect && typeof handleOfficeChangeForClientForm === 'function') {
+                        handleOfficeChangeForClientForm.call(officeSelect);
                     }
-                    break;
-                
-                case 'view-pago-grupo':
-                    // *** CORRECCIÓN PRINCIPAL AQUÍ ***
-                    console.log("Inicializando Pago Grupal...");
-                    await inicializarVistaPagoGrupal(); 
-                    break;
-                
-                case 'view-hoja-corte':
-                    // Inicialización simple para hoja de corte
-                    const fechaCorte = document.getElementById('corte-fecha');
-                    if(fechaCorte) fechaCorte.value = new Date().toISOString().split('T')[0];
-                    const containerResumen = document.getElementById('corte-resumen-cards');
-                    if(containerResumen) containerResumen.innerHTML = '';
-                    const tbodyCorte = document.querySelector('#tabla-corte-detalle tbody');
-                    if(tbodyCorte) tbodyCorte.innerHTML = '<tr><td colspan="6" style="text-align:center;">Selecciona fecha y genera corte.</td></tr>';
-                    break;
+                }
+                break;
 
-                case 'view-reportes-graficos':
-                    const hoyGraf = new Date();
-                    const haceUnAnio = new Date(hoyGraf.getFullYear() - 1, hoyGraf.getMonth(), hoyGraf.getDate() + 1);
-                    document.getElementById('grafico_fecha_inicio').value = haceUnAnio.toISOString().split('T')[0];
-                    document.getElementById('grafico_fecha_fin').value = hoyGraf.toISOString().split('T')[0];
+            // *** AQUÍ ESTÁ LA CORRECCIÓN CLAVE PARA PAGO GRUPAL ***
+            case 'view-pago-grupo':
+                console.log("⚡ Ejecutando inicialización de Pago Grupal...");
+                if(typeof inicializarVistaPagoGrupal === 'function') {
+                    await inicializarVistaPagoGrupal(); 
+                } else {
+                    console.error("❌ Error: No se encuentra la función inicializarVistaPagoGrupal");
+                }
+                break;
+
+            // *** AQUÍ ESTÁ LA LÓGICA PARA HOJA DE CORTE ***
+            case 'view-hoja-corte':
+                const fechaCorte = document.getElementById('corte-fecha');
+                if(fechaCorte) fechaCorte.value = new Date().toISOString().split('T')[0];
+                
+                const containerResumen = document.getElementById('corte-resumen-cards');
+                if(containerResumen) containerResumen.innerHTML = '';
+                
+                const tbodyCorte = document.querySelector('#tabla-corte-detalle tbody');
+                if(tbodyCorte) tbodyCorte.innerHTML = '<tr><td colspan="6" style="text-align:center;">Selecciona fecha y genera corte.</td></tr>';
+                break;
+
+            case 'view-reportes-graficos':
+                if(document.getElementById('grafico_fecha_inicio')) {
+                    const hoy = new Date();
+                    const haceMes = new Date();
+                    haceMes.setMonth(hoy.getMonth() - 1);
+                    document.getElementById('grafico_fecha_inicio').value = haceMes.toISOString().split('T')[0];
+                    document.getElementById('grafico_fecha_fin').value = hoy.toISOString().split('T')[0];
                     
                     const officeGraf = (currentUserData?.office && currentUserData?.office !== 'AMBAS') ? currentUserData.office : '';
-                    handleSucursalGraficoChange.call(document.getElementById('grafico_sucursal') || { value: officeGraf });
-                    
-                    if (currentChart) {
-                        currentChart.destroy();
-                        currentChart = null;
+                    if(typeof handleSucursalGraficoChange === 'function') {
+                        handleSucursalGraficoChange.call(document.getElementById('grafico_sucursal') || { value: officeGraf });
                     }
-                    document.getElementById('grafico-container').innerHTML = '';
+                    
+                    if (window.currentChart) {
+                        window.currentChart.destroy();
+                        window.currentChart = null;
+                    }
+                    const chartContainer = document.getElementById('grafico-container');
+                    if(chartContainer) chartContainer.innerHTML = '';
                     showStatus('status_graficos', 'Selecciona los filtros y genera un gráfico.', 'info');
-                    break;
-                    
-                case 'view-gestion-efectivo':
-                    await loadGestionEfectivo();
-                    break;
-                    
-                case 'view-reporte-contable':
-                    await inicializarVistaReporteContable();
-                    break;
+                }
+                break;
+                
+            case 'view-gestion-efectivo':
+                await loadGestionEfectivo();
+                break;
+                
+            case 'view-reporte-contable':
+                await inicializarVistaReporteContable();
+                break;
 
-                case 'view-colocacion':
-                    // Resetear formulario de colocación
-                    document.getElementById('curp_colocacion').value = '';
-                    document.getElementById('form-colocacion').classList.add('hidden');
-                    showStatus('status_colocacion', 'Ingresa la CURP del cliente para buscar.', 'info');
-                    break;
+            case 'view-colocacion':
+                const formCol = document.getElementById('form-colocacion');
+                if(formCol) formCol.classList.add('hidden');
+                const inputCurp = document.getElementById('curp_colocacion');
+                if(inputCurp) inputCurp.value = '';
+                showStatus('status_colocacion', 'Ingresa la CURP del cliente para buscar.', 'info');
+                break;
 
-                case 'view-cobranza':
-                    // Resetear formulario de cobranza
-                    document.getElementById('idCredito_cobranza').value = '';
-                    document.getElementById('form-cobranza').classList.add('hidden');
-                    showStatus('status_cobranza', 'Ingresa el ID del crédito (histórico) para buscar.', 'info');
-                    creditoActual = null;
-                    break;
+            case 'view-cobranza':
+                const formCob = document.getElementById('form-cobranza');
+                if(formCob) formCob.classList.add('hidden');
+                const inputId = document.getElementById('idCredito_cobranza');
+                if(inputId) inputId.value = '';
+                showStatus('status_cobranza', 'Ingresa el ID del crédito (histórico) para buscar.', 'info');
+                window.creditoActual = null;
+                break;
 
-                case 'view-usuarios':
-                    inicializarVistaUsuarios();
-                    break;
-            }
-        })();
-        
-    } else {
-        console.error(`Error: No se encontró la vista con ID ${viewId}`);
-        // Fallback al menú
-        const menu = document.getElementById('view-main-menu');
-        if(menu) menu.classList.remove('hidden');
+            case 'view-usuarios':
+                inicializarVistaUsuarios();
+                break;
+                
+            default:
+                // Vistas estáticas o que no requieren carga (Main Menu, Importar, etc.)
+                break;
+        }
+    } catch (error) {
+        console.error(`❌ Error crítico al inicializar la vista ${viewId}:`, error);
+        showStatus('connection-status', `Error al cargar la vista: ${error.message}`, 'error');
     }
 }
 
@@ -5019,120 +5041,6 @@ function actualizarPlazosSegunCliente(esComisionista) {
     // CORRECCIÓN: Un comisionista puede elegir 10, 13 o 14.
     const plazosDisponibles = esComisionista ? [10, 13, 14] : [13, 14];
     popularDropdown('plazo_colocacion', plazosDisponibles.map(p => ({ value: p, text: `${p} semanas` })), 'Selecciona plazo', true);
-}
-
-function showView(viewId) {
-    console.log(`Navegando a vista: ${viewId}`);
-    
-    // Ocultar todas las vistas
-    document.querySelectorAll('.view').forEach(view => view.classList.add('hidden'));
-    
-    const targetView = document.getElementById(viewId);
-    if (targetView) {
-        targetView.classList.remove('hidden');
-        console.log(`Vista ${viewId} mostrada.`);
-        
-        // ===================================
-        // --- 🚀 INICIO DE LA CORRECCIÓN (LAZY LOADING) ---
-        // ===================================
-        const userOffice = currentUserData?.office;
-        const filtroOfficeInicial = (userOffice && userOffice !== 'AMBAS') ? userOffice : '';
-
-        // Ejecutar código específico para cada vista usando IIFE async
-        (async () => {
-            // Usamos una variable para evitar cargas duplicadas si el usuario hace clic rápido
-            if (targetView.dataset.loaded === 'true') return; 
-
-            switch(viewId) {
-                case 'view-configuracion':
-                    console.log('🚀 EJECUTANDO loadConfiguracion AUTOMÁTICAMENTE');
-                    await loadConfiguracion();
-                    targetView.dataset.loaded = 'true'; // Marcar como cargado
-                    break;
-                    
-                case 'view-reportes':
-                    await loadBasicReports(currentUserData?.office);
-                    // No necesita dropdowns dinámicos
-                    break;
-                    
-                case 'view-reportes-avanzados':
-                    inicializarVistaReportesAvanzados();
-                    // ✅ Cargar dropdowns dinámicos SÓLO AHORA
-                    console.log('===> Cargando dropdowns para Reportes Avanzados...');
-                    await _actualizarDropdownGrupo('grupo_filtro_reporte', filtroOfficeInicial, 'Todos');
-                    const rutasReportes = (await database.obtenerRutas(filtroOfficeInicial)).map(r => r.nombre).sort();
-                    popularDropdown('ruta_filtro_reporte', rutasReportes, 'Todas');
-                    targetView.dataset.loaded = 'true'; // Marcar como cargado
-                    break;
-                    
-                case 'view-gestion-clientes':
-                    inicializarVistaGestionClientes();
-                    // ✅ Cargar dropdowns dinámicos SÓLO AHORA
-                    console.log('===> Cargando dropdowns para Gestión Clientes...');
-                    await _actualizarDropdownGrupo('grupo_filtro', filtroOfficeInicial, 'Todos');
-                    targetView.dataset.loaded = 'true'; // Marcar como cargado
-                    break;
-                    
-                case 'view-cliente':
-                    // resetClientForm ya llama a handleOfficeChangeForClientForm,
-                    // que carga los dropdowns necesarios para esa vista.
-                    if (!editingClientId) { 
-                        resetClientForm(); 
-                    } else {
-                        // Si está editando, forzamos la recarga de dropdowns
-                        handleOfficeChangeForClientForm.call(document.getElementById('office_cliente'));
-                    }
-                    targetView.dataset.loaded = 'true'; // Marcar como cargado
-                    break;
-                
-                case 'view-reportes-graficos':
-                    const hoyGraf = new Date();
-                    const haceUnAnio = new Date(hoyGraf.getFullYear() - 1, hoyGraf.getMonth(), hoyGraf.getDate() + 1);
-                    document.getElementById('grafico_fecha_inicio').value = haceUnAnio.toISOString().split('T')[0];
-                    document.getElementById('grafico_fecha_fin').value = hoyGraf.toISOString().split('T')[0];
-                    
-                    // handleSucursalGraficoChange carga los dropdowns necesarios
-                    handleSucursalGraficoChange.call(document.getElementById('grafico_sucursal') || { value: filtroOfficeInicial });
-                    
-                    if (currentChart) {
-                        currentChart.destroy();
-                        currentChart = null;
-                    }
-                    document.getElementById('grafico-container').innerHTML = '';
-                    showStatus('status_graficos', 'Selecciona los filtros y genera un gráfico.', 'info');
-                    targetView.dataset.loaded = 'true'; // Marcar como cargado
-                    break;
-                    
-                case 'view-gestion-efectivo':
-                    await loadGestionEfectivo();
-                    targetView.dataset.loaded = 'true'; // Marcar como cargado
-                    break;
-                    
-                case 'view-reporte-contable':
-                    await inicializarVistaReporteContable();
-                    targetView.dataset.loaded = 'true'; // Marcar como cargado
-                    break;
-
-                // Vistas que no necesitan carga de datos dinámicos
-                case 'view-colocacion':
-                case 'view-cobranza':
-                case 'view-pago-grupo':
-                case 'view-importar':
-                case 'view-registrar-gasto':
-                case 'view-usuarios':
-                    // 'inicializarVistaUsuarios' es rápido, no necesita lazy loading
-                    if (viewId === 'view-usuarios') inicializarVistaUsuarios(); 
-                    // 'resetClientForm' (en data-view click) maneja 'view-cliente'
-                    break;
-            }
-        })();
-        // --- 🔚 FIN DE LA CORRECCIÓN ---
-        
-    } else {
-        console.error(`Error: No se encontró la vista con ID ${viewId}`);
-        const fallbackView = document.getElementById('view-main-menu');
-        if (fallbackView) fallbackView.classList.remove('hidden');
-    }
 }
 
 // *** MANEJO DE DUPLICADOS ***
@@ -6765,6 +6673,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
