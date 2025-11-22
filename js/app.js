@@ -3224,7 +3224,7 @@ function renderizarCobranzaRuta(data, container) {
                                 <th style="width:25%">Cliente</th>
                                 <th style="width:15%">Estado</th>
                                 <th style="width:15%">Saldo</th>
-                                <th style="width:35%">Pago y Comisión</th>
+                                <th style="width:35%">Tipo de Pago, Pago Esperado y Comisión</th>
                                 <th style="width:10%; text-align:center;">Registrar</th>
                             </tr>
                         </thead>
@@ -3301,8 +3301,8 @@ function renderizarCobranzaRuta(data, container) {
                         <td colspan="3" style="text-align: right; vertical-align: middle;">TOTALES ${grupo.toUpperCase()}:</td>
                         <td style="vertical-align: middle;">
                             <div style="display: flex; justify-content: space-between;">
-                                <span style="color: var(--primary);">Pagos: <span id="total-pagos-${grupoId}">$0.00</span></span>
-                                <span style="color: #28a745;">Comis: <span id="total-comis-${grupoId}">$0.00</span></span>
+                                <span style="color: var(--primary);">Total de Pagos: <span id="total-pagos-${grupoId}">$0.00</span></span>
+                                <span style="color: #28a745;">Comisiones: <span id="total-comis-${grupoId}">$0.00</span></span>
                             </div>
                         </td>
                         <td></td>
@@ -6879,4 +6879,5 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
