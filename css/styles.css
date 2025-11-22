@@ -1616,37 +1616,37 @@ tr.pago-registrado-exito td, tr.pago-registrado-error td {
 .poblaciones-list,
 .rutas-list {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-    gap: 15px;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); 
+    gap: 20px;
+    padding: 15px 0;
 }
 
 .poblacion-card,
 .ruta-card {
-    background: white;
-    border: 1px solid var(--border-color);
-    border-radius: var(--border-radius);
+    background: #fff;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
     padding: 20px;
-    transition: all 0.3s ease;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
     display: flex;
     flex-direction: column;
-    position: relative;
+    justify-content: space-between;
+    height: 100%;
+    transition: transform 0.2s, box-shadow 0.2s;
 }
 
 .poblacion-card:hover,
 .ruta-card:hover {
-    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-    transform: translateY(-2px);
-    border-color: var(--primary);
+    transform: translateY(-3px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
 }
 
-.poblacion-header,
-.ruta-header {
+.ruta-header, 
+.poblacion-header {
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
     margin-bottom: 15px;
-    gap: 10px;
 }
 
 .poblacion-nombre {
@@ -1659,18 +1659,19 @@ tr.pago-registrado-exito td, tr.pago-registrado-error td {
     word-break: break-word;
 }
 
+.ruta-actions,
+.poblacion-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: auto;
+    border-top: 1px solid #eee;
+    padding-top: 10px;
+}
+
 .ruta-nombre-editable {
+    font-weight: bold;
     font-size: 1.1em;
-    font-weight: 600;
-    color: var(--dark);
-    flex: 1;
-    padding: 6px 10px;
-    margin: -6px -10px;
-    border: 1px solid transparent;
-    border-radius: 6px;
-    transition: all 0.3s ease;
-    min-height: 1.4em;
-    line-height: 1.4;
+    color: #333;
     word-break: break-word;
 }
 
@@ -2121,6 +2122,7 @@ body.has-connection-status #progress-container-fixed {
     display: inline-block;
     width: 100%;
 }
+
 
 
 
