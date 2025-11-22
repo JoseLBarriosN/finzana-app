@@ -3208,24 +3208,32 @@ function renderizarCobranzaRuta(data, container) {
 
     grupos.forEach(grupo => {
         const creditos = data[grupo];
-        // Creamos un ID seguro para el grupo (sin espacios) para usarlo en el DOM
         const grupoId = grupo.replace(/\s+/g, '_'); 
         
         html += `
-            <div class="poblacion-group card" style="margin-bottom: 20px; border: 1px solid #dee2e6;">
-                <div style="background-color: #f8f9fa; padding: 12px; border-bottom: 1px solid #ddd; display:flex; justify-content:space-between; align-items:center;">
-                    <h4 style="margin:0; color:var(--primary);"><i class="fas fa-map-marker-alt"></i> ${grupo} <span style="font-weight:normal; font-size:0.8em; color:#666;">(${creditos.length} clientes)</span></h4>
-                    <label style="cursor:pointer; font-weight:bold;"><input type="checkbox" class="check-group-all" data-grupo="${grupo}" checked> Marcar Todos</label>
+            <div class="poblacion-group card" style="margin-bottom: 20px; border: 1px solid #dee2e6; border-radius: 12px; overflow:hidden;">
+                <div style="background-color: #f8f9fa; padding: 15px; border-bottom: 1px solid #ddd; display:flex; justify-content:space-between; align-items:center;">
+                    <h4 style="margin:0; color:var(--primary); font-size: 1.1rem;">
+                        <i class="fas fa-map-marker-alt"></i> ${grupo} 
+                        <span style="font-weight:normal; font-size:0.8em; color:#666; margin-left: 5px;">(${creditos.length} clientes)</span>
+                    </h4>
+                    
+                    <label class="header-check-wrapper">
+                        <span style="font-weight:bold; font-size: 0.9rem; color: #555;">Marcar Todos</span>
+                        <input type="checkbox" class="check-group-all" data-grupo="${grupo}" checked>
+                        <i class="fas fa-check-circle custom-check-icon"></i>
+                    </label>
                 </div>
+                
                 <div class="table-responsive">
                     <table class="cobranza-ruta-table table table-hover" id="tabla-grupo-${grupoId}" data-grupo-name="${grupo}" style="margin-bottom:0;">
                         <thead style="background:#fff;">
                             <tr>
-                                <th style="width:25%">Cliente</th>
-                                <th style="width:15%">Estado</th>
-                                <th style="width:15%">Saldo</th>
-                                <th style="width:35%">Tipo de Pago, Pago Esperado y Comisión</th>
-                                <th style="width:10%; text-align:center;">Registrar</th>
+                                <th style="width:25%; border-top:none;">Cliente</th>
+                                <th style="width:15%; border-top:none;">Estado</th>
+                                <th style="width:15%; border-top:none;">Saldo</th>
+                                <th style="width:35%; border-top:none;">Pago y Comisión</th>
+                                <th style="width:10%; border-top:none; text-align:center;">Registrar</th>
                             </tr>
                         </thead>
                         <tbody>`;
@@ -3235,29 +3243,28 @@ function renderizarCobranzaRuta(data, container) {
             const montoSugerido = cred.pagoSemanalAcumulado;
             const estadoClase = `status-${cred.estadoCredito.replace(/\s/g, '-')}`;
             const plazo = cred.plazo || 14;
-            
-            // Cálculo inicial para renderizado
             const comisionInicial = (plazo !== 10 && montoSugerido > 0) ? 10 : 0;
 
-            // NOTA: Agregamos data-grupo-id a la fila para identificar a qué total pertenece
             html += `
                 <tr class="fila-cobro" data-plazo="${plazo}" data-grupo-id="${grupoId}" id="row-${linkId}">
-                    <td>
-                        <strong>${cred.nombreCliente}</strong><br>
-                        <small class="text-muted">${cred.curpCliente}</small><br>
-                        <small style="color:#888;">ID: ${cred.historicalIdCredito}</small>
-                        ${plazo === 10 ? '<span class="badge badge-warning" style="font-size:0.7em; margin-left:5px;">10 SEM</span>' : ''}
+                    <td style="vertical-align: middle;">
+                        <div style="line-height: 1.2;">
+                            <strong>${cred.nombreCliente}</strong><br>
+                            <small class="text-muted" style="font-size: 0.75em;">${cred.curpCliente}</small><br>
+                            <small style="color:#aaa; font-size: 0.75em;">ID: ${cred.historicalIdCredito}</small>
+                            ${plazo === 10 ? '<span class="badge badge-warning" style="font-size:0.6em; margin-left:3px;">10 SEM</span>' : ''}
+                        </div>
                     </td>
-                    <td>
-                        <span class="info-value ${estadoClase}">${cred.estadoCredito.toUpperCase()}</span>
+                    <td style="vertical-align: middle;">
+                        <span class="info-value ${estadoClase}" style="font-size: 0.75rem; padding: 4px 8px;">${cred.estadoCredito.toUpperCase()}</span>
                     </td>
-                    <td>$${cred.saldoRestante.toFixed(2)}</td>
+                    <td style="vertical-align: middle; font-weight: 500;">$${cred.saldoRestante.toFixed(2)}</td>
                     
-                    <td class="input-cell">
+                    <td class="input-cell" style="vertical-align: middle;">
                         <div style="display: flex; gap: 5px; margin-bottom: 5px;">
                             <select class="pago-grupal-tipo form-control-sm" 
                                     data-id-link="${linkId}" 
-                                    style="width: 60%; font-weight:bold;"
+                                    style="width: 60%; font-weight:bold; border-radius: 6px;"
                                     onchange="recalcularComision('${linkId}')">
                                 <option value="normal" selected>Normal</option>
                                 <option value="extraordinario">Extraordinario</option>
@@ -3265,44 +3272,45 @@ function renderizarCobranzaRuta(data, container) {
                             </select>
                             
                             <div style="position:relative; width: 40%;">
-                                <span style="position:absolute; left:5px; top:4px; color:#666;">$</span>
+                                <span style="position:absolute; left:8px; top:5px; color:#666; font-size: 0.9em;">$</span>
                                 <input type="number" class="pago-grupal-input form-control-sm" 
                                     value="${montoSugerido.toFixed(2)}" 
                                     data-id-link="${linkId}"
                                     data-saldo-max="${cred.saldoRestante}"
-                                    style="padding-left: 15px; width: 100%;"
+                                    style="padding-left: 18px; width: 100%; border-radius: 6px; font-weight: bold;"
                                     oninput="recalcularComision('${linkId}')">
                             </div>
                         </div>
                         
-                        <div class="comision-container" id="comision-box-${linkId}" style="font-size: 0.85em; color: #28a745; display: flex; align-items: center; justify-content: flex-end; gap: 5px;">
+                        <div class="comision-container" id="comision-box-${linkId}" style="font-size: 0.8em; color: #28a745; display: flex; align-items: center; justify-content: flex-end; gap: 4px;">
                             <i class="fas fa-hand-holding-usd"></i> Comisión: 
                             <strong id="comision-val-${linkId}" class="valor-comision-fila">$${comisionInicial}</strong>
                         </div>
                     </td>
 
                     <td class="checkbox-cell" style="text-align:center; vertical-align:middle;">
-                        <input type="checkbox" class="pago-grupal-check" 
-                            id="check-${linkId}"
-                            data-id-link="${linkId}" 
-                            data-grupo-id="${grupoId}"
-                            checked
-                            style="width:20px; height:20px; cursor:pointer;"
-                            onchange="recalcularComision('${linkId}')">
+                        <label class="custom-check-wrapper" title="Marcar para registrar">
+                            <input type="checkbox" class="pago-grupal-check" 
+                                id="check-${linkId}"
+                                data-id-link="${linkId}" 
+                                data-grupo-id="${grupoId}"
+                                checked
+                                onchange="recalcularComision('${linkId}')">
+                            <i class="fas fa-check-circle custom-check-icon"></i>
+                        </label>
                     </td>
                 </tr>
             `;
         });
 
-        // --- AQUÍ ESTÁ EL PIE DE PÁGINA CON TOTALES ---
         html += `</tbody>
-                <tfoot style="background-color: #e9ecef; font-weight: bold;">
+                <tfoot style="background-color: #f1f3f5; font-weight: bold; border-top: 2px solid #dee2e6;">
                     <tr>
-                        <td colspan="3" style="text-align: right; vertical-align: middle;">TOTALES ${grupo.toUpperCase()}:</td>
+                        <td colspan="3" style="text-align: right; vertical-align: middle; color: #495057;">TOTALES ${grupo.toUpperCase()}:</td>
                         <td style="vertical-align: middle;">
-                            <div style="display: flex; justify-content: space-between;">
+                            <div style="display: flex; justify-content: space-between; font-size: 0.95rem;">
                                 <span style="color: var(--primary);">Pagos: <span id="total-pagos-${grupoId}">$0.00</span></span>
-                                <span style="color: #28a745;">Comisiones: <span id="total-comis-${grupoId}">$0.00</span></span>
+                                <span style="color: #28a745;">Comis: <span id="total-comis-${grupoId}">$0.00</span></span>
                             </div>
                         </td>
                         <td></td>
@@ -3313,25 +3321,24 @@ function renderizarCobranzaRuta(data, container) {
 
     container.innerHTML = html;
 
-    // Listeners de Grupo
+    // Re-aplicar listeners de "Marcar Todos"
     container.querySelectorAll('.check-group-all').forEach(chk => {
         chk.addEventListener('change', (e) => {
             const grp = e.target.getAttribute('data-grupo');
-            // Buscamos la tabla por el atributo data-grupo-name que pusimos arriba
             const table = container.querySelector(`table[data-grupo-name="${grp}"]`);
             if(table) {
                 table.querySelectorAll('.pago-grupal-check').forEach(cb => {
                     if (!cb.disabled) {
                         cb.checked = e.target.checked;
                         const idLink = cb.getAttribute('data-id-link');
-                        recalcularComision(idLink); // Esto disparará el recálculo de totales
+                        recalcularComision(idLink); 
                     }
                 });
             }
         });
     });
 
-    // **IMPORTANTE**: Calcular totales iniciales una vez renderizado
+    // Calcular totales iniciales
     grupos.forEach(grupo => {
         const grupoId = grupo.replace(/\s+/g, '_');
         recalcularTotalesGrupo(grupoId);
@@ -6879,6 +6886,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
