@@ -3208,8 +3208,9 @@ function renderizarCobranzaRuta(data, container) {
 
     grupos.forEach(grupo => {
         const creditos = data[grupo];
+        // Creamos un ID seguro para el grupo (sin espacios) para usarlo en el DOM
+        const grupoId = grupo.replace(/\s+/g, '_'); 
         
-        // Header del Grupo
         html += `
             <div class="poblacion-group card" style="margin-bottom: 20px; border: 1px solid #dee2e6;">
                 <div style="background-color: #f8f9fa; padding: 12px; border-bottom: 1px solid #ddd; display:flex; justify-content:space-between; align-items:center;">
@@ -3217,7 +3218,7 @@ function renderizarCobranzaRuta(data, container) {
                     <label style="cursor:pointer; font-weight:bold;"><input type="checkbox" class="check-group-all" data-grupo="${grupo}" checked> Marcar Todos</label>
                 </div>
                 <div class="table-responsive">
-                    <table class="cobranza-ruta-table table table-hover" data-grupo="${grupo}" style="margin-bottom:0;">
+                    <table class="cobranza-ruta-table table table-hover" id="tabla-grupo-${grupoId}" data-grupo-name="${grupo}" style="margin-bottom:0;">
                         <thead style="background:#fff;">
                             <tr>
                                 <th style="width:25%">Cliente</th>
@@ -3233,14 +3234,14 @@ function renderizarCobranzaRuta(data, container) {
             const linkId = cred.firestoreId;
             const montoSugerido = cred.pagoSemanalAcumulado;
             const estadoClase = `status-${cred.estadoCredito.replace(/\s/g, '-')}`;
-            // Guardamos el plazo en un atributo data para usarlo en la lógica de comisión
-            const plazo = cred.plazo || 14; // Default a 14 si no viene, pero debería venir del backend
-
-            // Calculo inicial de comisión (asumiendo pago normal > 0)
+            const plazo = cred.plazo || 14;
+            
+            // Cálculo inicial para renderizado
             const comisionInicial = (plazo !== 10 && montoSugerido > 0) ? 10 : 0;
 
+            // NOTA: Agregamos data-grupo-id a la fila para identificar a qué total pertenece
             html += `
-                <tr class="fila-cobro" data-plazo="${plazo}" id="row-${linkId}">
+                <tr class="fila-cobro" data-plazo="${plazo}" data-grupo-id="${grupoId}" id="row-${linkId}">
                     <td>
                         <strong>${cred.nombreCliente}</strong><br>
                         <small class="text-muted">${cred.curpCliente}</small><br>
@@ -3259,8 +3260,8 @@ function renderizarCobranzaRuta(data, container) {
                                     style="width: 60%; font-weight:bold;"
                                     onchange="recalcularComision('${linkId}')">
                                 <option value="normal" selected>Normal</option>
-                                <option value="extraordinario">Extraordinario (Adelanto)</option>
-                                <option value="actualizado">Actualizado (Sin Comisión)</option>
+                                <option value="extraordinario">Extraordinario</option>
+                                <option value="actualizado">Actualizado</option>
                             </select>
                             
                             <div style="position:relative; width: 40%;">
@@ -3276,7 +3277,7 @@ function renderizarCobranzaRuta(data, container) {
                         
                         <div class="comision-container" id="comision-box-${linkId}" style="font-size: 0.85em; color: #28a745; display: flex; align-items: center; justify-content: flex-end; gap: 5px;">
                             <i class="fas fa-hand-holding-usd"></i> Comisión: 
-                            <strong id="comision-val-${linkId}">$${(plazo !== 10 && montoSugerido > 0) ? 10 : 0}</strong>
+                            <strong id="comision-val-${linkId}" class="valor-comision-fila">$${comisionInicial}</strong>
                         </div>
                     </td>
 
@@ -3284,37 +3285,56 @@ function renderizarCobranzaRuta(data, container) {
                         <input type="checkbox" class="pago-grupal-check" 
                             id="check-${linkId}"
                             data-id-link="${linkId}" 
-                            data-firestore-id="${cred.firestoreId}"
-                            data-hist-id="${cred.historicalIdCredito}"
-                            data-nombre="${cred.nombreCliente}"
+                            data-grupo-id="${grupoId}"
                             checked
                             style="width:20px; height:20px; cursor:pointer;"
-                            onchange="recalcularComision('${linkId}')"> </td>
+                            onchange="recalcularComision('${linkId}')">
+                    </td>
                 </tr>
             `;
         });
 
-        html += `</tbody></table></div></div>`;
+        // --- AQUÍ ESTÁ EL PIE DE PÁGINA CON TOTALES ---
+        html += `</tbody>
+                <tfoot style="background-color: #e9ecef; font-weight: bold;">
+                    <tr>
+                        <td colspan="3" style="text-align: right; vertical-align: middle;">TOTALES ${grupo.toUpperCase()}:</td>
+                        <td style="vertical-align: middle;">
+                            <div style="display: flex; justify-content: space-between;">
+                                <span style="color: var(--primary);">Pagos: <span id="total-pagos-${grupoId}">$0.00</span></span>
+                                <span style="color: #28a745;">Comis: <span id="total-comis-${grupoId}">$0.00</span></span>
+                            </div>
+                        </td>
+                        <td></td>
+                    </tr>
+                </tfoot>
+            </table></div></div>`;
     });
 
     container.innerHTML = html;
 
-    // Re-aplicar listeners de "Marcar Todos" (MODIFICADO PARA ACTUALIZAR VISUALES)
+    // Listeners de Grupo
     container.querySelectorAll('.check-group-all').forEach(chk => {
         chk.addEventListener('change', (e) => {
             const grp = e.target.getAttribute('data-grupo');
-            const table = container.querySelector(`table[data-grupo="${grp}"]`);
+            // Buscamos la tabla por el atributo data-grupo-name que pusimos arriba
+            const table = container.querySelector(`table[data-grupo-name="${grp}"]`);
             if(table) {
                 table.querySelectorAll('.pago-grupal-check').forEach(cb => {
                     if (!cb.disabled) {
                         cb.checked = e.target.checked;
-                        // Disparamos el recalculo manualmente para cada fila
                         const idLink = cb.getAttribute('data-id-link');
-                        recalcularComision(idLink);
+                        recalcularComision(idLink); // Esto disparará el recálculo de totales
                     }
                 });
             }
         });
+    });
+
+    // **IMPORTANTE**: Calcular totales iniciales una vez renderizado
+    grupos.forEach(grupo => {
+        const grupoId = grupo.replace(/\s+/g, '_');
+        recalcularTotalesGrupo(grupoId);
     });
 }
 
@@ -3322,26 +3342,24 @@ function renderizarCobranzaRuta(data, container) {
 // Esta función se llama automáticamente al cambiar el select o el monto
 function recalcularComision(idLink) {
     const row = document.getElementById(`row-${idLink}`);
+    if (!row) return; // Seguridad
+
     const select = row.querySelector('.pago-grupal-tipo');
     const inputMonto = row.querySelector('.pago-grupal-input');
-    const checkbox = row.querySelector('.pago-grupal-check'); // Obtenemos el checkbox
-    
+    const checkbox = row.querySelector('.pago-grupal-check');
     const labelComision = document.getElementById(`comision-val-${idLink}`);
     const boxComision = document.getElementById(`comision-box-${idLink}`);
-
     const tipo = select.value;
     const monto = parseFloat(inputMonto.value) || 0;
     const plazo = parseInt(row.getAttribute('data-plazo'));
     const isChecked = checkbox.checked;
+    const grupoId = row.getAttribute('data-grupo-id');
 
     let comision = 0;
 
-    // --- CAMBIO VISUAL FILA ---
-    // Si está desmarcado, hacemos la fila un poco transparente
     if (!isChecked) {
         row.style.opacity = '0.5';
         row.style.backgroundColor = '#f9f9f9';
-        // Deshabilitar inputs visualmente para reforzar
         select.disabled = true;
         inputMonto.disabled = true;
     } else {
@@ -3351,40 +3369,73 @@ function recalcularComision(idLink) {
         inputMonto.disabled = false;
     }
 
-    // --- REGLAS DE NEGOCIO ---
-    
-    // 0. Si NO está seleccionado -> NO hay comisión (ni pago)
     if (!isChecked) {
         comision = 0;
     }
-    // 1. Crédito de 10 semanas (Comisionista) -> NUNCA genera comisión
     else if (plazo === 10) {
         comision = 0;
     }
-    // 2. Si el monto es 0 o negativo (Falta de pago) -> No genera comisión
     else if (monto <= 0) {
         comision = 0;
     }
-    // 3. Tipos que generan comisión ($10)
     else if (tipo === 'normal' || tipo === 'extraordinario') {
         comision = 10;
     }
-    // 4. "Actualizado" -> No genera
     else if (tipo === 'actualizado') {
         comision = 0;
     }
 
-    // Actualizar UI Texto
     labelComision.textContent = `$${comision}`;
     
-    // Feedback visual Texto (Gris si es 0 o desmarcado, Verde si es 10)
     if (comision > 0) {
-        boxComision.style.color = '#28a745'; // Verde
+        boxComision.style.color = '#28a745';
         labelComision.style.fontWeight = 'bold';
     } else {
-        boxComision.style.color = '#6c757d'; // Gris
+        boxComision.style.color = '#6c757d';
         labelComision.style.fontWeight = 'normal';
     }
+
+    if (grupoId) {
+        recalcularTotalesGrupo(grupoId);
+    }
+}
+
+//=========================================================
+    // ---  Calcular totales por población --- //
+//=========================================================
+function recalcularTotalesGrupo(grupoId) {
+    const tabla = document.getElementById(`tabla-grupo-${grupoId}`);
+    if (!tabla) return;
+
+    let sumaPagos = 0;
+    let sumaComisiones = 0;
+
+    // Buscar todas las filas de datos de esta tabla
+    const filas = tabla.querySelectorAll('tbody tr.fila-cobro');
+
+    filas.forEach(fila => {
+        // Buscar el checkbox y los inputs dentro de la fila
+        const checkbox = fila.querySelector('.pago-grupal-check');
+        const inputMonto = fila.querySelector('.pago-grupal-input');
+        const labelComision = fila.querySelector('.valor-comision-fila'); // Clase agregada en render
+
+        // SOLO SUMAR SI ESTÁ MARCADO (CHECKED)
+        if (checkbox && checkbox.checked && !checkbox.disabled) {
+            const monto = parseFloat(inputMonto.value) || 0;
+            // Limpiamos el signo de $ para sumar
+            const comision = parseFloat(labelComision.textContent.replace('$', '')) || 0;
+
+            sumaPagos += monto;
+            sumaComisiones += comision;
+        }
+    });
+
+    // Actualizar el Footer del grupo
+    const spanPagos = document.getElementById(`total-pagos-${grupoId}`);
+    const spanComis = document.getElementById(`total-comis-${grupoId}`);
+
+    if (spanPagos) spanPagos.textContent = `$${sumaPagos.toLocaleString('es-MX', {minimumFractionDigits: 2})}`;
+    if (spanComis) spanComis.textContent = `$${sumaComisiones.toLocaleString('es-MX', {minimumFractionDigits: 2})}`;
 }
 
 /**
@@ -6828,3 +6879,4 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
