@@ -6352,53 +6352,40 @@ async function verificarYubiKey() {
     showProcessingOverlay(true, "Esperando llave de seguridad...");
     
     try {
-        // 1. Generar un desafío (igual que en el registro)
         const challengeBuffer = new Uint8Array(32);
         crypto.getRandomValues(challengeBuffer);
-
-        // 2. Convertir el ID de credencial (guardado como string) de vuelta a un ArrayBuffer
         const credentialIdBase64URL = currentUserData.yubiKeyCredentialId;
         const credentialIdBuffer = Uint8Array.from(
             atob(credentialIdBase64URL.replace(/-/g, "+").replace(/_/g, "/")), 
             c => c.charCodeAt(0)
         ).buffer;
 
-        // 3. Crear las opciones de autenticación
         const getOptions = {
             publicKey: {
                 challenge: challengeBuffer,
                 rpId: window.location.hostname,
-                // Especificamos qué llave esperamos
                 allowCredentials: [{
                     type: "public-key",
                     id: credentialIdBuffer
                 }],
-                userVerification: "discouraged" // "preferred" si quieres PIN/Huella
+                userVerification: "discouraged"
             }
         };
 
-        // 4. Pedir al navegador que verifique la llave (aquí te pedirá tocarla)
         const assertion = await navigator.credentials.get(getOptions);
-
-        // 5. Verificación (Simplificada)
-        // En una app real, enviarías 'assertion' a tu servidor/Firebase Function
-        // para una verificación criptográfica compleja.
-        // Para esta PRUEBA, si 'navigator.credentials.get' NO da error,
-        // confiaremos en que el usuario tocó la llave correcta.
-        
         if (!assertion) {
             throw new Error("La verificación falló o fue cancelada.");
         }
 
         console.log("¡YubiKey verificada!");
         showProcessingOverlay(false);
-        return true; // ¡Éxito!
+        return true;
 
     } catch (error) {
         showProcessingOverlay(false);
         console.error("Error al verificar YubiKey:", error);
         alert(`Error de verificación: ${error.message}`);
-        return false; // Falló
+        return false;
     }
 }
 // =========================
@@ -6422,8 +6409,6 @@ async function loadHojaCorte() {
     try {
         const esAgente = currentUserData.role === 'Área comercial';
         const userIdFiltro = esAgente ? currentUserData.id : null;
-        
-        // Asegúrate de que esta función exista en database.js
         const datos = await database.obtenerDatosHojaCorte(fecha, currentUserData.office, userIdFiltro);
 
         let totalEntradas = 0;
@@ -6432,40 +6417,45 @@ async function loadHojaCorte() {
         let subColocacion = 0;
         let subGastos = 0;
         let subComisiones = 0;
-        let subEntregas = 0;
+        let subFondeo = 0;
 
         const filasRenderizadas = datos.map(item => {
             let monto = 0;
             let esEntrada = false; 
             let concepto = '';
+            let colorMonto = '';
 
             if (item.categoria === 'COBRANZA') {
-                monto = item.monto || 0;
+                monto = Math.abs(item.monto || 0);
                 esEntrada = true;
                 concepto = 'COBRANZA';
                 subCobranza += monto;
-            } else if (item.categoria === 'COMISION') {
-                monto = Math.abs(item.monto || item.montoComision || 0);
+            } 
+            else if (item.tipo === 'COMISION_PAGO' || item.categoria === 'COMISION') {
+                monto = Math.abs(item.monto || 0);
                 esEntrada = false;
                 concepto = 'COMISIÓN';
                 subComisiones += monto;
-            } else {
+            } 
+            else {
                 const rawMonto = item.monto || 0;
+                monto = Math.abs(rawMonto);
+
                 if (item.tipo === 'COLOCACION') {
-                    monto = Math.abs(rawMonto);
                     esEntrada = false;
                     concepto = 'COLOCACIÓN';
                     subColocacion += monto;
                 } else if (item.tipo === 'GASTO') {
-                    monto = Math.abs(rawMonto);
                     esEntrada = false;
-                    concepto = 'GASTO';
+                    concepto = 'GASTO OPERATIVO';
                     subGastos += monto;
                 } else if (item.tipo === 'ENTREGA_INICIAL') {
-                    monto = Math.abs(rawMonto);
                     esEntrada = true;
-                    concepto = 'FONDEO';
-                    subEntregas += monto;
+                    concepto = 'FONDEO / RECIBIDO';
+                    subFondeo += monto;
+                } else {
+                    esEntrada = rawMonto >= 0;
+                    concepto = item.tipo || 'OTRO';
                 }
             }
 
@@ -6475,56 +6465,65 @@ async function loadHojaCorte() {
             return {
                 hora: new Date(item.rawDate),
                 concepto: concepto,
-                descripcion: item.descripcion || '-',
+                descripcion: item.descripcion || (item.categoria === 'COBRANZA' ? `Pago crédito: ${item.idCredito || 'N/A'}` : '-'),
                 monto: monto,
                 esEntrada: esEntrada,
-                ref: item.registradoPor || 'Sys'
+                ref: item.registradoPor || 'Sistema'
             };
         });
 
         filasRenderizadas.sort((a, b) => a.hora - b.hora);
-        const balance = totalEntradas - totalSalidas;
+        
+        const efectivoEnMano = totalEntradas - totalSalidas;
 
         if (containerResumen) {
             containerResumen.innerHTML = `
-                <div class="card" style="border-left: 5px solid var(--info);">
-                    <h5 style="color:gray;">Efectivo en Mano</h5>
-                    <h2 style="color:var(--dark);">$${balance.toLocaleString('es-MX', {minimumFractionDigits: 2})}</h2>
+                <div class="card" style="border-left: 5px solid var(--info); flex: 1;">
+                    <h5 style="color:#666; margin-bottom:5px;">EFECTIVO EN MANO</h5>
+                    <h2 style="color:var(--dark); font-weight:bold; margin:0;">$${efectivoEnMano.toLocaleString('es-MX', {minimumFractionDigits: 2})}</h2>
+                    <small style="color:#888;">(Entradas - Salidas)</small>
                 </div>
-                <div class="card" style="border-left: 5px solid var(--success);">
-                    <h5 style="color:gray;">Entradas</h5>
-                    <h3 style="color:var(--success);">$${totalEntradas.toLocaleString('es-MX', {minimumFractionDigits: 2})}</h3>
-                    <small>Cobranza: $${subCobranza.toLocaleString()}</small><br>
-                    <small>Fondeo: $${subEntregas.toLocaleString()}</small>
+                
+                <div class="card" style="border-left: 5px solid var(--success); flex: 1;">
+                    <h5 style="color:#666; margin-bottom:5px;">ENTRADAS (+)</h5>
+                    <h3 style="color:var(--success); margin:0;">$${totalEntradas.toLocaleString('es-MX', {minimumFractionDigits: 2})}</h3>
+                    <div style="margin-top:10px; font-size:0.85em;">
+                        <div style="display:flex; justify-content:space-between;"><span>Cobranza:</span> <strong>$${subCobranza.toLocaleString()}</strong></div>
+                        <div style="display:flex; justify-content:space-between;"><span>Fondeo:</span> <strong>$${subFondeo.toLocaleString()}</strong></div>
+                    </div>
                 </div>
-                <div class="card" style="border-left: 5px solid var(--danger);">
-                    <h5 style="color:gray;">Salidas</h5>
-                    <h3 style="color:var(--danger);">$${totalSalidas.toLocaleString('es-MX', {minimumFractionDigits: 2})}</h3>
-                    <small>Colocación: $${subColocacion.toLocaleString()}</small><br>
-                    <small>Comisiones: $${subComisiones.toLocaleString()}</small><br>
-                    <small>Gastos: $${subGastos.toLocaleString()}</small>
+                
+                <div class="card" style="border-left: 5px solid var(--danger); flex: 1;">
+                    <h5 style="color:#666; margin-bottom:5px;">SALIDAS (-)</h5>
+                    <h3 style="color:var(--danger); margin:0;">$${totalSalidas.toLocaleString('es-MX', {minimumFractionDigits: 2})}</h3>
+                    <div style="margin-top:10px; font-size:0.85em;">
+                        <div style="display:flex; justify-content:space-between;"><span>Colocación:</span> <strong>$${subColocacion.toLocaleString()}</strong></div>
+                        <div style="display:flex; justify-content:space-between;"><span>Comisiones:</span> <strong>$${subComisiones.toLocaleString()}</strong></div>
+                        <div style="display:flex; justify-content:space-between;"><span>Gastos:</span> <strong>$${subGastos.toLocaleString()}</strong></div>
+                    </div>
                 </div>
             `;
         }
 
         if (tbody) {
             if (filasRenderizadas.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">No hay movimientos registrados.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:20px;">No hay movimientos registrados para esta fecha.</td></tr>';
             } else {
                 let htmlRows = '';
                 filasRenderizadas.forEach(row => {
                     const horaStr = row.hora.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-                    const entradaStr = row.esEntrada ? `$${row.monto.toFixed(2)}` : '-';
-                    const salidaStr = !row.esEntrada ? `$${row.monto.toFixed(2)}` : '-';
-                    
+                    const entradaStr = row.esEntrada ? `$${row.monto.toFixed(2)}` : '';
+                    const salidaStr = !row.esEntrada ? `$${row.monto.toFixed(2)}` : '';
+                    const rowStyle = row.concepto === 'COMISIÓN' ? 'background-color: #fff3cd;' : '';
+
                     htmlRows += `
-                        <tr>
-                            <td>${horaStr}</td>
-                            <td><span class="badge" style="background:${row.esEntrada ? '#d4edda' : '#f8d7da'}; color:${row.esEntrada ? '#155724' : '#721c24'};">${row.concepto}</span></td>
+                        <tr style="${rowStyle}">
+                            <td style="text-align:center; color:#666;">${horaStr}</td>
+                            <td><strong>${row.concepto}</strong></td>
                             <td>${row.descripcion}</td>
-                            <td style="color:var(--success); font-weight:bold;">${entradaStr}</td>
-                            <td style="color:var(--danger); font-weight:bold;">${salidaStr}</td>
-                            <td><small>${row.ref}</small></td>
+                            <td style="color:var(--success); font-weight:bold; text-align:right;">${entradaStr}</td>
+                            <td style="color:var(--danger); font-weight:bold; text-align:right;">${salidaStr}</td>
+                            <td style="font-size:0.8em; color:#888;">${row.ref}</td>
                         </tr>
                     `;
                 });
@@ -6540,7 +6539,6 @@ async function loadHojaCorte() {
     }
 }
 
-// LISTENER para botón Generar Corte
 const btnGenerarCorte = document.getElementById('btn-generar-corte');
 if(btnGenerarCorte) {
     btnGenerarCorte.addEventListener('click', loadHojaCorte);
@@ -6552,7 +6550,6 @@ if(btnGenerarCorte) {
 
 document.addEventListener('DOMContentLoaded', function () {
     console.log('DOM cargado, inicializando aplicación...');
-    // NO llamar inicializarDropdowns aquí
     setupEventListeners();
     setupSecurityListeners();
 
@@ -6562,7 +6559,6 @@ document.addEventListener('DOMContentLoaded', function () {
         const loginScreen = document.getElementById('login-screen');
         const mainApp = document.getElementById('main-app');
 
-        // Ocultar el overlay de carga inicial
         loadingOverlay.classList.add('hidden');
 
         if (user) {
@@ -6570,79 +6566,57 @@ document.addEventListener('DOMContentLoaded', function () {
             try {
                 currentUserData = await database.obtenerUsuarioPorId(user.uid);
 
-                if (currentUserData && !currentUserData.error) { // Asegurarse que no hubo error al cargar
+                if (currentUserData && !currentUserData.error) {
                     document.getElementById('user-name').textContent = currentUserData.name || user.email;
                     document.getElementById('user-role-display').textContent = currentUserData.role || 'Rol Desconocido';
-
-                    // Cargar dropdowns ESTÁTICOS
                     await inicializarDropdowns();
-
-                    // Aplicar permisos y filtros
                     aplicarPermisosUI(currentUserData.role);
 
                 } else {
                     console.warn(`No se encontraron datos válidos en Firestore para el usuario ${user.uid} o faltan campos requeridos.`);
                     document.getElementById('user-name').textContent = user.email;
                     document.getElementById('user-role-display').textContent = 'Datos Incompletos';
-                    aplicarPermisosUI('default'); // Aplicar permisos por defecto
+                    aplicarPermisosUI('default');
                 }
 
                 // ===================================
                 // --- 🚀 INICIO: LÓGICA DE VERIFICACIÓN MFA ---
                 // ===================================
                 
-                // 1. Ocultar el login, mostrar la app (el contenedor principal)
                 loginScreen.classList.add('hidden');
                 mainApp.classList.remove('hidden');
 
-                // 2. Revisar si el usuario actual REQUIERE MFA
                 if (currentUserData && currentUserData.mfaEnabled === true) {
-                    
-                    // Es tu cuenta de prueba. No mostrar el menú principal todavía.
-                    // Ocultar todas las vistas (por si acaso)
                     document.querySelectorAll('.view').forEach(view => view.classList.add('hidden'));
-                    
-                    // Mostrar un mensaje temporal de "Verificando..."
                     showProcessingOverlay(true, "Se requiere verificación de seguridad...");
-                    
-                    // 3. Iniciar la verificación con la llave
-                    const mfaExitoso = await verificarYubiKey(); // Llama a la nueva función
+                    const mfaExitoso = await verificarYubiKey();
                     
                     if (mfaExitoso) {
-                        // ¡Éxito! El usuario tocó la llave.
                         showProcessingOverlay(false);
-                        showView('view-main-menu'); // Mostrar el menú principal
+                        showView('view-main-menu');
                         updateConnectionStatus();
                         resetInactivityTimer();
                     } else {
-                        // Falló (canceló, llave incorrecta, error)
-                        // Lo echamos de la sesión.
                         showProcessingOverlay(false);
                         alert("Falló la verificación de seguridad. Se cerrará la sesión.");
                         auth.signOut();
                     }
 
                 } else {
-                    // Es un usuario normal (mfaEnabled no es true)
-                    // Dejarlo entrar directamente.
                     showView('view-main-menu');
                     updateConnectionStatus();
                     resetInactivityTimer();
                 }
-                // --- 🔚 FIN: LÓGICA DE VERIFICACIÓN MFA ---
-                // ===================================
 
             } catch (error) {
                 console.error("Error crítico al obtener datos del usuario:", error);
                 document.getElementById('user-name').textContent = user.email;
                 document.getElementById('user-role-display').textContent = 'Error al cargar datos';
-                // Ocultar app y mostrar login en caso de error crítico de carga de datos
                 mainApp.classList.add('hidden');
                 loginScreen.classList.remove('hidden');
             }
 
         } else {
-            // Esta es la lógica 'else' para cuando el usuario NO está logueado
             currentUser = null;
             currentUserData = null;
             clearTimeout(inactivityTimer);
@@ -6854,14 +6828,3 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
-
-
-
-
-
-
-
-
-
-
-
