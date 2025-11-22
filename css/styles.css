@@ -2123,6 +2123,52 @@ body.has-connection-status #progress-container-fixed {
     width: 100%;
 }
 
+.custom-check-wrapper {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    padding: 5px;
+    transition: transform 0.1s ease;
+}
 
+.custom-check-wrapper:active {
+    transform: scale(0.95); /* Efecto de click */
+}
+
+/* Ocultamos el input nativo pero sigue funcionando en el DOM */
+.custom-check-wrapper input[type="checkbox"] {
+    position: absolute;
+    opacity: 0;
+    cursor: pointer;
+    height: 0;
+    width: 0;
+}
+
+/* El ícono visual (FontAwesome) */
+.custom-check-icon {
+    font-size: 1.6rem; /* Tamaño grande y fácil de tocar */
+    color: #e0e0e0;    /* Color apagado (desactivado) */
+    transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); /* Animación rebote */
+}
+
+/* Cuando el input "oculto" está checked, cambiamos el ícono hermano */
+.custom-check-wrapper input[type="checkbox"]:checked ~ .custom-check-icon {
+    color: #28a745;    /* Verde éxito */
+    content: "\f058";  /* Código fa-check-circle solid */
+    transform: scale(1.1);
+    text-shadow: 0 2px 5px rgba(40, 167, 69, 0.3);
+}
+
+/* Estilos específicos para el header "Marcar Todos" */
+.header-check-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+}
+.header-check-wrapper .custom-check-icon {
+    font-size: 1.3rem; /* Un poco más pequeño en el header */
+}
 
 
