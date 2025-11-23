@@ -1901,7 +1901,7 @@ body.has-connection-status.has-progress {
     display: flex; 
     align-items: center;
     justify-content: space-between;
-    padding: 0 30px;
+    padding: 0 20px;
     box-shadow: 0 4px 12px rgba(0,0,0,0.15);
     border-bottom: 3px solid var(--primary);  
     transform: translateY(-100%);
@@ -1920,7 +1920,7 @@ body.has-connection-status.has-progress {
 }
 
 .progress-content-wrapper {
-    flex: 1; /* Toma todo el espacio disponible */
+    flex-grow: 1; /* Toma todo el espacio disponible */
     margin-right: 20px; /* Separa del botón de cancelar */
     display: flex;
     flex-direction: column;
@@ -1931,10 +1931,7 @@ body.has-connection-status.has-progress {
     font-weight: bold;
     color: #333;
     margin-bottom: 5px;
-    font-size: 0.95rem;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    font-size: 0.9rem;
 }
 
 .progress-bar-background {
@@ -1951,19 +1948,18 @@ body.has-connection-status.has-progress {
     width: 0%;
     transition: width 0.3s ease;
     border-radius: 5px;
-    /* Patrón rayado animado */
     background-image: linear-gradient(45deg,rgba(255,255,255,.15) 25%,transparent 25%,transparent 50%,rgba(255,255,255,.15) 50%,rgba(255,255,255,.15) 75%,transparent 75%,transparent);
     background-size: 1rem 1rem;
     animation: progress-bar-stripes 1s linear infinite;
 }
 
 .btn-cancelar-carga-fixed {
-    background-color: #dc3545; /* Rojo */
+    background-color: #dc3545;
     color: white;
     border: none;
     width: 45px;
     height: 45px;
-    border-radius: 50%; /* Perfectamente redondo */
+    border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1971,7 +1967,7 @@ body.has-connection-status.has-progress {
     font-size: 1.2rem;
     box-shadow: 0 2px 5px rgba(0,0,0,0.2);
     transition: all 0.2s;
-    flex-shrink: 0; /* Evita que se aplaste si hay poco espacio */
+    flex-shrink: 0;
 }
 
 .btn-cancelar-carga-fixed:hover {
@@ -2246,6 +2242,7 @@ body.has-connection-status #progress-container-fixed {
 .header-check-wrapper .custom-check-icon {
     font-size: 1.3rem; /* Un poco más pequeño en el header */
 }
+
 
 
 
