@@ -2850,162 +2850,123 @@ async function handleCalcularCobranzaRuta() {
     }
 }
 
-//** Inicializar Vista de Pago Grupal ** //
+//=======================================
+// ** INICIALIZAR VISTA DE PAGO GRUPAL **
+//=======================================
 
 async function inicializarVistaPagoGrupal() {
-    console.log("🚀 INICIANDO VISTA PAGO GRUPAL (Diseño Mejorado)");
+    console.log("🚀 INICIANDO VISTA PAGO GRUPAL (Estilo Unificado)");
     
     const containerChecks = document.getElementById('checkboxes-poblaciones-container');
     const cardSelector = document.getElementById('selector-poblaciones-card');
     const btnCalcular = document.getElementById('btn-calcular-seleccion');
     const statusPago = document.getElementById('status_pago_grupo');
-    
     const btnGuardar = document.getElementById('btn-guardar-cobranza-offline');
     const btnRegistrar = document.getElementById('btn-registrar-pagos-offline');
     const containerResultados = document.getElementById('cobranza-ruta-container');
     const placeholder = document.getElementById('cobranza-ruta-placeholder');
 
-    // 1. LIMPIEZA Y RESETEO DE UI
+    // Limpieza UI
     if (cardSelector) cardSelector.classList.remove('hidden'); 
     if (placeholder) placeholder.classList.remove('hidden');
     if (containerResultados) containerResultados.innerHTML = '';
-    if (statusPago) {
-        statusPago.innerHTML = '';
-        statusPago.className = 'status-message hidden';
-    }
-    
-    // Ocultar botones flotantes al inicio
+    if (statusPago) { statusPago.innerHTML = ''; statusPago.classList.add('hidden'); }
     if(btnGuardar) btnGuardar.classList.add('hidden');
     if(btnRegistrar) btnRegistrar.classList.add('hidden');
 
-    // 2. VALIDACIÓN DE USUARIO
     if (!currentUserData) {
-        showStatus('status_pago_grupo', 'Error: No se han cargado los datos del usuario.', 'error');
+        showStatus('status_pago_grupo', 'Error: No se han cargado datos del usuario.', 'error');
         return;
     }
 
-    // 3. LÓGICA OFFLINE (Prioridad: si no hay red, cargar local)
     const keyOffline = OFFLINE_STORAGE_KEY + (currentUserData.ruta || 'sin_ruta');
     const datosGuardadosStr = localStorage.getItem(keyOffline);
     let datosGuardados = null;
-    if (datosGuardadosStr) {
-        try { datosGuardados = JSON.parse(datosGuardadosStr); } catch(e) {}
-    }
+    if (datosGuardadosStr) { try { datosGuardados = JSON.parse(datosGuardadosStr); } catch(e) {} }
 
     if (!navigator.onLine) {
         showStatus('status_pago_grupo', 'Modo Offline detectado.', 'warning');
-        
         if (datosGuardados && datosGuardados.data) {
-            // En offline con datos, ocultamos el selector y mostramos la tabla directa
             cardSelector.classList.add('hidden');
             placeholder.classList.add('hidden');
-            
             cobranzaRutaData = datosGuardados.data;
-            renderizarCobranzaRuta(cobranzaRutaData, containerResultados); // Usa la nueva renderización con comisiones
-            
+            renderizarCobranzaRuta(cobranzaRutaData, containerResultados);
             if(btnRegistrar) btnRegistrar.classList.remove('hidden');
-            
             const fechaGuardado = new Date(datosGuardados.timestamp).toLocaleString();
-            showStatus('status_pago_grupo', `Mostrando datos guardados localmente (${fechaGuardado}).`, 'success');
+            showStatus('status_pago_grupo', `Mostrando datos guardados (${fechaGuardado}).`, 'success');
         } else {
             placeholder.classList.remove('hidden');
-            placeholder.innerHTML = '<p class="text-danger">No tienes conexión y no hay datos guardados para esta ruta.</p>';
+            placeholder.innerHTML = '<p class="text-danger">Sin conexión y sin datos guardados.</p>';
         }
-        return; // Fin del flujo Offline
+        return;
     }
 
-    // 4. LÓGICA ONLINE (Carga de Poblaciones)
     let rutaUsuario = currentUserData.ruta;
     let officeUsuario = currentUserData.office;
 
     if (!rutaUsuario) {
-        // Manejo para Admins sin ruta (aviso)
-        if (currentUserData.role === 'Super Admin' || currentUserData.role === 'Gerencia') {
-             showStatus('status_pago_grupo', 'Eres Admin sin ruta asignada. Asigna una ruta en tu perfil para probar.', 'warning');
-             if(containerChecks) containerChecks.innerHTML = '<p class="text-center text-muted">⚠️ Admin sin ruta asignada.</p>';
-             return;
-        } else {
-            showStatus('status_pago_grupo', 'Error: Tu usuario no tiene una RUTA asignada.', 'error');
-            return;
-        }
+        showStatus('status_pago_grupo', 'Error: Sin ruta asignada.', 'error');
+        return;
     }
 
-    // Mostrar spinner de carga
-    if (containerChecks) containerChecks.innerHTML = '<div style="text-align:center; padding:20px;"><div class="spinner"></div><p>Cargando poblaciones de la ruta: <strong>' + rutaUsuario + '</strong>...</p></div>';
+    if (containerChecks) containerChecks.innerHTML = '<div style="text-align:center;"><div class="spinner"></div> Cargando...</div>';
     if (btnCalcular) btnCalcular.disabled = true;
 
     try {
-        // Llamada a DB
         const poblaciones = await database.obtenerPoblacionesPorRuta(rutaUsuario, officeUsuario);
-        
-        containerChecks.innerHTML = ''; // Limpiar spinner
+        containerChecks.innerHTML = ''; 
 
         if (poblaciones.length === 0) {
-            containerChecks.innerHTML = `<p class="text-center">No se encontraron poblaciones para la ruta <strong>${rutaUsuario}</strong>.</p>`;
+            containerChecks.innerHTML = `<p>No hay poblaciones en ruta ${rutaUsuario}.</p>`;
             return;
         }
 
-        // --- CONSTRUCCIÓN DE LA INTERFAZ MEJORADA ---
-
-        // A. Botón "Seleccionar Todas" (Estilizado)
         const allDiv = document.createElement('div');
         allDiv.className = 'select-all-container';
         allDiv.innerHTML = `
-            <label style="font-weight:bold; cursor:pointer; color:var(--primary); display:flex; align-items:center; gap:10px; margin:0;">
-                <input type="checkbox" id="check-all-poblaciones" checked style="width:18px; height:18px; cursor:pointer;"> 
-                <span>SELECCIONAR TODAS LAS POBLACIONES</span>
+            <label class="custom-check-wrapper" style="width:100%; justify-content: space-between; padding: 10px;">
+                <span style="font-weight:bold; color:var(--primary); font-size: 1rem;">SELECCIONAR TODAS LAS POBLACIONES</span>
+                <input type="checkbox" id="check-all-poblaciones" checked> 
+                <i class="fas fa-check-circle custom-check-icon"></i>
             </label>
         `;
         containerChecks.appendChild(allDiv);
 
-        // B. Contenedor Grid para las Tarjetas
         const gridDiv = document.createElement('div');
         gridDiv.className = 'poblacion-selector-grid';
 
-        // C. Generar Tarjetas Individuales
         poblaciones.forEach(pob => {
             const label = document.createElement('label');
-            label.className = 'poblacion-select-card selected'; // Inician seleccionadas
-            
+            label.className = 'poblacion-select-card selected';
             label.innerHTML = `
                 <input type="checkbox" class="poblacion-check" value="${pob.nombre}" checked> 
                 <span class="poblacion-name">${pob.nombre}</span>
                 <i class="fas fa-check-circle check-icon"></i>
             `;
-
-            // Listener individual para efecto visual (toggle clase 'selected')
+            
             const checkbox = label.querySelector('input');
             checkbox.addEventListener('change', function() {
-                if(this.checked) {
-                    label.classList.add('selected');
-                } else {
-                    label.classList.remove('selected');
-                }
+                if(this.checked) label.classList.add('selected');
+                else label.classList.remove('selected');
                 
-                // Sincronizar el "Seleccionar Todas"
                 const allChecks = document.querySelectorAll('.poblacion-check');
                 const allChecked = Array.from(allChecks).every(c => c.checked);
                 document.getElementById('check-all-poblaciones').checked = allChecked;
             });
-
             gridDiv.appendChild(label);
         });
-
         containerChecks.appendChild(gridDiv);
 
-        // D. Listener Maestro para "Seleccionar Todas"
         document.getElementById('check-all-poblaciones').addEventListener('change', function(e) {
             const isChecked = e.target.checked;
             document.querySelectorAll('.poblacion-select-card').forEach(card => {
                 const input = card.querySelector('input');
                 input.checked = isChecked;
-                // Actualizar visualmente la tarjeta
                 if(isChecked) card.classList.add('selected');
                 else card.classList.remove('selected');
             });
         });
 
-        // Activar botón calcular
         if(btnCalcular) {
             btnCalcular.disabled = false;
             const newBtn = btnCalcular.cloneNode(true);
@@ -3014,9 +2975,8 @@ async function inicializarVistaPagoGrupal() {
         }
 
     } catch (error) {
-        console.error("❌ Error cargando poblaciones:", error);
-        if(containerChecks) containerChecks.innerHTML = `<p class="status-error">Error al cargar datos: ${error.message}</p>`;
-        showStatus('status_pago_grupo', `Error de conexión: ${error.message}`, 'error');
+        console.error(error);
+        showStatus('status_pago_grupo', `Error: ${error.message}`, 'error');
     }
 }
 
@@ -3165,7 +3125,7 @@ async function loadBasicReports(userOffice = null) {
     document.getElementById('total-comisiones').textContent = '$...';
 
     try {
-        const reportes = await database.generarReportes(userOffice); // Aplicar segregación
+        const reportes = await database.generarReportes(userOffice);
 
         document.getElementById('total-clientes').textContent = reportes.totalClientes?.toLocaleString() ?? 'Error';
         document.getElementById('total-creditos').textContent = reportes.totalCreditos?.toLocaleString() ?? 'Error';
@@ -3194,9 +3154,9 @@ async function loadBasicReports(userOffice = null) {
     }
 }
 
-/**
- * Renderiza la tabla de cobros con lógica de COMISIONES en tiempo real.
- */
+//==============================================================//
+    // ** RENDERIZAR LA LOGICA DE COMISIONES EN TIEMPO REAL **
+//==============================================================//
 function renderizarCobranzaRuta(data, container) {
     if (!data || Object.keys(data).length === 0) {
         container.innerHTML = '<p style="text-align:center; padding:20px;">No hay datos para mostrar.</p>';
@@ -3212,16 +3172,16 @@ function renderizarCobranzaRuta(data, container) {
         
         html += `
             <div class="poblacion-group card" style="margin-bottom: 20px; border: 1px solid #dee2e6; border-radius: 12px; overflow:hidden;">
-                <div style="background-color: #f8f9fa; padding: 15px; border-bottom: 1px solid #ddd; display:flex; justify-content:space-between; align-items:center;">
+                <div style="background-color: #f8f9fa; padding: 12px 15px; border-bottom: 1px solid #ddd; display:flex; justify-content:space-between; align-items:center;">
                     <h4 style="margin:0; color:var(--primary); font-size: 1.1rem;">
                         <i class="fas fa-map-marker-alt"></i> ${grupo} 
                         <span style="font-weight:normal; font-size:0.8em; color:#666; margin-left: 5px;">(${creditos.length} clientes)</span>
                     </h4>
                     
-                    <label class="header-check-wrapper">
-                        <span style="font-weight:bold; font-size: 0.9rem; color: #555;">Marcar Todos</span>
+                    <label class="custom-check-wrapper" title="Marcar/Desmarcar Todos">
+                        <span style="font-weight:bold; font-size: 0.9rem; color: #555; margin-right: 8px;">Marcar Todos</span>
                         <input type="checkbox" class="check-group-all" data-grupo="${grupo}" checked>
-                        <i class="fas fa-check-circle custom-check-icon"></i>
+                        <i class="fas fa-check-circle custom-check-icon" style="font-size: 1.4rem;"></i>
                     </label>
                 </div>
                 
@@ -3229,11 +3189,11 @@ function renderizarCobranzaRuta(data, container) {
                     <table class="cobranza-ruta-table table table-hover" id="tabla-grupo-${grupoId}" data-grupo-name="${grupo}" style="margin-bottom:0;">
                         <thead style="background:#fff;">
                             <tr>
-                                <th style="width:25%; border-top:none;">Cliente</th>
-                                <th style="width:15%; border-top:none;">Estado</th>
-                                <th style="width:15%; border-top:none;">Saldo</th>
-                                <th style="width:35%; border-top:none;">Pago y Comisión</th>
-                                <th style="width:10%; border-top:none; text-align:center;">Registrar</th>
+                                <th style="width:25%;">Cliente</th>
+                                <th style="width:15%;">Estado</th>
+                                <th style="width:15%;">Saldo</th>
+                                <th style="width:35%;">Pago y Comisión</th>
+                                <th style="width:10%; text-align:center;">Registrar</th>
                             </tr>
                         </thead>
                         <tbody>`;
@@ -3258,7 +3218,8 @@ function renderizarCobranzaRuta(data, container) {
                     <td style="vertical-align: middle;">
                         <span class="info-value ${estadoClase}" style="font-size: 0.75rem; padding: 4px 8px;">${cred.estadoCredito.toUpperCase()}</span>
                     </td>
-                    <td style="vertical-align: middle; font-weight: 500;">$${cred.saldoRestante.toFixed(2)}</td>
+                    
+                    <td style="vertical-align: middle; font-weight: 500;">${formatMoney(cred.saldoRestante)}</td>
                     
                     <td class="input-cell" style="vertical-align: middle;">
                         <div style="display: flex; gap: 5px; margin-bottom: 5px;">
@@ -3284,7 +3245,7 @@ function renderizarCobranzaRuta(data, container) {
                         
                         <div class="comision-container" id="comision-box-${linkId}" style="font-size: 0.8em; color: #28a745; display: flex; align-items: center; justify-content: flex-end; gap: 4px;">
                             <i class="fas fa-hand-holding-usd"></i> Comisión: 
-                            <strong id="comision-val-${linkId}" class="valor-comision-fila">$${comisionInicial}</strong>
+                            <strong id="comision-val-${linkId}" class="valor-comision-fila">${formatMoney(comisionInicial)}</strong>
                         </div>
                     </td>
 
@@ -3310,7 +3271,7 @@ function renderizarCobranzaRuta(data, container) {
                         <td style="vertical-align: middle;">
                             <div style="display: flex; justify-content: space-between; font-size: 0.95rem;">
                                 <span style="color: var(--primary);">Pagos: <span id="total-pagos-${grupoId}">$0.00</span></span>
-                                <span style="color: #28a745;">Comis: <span id="total-comis-${grupoId}">$0.00</span></span>
+                                <span style="color: #28a745;">Comisión: <span id="total-comis-${grupoId}">$0.00</span></span>
                             </div>
                         </td>
                         <td></td>
@@ -3320,8 +3281,6 @@ function renderizarCobranzaRuta(data, container) {
     });
 
     container.innerHTML = html;
-
-    // Re-aplicar listeners de "Marcar Todos"
     container.querySelectorAll('.check-group-all').forEach(chk => {
         chk.addEventListener('change', (e) => {
             const grp = e.target.getAttribute('data-grupo');
@@ -3331,36 +3290,36 @@ function renderizarCobranzaRuta(data, container) {
                     if (!cb.disabled) {
                         cb.checked = e.target.checked;
                         const idLink = cb.getAttribute('data-id-link');
-                        recalcularComision(idLink); 
+                        recalcularComision(idLink);
                     }
                 });
             }
         });
     });
 
-    // Calcular totales iniciales
     grupos.forEach(grupo => {
         const grupoId = grupo.replace(/\s+/g, '_');
         recalcularTotalesGrupo(grupoId);
     });
 }
 
-// --- FUNCIÓN NUEVA: LÓGICA DE NEGOCIO DE COMISIONES ---
-// Esta función se llama automáticamente al cambiar el select o el monto
+//==============================================//
+    // ** CALCULO DE COMISIONES EN COBRANZA **
+//==============================================//
 function recalcularComision(idLink) {
     const row = document.getElementById(`row-${idLink}`);
-    if (!row) return; // Seguridad
+    if (!row) return;
 
     const select = row.querySelector('.pago-grupal-tipo');
     const inputMonto = row.querySelector('.pago-grupal-input');
     const checkbox = row.querySelector('.pago-grupal-check');
     const labelComision = document.getElementById(`comision-val-${idLink}`);
     const boxComision = document.getElementById(`comision-box-${idLink}`);
+    const grupoId = row.getAttribute('data-grupo-id');
     const tipo = select.value;
     const monto = parseFloat(inputMonto.value) || 0;
     const plazo = parseInt(row.getAttribute('data-plazo'));
     const isChecked = checkbox.checked;
-    const grupoId = row.getAttribute('data-grupo-id');
 
     let comision = 0;
 
@@ -3376,23 +3335,13 @@ function recalcularComision(idLink) {
         inputMonto.disabled = false;
     }
 
-    if (!isChecked) {
-        comision = 0;
-    }
-    else if (plazo === 10) {
-        comision = 0;
-    }
-    else if (monto <= 0) {
-        comision = 0;
-    }
-    else if (tipo === 'normal' || tipo === 'extraordinario') {
-        comision = 10;
-    }
-    else if (tipo === 'actualizado') {
-        comision = 0;
-    }
+    if (!isChecked) comision = 0;
+    else if (plazo === 10) comision = 0;
+    else if (monto <= 0) comision = 0;
+    else if (tipo === 'normal' || tipo === 'extraordinario') comision = 10;
+    else if (tipo === 'actualizado') comision = 0;
 
-    labelComision.textContent = `$${comision}`;
+    labelComision.textContent = formatMoney(comision);
     
     if (comision > 0) {
         boxComision.style.color = '#28a745';
@@ -3407,9 +3356,9 @@ function recalcularComision(idLink) {
     }
 }
 
-//=========================================================
-    // ---  Calcular totales por población --- //
-//=========================================================
+//================================================//
+    // **  CALCULAR TOTALES POR POBLACION ** //
+//================================================//
 function recalcularTotalesGrupo(grupoId) {
     const tabla = document.getElementById(`tabla-grupo-${grupoId}`);
     if (!tabla) return;
@@ -3417,37 +3366,33 @@ function recalcularTotalesGrupo(grupoId) {
     let sumaPagos = 0;
     let sumaComisiones = 0;
 
-    // Buscar todas las filas de datos de esta tabla
     const filas = tabla.querySelectorAll('tbody tr.fila-cobro');
 
     filas.forEach(fila => {
-        // Buscar el checkbox y los inputs dentro de la fila
         const checkbox = fila.querySelector('.pago-grupal-check');
         const inputMonto = fila.querySelector('.pago-grupal-input');
-        const labelComision = fila.querySelector('.valor-comision-fila'); // Clase agregada en render
+        const labelComision = fila.querySelector('.valor-comision-fila');
 
-        // SOLO SUMAR SI ESTÁ MARCADO (CHECKED)
         if (checkbox && checkbox.checked && !checkbox.disabled) {
             const monto = parseFloat(inputMonto.value) || 0;
-            // Limpiamos el signo de $ para sumar
-            const comision = parseFloat(labelComision.textContent.replace('$', '')) || 0;
+            const textoComision = labelComision.textContent.replace(/[^0-9.-]+/g, "");
+            const comision = parseFloat(textoComision) || 0;
 
             sumaPagos += monto;
             sumaComisiones += comision;
         }
     });
 
-    // Actualizar el Footer del grupo
     const spanPagos = document.getElementById(`total-pagos-${grupoId}`);
     const spanComis = document.getElementById(`total-comis-${grupoId}`);
 
-    if (spanPagos) spanPagos.textContent = `$${sumaPagos.toLocaleString('es-MX', {minimumFractionDigits: 2})}`;
-    if (spanComis) spanComis.textContent = `$${sumaComisiones.toLocaleString('es-MX', {minimumFractionDigits: 2})}`;
+    if (spanPagos) spanPagos.textContent = formatMoney(sumaPagos);
+    if (spanComis) spanComis.textContent = formatMoney(sumaComisiones);
 }
 
-/**
- * Guarda la lista de cobranza calculada (cobranzaRutaData) en localStorage.
- */
+//===========================================//
+    // **  GUARDAR COBRANZA CALCULADA ** //
+//===========================================//
 function handleGuardarCobranzaOffline() {
     const statusPagoGrupo = document.getElementById('status_pago_grupo');
     const btnGuardar = document.getElementById('btn-guardar-cobranza-offline');
@@ -3456,8 +3401,8 @@ function handleGuardarCobranzaOffline() {
         showStatus('status_pago_grupo', 'No hay datos de cobranza calculados para guardar.', 'warning');
         return;
     }
-    if (!currentUserData || !currentUserData.ruta || !currentUserData.office) { // <-- CAMBIO DE sucursal A office
-         showStatus('status_pago_grupo', 'Error: No se puede identificar la ruta u oficina del usuario...', 'error'); // <-- Mensaje actualizado
+    if (!currentUserData || !currentUserData.ruta || !currentUserData.office) {
+         showStatus('status_pago_grupo', 'Error: No se puede identificar la ruta u oficina del usuario...', 'error');
         return;
     }
 
@@ -3466,7 +3411,7 @@ function handleGuardarCobranzaOffline() {
         const key = OFFLINE_STORAGE_KEY + currentUserData.ruta;
         const dataToSave = {
             ruta: currentUserData.ruta,
-            office: currentUserData.office, // <-- CAMBIO DE sucursal A office
+            office: currentUserData.office,
             timestamp: new Date().toISOString(),
             data: cobranzaRutaData
         };
@@ -3474,7 +3419,6 @@ function handleGuardarCobranzaOffline() {
         showStatus('status_pago_grupo', `Lista de cobranza para ruta ${currentUserData.ruta} guardada localmente...`, 'success');
     } catch (error) {
         console.error("Error guardando cobranza offline:", error);
-        // Podría ser error por JSON grande o localStorage lleno
         showStatus('status_pago_grupo', `Error al guardar localmente: ${error.message}. Es posible que no haya suficiente espacio.`, 'error');
     } finally {
         showButtonLoading(btnGuardar, false);
@@ -5925,14 +5869,13 @@ function handleExportarTelefonos() {
     }
 }
 
-// =============================================
-// *** INICIO: NUEVAS FUNCIONES (EDICIÓN/ELIMINACIÓN DE CRÉDITOS Y PAGOS) ***
-// =============================================
+// ============================================================
+// ***  FUNCIONES (EDICIÓN/ELIMINACIÓN DE CRÉDITOS Y PAGOS) ***
+// ============================================================
 
-/**
- * Muestra el modal para editar un CRÉDITO.
- * @param {object} credito El objeto de crédito completo (pasado como JSON string).
- */
+// ==================================
+// ** MODAL PARA EDITAR UN CREDITO ** 
+// ==================================
 function handleEditarCredito(credito) {
     if (typeof credito === 'string') {
         credito = JSON.parse(credito.replace(/&apos;/g, "'").replace(/&quot;/g, '"'));
@@ -5989,10 +5932,9 @@ function handleEditarCredito(credito) {
     };
 }
 
-/**
- * Guarda los cambios de un CRÉDITO.
- * ADVERTENCIA: Esta es una edición simple. NO recalcula el saldo total.
- */
+// ===================================
+// ** GUARDAR CAMBIOS DE UN CREDITO ** 
+// ===================================
 async function guardarCambiosCredito(creditoId, historicalId, office) {
     const statusEl = document.getElementById('status-edit-credito');
     
@@ -6035,11 +5977,9 @@ async function guardarCambiosCredito(creditoId, historicalId, office) {
     }
 }
 
-/**
- * Muestra el modal para editar un PAGO.
- * @param {object} pago El objeto de pago completo (pasado como JSON string).
- * @param {object} credito El objeto de crédito asociado (pasado como JSON string).
- */
+// ===============================
+// ** MODAL APRA EDITAR UN PAGO ** 
+// ===============================
 function handleEditarPago(pago, credito) {
     if (typeof pago === 'string') {
         pago = JSON.parse(pago.replace(/&apos;/g, "'").replace(/"/g, '"'));
@@ -6089,9 +6029,9 @@ function handleEditarPago(pago, credito) {
     };
 }
 
-/**
- * Guarda los cambios de un PAGO y recalcula el saldo.
- */
+// =======================================================
+// ** GUARDAR LOS CAMBIOS DE UN PAGO Y RECALCULAR SALDO ** 
+// =======================================================
 async function guardarCambiosPago(pagoId, creditoId, montoOriginal, historicalId, office) {
     const statusEl = document.getElementById('status-edit-pago');
 
@@ -6132,9 +6072,9 @@ async function guardarCambiosPago(pagoId, creditoId, montoOriginal, historicalId
     }
 }
 
-/**
- * Confirma y elimina un CRÉDITO y todos sus pagos.
- */
+// =============================================================
+// ** CONFIRMACION DE ELMINACION DE CREDITO Y TODOS SUS PAGOS ** 
+// =============================================================
 async function handleEliminarCredito(creditoId, historicalId, office) {
     if (!confirm(`ADVERTENCIA:\n\n¿Estás seguro de eliminar el crédito ${historicalId}?\n\nEsta acción es PERMANENTE y eliminará también TODOS sus pagos, comisiones y movimientos asociados.\n\nEsta acción NO se puede deshacer.`)) {
         return;
@@ -6158,9 +6098,9 @@ async function handleEliminarCredito(creditoId, historicalId, office) {
     }
 }
 
-/**
- * Confirma y elimina un PAGO y recalcula el saldo.
- */
+// =============================================
+// ** CONFIRMACION DE PAGO Y RECALCULAR SALDO ** 
+// =============================================
 async function handleEliminarPago(pagoId, creditoId, monto, office, fecha) {
     if (!confirm(`ADVERTENCIA:\n\n¿Estás seguro de eliminar este pago?\n- Monto: $${monto}\n- Fecha: ${fecha}\n\nEsta acción REEMBOLSARÁ $${monto} al saldo del crédito y NO se puede deshacer.`)) {
         return;
@@ -6184,9 +6124,20 @@ async function handleEliminarPago(pagoId, creditoId, monto, office, fecha) {
     }
 }
 
-// =============================================
+// ================================================
+// ** FORMATO DE MONEDA CON COMA Y DOS DECIMALES ** 
+// ================================================
+function formatMoney(amount) {
+    if (amount === undefined || amount === null || isNaN(amount)) return '$0.00';
+    return '$' + parseFloat(amount).toLocaleString('es-MX', {
+        minimumFractionDigits: 2, 
+        maximumFractionDigits: 2
+    });
+}
+
+// ===================================================
 // CONFIGURACIÓN DE EVENT LISTENERS PARA CONFIGURACIÓN
-// =============================================
+// ===================================================
 
 function configurarEventListenersConfiguracion() {
     console.log("🔧 Configurando event listeners para configuración...");
@@ -6276,7 +6227,9 @@ function configurarEventListenersConfiguracion() {
     console.log("✅ Event listeners de configuración configurados");
 }
 
-// Modifica la función loadConfiguracion para llamar a esta configuración
+// ============================================
+// ** CARGAR INTERFAZ DE RUTAS Y POBLACIONES ** 
+// ============================================
 async function loadConfiguracion() {
     console.log("🚀 EJECUTANDO loadConfiguracion - INICIO");
     const statusEl = 'status_configuracion';
@@ -6314,14 +6267,9 @@ async function loadConfiguracion() {
     }
 }
 
-// =============================================
-// --- 🚀 INICIO: LÓGICA DE MFA CON YUBIKEY ---
-// =============================================
-
-/**
- * Registra una nueva YubiKey (u otra llave WebAuthn) para el usuario actual.
- * Guarda el ID de la credencial en Firestore.
- */
+// =========================
+// ** REGISTRO DE YUBIKEY ** 
+// =========================
 async function registrarYubiKey() {
     if (!currentUserData || !currentUserData.id) {
         alert("Error: Debes estar logueado para registrar una llave.");
@@ -6394,12 +6342,9 @@ async function registrarYubiKey() {
     }
 }
 
-
-/**
- * Pide la verificación de una YubiKey ya registrada.
- * Esta función se llamará durante el inicio de sesión.
- * DEVUELVE: true (si es exitoso) o false (si falla).
- */
+// =========================
+// ** VERIFICAR YUBIKEY ** 
+// =========================
 async function verificarYubiKey() {
     if (!currentUserData || !currentUserData.yubiKeyCredentialId) {
         alert("Error: No hay llave de seguridad registrada para este usuario.");
@@ -6446,8 +6391,9 @@ async function verificarYubiKey() {
         return false;
     }
 }
+
 // =========================
-// ** Hoja de Corte ** 
+// ** HOJA DE CORTE ** 
 // =========================
 async function loadHojaCorte() {
     const fechaInput = document.getElementById('corte-fecha');
@@ -6693,7 +6639,7 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         }
     });
-});
+});|
 
 ///===========================================================///
   ///  EVENT LISTENERS ---- DISPARADORES ///
@@ -6886,6 +6832,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
