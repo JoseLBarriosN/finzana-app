@@ -6639,7 +6639,7 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         }
     });
-});|
+});
 
 ///===========================================================///
   ///  EVENT LISTENERS ---- DISPARADORES ///
@@ -6832,8 +6832,3 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
-
-
-
-
-
