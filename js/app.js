@@ -446,13 +446,16 @@ function aplicarPermisosUI(role) {
 }
 
 
-// =============================================
-// FUNCIONES MOVIDAS ANTES DE DOMContentLoaded
-// =============================================
+/// ==================================================== ///
+    /// FUNCIONES MOVIDAS ANTES DE DOM CONTENTLOADED ///
+/// ==================================================== ///
 
+//=========================================//
+    // ** CARGAR TABLA DE CLIENTES ** //
+//=========================================//
 async function loadClientesTable() {
     if (cargaEnProgreso) {
-        showStatus('status_gestion_clientes', 'Ya hay una búsqueda en progreso. Por favor, espera.', 'warning');
+        showStatus('status_gestion_clientes', 'Ya hay una búsqueda en progreso. Por favor, espera o cancela la actual.', 'warning');
         return;
     }
 
@@ -460,17 +463,14 @@ async function loadClientesTable() {
     cargaEnProgreso = true;
     currentSearchOperation = Date.now();
     const operationId = currentSearchOperation;
-
     const tbody = document.getElementById('tabla-clientes');
-    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">Buscando clientes...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">Iniciando búsqueda...</td></tr>';
     showButtonLoading('#btn-aplicar-filtros', true, 'Buscando...');
-    showFixedProgress(10, 'Iniciando búsqueda...');
+    showFixedProgress(10, 'Leyendo filtros...');
 
     try {
         const esAdminConAccesoTotal = (currentUserData?.role === 'Super Admin' || currentUserData?.role === 'Gerencia');
         const userRole = currentUserData?.role;
-        
-        // --- CONFIGURACIÓN DE FILTROS CON SEGURIDAD ESTRICTA ---
         const filtros = {
             curp: document.getElementById('curp_filtro')?.value?.trim() || '',
             nombre: document.getElementById('nombre_filtro')?.value?.trim() || '',
@@ -480,121 +480,106 @@ async function loadClientesTable() {
             plazo: document.getElementById('plazo_filtro')?.value || '',
             grupo: document.getElementById('grupo_filtro')?.value || '',
             soloComisionistas: document.getElementById('comisionista_filtro')?.checked || false,
-            
-            // Permisos de Oficina
             userOffice: esAdminConAccesoTotal ? null : currentUserData?.office,
             office: document.getElementById('sucursal_filtro')?.value || '',
-            
-            // Permisos de Ruta (Forzado para Área Comercial)
             ruta: (userRole === 'Área comercial') ? currentUserData?.ruta : null
         };
         
-        // Validación de seguridad: Agente sin ruta
         if (userRole === 'Área comercial' && !currentUserData?.ruta) {
             throw new Error("Error de Permisos: Tu usuario de Área Comercial no tiene una ruta asignada.");
         }
 
+        if (operationId !== currentSearchOperation) throw new Error("Cancelado");
         showFixedProgress(30, 'Consultando base de datos...');
-
-        // Lógica diferenciada: Si busca por ID crédito vs Búsqueda general
         let resultadosFinales = [];
 
         if (filtros.idCredito) {
-            // Búsqueda específica por Crédito
             const creditos = await database.buscarCreditosPorHistoricalId(filtros.idCredito, { 
                 userOffice: filtros.userOffice, 
                 office: filtros.office 
             });
             
             for (const cred of creditos) {
+                if (operationId !== currentSearchOperation) throw new Error("Cancelado");
+
                 const cliente = await database.buscarClientePorCURP(cred.curpCliente, filtros.userOffice);
                 if(cliente) {
-                    // Verificar filtro de ruta si es agente
                     if (userRole === 'Área comercial' && cliente.ruta !== filtros.ruta) continue;
-                    
                     resultadosFinales.push({ cliente, credito: cred });
                 }
             }
 
         } else {
-            // Búsqueda general de Clientes
-            // database.buscarClientes debe respetar el filtro 'ruta' que pasamos
             const clientesEncontrados = await database.buscarClientes(filtros);
 
             if (clientesEncontrados.length === 0) {
                 throw new Error("No se encontraron clientes con los criterios seleccionados.");
             }
 
-            showFixedProgress(50, `Analizando ${clientesEncontrados.length} clientes...`);
+            if (operationId !== currentSearchOperation) throw new Error("Cancelado");
+
+            const total = clientesEncontrados.length;
+            showFixedProgress(45, `Analizando ${total} clientes...`);
             
             for (const [index, cliente] of clientesEncontrados.entries()) {
+                
                 if (operationId !== currentSearchOperation) throw new Error("Cancelado");
-
-                // Verificar filtro de comisionista
                 if (filtros.soloComisionistas && !cliente.isComisionista) continue;
-
-                // Buscar Créditos del Cliente
                 const creditosCliente = await database.buscarCreditosPorCliente(cliente.curp, filtros.userOffice);
-
                 if (creditosCliente.length > 0) {
-                    // Si tiene créditos, mostramos una fila por cada crédito (o filtrados por estado)
                     let tieneCreditosVisibles = false;
                     
-                    // Ordenar créditos por fecha (más reciente primero)
                     creditosCliente.sort((a, b) => (parsearFecha(b.fechaCreacion)?.getTime() || 0) - (parsearFecha(a.fechaCreacion)?.getTime() || 0));
 
                     for (const credito of creditosCliente) {
-                        // Filtros adicionales de crédito (Estado, Plazo, Aval)
                         if (filtros.plazo && credito.plazo != filtros.plazo) continue;
                         if (filtros.curpAval && (!credito.curpAval || !credito.curpAval.includes(filtros.curpAval))) continue;
-                        
-                        // Para estado necesitamos calcularlo primero, o usar el guardado. 
-                        // Usaremos el guardado para filtrado rápido, cálculo real en render.
-                        // Pero si el usuario pide filtro de estado exacto, lo ideal es calcularlo.
-                        // Para optimizar, aquí pasamos si cumple los filtros estáticos y calculamos abajo.
                         
                         resultadosFinales.push({ cliente, credito: credito });
                         tieneCreditosVisibles = true;
                     }
-                    
-                    // Si se filtraron todos los créditos pero el cliente existe y no se pidieron filtros específicos de crédito exclusivos
-                    // mostramos al cliente solo? No, si filtró por "Crédito Activo" y no tiene, no se muestra.
-                    // Pero el requerimiento dice "ver clientes aunque no se les genere crédito".
-                    // Si NO aplicó filtros de crédito específicos (plazo, estado, aval), mostramos al cliente.
+                
                     if (!tieneCreditosVisibles && !filtros.plazo && !filtros.estado && !filtros.curpAval) {
                          resultadosFinales.push({ cliente, credito: null });
                     }
 
                 } else {
-                    // Si NO tiene créditos, y no estamos filtrando por propiedades de crédito
                     if (!filtros.plazo && !filtros.estado && !filtros.curpAval && !filtros.idCredito) {
                         resultadosFinales.push({ cliente, credito: null });
                     }
                 }
                 
-                // Actualizar progreso UI cada 10 clientes
-                if(index % 10 === 0) showFixedProgress(50 + Math.floor((index/clientesEncontrados.length)*40), 'Procesando...');
+                if(index % 5 === 0 || index === total - 1) {
+                    const porcentaje = 45 + Math.floor(((index + 1) / total) * 45);
+                    showFixedProgress(porcentaje, `Procesando ${index + 1}/${total}...`);
+                    
+                    await new Promise(r => setTimeout(r, 0)); 
+                }
             }
         }
 
         if (operationId !== currentSearchOperation) throw new Error("Cancelado");
 
-        // Renderizar Tabla
+        showFixedProgress(95, 'Dibujando tabla...');
         tbody.innerHTML = '';
+        
         if (resultadosFinales.length === 0) {
             tbody.innerHTML = '<tr><td colspan="6">No se encontraron registros coincidentes.</td></tr>';
         } else {
-            // Renderizar filas
             for (const item of resultadosFinales) {
+                if (operationId !== currentSearchOperation) throw new Error("Cancelado"); 
                 await renderFilaTablaClientes(tbody, item.cliente, item.credito, filtros.estado);
             }
         }
         
-        showFixedProgress(100, `Mostrando ${resultadosFinales.length} resultados.`);
+        showFixedProgress(100, `Completado (${resultadosFinales.length} resultados).`);
 
     } catch (error) {
         if (error.message === "Cancelado") {
-            tbody.innerHTML = '<tr><td colspan="6">Búsqueda cancelada.</td></tr>';
+            console.log("Búsqueda detenida por el usuario.");
+            if(tbody.innerHTML.includes("Buscando")) {
+                 tbody.innerHTML = '<tr><td colspan="6" style="color:orange; text-align:center;">Búsqueda cancelada.</td></tr>';
+            }
         } else {
             console.error('Error en loadClientesTable:', error);
             tbody.innerHTML = `<tr><td colspan="6">Mensaje: ${error.message}</td></tr>`;
@@ -609,24 +594,21 @@ async function loadClientesTable() {
     }
 }
 
-// [NUEVA FUNCIÓN AUXILIAR] Renderizado de fila (Pégala después de loadClientesTable)
+//==================================//
+    // ** RENDERIZAR FILA ** //
+//==================================// 
 async function renderFilaTablaClientes(tbody, cliente, credito, filtroEstado) {
     let infoCreditoHTML = '';
 
     if (credito) {
         const historicalId = credito.historicalIdCredito || credito.id;
-        
-        // Obtener pagos y ordenarlos para calcular estado y obtener fecha último pago
         const pagos = await database.getPagosPorCredito(historicalId, credito.office);
         pagos.sort((a, b) => (parsearFecha(b.fecha)?.getTime() || 0) - (parsearFecha(a.fecha)?.getTime() || 0));
-        
         const estadoCalc = _calcularEstadoCredito(credito, pagos);
         const ultimoPago = pagos.length > 0 ? pagos[0] : null;
 
-        // Aplicar filtro de estado "calculado" si existe en los filtros de UI
         if (filtroEstado && estadoCalc.estado !== filtroEstado) return; 
 
-        // --- DISEÑO RESTAURADO (Estilo original) ---
         const fechaInicioCredito = formatDateForDisplay(parsearFecha(credito.fechaCreacion));
         const fechaUltimoPago = formatDateForDisplay(ultimoPago ? parsearFecha(ultimoPago.fecha) : null);
         const estadoClase = `status-${estadoCalc.estado.replace(/\s/g, '-')}`;
@@ -651,7 +633,6 @@ async function renderFilaTablaClientes(tbody, cliente, credito, filtroEstado) {
             </div>`;
             
     } else {
-        // Cliente sin crédito (Mantenemos esto simple para diferenciar)
         infoCreditoHTML = `<div style="padding: 15px; text-align: center; background: #f8f9fa; border-radius: 8px; border: 1px dashed #ccc;">
             <span style="color: #6c757d; font-style: italic;">Cliente registrado sin crédito activo actualmente.</span>
         </div>`;
@@ -688,9 +669,9 @@ async function renderFilaTablaClientes(tbody, cliente, credito, filtroEstado) {
     tbody.appendChild(tr);
 }
 
-//**
-//INICIALIZAR VISTA GESTION DE CLIENTES
-//**
+//=======================================================//
+    // ** INICIALIZAR VISTA GESTION DE CLIENTES ** //
+//=======================================================//
 function inicializarVistaGestionClientes() {
     const tbody = document.getElementById('tabla-clientes');
     if (tbody) {
@@ -714,7 +695,9 @@ function limpiarFiltrosClientes() {
     showStatus('status_gestion_clientes', 'Filtros limpiados. Ingresa nuevos criterios para buscar.', 'info');
 }
 
-// --- Inicializar Reportes Avanzados ---
+//===============================================//
+    // ** INICIALIZAR REPORTES AVANZADOS ** //
+//===============================================//
 function inicializarVistaReportesAvanzados() {
     const tbody = document.getElementById('tabla-reportes_avanzados');
     if (tbody) {
@@ -753,7 +736,9 @@ function limpiarFiltrosReportes() {
     showStatus('status_reportes_avanzados', 'Filtros limpiados. Selecciona nuevos criterios y genera el reporte.', 'info');
 }
 
-//** Reportes Avanzados **//
+//=====================================//
+    // ** REPORTES AVANZADOS ** //
+//=====================================//
 async function loadAdvancedReports() {
     if (cargaEnProgreso) {
         showStatus('status_reportes_avanzados', 'Ya hay una generación de reporte en progreso. Espera a que termine.', 'warning');
@@ -828,6 +813,9 @@ async function loadAdvancedReports() {
     }
 }
 
+//===========================================//
+    // ** MOSTRAR REPORTES AVANZADOS ** //
+//===========================================//
 function mostrarReporteAvanzado(data) {
     const tbody = document.getElementById('tabla-reportes_avanzados');
     const estadisticasElement = document.getElementById('estadisticas-reporte');
@@ -879,6 +867,10 @@ function mostrarReporteAvanzado(data) {
     `;
 }
 
+
+//=========================================//
+    // ** EXPORTAR REPORTES A CSV ** //
+//=========================================//
 function exportToCSV() {
     if (!reportData || reportData.length === 0) {
         showStatus('status_reportes_avanzados', 'No hay datos para exportar. Genera un reporte primero.', 'warning');
@@ -954,6 +946,9 @@ function exportToCSV() {
     }
 }
 
+//=========================================//
+    // ** EXPORTAR REPORTES A PDF ** //
+//=========================================//
 function exportToPDF() {
     if (!reportData || reportData.length === 0) {
         alert('No hay datos para exportar. Genera un reporte primero.');
@@ -1085,8 +1080,6 @@ async function handleLogin(e) {
 
     try {
         await auth.signInWithEmailAndPassword(email, password);
-        // El onAuthStateChanged se encargará de ocultar esto y mostrar la app
-        // No es necesario re-habilitar el botón aquí, onAuthStateChanged lo hará si falla
 
     } catch (error) {
         console.error("Error de inicio de sesión:", error.code, error.message);
@@ -1100,10 +1093,13 @@ async function handleLogin(e) {
         }
         statusElement.textContent = mensajeError;
         statusElement.className = 'status-message status-error';
-        showButtonLoading(loginButton, false); // Re-habilitar botón SÓLO si falla el login
+        showButtonLoading(loginButton, false);
     }
 }
 
+//==========================================//
+    // ** MANEJAR CAMBIOS DE OFICINA ** //
+//==========================================//
 function handleOfficeChange() {
     const office = this.value;
     const isGDL = office === 'GDL';
@@ -1131,7 +1127,9 @@ function handleOfficeChange() {
     document.getElementById('detalle-importacion').innerHTML = '';
 }
 
-
+//==========================================//
+    // ** MANEJO DE CLICK DE TABLAS ** //
+//==========================================//
 function handleTabClick() {
     const parentSection = this.closest('[id$="-section"]');
     if (!parentSection) return;
@@ -1156,52 +1154,44 @@ function handleTabClick() {
     document.getElementById('detalle-importacion').innerHTML = '';
 }
 
-// EN app.js - AÑADIR NUEVA FUNCIÓN
-
-/**
- * Maneja los clics en los botones dentro de las listas de configuración.
- */
+//===================================================================//
+    // ** MANEJO DE CLICK DENTRO DE LISTAS DE CONFIGURACION ** //
+//===================================================================//
 async function handleConfigListClick(e) {
-    const button = e.target.closest('button'); // Encuentra el botón clickeado
-    if (!button) return; // No se hizo clic en un botón
+    const button = e.target.closest('button');
+    if (!button) return;
 
     const id = button.getAttribute('data-id');
-    const nombre = button.getAttribute('data-nombre'); // Para confirmación/logs
-    const tipo = button.getAttribute('data-tipo'); // 'poblacion' o 'ruta' (solo en eliminar)
+    const nombre = button.getAttribute('data-nombre');
+    const tipo = button.getAttribute('data-tipo');
     const listItem = button.closest('.config-list-item');
     const inputNombreRuta = listItem?.querySelector('.ruta-nombre-editable');
 
-    // --- Botón Eliminar ---
     if (button.classList.contains('btn-eliminar-config')) {
-        const tipoItem = button.getAttribute('data-tipo'); // 'poblacion' o 'ruta'
+        const tipoItem = button.getAttribute('data-tipo');
         const nombreItem = button.getAttribute('data-nombre');
-        handleEliminarConfig(tipoItem, id, nombreItem); // Llama a la función existente
+        handleEliminarConfig(tipoItem, id, nombreItem);
     }
-    // --- Botón Editar Ruta (Nombre) ---
     else if (button.classList.contains('btn-editar-ruta')) {
          if (!inputNombreRuta) return;
          inputNombreRuta.readOnly = false;
          inputNombreRuta.style.border = '1px solid #ccc';
          inputNombreRuta.style.background = '#fff';
          inputNombreRuta.focus();
-         // Ocultar Editar, Mostrar Guardar/Cancelar
          button.classList.add('hidden');
          listItem.querySelector('.btn-guardar-ruta')?.classList.remove('hidden');
          listItem.querySelector('.btn-cancelar-ruta')?.classList.remove('hidden');
     }
-    // --- Botón Cancelar Ruta (Nombre) ---
     else if (button.classList.contains('btn-cancelar-ruta')) {
         if (!inputNombreRuta) return;
-        inputNombreRuta.value = button.getAttribute('data-original-nombre'); // Restaurar valor
+        inputNombreRuta.value = button.getAttribute('data-original-nombre');
         inputNombreRuta.readOnly = true;
         inputNombreRuta.style.border = 'none';
         inputNombreRuta.style.background = 'transparent';
-        // Ocultar Guardar/Cancelar, Mostrar Editar
         button.classList.add('hidden');
         listItem.querySelector('.btn-guardar-ruta')?.classList.add('hidden');
         listItem.querySelector('.btn-editar-ruta')?.classList.remove('hidden');
     }
-    // --- Botón Guardar Ruta (Nombre) ---
     else if (button.classList.contains('btn-guardar-ruta')) {
         if (!inputNombreRuta) return;
         const nuevoNombre = inputNombreRuta.value.trim();
@@ -1212,8 +1202,7 @@ async function handleConfigListClick(e) {
             return;
         }
         if (nuevoNombre.toUpperCase() === originalNombre.toUpperCase()) {
-             // Si no cambió, solo cancelar la edición
-             listItem.querySelector('.btn-cancelar-ruta')?.click(); // Simular clic en cancelar
+             listItem.querySelector('.btn-cancelar-ruta')?.click();
              return;
         }
 
@@ -1223,62 +1212,53 @@ async function handleConfigListClick(e) {
 
         if (resultado.success) {
              showStatus('status_configuracion', resultado.message, 'success');
-             // Actualizar UI sin recargar todo (mejor experiencia)
              inputNombreRuta.readOnly = true;
              inputNombreRuta.style.border = 'none';
              inputNombreRuta.style.background = 'transparent';
              listItem.querySelector('.btn-cancelar-ruta')?.setAttribute('data-original-nombre', nuevoNombre.toUpperCase()); // Actualizar original
-             button.classList.add('hidden'); // Ocultar Guardar
+             button.classList.add('hidden');
              listItem.querySelector('.btn-cancelar-ruta')?.classList.add('hidden');
              listItem.querySelector('.btn-editar-ruta')?.classList.remove('hidden');
-             // Podríamos necesitar actualizar dropdowns en otras partes si el nombre cambió
-             await inicializarDropdowns(); // Recargar todos los dropdowns
+             await inicializarDropdowns();
         } else {
              showStatus('status_configuracion', `Error: ${resultado.message}`, 'error');
         }
     }
-    // --- Botón Editar Población (Asignar Ruta) ---
     else if (button.classList.contains('btn-editar-poblacion')) {
         const poblacionId = id;
         const poblacionNombre = button.getAttribute('data-nombre');
         const poblacionOffice = button.getAttribute('data-office');
         const rutaActual = button.getAttribute('data-ruta') || '';
-
-        // Obtener rutas disponibles para ESA oficina
         const rutasDisponibles = await database.obtenerRutas(poblacionOffice);
         const opcionesRutas = rutasDisponibles.map(r => r.nombre).sort();
 
-        // Crear HTML para el modal o prompt
         let selectHTML = `<label for="ruta-poblacion-select">Selecciona la nueva ruta para <strong>${poblacionNombre}</strong> (${poblacionOffice}):</label><br>`;
         selectHTML += `<select id="ruta-poblacion-select" style="width: 100%; margin-top: 10px;">`;
-        selectHTML += `<option value="">-- Sin asignar --</option>`; // Opción para quitar ruta
+        selectHTML += `<option value="">-- Sin asignar --</option>`;
         opcionesRutas.forEach(rutaNombre => {
             selectHTML += `<option value="${rutaNombre}" ${rutaNombre === rutaActual ? 'selected' : ''}>${rutaNombre}</option>`;
         });
         selectHTML += `</select>`;
         selectHTML += `<br><br><button id="btn-confirmar-ruta-poblacion" class="btn btn-success">Guardar Cambio</button>`;
 
-        // Mostrar en un modal (Asumiendo que tienes un modal genérico)
         document.getElementById('modal-title').textContent = 'Asignar Ruta a Población';
         document.getElementById('modal-body').innerHTML = selectHTML;
         document.getElementById('generic-modal').classList.remove('hidden');
 
-        // Añadir listener al botón dentro del modal
          const btnConfirmar = document.getElementById('btn-confirmar-ruta-poblacion');
          if (btnConfirmar) {
-            // Remover listener previo si existe
              btnConfirmar.replaceWith(btnConfirmar.cloneNode(true));
              document.getElementById('btn-confirmar-ruta-poblacion').addEventListener('click', async () => {
-                 const nuevaRuta = document.getElementById('ruta-poblacion-select').value || null; // null si es '-- Sin asignar --'
+                 const nuevaRuta = document.getElementById('ruta-poblacion-select').value || null;
 
                  showProcessingOverlay(true, 'Asignando ruta...');
                  const resultado = await database.asignarRutaAPoblacion(poblacionId, nuevaRuta);
                  showProcessingOverlay(false);
-                 document.getElementById('generic-modal').classList.add('hidden'); // Cerrar modal
+                 document.getElementById('generic-modal').classList.add('hidden');
 
                  if (resultado.success) {
                      showStatus('status_configuracion', resultado.message, 'success');
-                     await loadConfiguracion(); // Recargar la lista para ver el cambio
+                     await loadConfiguracion();
                  } else {
                      showStatus('status_configuracion', `Error: ${resultado.message}`, 'error');
                  }
@@ -1287,9 +1267,9 @@ async function handleConfigListClick(e) {
     }
 }
 
-/**
- * Carga todas las poblaciones en los dropdowns y los muestra
- */
+//=================================================================//
+    // ** CARGA DE POBLACIONES EN DROPDOWNS Y SE MUESTRAN ** //
+//=================================================================//
 async function handleCargarPoblaciones() {
     const statusEl = 'status_configuracion';
     
@@ -1339,9 +1319,9 @@ async function handleCargarPoblaciones() {
     }
 }
 
-/**
- * Carga todas las rutas en los dropdowns y los muestra
- */
+//============================================================//
+    // ** CARGA DE RUTAS EN DROPDOWNS Y SE MUESTRAN ** //
+//============================================================//
 async function handleCargarRutas() {
     const statusEl = 'status_configuracion';
     
@@ -1387,13 +1367,13 @@ async function handleCargarRutas() {
     }
 }
 
-// =============================================
-// *** NUEVAS FUNCIONES: EFECTIVO Y COMISIONES ***
-// =============================================
-/**
- * Carga la lista de agentes (Área Comercial) en los dropdowns de la vista Gestión Efectivo.
- * Se llama al mostrar la vista 'view-gestion-efectivo'.
- */
+/// ====================================================== ///
+    // *** NUEVAS FUNCIONES: EFECTIVO Y COMISIONES *** ///
+/// ====================================================== ///
+
+//===============================================================//
+    // ** CARGA DE AREA COMERCIAL EN GESTON DE EFECTIVO ** //
+//===============================================================//
 async function loadGestionEfectivo() {
     console.log("--- Ejecutando loadGestionEfectivo (Corregido) ---");
     const selectAgenteEntrega = document.getElementById('entrega-agente');
@@ -1405,14 +1385,12 @@ async function loadGestionEfectivo() {
         return;
     }
 
-    // Resetear vista
     selectAgenteEntrega.innerHTML = '<option value="">Cargando...</option>';
     selectAgenteFiltro.innerHTML = '<option value="">Cargando...</option>';
     document.getElementById('resultados-gestion-efectivo').classList.add('hidden');
     document.getElementById('tabla-movimientos-efectivo').innerHTML = '<tr><td colspan="5">Selecciona un agente y rango de fechas.</td></tr>';
     document.getElementById('form-registrar-entrega').reset();
 
-    // Poner fechas por defecto
     const hoy = new Date();
     const haceUnMes = new Date(hoy.getFullYear(), hoy.getMonth() - 1, hoy.getDate() + 1);
     document.getElementById('filtro-fecha-inicio-efectivo').value = haceUnMes.toISOString().split('T')[0];
@@ -1427,21 +1405,17 @@ async function loadGestionEfectivo() {
 
         let agentes = resultado.data || [];
         
-        // --- INICIO DE LA CORRECCIÓN ---
         const adminOffice = currentUserData?.office;
-        const adminRole = currentUserData?.role; // <-- Obtener el rol
-        const esAdminConAccesoTotal = (adminRole === 'Super Admin' || adminRole === 'Gerencia'); // <-- Variable de permiso
+        const adminRole = currentUserData?.role;
+        const esAdminConAccesoTotal = (adminRole === 'Super Admin' || adminRole === 'Gerencia');
 
         agentes = agentes.filter(u =>
             u.role === 'Área comercial' &&
-            // <-- Lógica corregida que incluye a Super Admin/Gerencia
             (esAdminConAccesoTotal || adminOffice === 'AMBAS' || !adminOffice || u.office === u.office)
         );
-        // --- FIN DE LA CORRECCIÓN ---
 
         agentes.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 
-        // Poblar dropdowns
         if (agentes.length === 0) {
             const msg = (adminOffice && adminOffice !== 'AMBAS' && !esAdminConAccesoTotal) ? `No hay agentes para ${adminOffice}` : 'No hay agentes de Área Comercial';
             popularDropdown('entrega-agente', [], msg, true);
@@ -1462,21 +1436,18 @@ async function loadGestionEfectivo() {
     }
 }
 
-/**
- * Maneja el formulario para registrar una entrega de efectivo a un agente.
- */
+//===============================================================//
+    // ** MANEJO DE FORMULARIO DE ENTREGA DE EFECTIVO ** //
+//===============================================================//
 async function handleRegistrarEntregaInicial(e) {
     e.preventDefault();
     const btn = e.target.querySelector('button[type="submit"]');
     const statusEl = document.getElementById('status_registrar_entrega');
-    
     const agenteId = document.getElementById('entrega-agente').value;
     const monto = parseFloat(document.getElementById('entrega-monto').value);
     const descripcion = document.getElementById('entrega-descripcion').value || 'Entrega inicial de efectivo';
-    
-    // Obtener datos del agente seleccionado para guardar su oficina
     const agenteSelect = document.getElementById('entrega-agente');
-    const agenteTexto = agenteSelect.options[agenteSelect.selectedIndex].text; // Ej: "Nombre Agente (GDL)"
+    const agenteTexto = agenteSelect.options[agenteSelect.selectedIndex].text;
     const officeAgente = agenteTexto.includes('(GDL)') ? 'GDL' : (agenteTexto.includes('(LEON)') ? 'LEON' : null);
 
     if (!agenteId || isNaN(monto) || monto <= 0 || !officeAgente) {
@@ -1492,7 +1463,7 @@ async function handleRegistrarEntregaInicial(e) {
             userId: agenteId,
             fecha: new Date().toISOString(),
             tipo: 'ENTREGA_INICIAL',
-            monto: monto, // Monto POSITIVO (entrada para el agente)
+            monto: monto,
             descripcion: descripcion,
             registradoPor: currentUserData.email,
             office: officeAgente
@@ -1502,9 +1473,8 @@ async function handleRegistrarEntregaInicial(e) {
         if (!resultado.success) throw new Error(resultado.message);
 
         showStatus(statusEl.id, 'Entrega registrada exitosamente.', 'success');
-        e.target.reset(); // Limpiar formulario de entrega
+        e.target.reset();
         
-        // Si el agente filtrado es el mismo, recargar los movimientos
         if (document.getElementById('filtro-agente').value === agenteId) {
             handleBuscarMovimientos();
         }
@@ -1517,10 +1487,9 @@ async function handleRegistrarEntregaInicial(e) {
     }
 }
 
-/**
- * Busca y muestra los movimientos y el balance del agente seleccionado.
- * CORREGIDO: Ahora pasa el filtro de 'office' del administrador a la consulta.
- */
+//===============================================================//
+    // ** REPORTE DE BALANCE POR AGENTE AREA COMERCIAL ** //
+//===============================================================//
 async function handleBuscarMovimientos() {
     const btn = document.getElementById('btn-buscar-movimientos');
     const statusEl = 'status_registrar_entrega';
@@ -1542,7 +1511,6 @@ async function handleBuscarMovimientos() {
     resultadosDiv.classList.add('hidden');
     tbody.innerHTML = '<tr><td colspan="5">Buscando...</td></tr>';
     
-    // Resetear balance
     document.getElementById('balance-agente').textContent = '...';
     document.getElementById('balance-entregado').textContent = '...';
     document.getElementById('balance-gastos').textContent = '...';
@@ -1550,7 +1518,6 @@ async function handleBuscarMovimientos() {
     document.getElementById('balance-final').textContent = '...';
 
     try {
-        // --- INICIO DE LA CORRECCIÓN ---
         const adminOffice = currentUserData?.office;
         const esAdminTotal = (currentUserData?.role === 'Super Admin' || currentUserData?.role === 'Gerencia');
         
@@ -1558,11 +1525,8 @@ async function handleBuscarMovimientos() {
             userId: agenteId,
             fechaInicio: fechaInicio ? (fechaInicio + 'T00:00:00Z') : null,
             fechaFin: fechaFin ? (fechaFin + 'T23:59:59Z') : null,
-            // Añadir el filtro de oficina del admin (si no es admin total)
-            // 'null' significa que la función de DB no aplicará filtro de oficina
             office: (esAdminTotal || !adminOffice || adminOffice === 'AMBAS') ? null : adminOffice
         };
-        // --- FIN DE LA CORRECCIÓN ---
 
         const movimientos = await database.getMovimientosEfectivo(filtros);
 
@@ -1570,7 +1534,6 @@ async function handleBuscarMovimientos() {
             tbody.innerHTML = '<tr><td colspan="5">No se encontraron movimientos para este agente en este rango de fechas.</td></tr>';
             showStatus(statusEl, 'No se encontraron movimientos.', 'info');
         } else {
-            // El resto de la función (renderizado de tabla) es correcto
             tbody.innerHTML = movimientos.map(mov => `
                 <tr style="color: ${mov.monto > 0 ? 'var(--success)' : 'var(--danger)'};">
                     <td>${formatDateForDisplay(parsearFecha(mov.fecha))}</td>
@@ -1583,7 +1546,6 @@ async function handleBuscarMovimientos() {
             showStatus(statusEl, `Se encontraron ${movimientos.length} movimientos.`, 'success');
         }
         
-        // El resto del cálculo de balance es correcto
         let totalEntregado = 0;
         let totalGastos = 0;
         let totalColocado = 0;
@@ -1619,9 +1581,9 @@ async function handleBuscarMovimientos() {
     }
 }
 
-/**
- * Maneja el formulario para registrar un gasto (Área Comercial).
- */
+//==================================================//
+    // ** FORMULARIO DE REGISTRO DE GASTO ** //
+//==================================================//
 async function handleRegistrarGasto(e) {
     e.preventDefault();
     const btn = e.target.querySelector('button[type="submit"]');
@@ -1629,25 +1591,24 @@ async function handleRegistrarGasto(e) {
 
     const monto = parseFloat(document.getElementById('gasto-monto').value);
     const descripcion = document.getElementById('gasto-descripcion').value.trim();
-    const fechaInput = document.getElementById('gasto-fecha').value; // YYYY-MM-DD
+    const fechaInput = document.getElementById('gasto-fecha').value;
 
     if (isNaN(monto) || monto <= 0 || !descripcion || !fechaInput) {
         showStatus(statusEl.id, 'Todos los campos son obligatorios y el monto debe ser positivo.', 'error');
         return;
     }
 
-    // Convertir fecha YYYY-MM-DD a ISO String con hora
-    const fechaGasto = new Date(fechaInput + 'T12:00:00Z').toISOString(); // Usar mediodía UTC
+    const fechaGasto = new Date(fechaInput + 'T12:00:00Z').toISOString();
 
     showButtonLoading(btn, true, 'Guardando...');
     showStatus(statusEl.id, 'Registrando gasto...', 'info');
 
     try {
         const movimientoData = {
-            userId: currentUserData.id, // ID del agente
+            userId: currentUserData.id,
             fecha: fechaGasto,
             tipo: 'GASTO',
-            monto: -monto, // Monto NEGATIVO (salida)
+            monto: -monto,
             descripcion: descripcion,
             registradoPor: currentUserData.email,
             office: currentUserData.office
@@ -1669,7 +1630,9 @@ async function handleRegistrarGasto(e) {
     }
 }
 
-//** IMPORTACIÓN DE DATOS **//
+//================================================//
+    // ** MANEJO DE IMPORTACION DE DATOS ** //
+//================================================//
 async function handleImport() {
     const office = document.getElementById('office-select').value;
     const textareaId = `datos-importar-${office.toLowerCase()}-${currentImportTab}`;
@@ -1731,7 +1694,9 @@ async function handleImport() {
     }
 }
 
-// Formato de Clientes
+//=====================================//
+    // ** FORMATO DE CLIENTES ** //
+//=====================================//
 function resetClientForm() {
     editingClientId = null;
     const form = document.getElementById('form-cliente');
@@ -1757,7 +1722,9 @@ function resetClientForm() {
     showStatus('status_cliente', '', 'info');
 }
 
-// Manejar formato de Clienes
+//============================================//
+    // ** MANEJAR FORMATO DE CLIENTES ** //
+//============================================//
 async function handleClientForm(e) {
     e.preventDefault();
     const curpInput = document.getElementById('curp_cliente');
@@ -1766,7 +1733,6 @@ async function handleClientForm(e) {
     const telefono = telefonoInput.value.trim();
     const submitButton = e.target.querySelector('button[type="submit"]');
 
-    // Validación CURP
     if (!validarFormatoCURP(curp)) {
         showStatus('status_cliente', 'El formato del CURP es incorrecto (debe tener 18 caracteres).', 'error');
         curpInput.classList.add('input-error');
@@ -1775,7 +1741,6 @@ async function handleClientForm(e) {
         curpInput.classList.remove('input-error');
     }
 
-    // VALIDACIÓN OBLIGATORIA DE TELÉFONO
     if (!telefono || telefono.length < 10) {
         showStatus('status_cliente', 'El teléfono es obligatorio y debe tener al menos 10 dígitos.', 'error');
         telefonoInput.classList.add('input-error');
@@ -1808,7 +1773,6 @@ async function handleClientForm(e) {
     try {
         let resultado;
         if (editingClientId) {
-            // Verificación de seguridad al editar CURP
             if (!curpInput.readOnly) {
                 const clienteOriginal = await database.obtenerClientePorId(editingClientId);
                 if (clienteOriginal && clienteOriginal.curp !== curp) {
@@ -1831,7 +1795,6 @@ async function handleClientForm(e) {
             showStatus('status_gestion_clientes', successMessage, 'success');
             resetClientForm();
             showView('view-gestion-clientes');
-            // No recargamos la tabla automáticamente para no perder filtros del usuario, él decidirá cuándo buscar de nuevo.
         } else {
             throw new Error(resultado.message || 'Ocurrió un error desconocido.');
         }
@@ -1844,23 +1807,22 @@ async function handleClientForm(e) {
     }
 }
 
-// =============================================
-// GESTIÓN DE USUARIOS
-// =============================================
+//=====================================//
+    // ** GESTION DE USUARIOS ** //
+//=====================================//
 async function mostrarFormularioUsuario(usuario = null) {
     const formContainer = document.getElementById('form-usuario-container');
     const formTitulo = document.getElementById('form-usuario-titulo');
     const form = document.getElementById('form-usuario');
     const passwordInput = document.getElementById('nuevo-password');
     const emailInput = document.getElementById('nuevo-email');
-    const officeSelect = document.getElementById('nuevo-sucursal'); // <-- Mantener ID HTML, cambiar variable
+    const officeSelect = document.getElementById('nuevo-sucursal');
     const rutaSelect = document.getElementById('nuevo-ruta');
 
-    // Cambiar nombre de variable sucursalSelect a officeSelect para claridad
     if (!formContainer || !formTitulo || !form || !officeSelect || !rutaSelect) return;
 
     form.reset();
-    let userOffice = ''; // <-- CAMBIO DE sucursalUsuario A userOffice
+    let userOffice = '';
 
     if (usuario) {
         editingUserId = usuario.id;
@@ -1869,8 +1831,8 @@ async function mostrarFormularioUsuario(usuario = null) {
         emailInput.value = usuario.email || '';
         emailInput.readOnly = true;
         document.getElementById('nuevo-rol').value = usuario.role || '';
-        userOffice = usuario.office || ''; // <-- CAMBIO DE sucursal A office
-        officeSelect.value = userOffice; // <-- CAMBIO DE sucursalUsuario A userOffice
+        userOffice = usuario.office || '';
+        officeSelect.value = userOffice;
         passwordInput.required = false;
         passwordInput.placeholder = "Dejar en blanco para no cambiar";
     } else {
@@ -1879,19 +1841,17 @@ async function mostrarFormularioUsuario(usuario = null) {
         emailInput.readOnly = false;
         passwordInput.required = true;
         passwordInput.placeholder = "Mínimo 6 caracteres";
-        userOffice = ''; // <-- CAMBIO DE sucursalUsuario A userOffice
+        userOffice = '';
         officeSelect.value = '';
     }
 
-    // Cargar rutas DESPUÉS de establecer la oficina
-    await _cargarRutasParaUsuario(userOffice); // <-- CAMBIO DE sucursalUsuario A userOffice
+    await _cargarRutasParaUsuario(userOffice);
 
-    // Si editamos, seleccionar ruta guardada
     if (usuario && usuario.ruta) {
          setTimeout(() => {
             rutaSelect.value = usuario.ruta;
             if(rutaSelect.value !== usuario.ruta) {
-                console.warn(`La ruta guardada "${usuario.ruta}" no se encontró en la lista para la oficina ${userOffice}.`); // <-- Mensaje actualizado
+                console.warn(`La ruta guardada "${usuario.ruta}" no se encontró en la lista para la oficina ${userOffice}.`);
             }
          }, 50);
     }
@@ -1899,7 +1859,9 @@ async function mostrarFormularioUsuario(usuario = null) {
     formContainer.classList.remove('hidden');
 }
 
-
+//=============================================//
+    // ** OCULTAR FORMULATIO DE USUARIO ** //
+//=============================================//
 function ocultarFormularioUsuario() {
     editingUserId = null;
     const formContainer = document.getElementById('form-usuario-container');
@@ -1910,9 +1872,9 @@ function ocultarFormularioUsuario() {
     }
 }
 
-/**
- * Deshabilita un usuario
- */
+//=====================================//
+    // ** DESHABILITAR USUARIO ** //
+//=====================================//
 async function disableUsuario(userId, userName) {
     if (!confirm(`¿Estás seguro de que deseas deshabilitar al usuario "${userName}"?`)) {
         return;
@@ -1935,7 +1897,9 @@ async function disableUsuario(userId, userName) {
     }
 }
 
-
+//============================================//
+    // ** MANEJAR FORMATO DE USUARIOS ** //
+//============================================//
 async function handleUserForm(e) {
     e.preventDefault();
     const submitButton = e.target.querySelector('button[type="submit"]');
@@ -1950,13 +1914,12 @@ async function handleUserForm(e) {
             const userData = {
                 name: document.getElementById('nuevo-nombre').value.trim(),
                 role: document.getElementById('nuevo-rol').value,
-                office: document.getElementById('nuevo-sucursal').value, // <-- CAMBIO DE sucursal A office
+                office: document.getElementById('nuevo-sucursal').value,
                 ruta: document.getElementById('nuevo-ruta').value || null
             };
-            if (!userData.name || !userData.role || !userData.office) { // <-- CAMBIO DE sucursal A office
-                throw new Error('Nombre, Rol y Oficina son obligatorios.'); // <-- Mensaje actualizado
+            if (!userData.name || !userData.role || !userData.office) {
+                throw new Error('Nombre, Rol y Oficina son obligatorios.');
             }
-            // La llamada a database.actualizarUsuario ya espera 'office'
             const resultado = await database.actualizarUsuario(editingUserId, userData);
             if (!resultado.success) throw new Error(resultado.message);
 
@@ -1971,11 +1934,11 @@ async function handleUserForm(e) {
             const password = document.getElementById('nuevo-password').value;
             const nombre = document.getElementById('nuevo-nombre').value.trim();
             const rol = document.getElementById('nuevo-rol').value;
-            const office = document.getElementById('nuevo-sucursal').value; // <-- CAMBIO DE sucursal A office
+            const office = document.getElementById('nuevo-sucursal').value;
             const ruta = document.getElementById('nuevo-ruta').value || null;
 
-            if (!email || !password || !nombre || !rol || !office) { // <-- CAMBIO DE sucursal A office
-                throw new Error('Email, Contraseña, Nombre, Rol y Oficina son obligatorios...'); // <-- Mensaje actualizado
+            if (!email || !password || !nombre || !rol || !office) {
+                throw new Error('Email, Contraseña, Nombre, Rol y Oficina son obligatorios...');
             }
             if (password.length < 6) {
                 throw new Error('La contraseña debe tener al menos 6 caracteres.');
@@ -1996,10 +1959,9 @@ async function handleUserForm(e) {
                 throw new Error(`Error de autenticación: ${authError.message}`);
             }
 
-            // Si la creación en Auth fue exitosa, crear el documento en Firestore
             await db.collection('users').doc(user.uid).set({
                 id: user.uid, email, name: nombre, role: rol,
-                office: office, // <-- CAMBIO DE sucursal A office
+                office: office,
                 ruta: ruta,
                 createdAt: new Date().toISOString(), status: 'active'
             });
@@ -2016,12 +1978,14 @@ async function handleUserForm(e) {
     }
 }
 
-
+//=========================================//
+    // ** CARGAR TABLA DE USUARIOS ** //
+//=========================================//
 async function loadUsersTable() {
     if (cargaEnProgreso) { /* ... sin cambios ... */ return; }
     cargaEnProgreso = true;
     const tbody = document.getElementById('tabla-usuarios');
-    tbody.innerHTML = '<tr><td colspan="7">...</td></tr>'; // Colspan 7
+    tbody.innerHTML = '<tr><td colspan="7">...</td></tr>';
     showButtonLoading('#btn-aplicar-filtros-usuarios', true, 'Buscando...');
     showStatus('status_usuarios', '', 'info');
 
@@ -2033,27 +1997,22 @@ async function loadUsersTable() {
         const filtroEmail = (document.getElementById('filtro-email-usuario')?.value || '').trim().toLowerCase();
         const filtroNombre = (document.getElementById('filtro-nombre-usuario')?.value || '').trim().toLowerCase();
         const filtroRol = document.getElementById('filtro-rol-usuario')?.value || '';
-        const filtroOfficeUsuario = document.getElementById('filtro-sucursal-usuario')?.value || ''; // <-- Variable correcta definida aquí
+        const filtroOfficeUsuario = document.getElementById('filtro-sucursal-usuario')?.value || '';
 
         const usuariosFiltrados = usuarios.filter(usuario => {
             const emailMatch = !filtroEmail || (usuario.email && usuario.email.toLowerCase().includes(filtroEmail));
             const nombreMatch = !filtroNombre || (usuario.name && usuario.name.toLowerCase().includes(filtroNombre));
             const rolMatch = !filtroRol || usuario.role === filtroRol;
-
-            // *** CORRECCIÓN AQUÍ ***
-            // Usar la variable 'filtroOfficeUsuario' que definimos arriba
             const officeUiMatch = !filtroOfficeUsuario || usuario.office === filtroOfficeUsuario || (filtroOfficeUsuario === 'AMBAS' && usuario.office === 'AMBAS');
-
             const adminOffice = currentUserData?.office;
             const adminOfficeMatch = !adminOffice || adminOffice === 'AMBAS' || usuario.office === adminOffice || !usuario.office;
-
             return emailMatch && nombreMatch && rolMatch && officeUiMatch && adminOfficeMatch;
         });
 
         tbody.innerHTML = '';
 
         if (usuariosFiltrados.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="7">No se encontraron usuarios...</td></tr>'; // Colspan 7
+            tbody.innerHTML = '<tr><td colspan="7">No se encontraron usuarios...</td></tr>';
             showStatus('status_usuarios', 'No se encontraron usuarios.', 'info');
         } else {
             usuariosFiltrados.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
@@ -2065,7 +2024,7 @@ async function loadUsersTable() {
                     tr.title = 'Usuario deshabilitado';
                 }
                 const normalizedRole = (usuario.role || 'default')
-                    .normalize("NFD") // Separa acentos de letras (ej: "á" -> "a" + "´")
+                    .normalize("NFD")
                     .replace(/[\u0300-\u036f]/g, "");
                 const roleBadgeClass = `role-${normalizedRole.toLowerCase().replace(/\s/g, '-')}`;
                 const usuarioJsonString = JSON.stringify(usuario).replace(/'/g, "&apos;").replace(/"/g, "&quot;");
@@ -4889,86 +4848,85 @@ function showButtonLoading(selector, show, loadingText = '') {
 // FUNCIONES DE BARRA DE PROGRESO Y UTILIDADES
 // =============================================
 
+
+//=================================//
+    // ** BARRA DE CARGA ** //
+//=================================//
 function showFixedProgress(percentage, message = '') {
-    if (typeof resetInactivityTimer === 'function') {
-        resetInactivityTimer();
-    }
-    let progressContainer = document.getElementById('progress-container-fixed');
-    if (!progressContainer) {
-        progressContainer = document.createElement('div');
-        progressContainer.id = 'progress-container-fixed';
-        progressContainer.className = 'progress-container-fixed hidden';
-        progressContainer.innerHTML = `
-            <div id="progress-text-fixed" class="progress-text-fixed"></div>
-            <div id="progress-bar-fixed" class="progress-bar-fixed" style="width: 0%;"></div>
-            <button id="btn-cancelar-carga-fixed" class="btn-cancelar-carga-fixed" title="Cancelar operación">
-                <i class="fas fa-times"></i>
-            </button>
-        `;
-        document.body.insertBefore(progressContainer, document.body.firstChild);
-        const cancelButton = document.getElementById('btn-cancelar-carga-fixed');
-        if (cancelButton) cancelButton.addEventListener('click', cancelarCarga);
-    }
-    const statusDiv = document.getElementById('connection-status');
-    if (statusDiv) statusDiv.classList.add('hidden');
-    document.body.classList.remove('has-connection-status');
-    const progressBar = document.getElementById('progress-bar-fixed');
-    const progressText = document.getElementById('progress-text-fixed');
-    const validPercentage = Math.max(0, Math.min(100, percentage));
-    if (progressBar) progressBar.style.width = validPercentage + '%';
-    if (progressText) progressText.textContent = `${message} (${validPercentage.toFixed(0)}%)`;
-    progressContainer.classList.remove('hidden');
-    progressContainer.classList.add('visible');
-    progressContainer.style.display = 'block';
-    document.body.classList.add('has-progress');
+    if (typeof resetInactivityTimer === 'function') resetInactivityTimer();
+
+    let progressContainer = document.getElementById('progress-container-fixed');
+    
+    if (!progressContainer) {
+        progressContainer = document.createElement('div');
+        progressContainer.id = 'progress-container-fixed';
+        progressContainer.className = 'hidden';
+        
+        progressContainer.innerHTML = `
+            <div class="progress-content-wrapper">
+                <div id="progress-text-fixed" class="progress-text-fixed">Iniciando...</div>
+                <div class="progress-bar-background">
+                    <div id="progress-bar-fixed" class="progress-bar-fixed" style="width: 0%;"></div>
+                </div>
+            </div>
+            <button id="btn-cancelar-carga-fixed" class="btn-cancelar-carga-fixed" title="Detener operación">
+                <i class="fas fa-times"></i>
+            </button>
+        `;
+        document.body.insertBefore(progressContainer, document.body.firstChild);
+        
+        document.getElementById('btn-cancelar-carga-fixed').addEventListener('click', cancelarCarga);
+    }
+
+    const progressBar = document.getElementById('progress-bar-fixed');
+    const progressText = document.getElementById('progress-text-fixed');
+    
+    const validPercentage = Math.max(0, Math.min(100, percentage));
+    
+    if (progressBar) progressBar.style.width = validPercentage + '%';
+    if (progressText) progressText.textContent = `${message} (${validPercentage.toFixed(0)}%)`;
+    
+    progressContainer.classList.remove('hidden');
+    progressContainer.classList.add('visible');
+    document.body.classList.add('has-progress');
 }
 
+//=======================================//
+    // ** OCULTAR BARRA DE PROGRESO ** 
+//=======================================//
 function hideFixedProgress() {
-    const progressContainer = document.getElementById('progress-container-fixed');
-    if (progressContainer) {
-        progressContainer.classList.add('hidden');
+    const progressContainer = document.getElementById('progress-container-fixed');
+    if (progressContainer) {
         progressContainer.classList.remove('visible');
-        progressContainer.style.display = 'none';
-        const progressBar = document.getElementById('progress-bar-fixed');
-        if (progressBar) progressBar.style.width = '0%';
-        const progressText = document.getElementById('progress-text-fixed');
-        if (progressText) progressText.textContent = '';
+        progressContainer.classList.add('hidden');
+        setTimeout(() => {
+            const pb = document.getElementById('progress-bar-fixed');
+            if(pb) pb.style.width = '0%';
+        }, 300);
     }
     document.body.classList.remove('has-progress');
 }
 
+//============================//
+    // ** CANCELAR CARGA** 
+//============================//
 function cancelarCarga() {
-    console.warn("Operación cancelada por el usuario.");
-    currentSearchOperation = null;
-    cargaEnProgreso = false;
+    if (!cargaEnProgreso) return;
 
+    console.warn("🛑 Operación cancelada manualmente por el usuario.");
+    currentSearchOperation = Date.now(); 
+    cargaEnProgreso = false;
     hideFixedProgress();
     showProcessingOverlay(false);
+    showButtonLoading('#btn-aplicar-filtros', false);
 
-    document.querySelectorAll('.btn-loading').forEach(button => {
-        showButtonLoading(button, false);
-    });
-
-    const activeView = document.querySelector('.view:not(.hidden)');
-    if (activeView) {
-        const statusElement = activeView.querySelector('.status-message');
-        const statusElementId = statusElement?.id || (activeView.id ? `status_${activeView.id.replace('view-', '')}` : null);
-
-        if (statusElementId) {
-            showStatus(statusElementId, 'Operación cancelada por el usuario.', 'warning');
-        }
-        if (activeView.id === 'view-gestion-clientes') {
-            const tabla = document.getElementById('tabla-clientes');
-            if (tabla) tabla.innerHTML = '<tr><td colspan="6">Búsqueda cancelada. Utiliza los filtros para buscar de nuevo.</td></tr>';
-        }
-        if (activeView.id === 'view-reportes-avanzados') {
-            const tablaReporte = document.getElementById('tabla-reportes_avanzados');
-            if (tablaReporte) tablaReporte.innerHTML = '<tr><td colspan="10">Generación de reporte cancelada.</td></tr>';
-            document.getElementById('estadisticas-reporte').innerHTML = '';
-        }
+    const tbody = document.getElementById('tabla-clientes');
+    if(tbody) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:#dc3545; font-weight:bold;"><i class="fas fa-ban"></i> Búsqueda cancelada por el usuario.</td></tr>';
     }
+    
+    showStatus('status_gestion_clientes', 'Operación detenida.', 'warning');
 }
-
 
 /**
  * CORRECCIÓN: Calcula el monto total basado en plazo (0%, 30%, 40%).
@@ -6832,3 +6790,4 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
