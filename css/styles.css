@@ -1920,8 +1920,8 @@ body.has-connection-status.has-progress {
 }
 
 .progress-content-wrapper {
-    flex-grow: 1;
-    margin-right: 20px;
+    flex-grow: 1; /* Toma todo el espacio disponible */
+    margin-right: 20px; /* Separa del botón de cancelar */
     display: flex;
     flex-direction: column;
     justify-content: center;
@@ -1934,89 +1934,31 @@ body.has-connection-status.has-progress {
     font-size: 0.9rem;
 }
 
-/** Progress Bar **/
-#progress-container-fixed {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 70px;
-    background-color: #ffffff;
-    z-index: 10000; /* Encima de todo */
-    
-    /* FLEXBOX PARA ALINEACIÓN */
-    display: flex;
-    align-items: center; /* Centrado vertical */
-    justify-content: space-between; 
-    padding: 0 20px;
-    
-    box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-    border-bottom: 4px solid var(--primary);
-    
-    /* Transiciones */
-    transform: translateY(-100%);
-    transition: transform 0.3s ease-in-out, top 0.3s ease; /* Agregado 'top' para transición suave si hay banner de conexión */
-    visibility: hidden;
-}
-
-#progress-container-fixed.visible {
-    transform: translateY(0);
-    visibility: visible;
-}
-
-/* Ajuste cuando hay barra de conexión visible */
-body.has-connection-status #progress-container-fixed {
-    top: 40px; /* Baja la barra para no tapar el status de conexión */
-}
-
-/* WRAPPER: Ocupa el espacio izquierdo */
-.progress-content-wrapper {
-    flex-grow: 1; /* Ocupa todo el espacio disponible */
-    margin-right: 20px; /* Separación del botón rojo */
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-}
-
-.progress-text-fixed {
-    font-weight: bold;
-    color: #333;
-    margin-bottom: 6px;
-    font-size: 0.9rem;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-/* Fondo de la barra */
 .progress-bar-background {
     width: 100%;
-    height: 12px;
+    height: 10px;
     background-color: #e9ecef;
-    border-radius: 6px;
+    border-radius: 5px;
     overflow: hidden;
 }
 
-/* Barra animada */
 .progress-bar-fixed {
     height: 100%;
     background-color: var(--primary);
     width: 0%;
-    transition: width 0.2s ease;
-    border-radius: 6px;
+    transition: width 0.3s ease;
+    border-radius: 5px;
     background-image: linear-gradient(45deg,rgba(255,255,255,.15) 25%,transparent 25%,transparent 50%,rgba(255,255,255,.15) 50%,rgba(255,255,255,.15) 75%,transparent 75%,transparent);
     background-size: 1rem 1rem;
     animation: progress-bar-stripes 1s linear infinite;
 }
 
-/* BOTÓN CANCELAR (Estilo único) */
 .btn-cancelar-carga-fixed {
     background-color: #dc3545;
     color: white;
     border: none;
-    width: 40px;
-    height: 40px;
-    min-width: 40px; /* Evita aplastamiento */
+    width: 45px;
+    height: 45px;
     border-radius: 50%;
     display: flex;
     align-items: center;
@@ -2024,7 +1966,8 @@ body.has-connection-status #progress-container-fixed {
     cursor: pointer;
     font-size: 1.2rem;
     box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-    transition: transform 0.2s, background-color 0.2s;
+    transition: all 0.2s;
+    flex-shrink: 0;
 }
 
 .btn-cancelar-carga-fixed:hover {
@@ -2032,29 +1975,121 @@ body.has-connection-status #progress-container-fixed {
     transform: scale(1.1);
 }
 
-.btn-cancelar-carga-fixed:active {
-    transform: scale(0.9);
-}
-
 @keyframes progress-bar-stripes {
     0% { background-position: 1rem 0; }
     100% { background-position: 0 0; }
 }
 
-/* Ajustes Responsive */
+body.has-connection-status #progress-container-fixed {
+    top: 50px;
+}
+
+#btn-cancelar-carga-fixed {
+    background: var(--danger);
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    font-size: 12px;
+    flex-shrink: 0;
+    padding: 0; 
+}
+#btn-cancelar-carga-fixed:hover {
+    background: #e64a2e;
+    transform: scale(1.1);
+}
+#btn-cancelar-carga-fixed .fa-times {
+    margin: 0;
+}
+
+#progress-container-fixed > #btn-cancelar-carga-fixed {
+    grid-column: 1;
+    align-self: center;
+}
+
+.progress-center-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+}
+
+#progress-text-fixed {
+    font-size: 14px;
+    color: var(--dark);
+    font-weight: 500;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    width: 100%;
+    padding: 0;
+}
+
+.progress-bar-wrapper {
+    background: #e0e0e0;
+    border-radius: 10px;
+    height: 8px;
+    overflow: hidden;
+    margin-top: 5px;
+    width: 100%;
+    max-width: 400px;
+}
+
+#progress-bar-fixed {
+    height: 8px;
+    background: linear-gradient(90deg, var(--primary), var(--secondary));
+    border-radius: 10px;
+    transition: width 0.3s ease, background 0.3s ease;
+    width: 0%;
+}
+
+.progress-spacer {
+    width: 30px; 
+    height: 30px;
+    flex-shrink: 0;
+}
+
 @media (max-width: 600px) {
+    body.has-progress {
+        padding-top: calc(50px + 20px) !important;
+    }
+    body.has-connection-status:not(.has-progress) {
+        padding-top: calc(40px + 20px) !important;
+    }
+    body.has-connection-status.has-progress {
+        padding-top: calc(50px + 40px + 20px) !important;
+    }
+
     #progress-container-fixed {
-        height: 60px;
-        padding: 0 15px;
+        height: 50px;
+        padding: 0 10px;
+        gap: 10px;
     }
-    .btn-cancelar-carga-fixed {
-        width: 35px;
-        height: 35px;
-        min-width: 35px;
-        font-size: 1rem;
+    
+    body.has-connection-status #progress-container-fixed {
+        top: 40px;
     }
-    .progress-text-fixed {
-        font-size: 0.8rem;
+
+    #btn-cancelar-carga-fixed {
+        width: 25px;
+        height: 25px;
+    }
+
+    .progress-spacer {
+        width: 25px;
+        height: 25px;
+    }
+
+    #progress-text-fixed {
+        font-size: 12px;
     }
 }
 
@@ -2067,28 +2102,33 @@ body.has-connection-status #progress-container-fixed {
 /* =============================================
    ESTILOS PARA ACCIONES EN MODAL DE PAGOS
    ============================================= */
+
+/* Contenedor para los botones "Editar/Eliminar Crédito" */
 .modal-credit-actions {
     display: flex;
     gap: 10px;
-    justify-content: flex-end;
-    margin: -10px 0 15px 0;
+    justify-content: flex-end; /* Alinea a la derecha */
+    margin: -10px 0 15px 0; /* Espacio arriba/abajo */
 }
 
+/* Estilo para los botones de acción en la tabla de pagos */
 .payment-history-table .action-buttons-modal {
     display: flex;
     gap: 5px;
     justify-content: center;
 }
 
+/* Botones de acción pequeños para el modal */
 .btn-modal-action {
     padding: 4px 8px;
     font-size: 12px;
     border-radius: 6px;
 }
 
+/* --- Estilos para el Selector de Poblaciones (Pago Grupal) --- */
 .poblacion-selector-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); /* Responsivo */
     gap: 15px;
     margin: 15px 0;
 }
@@ -2107,9 +2147,10 @@ body.has-connection-status #progress-container-fixed {
     overflow: hidden;
 }
 
+/* Estilo cuando está seleccionado */
 .poblacion-select-card.selected {
-    border-color: var(--primary);
-    background-color: #e8f5e9;
+    border-color: var(--primary); /* Tu color verde */
+    background-color: #e8f5e9; /* Verde muy clarito */
     box-shadow: 0 4px 6px rgba(0,0,0,0.1);
 }
 
@@ -2119,6 +2160,7 @@ body.has-connection-status #progress-container-fixed {
 }
 
 .poblacion-select-card input[type="checkbox"] {
+    /* Ocultar el checkbox nativo feo, pero mantenerlo funcional */
     position: absolute;
     opacity: 0; 
     cursor: pointer;
@@ -2142,6 +2184,7 @@ body.has-connection-status #progress-container-fixed {
     transform: scale(1.1);
 }
 
+/* Botón de "Seleccionar Todas" más bonito */
 .select-all-container {
     background: #f8f9fa;
     padding: 10px 15px;
@@ -2162,9 +2205,10 @@ body.has-connection-status #progress-container-fixed {
 }
 
 .custom-check-wrapper:active {
-    transform: scale(0.95);
+    transform: scale(0.95); /* Efecto de click */
 }
 
+/* Ocultamos el input nativo pero sigue funcionando en el DOM */
 .custom-check-wrapper input[type="checkbox"] {
     position: absolute;
     opacity: 0;
@@ -2173,19 +2217,22 @@ body.has-connection-status #progress-container-fixed {
     width: 0;
 }
 
+/* El ícono visual (FontAwesome) */
 .custom-check-icon {
-    font-size: 1.6rem;
-    color: #e0e0e0; 
-    transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    font-size: 1.6rem; /* Tamaño grande y fácil de tocar */
+    color: #e0e0e0;    /* Color apagado (desactivado) */
+    transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); /* Animación rebote */
 }
 
+/* Cuando el input "oculto" está checked, cambiamos el ícono hermano */
 .custom-check-wrapper input[type="checkbox"]:checked ~ .custom-check-icon {
-    color: #28a745; 
-    content: "\f058"; 
+    color: #28a745;    /* Verde éxito */
+    content: "\f058";  /* Código fa-check-circle solid */
     transform: scale(1.1);
     text-shadow: 0 2px 5px rgba(40, 167, 69, 0.3);
 }
 
+/* Estilos específicos para el header "Marcar Todos" */
 .header-check-wrapper {
     display: flex;
     align-items: center;
@@ -2193,5 +2240,5 @@ body.has-connection-status #progress-container-fixed {
     cursor: pointer;
 }
 .header-check-wrapper .custom-check-icon {
-    font-size: 1.3rem;
+    font-size: 1.3rem; /* Un poco más pequeño en el header */
 }
