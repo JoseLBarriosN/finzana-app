@@ -2008,91 +2008,6 @@ body.has-connection-status #progress-container-fixed {
     margin: 0;
 }
 
-#progress-container-fixed > #btn-cancelar-carga-fixed {
-    grid-column: 1;
-    align-self: center;
-}
-
-.progress-center-content {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    overflow: hidden;
-}
-
-#progress-text-fixed {
-    font-size: 14px;
-    color: var(--dark);
-    font-weight: 500;
-    text-align: center;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    width: 100%;
-    padding: 0;
-}
-
-.progress-bar-wrapper {
-    background: #e0e0e0;
-    border-radius: 10px;
-    height: 8px;
-    overflow: hidden;
-    margin-top: 5px;
-    width: 100%;
-    max-width: 400px;
-}
-
-#progress-bar-fixed {
-    height: 8px;
-    background: linear-gradient(90deg, var(--primary), var(--secondary));
-    border-radius: 10px;
-    transition: width 0.3s ease, background 0.3s ease;
-    width: 0%;
-}
-
-.progress-spacer {
-    width: 30px; 
-    height: 30px;
-    flex-shrink: 0;
-}
-
-@media (max-width: 600px) {
-    body.has-progress {
-        padding-top: calc(50px + 20px) !important;
-    }
-    body.has-connection-status:not(.has-progress) {
-        padding-top: calc(40px + 20px) !important;
-    }
-    body.has-connection-status.has-progress {
-        padding-top: calc(50px + 40px + 20px) !important;
-    }
-
-    #progress-container-fixed {
-        height: 50px;
-        padding: 0 10px;
-        gap: 10px;
-    }
-    
-    body.has-connection-status #progress-container-fixed {
-        top: 40px;
-    }
-
-    #btn-cancelar-carga-fixed {
-        width: 25px;
-        height: 25px;
-    }
-
-    .progress-spacer {
-        width: 25px;
-        height: 25px;
-    }
-
-    #progress-text-fixed {
-        font-size: 12px;
-    }
-}
-
 @keyframes fade-in-out-sutil {
   0% { top: 0; opacity: 1; }
   80% { top: 0; opacity: 1; }
@@ -2242,6 +2157,7 @@ body.has-connection-status #progress-container-fixed {
 .header-check-wrapper .custom-check-icon {
     font-size: 1.3rem; /* Un poco más pequeño en el header */
 }
+
 
 
 
