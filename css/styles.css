@@ -1890,38 +1890,16 @@ body.has-connection-status.has-progress {
     padding-top: calc(60px + 50px + 20px) !important;
 }
 
-#progress-container-fixed {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 70px;
-    background-color: #ffffff;
-    z-index: 9999;
-    display: flex; 
-    align-items: center;
-    justify-content: space-between;
-    padding: 0 20px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-    border-bottom: 3px solid var(--primary);  
-    transform: translateY(-100%);
-    transition: transform 0.3s ease-in-out;
-    visibility: hidden;
-}
-
+/* --- BARRA DE PROGRESO FIJA (CORREGIDA DEFINITIVA) --- */
 #progress-container-fixed.visible {
     transform: translateY(0);
     visibility: visible;
 }
 
-#progress-container-fixed.hidden {
-    transform: translateY(-100%);
-    visibility: hidden;
-}
-
+/* EL CONTENEDOR DE TEXTO Y BARRA (DEBE CRECER) */
 .progress-content-wrapper {
-    flex-grow: 1; /* Toma todo el espacio disponible */
-    margin-right: 20px; /* Separa del botón de cancelar */
+    flex-grow: 1; /* OBLIGATORIO: Ocupa todo el espacio libre */
+    margin-right: 20px; /* Espacio entre la barra y el botón rojo */
     display: flex;
     flex-direction: column;
     justify-content: center;
@@ -1930,15 +1908,15 @@ body.has-connection-status.has-progress {
 .progress-text-fixed {
     font-weight: bold;
     color: #333;
-    margin-bottom: 5px;
+    margin-bottom: 6px;
     font-size: 0.9rem;
 }
 
 .progress-bar-background {
     width: 100%;
-    height: 10px;
+    height: 12px;
     background-color: #e9ecef;
-    border-radius: 5px;
+    border-radius: 6px;
     overflow: hidden;
 }
 
@@ -1946,19 +1924,18 @@ body.has-connection-status.has-progress {
     height: 100%;
     background-color: var(--primary);
     width: 0%;
-    transition: width 0.3s ease;
-    border-radius: 5px;
-    background-image: linear-gradient(45deg,rgba(255,255,255,.15) 25%,transparent 25%,transparent 50%,rgba(255,255,255,.15) 50%,rgba(255,255,255,.15) 75%,transparent 75%,transparent);
-    background-size: 1rem 1rem;
-    animation: progress-bar-stripes 1s linear infinite;
+    transition: width 0.2s ease; /* Transición rápida */
+    border-radius: 6px;
 }
 
+/* BOTÓN DE CANCELAR (FIJO A LA DERECHA) */
 .btn-cancelar-carga-fixed {
     background-color: #dc3545;
     color: white;
     border: none;
-    width: 45px;
-    height: 45px;
+    width: 40px;
+    height: 40px;
+    min-width: 40px; /* Evita que se aplaste */
     border-radius: 50%;
     display: flex;
     align-items: center;
@@ -1966,8 +1943,7 @@ body.has-connection-status.has-progress {
     cursor: pointer;
     font-size: 1.2rem;
     box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-    transition: all 0.2s;
-    flex-shrink: 0;
+    transition: transform 0.2s;
 }
 
 .btn-cancelar-carga-fixed:hover {
@@ -1975,43 +1951,8 @@ body.has-connection-status.has-progress {
     transform: scale(1.1);
 }
 
-@keyframes progress-bar-stripes {
-    0% { background-position: 1rem 0; }
-    100% { background-position: 0 0; }
-}
-
-body.has-connection-status #progress-container-fixed {
-    top: 50px;
-}
-
-#btn-cancelar-carga-fixed {
-    background: var(--danger);
-    color: white;
-    border: none;
-    border-radius: 50%;
-    width: 30px;
-    height: 30px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    transition: all 0.3s ease;
-    font-size: 12px;
-    flex-shrink: 0;
-    padding: 0; 
-}
-#btn-cancelar-carga-fixed:hover {
-    background: #e64a2e;
-    transform: scale(1.1);
-}
-#btn-cancelar-carga-fixed .fa-times {
-    margin: 0;
-}
-
-@keyframes fade-in-out-sutil {
-  0% { top: 0; opacity: 1; }
-  80% { top: 0; opacity: 1; }
-  100% { top: -60px; opacity: 0; }
+.btn-cancelar-carga-fixed:active {
+    transform: scale(0.9);
 }
 
 /* =============================================
@@ -2157,6 +2098,7 @@ body.has-connection-status #progress-container-fixed {
 .header-check-wrapper .custom-check-icon {
     font-size: 1.3rem; /* Un poco más pequeño en el header */
 }
+
 
 
 
