@@ -445,12 +445,17 @@ const database = {
      * Verifica si un cliente es elegible para un nuevo crédito.
      * REGLA: Si tiene activo, debe estar pagado al 80%.
      */
-    async verificarElegibilidadCliente(curp) {
+    async verificarElegibilidadCliente(curp, office) {
         try {
-            const creditosActivosSnapshot = await db.collection('creditos')
+            let query = db.collection('creditos')
                 .where('curpCliente', '==', curp)
-                .where('estado', '!=', 'liquidado')
-                .get();
+                .where('estado', '!=', 'liquidado');
+
+            if (office && office !== 'AMBAS') {
+                query = query.where('office', '==', office);
+            }
+
+            const creditosActivosSnapshot = await query.get();
 
             if (creditosActivosSnapshot.empty) {
                 return { elegible: true, mensaje: "Cliente sin créditos activos.", esRenovacion: false };
@@ -462,6 +467,7 @@ const database = {
             const creditoActual = creditos[0];
             const saldo = creditoActual.saldo !== undefined ? creditoActual.saldo : creditoActual.montoTotal;
             const montoTotal = creditoActual.montoTotal;
+            const idCreditoVisual = creditoActual.historicalIdCredito || creditoActual.id;
             
             const pagado = montoTotal - saldo;
             const porcentajePagado = (pagado / montoTotal);
@@ -469,21 +475,21 @@ const database = {
             if (porcentajePagado >= 0.80) {
                 return { 
                     elegible: true, 
-                    mensaje: `Crédito activo al ${(porcentajePagado*100).toFixed(1)}%. Elegible para RENOVACIÓN.`, 
+                    mensaje: `Crédito activo (${idCreditoVisual}) al ${(porcentajePagado*100).toFixed(1)}%. Elegible para RENOVACIÓN.`, 
                     esRenovacion: true,
                     datosCreditoAnterior: creditoActual
                 };
             } else {
                 return { 
                     elegible: false, 
-                    mensaje: `El cliente tiene un crédito activo con saldo de $${saldo.toFixed(2)}. Solo ha liquidado el ${(porcentajePagado*100).toFixed(1)}% (Mínimo requerido: 80%).`,
+                    mensaje: `El cliente tiene el crédito activo ${idCreditoVisual} con saldo de $${saldo.toFixed(2)}. Solo ha liquidado el ${(porcentajePagado*100).toFixed(1)}% (Mínimo requerido: 80%).`,
                     esRenovacion: false
                 };
             }
 
         } catch (error) {
             console.error("Error verificando cliente:", error);
-            return { elegible: false, message: error.message };
+            return { elegible: false, mensaje: `Error de verificación: ${error.message}` };
         }
     },
 
@@ -2033,6 +2039,7 @@ const database = {
     },
 
 };
+
 
 
 
