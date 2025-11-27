@@ -3,20 +3,20 @@
 // =============================================
 
 let currentUser = null;
-let currentUserData = null; // Para almacenar los datos del usuario logueado
-let creditoActual = null; // Almacenará el objeto COMPLETO del crédito seleccionado (incluyendo Firestore ID y historicalIdCredito)
+let currentUserData = null;
+let creditoActual = null;
 let currentImportTab = 'clientes';
 let reportData = null;
 let cargaEnProgreso = false;
 let currentSearchOperation = null;
-let editingClientId = null; // ID del cliente que se está editando
+let editingClientId = null;
 let editingUserId = null;
 let isOnline = true;
-let inactivityTimer; // Temporizador para el cierre de sesión por inactividad
-let grupoDePagoActual = null; // Para la nueva función de pago grupal
-let currentChart = null; // Para la nueva función de gráficos
+let inactivityTimer;
+let grupoDePagoActual = null;
+let currentChart = null;
 let cobranzaRutaData = null;
-let dropdownUpdateInProgress = false; // Prevenir actualizaciones duplicadas
+let dropdownUpdateInProgress = false;
 let clienteParaCredito = null;
 const OFFLINE_STORAGE_KEY = 'cobranza_ruta_';
 
@@ -24,48 +24,40 @@ const OFFLINE_STORAGE_KEY = 'cobranza_ruta_';
 function parsearFecha(fechaInput) {
     if (!fechaInput) return null;
     if (fechaInput instanceof Date) return fechaInput;
-    if (typeof fechaInput === 'object' && typeof fechaInput.toDate === 'function') return fechaInput.toDate(); // Soporte para Timestamps de Firestore
+    if (typeof fechaInput === 'object' && typeof fechaInput.toDate === 'function') return fechaInput.toDate();
 
     if (typeof fechaInput === 'string') {
         const fechaStr = fechaInput.trim();
-        // Prioridad 1: Formato ISO 8601 (el más confiable) YYYY-MM-DDTHH:mm:ss.sssZ
         if (fechaStr.includes('T') && fechaStr.includes('Z') && fechaStr.length > 10) {
             const fecha = new Date(fechaStr);
             if (!isNaN(fecha.getTime())) return fecha;
         }
 
-        // Prioridad 2: YYYY-MM-DD (sin hora)
         if (/^\d{4}-\d{2}-\d{2}$/.test(fechaStr)) {
-            const fecha = new Date(fechaStr + 'T00:00:00Z'); // Interpretar como UTC
+            const fecha = new Date(fechaStr + 'T00:00:00Z');
             if (!isNaN(fecha.getTime())) return fecha;
         }
 
-
-        // Prioridad 3: Formatos con guiones o slashes (DD-MM-YYYY, MM/DD/YYYY etc.)
         const separador = fechaStr.includes('/') ? '/' : '-';
-        const partes = fechaStr.split('T')[0].split(separador); // Ignorar hora si la hubiera
+        const partes = fechaStr.split('T')[0].split(separador);
 
 
         if (partes.length === 3) {
             const [p1, p2, p3] = partes.map(p => parseInt(p, 10));
             if (!isNaN(p1) && !isNaN(p2) && !isNaN(p3)) {
                 let anio, mes, dia;
-                // Intentar DD-MM-YYYY
                 if (p3 > 1000 && p1 <= 31 && p2 <= 12) {
                     anio = p3; dia = p1; mes = p2;
                 }
-                // Intentar YYYY-MM-DD (ya cubierto arriba, pero por si acaso)
                 else if (p1 > 1000 && p2 <= 12 && p3 <= 31) {
                     anio = p1; mes = p2; dia = p3;
                 }
-                // Intentar MM-DD-YYYY
                 else if (p3 > 1000 && p1 <= 12 && p2 <= 31) {
                     anio = p3; mes = p1; dia = p2;
                 }
 
 
                 if (anio && mes && dia && mes > 0 && mes <= 12 && dia > 0 && dia <= 31) {
-                    // Verificar validez del día para el mes y año
                     const diasEnMes = new Date(Date.UTC(anio, mes, 0)).getUTCDate();
                     if (dia <= diasEnMes) {
                         const fecha = new Date(Date.UTC(anio, mes - 1, dia));
@@ -90,9 +82,8 @@ function formatDateForDisplay(dateObj) {
     if (!(dateObj instanceof Date) || isNaN(dateObj.getTime())) {
         return 'N/A';
     }
-    // Usar UTC para evitar problemas de zona horaria al mostrar
     const dia = String(dateObj.getUTCDate()).padStart(2, '0');
-    const mes = String(dateObj.getUTCMonth() + 1).padStart(2, '0'); // Meses son 0-11
+    const mes = String(dateObj.getUTCMonth() + 1).padStart(2, '0');
     const anio = dateObj.getUTCFullYear();
     return `${dia}/${mes}/${anio}`;
 }
@@ -159,6 +150,7 @@ function updateConnectionStatus() {
 // =============================================
 // *** INICIO DE LA CORRECCIÓN: LÓGICA DE ESTADO/SEMANAS PAGADAS (REVISADA) ***
 // =============================================
+
 /**
  * Calcula el estado actual de un crédito (atraso, estado, etc.) basado en sus datos y pagos.
  * @param {object} credito El objeto de crédito de Firestore.
@@ -168,14 +160,12 @@ function updateConnectionStatus() {
 function _calcularEstadoCredito(credito, pagos) {
     if (!credito || !credito.montoTotal || !credito.plazo || credito.plazo <= 0 || !credito.fechaCreacion) {
         console.warn("Datos de crédito insuficientes para calcular estado:", credito?.id || credito?.historicalIdCredito);
-        return null; // Datos insuficientes
+        return null;
     }
 
-    // --- 1. Calcular valores base ---
     const pagoSemanal = credito.montoTotal / credito.plazo;
     const montoTotal = credito.montoTotal;
 
-    // --- 1.1. RECALCULAR SALDO (La corrección clave) ---
     let totalPagado = 0;
     if (pagos && pagos.length > 0) {
         totalPagado = pagos.reduce((sum, p) => sum + (p.monto || 0), 0);
@@ -183,15 +173,13 @@ function _calcularEstadoCredito(credito, pagos) {
 
     let saldoCalculado = montoTotal - totalPagado;
 
-    // Redondeo y tolerancia (si pagó 4000.005 en un crédito de 4000, está liquidado)
-    const toleranciaLiquidado = 0.015; // Un poco más de 1 centavo
+    const toleranciaLiquidado = 0.015;
     if (saldoCalculado < toleranciaLiquidado) {
         saldoCalculado = 0;
     }
     
     const saldoRestante = parseFloat(saldoCalculado.toFixed(2));
     
-    // --- 2. VERIFICACIÓN DE LIQUIDADO (Prioridad #1) ---
     if (saldoRestante === 0) {
         
         let semanasPagadasCalc = 0;
@@ -211,13 +199,12 @@ function _calcularEstadoCredito(credito, pagos) {
             estado: 'liquidado',
             semanasAtraso: 0,
             pagoSemanal: pagoSemanal,
-            saldoRestante: 0, // Forzar a 0
+            saldoRestante: 0,
             proximaFechaPago: 'N/A',
             semanasPagadas: semanasPagadasCalc
         };
     }
 
-    // --- 3. Calcular Estado según Reglas de Fecha (Si NO está liquidado) ---
     const fechaCreacion = parsearFecha(credito.fechaCreacion);
     if (!fechaCreacion) {
         console.warn("Fecha de creación de crédito inválida:", credito.fechaCreacion, "ID:", credito.id || credito.historicalIdCredito);
@@ -236,7 +223,6 @@ function _calcularEstadoCredito(credito, pagos) {
     }
 
     const hoy = new Date();
-    // Asegurarse de comparar solo fechas, no horas, usando UTC
     const hoyUTC = new Date(Date.UTC(hoy.getUTCFullYear(), hoy.getUTCMonth(), hoy.getUTCDate()));
     const refUTC = new Date(Date.UTC(fechaReferencia.getUTCFullYear(), fechaReferencia.getUTCMonth(), fechaReferencia.getUTCDate()));
 
@@ -254,11 +240,10 @@ function _calcularEstadoCredito(credito, pagos) {
         estadoDisplay = 'juridico';
     }
 
-    // --- 4. Calcular Atraso en Semanas (para visualización) ---
-    const msTranscurridos = hoyUTC.getTime() - fechaCreacion.getTime(); // Usar UTC aquí también
+    const msTranscurridos = hoyUTC.getTime() - fechaCreacion.getTime();
     const semanasTranscurridas = Math.floor(msTranscurridos / (1000 * 60 * 60 * 24 * 7));
 
-    const montoPagadoTotal = totalPagado; // Usar el totalPagado calculado
+    const montoPagadoTotal = totalPagado;
 
     let semanasPagadas = 0;
     if (pagoSemanal > 0.01) {
@@ -274,31 +259,22 @@ function _calcularEstadoCredito(credito, pagos) {
         semanasAtraso = Math.max(0, credito.plazo - semanasPagadas);
     }
 
-
-    // --- 5. Calcular Próxima Fecha de Pago ---
     let proximaFechaPago = 'N/A';
-    // Solo hay próxima fecha si aún no ha completado el plazo en pagos
     if (semanasPagadas < credito.plazo) {
         const proximaFecha = new Date(fechaCreacion);
-        // La próxima fecha teórica es después de la última semana pagada
         proximaFecha.setUTCDate(proximaFecha.getUTCDate() + (semanasPagadas + 1) * 7);
         proximaFechaPago = formatDateForDisplay(proximaFecha);
     }
 
-    // Devolver el objeto de estado calculado
     return {
-        estado: estadoDisplay, // El estado se basa en los DÍAS desde ref.
-        semanasAtraso: semanasAtraso, // El atraso numérico se basa en SEMANAS calculadas
+        estado: estadoDisplay,
+        semanasAtraso: semanasAtraso,
         pagoSemanal: pagoSemanal,
-        saldoRestante: saldoRestante, // Devolver el saldo RECALCULADO
+        saldoRestante: saldoRestante,
         proximaFechaPago: proximaFechaPago,
         semanasPagadas: semanasPagadas
     };
 }
-// =============================================
-// *** FIN DE LA CORRECCIÓN DE ESTADO ***
-// =============================================
-
 
 // =============================================
 // LÓGICA DE SEGURIDAD, SESIÓN Y PERMISOS
@@ -311,23 +287,20 @@ function resetInactivityTimer() {
             alert("Sesión cerrada por inactividad.");
             auth.signOut();
         }
-    }, 600000); // 10 minutos (10 * 60 * 1000 ms)
+    }, 600000);
 }
 
 function setupSecurityListeners() {
-    // Resetear en varias interacciones del usuario
     window.addEventListener('load', resetInactivityTimer);
     document.addEventListener('mousemove', resetInactivityTimer);
     document.addEventListener('keypress', resetInactivityTimer);
     document.addEventListener('click', resetInactivityTimer);
     document.addEventListener('touchstart', resetInactivityTimer);
-    document.addEventListener('scroll', resetInactivityTimer); // Añadir scroll
+    document.addEventListener('scroll', resetInactivityTimer);
 
-    // Cancelar operaciones en progreso al intentar cerrar/recargar
     window.addEventListener('beforeunload', (event) => {
         if (cargaEnProgreso) {
             cancelarCarga();
-            // event.returnValue = 'Hay una operación en progreso. ¿Seguro que quieres salir?'; // Descomentar si se quiere advertencia
         }
     });
 }
@@ -727,7 +700,7 @@ function limpiarFiltrosReportes() {
     const filtrosContainer = document.getElementById('filtros-reportes-avanzados');
     if (filtrosContainer) {
         filtrosContainer.querySelectorAll('input, select').forEach(el => {
-            if (el.type !== 'date' && !el.disabled) { // No limpiar sucursal si está deshabilitada
+            if (el.type !== 'date' && !el.disabled) {
                 el.value = '';
             }
         });
@@ -773,7 +746,7 @@ async function loadAdvancedReports() {
             fechaFin: document.getElementById('fecha_fin_reporte')?.value || '',
             curpCliente: document.getElementById('curp_filtro_reporte')?.value.trim().toUpperCase() || '',
             idCredito: document.getElementById('id_credito_filtro_reporte')?.value.trim() || '',
-            userOffice: currentUserData?.office // <-- APLICAR SEGREGACIÓN
+            userOffice: currentUserData?.office
         };
 
         if (filtros.fechaInicio && filtros.fechaFin && new Date(filtros.fechaInicio) > new Date(filtros.fechaFin)) {
@@ -781,7 +754,7 @@ async function loadAdvancedReports() {
         }
 
         showFixedProgress(50, 'Consultando base de datos...');
-        const data = await database.generarReporteAvanzado(filtros); // Pasa todos los filtros, incl. userSucursal
+        const data = await database.generarReporteAvanzado(filtros);
 
         if (operationId !== currentSearchOperation) throw new Error("Búsqueda cancelada");
 
@@ -1368,7 +1341,7 @@ async function handleCargarRutas() {
 }
 
 /// ====================================================== ///
-    // *** NUEVAS FUNCIONES: EFECTIVO Y COMISIONES *** ///
+    //  NUEVAS FUNCIONES: EFECTIVO Y COMISIONES  ///
 /// ====================================================== ///
 
 //===============================================================//
@@ -1816,8 +1789,9 @@ async function mostrarFormularioUsuario(usuario = null) {
     const form = document.getElementById('form-usuario');
     const passwordInput = document.getElementById('nuevo-password');
     const emailInput = document.getElementById('nuevo-email');
-    const officeSelect = document.getElementById('nuevo-sucursal');
+    const officeSelect = document.getElementById('nuevo-sucursal'); 
     const rutaSelect = document.getElementById('nuevo-ruta');
+    const checkbox13Semanas = document.getElementById('usuario-permiso-13semanas');
 
     if (!formContainer || !formTitulo || !form || !officeSelect || !rutaSelect) return;
 
@@ -1827,22 +1801,34 @@ async function mostrarFormularioUsuario(usuario = null) {
     if (usuario) {
         editingUserId = usuario.id;
         formTitulo.textContent = 'Editar Usuario';
+        
         document.getElementById('nuevo-nombre').value = usuario.name || '';
         emailInput.value = usuario.email || '';
         emailInput.readOnly = true;
         document.getElementById('nuevo-rol').value = usuario.role || '';
         userOffice = usuario.office || '';
         officeSelect.value = userOffice;
+        
         passwordInput.required = false;
         passwordInput.placeholder = "Dejar en blanco para no cambiar";
+
+        if (checkbox13Semanas) {
+            checkbox13Semanas.checked = usuario.canSell13Weeks === true;
+        }
+
     } else {
         editingUserId = null;
         formTitulo.textContent = 'Nuevo Usuario';
+        
         emailInput.readOnly = false;
         passwordInput.required = true;
         passwordInput.placeholder = "Mínimo 6 caracteres";
         userOffice = '';
         officeSelect.value = '';
+
+        if (checkbox13Semanas) {
+            checkbox13Semanas.checked = false;
+        }
     }
 
     await _cargarRutasParaUsuario(userOffice);
@@ -1851,9 +1837,9 @@ async function mostrarFormularioUsuario(usuario = null) {
          setTimeout(() => {
             rutaSelect.value = usuario.ruta;
             if(rutaSelect.value !== usuario.ruta) {
-                console.warn(`La ruta guardada "${usuario.ruta}" no se encontró en la lista para la oficina ${userOffice}.`);
+                console.warn(`La ruta guardada "${usuario.ruta}" no coincide con la oficina actual.`);
             }
-         }, 50);
+         }, 100);
     }
 
     formContainer.classList.remove('hidden');
@@ -1904,6 +1890,7 @@ async function handleUserForm(e) {
     e.preventDefault();
     const submitButton = e.target.querySelector('button[type="submit"]');
     const statusUsuarios = document.getElementById('status_usuarios');
+    const permiso13Semanas = document.getElementById('usuario-permiso-13semanas')?.checked || false;
 
     showButtonLoading(submitButton, true, editingUserId ? 'Actualizando...' : 'Creando...');
     statusUsuarios.textContent = editingUserId ? 'Actualizando usuario...' : 'Creando nuevo usuario...';
@@ -1915,16 +1902,25 @@ async function handleUserForm(e) {
                 name: document.getElementById('nuevo-nombre').value.trim(),
                 role: document.getElementById('nuevo-rol').value,
                 office: document.getElementById('nuevo-sucursal').value,
-                ruta: document.getElementById('nuevo-ruta').value || null
+                ruta: document.getElementById('nuevo-ruta').value || null,
+                canSell13Weeks: permiso13Semanas
             };
+
             if (!userData.name || !userData.role || !userData.office) {
                 throw new Error('Nombre, Rol y Oficina son obligatorios.');
             }
+
+            const password = document.getElementById('nuevo-password').value;
+            if (password && password.trim() !== "") {
+                userData.password = password; 
+            }
+
             const resultado = await database.actualizarUsuario(editingUserId, userData);
             if (!resultado.success) throw new Error(resultado.message);
 
             let message = resultado.message;
             if (!isOnline) message += ' (Guardado localmente, se sincronizará).';
+            
             showStatus('status_usuarios', message, 'success');
             ocultarFormularioUsuario();
             await loadUsersTable();
@@ -1938,7 +1934,7 @@ async function handleUserForm(e) {
             const ruta = document.getElementById('nuevo-ruta').value || null;
 
             if (!email || !password || !nombre || !rol || !office) {
-                throw new Error('Email, Contraseña, Nombre, Rol y Oficina son obligatorios...');
+                throw new Error('Email, Contraseña, Nombre, Rol y Oficina son obligatorios.');
             }
             if (password.length < 6) {
                 throw new Error('La contraseña debe tener al menos 6 caracteres.');
@@ -1954,16 +1950,21 @@ async function handleUserForm(e) {
             } catch (authError) {
                 console.error("Error en Auth createUser:", authError);
                 if (authError.code === 'auth/email-already-in-use') throw new Error('Error: El correo electrónico ya está registrado.');
-                if (authError.code === 'auth/weak-password') throw new Error('Error: La contraseña es demasiado débil (mínimo 6 caracteres).');
-                if (authError.code === 'auth/invalid-email') throw new Error('Error: El formato del correo electrónico no es válido.');
+                if (authError.code === 'auth/weak-password') throw new Error('Error: La contraseña es demasiado débil.');
+                if (authError.code === 'auth/invalid-email') throw new Error('Error: El formato del correo no es válido.');
                 throw new Error(`Error de autenticación: ${authError.message}`);
             }
 
             await db.collection('users').doc(user.uid).set({
-                id: user.uid, email, name: nombre, role: rol,
+                id: user.uid, 
+                email: email, 
+                name: nombre, 
+                role: rol,
                 office: office,
                 ruta: ruta,
-                createdAt: new Date().toISOString(), status: 'active'
+                canSell13Weeks: permiso13Semanas,
+                createdAt: new Date().toISOString(), 
+                status: 'active'
             });
 
             showStatus('status_usuarios', 'Usuario creado exitosamente.', 'success');
@@ -2063,9 +2064,7 @@ function inicializarVistaUsuarios() {
     if (tbody) {
         tbody.innerHTML = '<tr><td colspan="7">Usa los filtros para buscar usuarios.</td></tr>';
     }
-    // Ocultar formulario si está visible
     ocultarFormularioUsuario();
-    // Limpiar filtros de texto
     const filtroEmail = document.getElementById('filtro-email-usuario');
     if (filtroEmail) filtroEmail.value = '';
     
@@ -2075,7 +2074,6 @@ function inicializarVistaUsuarios() {
     const filtroRol = document.getElementById('filtro-rol-usuario');
     if (filtroRol) filtroRol.value = '';
 
-    // No resetear filtro de sucursal si está deshabilitado por permisos
     const filtroSucursal = document.getElementById('filtro-sucursal-usuario');
     if (filtroSucursal && !filtroSucursal.disabled) {
         filtroSucursal.value = '';
@@ -2102,9 +2100,8 @@ async function editCliente(cliente) {
         return;
     }
     console.log("Editando cliente:", cliente);
-    editingClientId = cliente.id; // Marcar que estamos editando
+    editingClientId = cliente.id;
 
-    // Poblar formulario
     document.getElementById('office_cliente').value = cliente.office || 'GDL';
     document.getElementById('curp_cliente').value = cliente.curp || '';
     document.getElementById('nombre_cliente').value = cliente.nombre || '';
@@ -2113,13 +2110,8 @@ async function editCliente(cliente) {
     document.getElementById('telefono_cliente').value = cliente.telefono || '';
     document.getElementById('comisionista_cliente').checked = cliente.isComisionista || false;
 
-    // Actualizar y seleccionar grupo/ruta
     handleOfficeChangeForClientForm.call(document.getElementById('office_cliente'));
-
-    // Esperar a que los dropdowns se pueblen (si son asíncronos, aunque aquí no lo son)
-    // Usar setTimeout para asegurar que el DOM se actualice
     setTimeout(async () => {
-        // Cargar y unificar listas de poblaciones y rutas
         const [poblacionesGdl, poblacionesLeon, rutasGdl, rutasLeon] = await Promise.all([
             database.obtenerPoblaciones('GDL'),
             database.obtenerPoblaciones('LEON'),
@@ -2139,7 +2131,6 @@ async function editCliente(cliente) {
 
     const curpInput = document.getElementById('curp_cliente');
     if (curpInput) {
-        // ReadOnly se maneja ahora por aplicarPermisosUI
         aplicarPermisosUI(currentUserData.role);
         validarCURP(curpInput);
     }
@@ -2284,54 +2275,39 @@ async function handleSearchClientForCredit() {
     }
 
     showButtonLoading(btnBuscar, true, 'Buscando...');
-    showFixedProgress(30, 'Buscando cliente...');
-    statusColocacion.innerHTML = 'Buscando cliente...';
+    statusColocacion.innerHTML = 'Consultando historial...';
     statusColocacion.className = 'status-message status-info';
     formColocacion.classList.add('hidden');
 
     try {
         const cliente = await database.buscarClientePorCURP(curp, currentUserData?.office);
         if (!cliente) {
-            showFixedProgress(100, 'Cliente no encontrado');
-            throw new Error('CURP aún no registrado. Hay que generar el registro del cliente primero.');
+            throw new Error('CURP no registrada. Debes registrar al cliente primero.');
         }
-
         clienteParaCredito = cliente;
 
-        showFixedProgress(70, 'Verificando elegibilidad...');
-        statusColocacion.innerHTML = 'Cliente encontrado. Verificando elegibilidad para crédito...';
-        const elegibilidad = await database.verificarElegibilidadCliente(curp);
+        const analisis = await database.verificarElegibilidadCliente(curp);
 
-        if (!elegibilidad.elegible) {
-            showFixedProgress(100, 'Cliente no elegible');
-            throw new Error(elegibilidad.message);
+        if (!analisis.elegible) {
+            throw new Error(analisis.mensaje);
         }
 
-        showFixedProgress(100, 'Cliente elegible');
-
-        const creditoActivo = await database.buscarCreditoActivoPorCliente(curp);
         const plazoSelect = document.getElementById('plazo_colocacion');
         const tipoCreditoSelect = document.getElementById('tipo_colocacion');
 
-        let mensaje = '';
-        if (creditoActivo) {
-            // *** CORRECCIÓN: Lógica de Renovación ***
-            mensaje = 'Cliente encontrado y elegible para RENOVACIÓN (solo 14 semanas).';
-            popularDropdown('plazo_colocacion', [14].map(p => ({ value: p, text: `${p} semanas` })), 'Selecciona plazo', true);
-            plazoSelect.value = 14;
-            plazoSelect.disabled = true;
+        actualizarPlazosSegunCliente(cliente.isComisionista || false, analisis.esRenovacion);
+        plazoSelect.disabled = false;
+
+        if (analisis.esRenovacion) {
             tipoCreditoSelect.value = 'renovacion';
             tipoCreditoSelect.disabled = true;
+            
+            showStatus('status_colocacion', `✅ ${analisis.mensaje}`, 'success');
         } else {
-            // Lógica de Cliente Nuevo
-            mensaje = 'Cliente encontrado y elegible para crédito NUEVO.';
-            actualizarPlazosSegunCliente(cliente.isComisionista || false);
-            plazoSelect.disabled = false;
             tipoCreditoSelect.value = 'nuevo';
             tipoCreditoSelect.disabled = false;
+            showStatus('status_colocacion', '✅ Cliente elegible para crédito NUEVO.', 'success');
         }
-
-        showStatus('status_colocacion', mensaje, 'success');
 
         document.getElementById('nombre_colocacion').value = cliente.nombre;
         document.getElementById('idCredito_colocacion').value = 'Se asignará automáticamente';
@@ -2339,21 +2315,16 @@ async function handleSearchClientForCredit() {
         document.getElementById('montoTotal_colocacion').value = '';
         document.getElementById('curpAval_colocacion').value = '';
         document.getElementById('nombreAval_colocacion').value = '';
-        validarCURP(document.getElementById('curpAval_colocacion'));
-
-        calcularMontoTotalColocacion(); // Calcular monto (que será $0)
+        
+        calcularMontoTotalColocacion();
         formColocacion.classList.remove('hidden');
 
     } catch (error) {
-        console.error("Error buscando cliente para crédito:", error);
-        showStatus('status_colocacion', `Error: ${error.message}`, 'error');
+        console.error("Error búsqueda crédito:", error);
+        showStatus('status_colocacion', `🚫 ${error.message}`, 'error');
         formColocacion.classList.add('hidden');
-        hideFixedProgress();
     } finally {
         showButtonLoading(btnBuscar, false);
-        if (!document.querySelector('#status_colocacion.status-error')) {
-            setTimeout(hideFixedProgress, 1500);
-        }
     }
 }
 
@@ -2374,11 +2345,9 @@ async function handleCreditForm(e) {
          return;
     }
 
-    // 2. PREPARAR DATOS DEL CRÉDITO
-    // Es vital que 'office' venga del cliente cargado para cumplir las reglas de seguridad
     const creditoData = {
         curpCliente: clienteParaCredito.curp,
-        office: clienteParaCredito.office, // <--- DATO CRÍTICO PARA PERMISOS
+        office: clienteParaCredito.office,
         tipo: document.getElementById('tipo_colocacion').value,
         monto: parseFloat(document.getElementById('monto_colocacion').value),
         plazo: parseInt(document.getElementById('plazo_colocacion').value),
@@ -2386,7 +2355,6 @@ async function handleCreditForm(e) {
         nombreAval: document.getElementById('nombreAval_colocacion').value.trim()
     };
     
-    // 3. CÁLCULOS FINANCIEROS
     let interesRate = 0;
     if (creditoData.plazo === 14) interesRate = 0.40;
     else if (creditoData.plazo === 13) interesRate = 0.30;
@@ -2396,7 +2364,6 @@ async function handleCreditForm(e) {
     creditoData.saldo = creditoData.montoTotal;
 
 
-    // 4. VALIDACIONES DE FORMULARIO
     if (!creditoData.monto || creditoData.monto <= 0 || !creditoData.plazo || !creditoData.tipo || !creditoData.nombreAval) {
         showStatus('status_colocacion', 'Error: Todos los campos del crédito son obligatorios (Monto, Plazo, Tipo, Nombre Aval).', 'error');
         return;
@@ -2417,26 +2384,18 @@ async function handleCreditForm(e) {
         curpAvalInput.classList.remove('input-error');
     }
 
-    // UI: MOSTRAR CARGA
     showButtonLoading(submitButton, true, 'Generando...');
     showFixedProgress(50, 'Validando aval y generando crédito...');
     statusColocacion.innerHTML = 'Validando elegibilidad y generando crédito...';
     statusColocacion.className = 'status-message status-info';
 
     try {
-        // ============================================================
-        // Verificamos el Aval pasando la OFICINA explícitamente antes de guardar.
-        // Esto evita el error de permisos dentro de database.agregarCredito
-        // ============================================================
-        
-        // Paso 1: Verificar Aval pasando la oficina
         const checkAval = await database.verificarElegibilidadAval(creditoData.curpAval, creditoData.office);
         
         if (!checkAval.elegible) {
             throw new Error(`Problema con el Aval: ${checkAval.message}`);
         }
 
-        // Paso 2: Si el aval es válido, procedemos a crear el crédito
         const resultado = await database.agregarCredito(creditoData, currentUser.email);
 
         if (resultado.success) {
@@ -2449,7 +2408,6 @@ async function handleCreditForm(e) {
             }
             showStatus('status_colocacion', successMessage, 'success');
 
-            // Limpiar formulario
             e.target.reset();
             document.getElementById('form-colocacion').classList.add('hidden');
             document.getElementById('curp_colocacion').value = '';
@@ -5178,10 +5136,33 @@ async function inicializarDropdowns() {
 }
 
 
-function actualizarPlazosSegunCliente(esComisionista) {
-    // CORRECCIÓN: Un comisionista puede elegir 10, 13 o 14.
-    const plazosDisponibles = esComisionista ? [10, 13, 14] : [13, 14];
-    popularDropdown('plazo_colocacion', plazosDisponibles.map(p => ({ value: p, text: `${p} semanas` })), 'Selecciona plazo', true);
+/**
+ * Actualiza el dropdown de plazos según reglas de negocio:
+ * - Comisionista: 10, 13, 14 semanas.
+ * - Normal: 13, 14 semanas.
+ * - Regla 13 Semanas: Solo disponible si es RENOVACIÓN Y el usuario tiene permiso.
+ */
+function actualizarPlazosSegunCliente(esComisionista, esRenovacion) {
+    const plazoSelect = document.getElementById('plazo_colocacion');
+    if(!plazoSelect) return;
+
+    let plazos = [];
+
+    if (esComisionista) {
+        plazos.push(10);
+    }
+
+    plazos.push(14);
+
+    const usuarioTienePermiso = currentUserData.canSell13Weeks === true;
+    
+    if (esRenovacion && usuarioTienePermiso) {
+        plazos.push(13);
+    }
+
+    plazos.sort((a, b) => a - b);
+
+    popularDropdown('plazo_colocacion', plazos.map(p => ({ value: p, text: `${p} semanas` })), 'Selecciona plazo', true);
 }
 
 // *** MANEJO DE DUPLICADOS ***
@@ -6790,4 +6771,5 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
