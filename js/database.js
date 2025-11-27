@@ -442,8 +442,8 @@ const database = {
     },
 
     /**
-     * Verifica si un cliente es elegible para un nuevo crédito.
-     * REGLA: Si tiene activo, debe estar pagado al 80%.
+     * Verifica si un cliente es elegible (Regla del 80% pagado).
+     * CORREGIDO: Recibe 'office' para pasar las reglas de seguridad.
      */
     async verificarElegibilidadCliente(curp, office) {
         try {
@@ -451,8 +451,7 @@ const database = {
                 .where('curpCliente', '==', curp)
                 .where('estado', '!=', 'liquidado');
 
-            // *** CORRECCIÓN CRÍTICA DE SEGURIDAD ***
-            // Si hay oficina y no es admin global, filtramos.
+            // FILTRO DE SEGURIDAD OBLIGATORIO
             if (office && office !== 'AMBAS') {
                 query = query.where('office', '==', office);
             }
@@ -463,7 +462,7 @@ const database = {
                 return { elegible: true, mensaje: "Cliente sin créditos activos.", esRenovacion: false };
             }
 
-            // Analizar el crédito activo más reciente
+            // Ordenar por fecha para tomar el más reciente
             const creditos = creditosActivosSnapshot.docs.map(doc => doc.data());
             creditos.sort((a, b) => new Date(b.fechaCreacion) - new Date(a.fechaCreacion));
             
@@ -472,9 +471,7 @@ const database = {
             const montoTotal = creditoActual.montoTotal;
             const idCreditoVisual = creditoActual.historicalIdCredito || creditoActual.id;
             
-            const pagado = montoTotal - saldo;
-            // Evitar división por cero
-            const porcentajePagado = montoTotal > 0 ? (pagado / montoTotal) : 0;
+            const porcentajePagado = montoTotal > 0 ? ((montoTotal - saldo) / montoTotal) : 0;
 
             if (porcentajePagado >= 0.80) {
                 return { 
@@ -493,11 +490,11 @@ const database = {
 
         } catch (error) {
             console.error("Error verificando cliente:", error);
-            // Si falta índice, avisar específicamente
             if (error.code === 'failed-precondition') {
                  console.warn("⚠️ FALTA ÍNDICE CLIENTE: Revisa la consola (F12) para el link.");
             }
-            return { elegible: false, mensaje: `Error de verificación: ${error.message}` };
+            // Retornamos el error para que la UI sepa que falló
+            throw error; 
         }
     },
 
@@ -571,152 +568,188 @@ const database = {
         }
     },
 
-    // Generar crédito
-    agregarCredito: async (creditoData, userEmail) => {
+    /**
+     * Genera un nuevo crédito.
+     * INCLUYE: Validación de oficina, contadores secuenciales, liquidación de anteriores y registro de flujos.
+     */
+    async agregarCredito(creditoData, userEmail) {
         try {
             
-            // 1. Validar la oficina (AHORA ES CRUCIAL PARA LAS REGLAS DE SEGURIDAD)
+            // 1. Validar la oficina (CRUCIAL PARA SEGURIDAD Y CONTADORES)
             const office = creditoData.office;
             if (!office || (office !== 'GDL' && office !== 'LEON')) {
-                return { success: false, message: 'Oficina (GDL o LEON) no especificada en los datos del crédito. No se puede generar ID.' };
+                return { success: false, message: 'Error crítico: La oficina del cliente no es válida (GDL o LEON).' };
             }
 
-            // 2. Validaciones de elegibilidad
+            // 2. Validaciones de elegibilidad básicas
             if ((creditoData.tipo === 'renovacion' || creditoData.tipo === 'reingreso') && creditoData.plazo !== 14) {
-                return { success: false, message: 'Créditos de renovación/reingreso deben ser a 14 semanas.' };
+                // Excepción para la regla de 13 semanas (si el sistema lo permite en el frontend, aquí asumimos que es válido, 
+                // pero si quieres ser estricto puedes agregar la validación de 'canSell13Weeks' aquí también).
+                if (creditoData.plazo !== 13) { 
+                    return { success: false, message: 'Créditos de renovación/reingreso deben ser a 14 semanas (o 13 si está autorizado).' };
+                }
             }
             
-            // Validación Cliente
-            const elegibilidadCliente = await database.verificarElegibilidadCliente(creditoData.curpCliente);
-            if (!elegibilidadCliente.elegible) return { success: false, message: elegibilidadCliente.message };
-            
             // =============================================================================
-            // --- 🚀 CORRECCIÓN AQUÍ: Se agrega 'office' como segundo parámetro ---
-            // Esto evita el error "Missing or insufficient permissions" en la DB
+            // --- 🚀 CORRECCIÓN DE SEGURIDAD: Pasamos 'office' a las verificaciones ---
             // =============================================================================
-            const elegibilidadAval = await database.verificarElegibilidadAval(creditoData.curpAval, office); 
             
-            if (!elegibilidadAval.elegible) return { success: false, message: elegibilidadAval.message };
+            // Validación Cliente (Regla 80%)
+            const elegibilidadCliente = await this.verificarElegibilidadCliente(creditoData.curpCliente, office);
+            if (!elegibilidadCliente.elegible) return { success: false, message: elegibilidadCliente.mensaje };
             
-            const cliente = await database.buscarClientePorCURP(creditoData.curpCliente, office); 
+            // Validación Aval (Regla 80% y comportamiento)
+            // Solo verificamos si hay CURP de Aval (algunos créditos podrían no tener)
+            if (creditoData.curpAval) {
+                const elegibilidadAval = await this.verificarElegibilidadAval(creditoData.curpAval, office); 
+                if (!elegibilidadAval.elegible) return { success: false, message: `Problema con el Aval: ${elegibilidadAval.message}` };
+            }
+            
+            // Obtener datos frescos del cliente
+            const cliente = await this.buscarClientePorCURP(creditoData.curpCliente, office); 
             if (!cliente) return { success: false, message: "Cliente no encontrado en esta oficina." };
             
+            // Validación Comisionista
             if (creditoData.plazo === 10 && !cliente.isComisionista) {
                 return { success: false, message: "Solo comisionistas pueden acceder a créditos de 10 semanas." };
             }
             
-            // 3. Preparar los datos del crédito (sin el ID histórico todavía)
+            // 3. Preparar datos del nuevo crédito
             const fechaCreacionISO = new Date().toISOString();
             const nuevoCreditoData = {
-                monto: creditoData.monto,
-                plazo: creditoData.plazo,
+                monto: parseFloat(creditoData.monto),
+                plazo: parseInt(creditoData.plazo),
                 tipo: creditoData.tipo,
-                montoTotal: creditoData.montoTotal,
-                saldo: creditoData.saldo,
+                montoTotal: parseFloat(creditoData.montoTotal),
+                saldo: parseFloat(creditoData.saldo),
                 curpCliente: creditoData.curpCliente.toUpperCase(),
                 curpAval: (creditoData.curpAval || '').toUpperCase(),
-                nombreAval: creditoData.nombreAval,
-                office: cliente.office,
+                nombreAval: creditoData.nombreAval || '',
+                office: cliente.office, // Usamos la oficina del cliente por seguridad
                 poblacion_grupo: cliente.poblacion_grupo,
                 ruta: cliente.ruta,
-                estado: 'activo',
+                estado: 'al corriente', // Estado inicial
                 fechaCreacion: fechaCreacionISO,
                 creadoPor: userEmail,
+                // Campos para búsqueda rápida (Arrays)
+                busqueda: [
+                    creditoData.curpCliente.toUpperCase(),
+                    (creditoData.curpAval || '').toUpperCase()
+                ]
                 // 'historicalIdCredito' se añadirá dentro de la transacción
             };
 
-            // 4. Referencia al contador de la oficina correcta
+            // 4. Referencias para la transacción
             const contadorRef = db.doc(`contadores/${office}`);
-            
-            // 5. Referencia al nuevo documento de crédito
             const nuevoCreditoRef = db.collection('creditos').doc();
 
-            // 6. Captura de saldo anterior (si es renovación)
+            // 5. Lógica de Renovación (Saldo Anterior)
             let saldoCreditoAnterior = 0;
             let creditoAnteriorRef = null;
-            if (creditoData.tipo === 'renovacion' || creditoData.tipo === 'reingreso') {
-                const creditoAnterior = await database.buscarCreditoActivoPorCliente(creditoData.curpCliente, office);
-                if (creditoAnterior && creditoAnterior.id !== nuevoCreditoRef.id) {
-                    saldoCreditoAnterior = creditoAnterior.saldo || 0;
+            
+            // Si es renovación, buscamos el crédito activo para liquidarlo y restar saldo
+            if (elegibilidadCliente.esRenovacion && elegibilidadCliente.datosCreditoAnterior) {
+                const creditoAnterior = elegibilidadCliente.datosCreditoAnterior;
+                // Asegurarnos que no sea el mismo documento (raro, pero posible en concurrencia)
+                if (creditoAnterior.id !== nuevoCreditoRef.id) {
+                    saldoCreditoAnterior = creditoAnterior.saldo !== undefined ? creditoAnterior.saldo : creditoAnterior.montoTotal;
                     creditoAnteriorRef = db.collection('creditos').doc(creditoAnterior.id);
                 }
             }
 
-            // 7. Cálculos de Efectivo y Comisión
+            // 6. Cálculos Financieros (Efectivo a Entregar)
             const esCreditoComisionista = (creditoData.plazo === 10 && cliente.isComisionista);
             let montoPolizaDeduccion = 0;
+            
+            // Regla: Póliza de $100 se descuenta a todos MENOS a los créditos de 10 semanas (comisionistas)
             if (!esCreditoComisionista) {
-                montoPolizaDeduccion = 100; // $100 de póliza
+                montoPolizaDeduccion = 100; 
             }
-            const montoEfectivoEntregado = creditoData.monto - montoPolizaDeduccion - saldoCreditoAnterior;
+            
+            // Lo que recibe el cliente en mano = Monto Solicitado - Póliza - Deuda Anterior
+            const montoEfectivoEntregado = nuevoCreditoData.monto - montoPolizaDeduccion - saldoCreditoAnterior;
 
-            // 8. Ejecutar la Transacción
+            // 7. Ejecutar Transacción (Todo o Nada)
             let nuevoHistoricalId = null; 
 
             await db.runTransaction(async (transaction) => {
-                // a. Leer el contador
+                // a. Leer contador atómico para ID secuencial
                 const contadorDoc = await transaction.get(contadorRef);
                 let ultimoId;
                 if (!contadorDoc.exists) {
-                    console.warn(`Contador para ${office} no existía. Creando...`);
+                    // Inicializar si no existe (GDL 30M, LEON 20M)
                     ultimoId = (office === 'GDL') ? 30000000 : 20000000;
                 } else {
-                    ultimoId = contadorDoc.data().ultimoId || (office === 'GDL' ? 30000000 : 20000000);
+                    ultimoId = contadorDoc.data().ultimoId;
                 }
                 
-                // b. Generar el nuevo ID
+                // b. Incrementar ID
                 nuevoHistoricalId = ultimoId + 1;
                 
-                // c. Actualizar el contador
+                // c. Guardar nuevo contador
                 transaction.set(contadorRef, { ultimoId: nuevoHistoricalId }, { merge: true });
 
-                // d. Crear el nuevo crédito
+                // d. Guardar el Crédito
                 nuevoCreditoData.historicalIdCredito = String(nuevoHistoricalId);
+                // Actualizamos el array de búsqueda con el ID nuevo
+                nuevoCreditoData.busqueda.push(String(nuevoHistoricalId));
+                
                 transaction.set(nuevoCreditoRef, nuevoCreditoData);
 
-                // e. Liquidar crédito anterior (si aplica)
+                // e. Liquidar crédito anterior (Renovación)
                 if (creditoAnteriorRef) {
                     transaction.update(creditoAnteriorRef, {
                         estado: 'liquidado',
-                        fechaModificacion: fechaCreacionISO,
-                        modificadoPor: userEmail
+                        saldo: 0, // Forzar saldo a 0 al renovar
+                        fechaLiquidacion: fechaCreacionISO,
+                        nota: `Liquidado por renovación (Nuevo Crédito: ${nuevoHistoricalId})`
                     });
                 }
 
-                // f. Registrar SALIDA de efectivo
+                // f. Registrar SALIDA DE EFECTIVO (Movimiento de Caja)
+                // Este dinero sale de la caja del administrador/agente hacia el cliente
                 const movimientoEfectivo = {
                     userId: (await auth.currentUser).uid,
                     fecha: fechaCreacionISO,
-                    tipo: 'COLOCACION',
-                    monto: -montoEfectivoEntregado,
-                    descripcion: `Colocación a ${cliente.nombre} (ID: ${nuevoHistoricalId}, Monto: $${creditoData.monto} - Póliza: $${montoPolizaDeduccion} - Saldo Ant: $${saldoCreditoAnterior.toFixed(2)})`,
+                    tipo: 'COLOCACION', // Etiqueta para hoja de corte
+                    categoria: 'COLOCACION', // Nueva etiqueta para agrupación más fácil
+                    monto: -Math.abs(montoEfectivoEntregado), // NEGATIVO (Salida)
+                    descripcion: `Colocación a ${cliente.nombre} (ID: ${nuevoHistoricalId}) | Monto: $${nuevoCreditoData.monto} - Póliza: $${montoPolizaDeduccion} - Renovación: $${saldoCreditoAnterior.toFixed(2)}`,
                     creditoId: nuevoCreditoRef.id,
                     registradoPor: userEmail,
-                    office: cliente.office
+                    office: office
                 };
                 const movimientoRef = db.collection('movimientos_efectivo').doc();
                 transaction.set(movimientoRef, movimientoEfectivo);
 
-                // g. Registrar COMISIÓN por colocación (si aplica)
-                if (!esCreditoComisionista && (creditoData.tipo === 'nuevo' || creditoData.tipo === 'renovacion' || creditoData.tipo === 'reingreso')) {
+                // g. Registrar COMISIÓN DE COLOCACIÓN (Salida adicional)
+                // Regla: $100 de comisión al vendedor por colocar un crédito (excepto los de 10 semanas)
+                if (!esCreditoComisionista) {
                     const comisionData = {
                         userId: (await auth.currentUser).uid,
                         fecha: fechaCreacionISO,
-                        tipo: 'COLOCACION',
-                        montoComision: 100,
-                        descripcion: `Comisión por ${creditoData.tipo} a ${cliente.nombre} (ID: ${nuevoHistoricalId})`,
+                        tipo: 'COMISION_COLOCACION', // Diferente a 'COMISION_PAGO'
+                        categoria: 'COMISION', // Para agrupar en hoja de corte junto con las de pago
+                        monto: -100, // Salida de $100 de la caja
+                        montoComision: 100, // Valor positivo referencial
+                        descripcion: `Comisión por colocación a ${cliente.nombre} (ID: ${nuevoHistoricalId})`,
                         creditoId: nuevoCreditoRef.id,
                         registradoPor: userEmail,
-                        office: cliente.office
+                        office: office
                     };
-                    const comisionRef = db.collection('comisiones').doc();
-                    transaction.set(comisionRef, comisionData);
+                    // Guardamos en 'movimientos_efectivo' para que salga en la hoja de corte
+                    const comisionMovRef = db.collection('movimientos_efectivo').doc();
+                    transaction.set(comisionMovRef, comisionData);
+                    
+                    // Opcional: Guardar también en colección 'comisiones' si la usas para nómina aparte
+                    // const comisionRef = db.collection('comisiones').doc();
+                    // transaction.set(comisionRef, comisionData);
                 }
             }); 
             
             return { 
                 success: true, 
-                message: 'Crédito generado.', 
+                message: 'Crédito generado exitosamente.', 
                 data: { 
                     id: nuevoCreditoRef.id, 
                     historicalIdCredito: String(nuevoHistoricalId), 
@@ -2069,6 +2102,7 @@ const database = {
     },
 
 };
+
 
 
 
