@@ -441,64 +441,97 @@ const database = {
         }
     },
 
-    verificarElegibilidadCliente: async (curp) => {
-        const creditoActivo = await database.buscarCreditoActivoPorCliente(curp);
-        if (!creditoActivo) return { elegible: true }; // Elegible si no hay activo
+    /**
+     * Verifica si un cliente es elegible para un nuevo crédito.
+     * REGLA: Si tiene activo, debe estar pagado al 80%.
+     */
+    async verificarElegibilidadCliente(curp) {
+        try {
+            const creditosActivosSnapshot = await db.collection('creditos')
+                .where('curpCliente', '==', curp)
+                .where('estado', '!=', 'liquidado')
+                .get();
 
-        // Considerar elegible si el saldo es prácticamente cero
-        if (creditoActivo.saldo !== undefined && creditoActivo.saldo <= 0.01) {
-            return { elegible: true };
-        }
-        if (!creditoActivo.montoTotal || creditoActivo.montoTotal <= 0) {
-            return { elegible: false, message: `Crédito activo ${creditoActivo.historicalIdCredito || creditoActivo.id} con datos inconsistentes.` };
-        }
-        const montoPagado = creditoActivo.montoTotal - (creditoActivo.saldo || 0); // Usar 0 si saldo es undefined
-        const porcentajePagado = creditoActivo.montoTotal > 0 ? (montoPagado / creditoActivo.montoTotal) * 100 : 0;
+            if (creditosActivosSnapshot.empty) {
+                return { elegible: true, mensaje: "Cliente sin créditos activos.", esRenovacion: false };
+            }
 
-        if (porcentajePagado >= 80) {
-            return { elegible: true };
-        } else {
-            return { elegible: false, message: `Cliente con crédito activo (${creditoActivo.historicalIdCredito || creditoActivo.id}) pagado al ${porcentajePagado.toFixed(0)}%. Se requiere 80%.` };
+            const creditos = creditosActivosSnapshot.docs.map(doc => doc.data());
+            creditos.sort((a, b) => new Date(b.fechaCreacion) - new Date(a.fechaCreacion));
+            
+            const creditoActual = creditos[0];
+            const saldo = creditoActual.saldo !== undefined ? creditoActual.saldo : creditoActual.montoTotal;
+            const montoTotal = creditoActual.montoTotal;
+            
+            const pagado = montoTotal - saldo;
+            const porcentajePagado = (pagado / montoTotal);
+
+            if (porcentajePagado >= 0.80) {
+                return { 
+                    elegible: true, 
+                    mensaje: `Crédito activo al ${(porcentajePagado*100).toFixed(1)}%. Elegible para RENOVACIÓN.`, 
+                    esRenovacion: true,
+                    datosCreditoAnterior: creditoActual
+                };
+            } else {
+                return { 
+                    elegible: false, 
+                    mensaje: `El cliente tiene un crédito activo con saldo de $${saldo.toFixed(2)}. Solo ha liquidado el ${(porcentajePagado*100).toFixed(1)}% (Mínimo requerido: 80%).`,
+                    esRenovacion: false
+                };
+            }
+
+        } catch (error) {
+            console.error("Error verificando cliente:", error);
+            return { elegible: false, message: error.message };
         }
     },
 
-    verificarElegibilidadAval: async (curpAval, office = null) => {
-        if (!curpAval || curpAval.trim() === '') return { elegible: true };
+    /**
+     * Verifica si una persona puede ser Aval.
+     * REGLA: Solo 1 crédito activo avalado, a menos que el anterior esté al 80% y sin atrasos.
+     */
+    async verificarElegibilidadAval(curpAval, office) {
+        if (!curpAval) return { elegible: false, message: "CURP de aval vacía." };
 
         try {
-            let query = db.collection('creditos').where('curpAval', '==', curpAval.toUpperCase());
-            if (office && office !== 'AMBAS') {
-                query = query.where('office', '==', office);
+            const snapshot = await db.collection('creditos')
+                .where('curpAval', '==', curpAval)
+                .where('estado', '!=', 'liquidado')
+                .get();
+
+            if (snapshot.empty) {
+                return { elegible: true, message: "Aval limpio." };
             }
 
-            const snapshot = await query.get();
+            const creditosAvalados = snapshot.docs.map(doc => doc.data());
+            
+            for (const credito of creditosAvalados) {
+                const saldo = credito.saldo !== undefined ? credito.saldo : credito.montoTotal;
+                const porcentajePagado = 1 - (saldo / credito.montoTotal);
+                const buenComportamiento = (credito.estado === 'al corriente' || credito.estado === 'adelantado');
 
-            if (snapshot.empty) return { elegible: true };
-
-            for (const doc of snapshot.docs) {
-                const credito = doc.data();
-                if (credito.estado === 'liquidado' || (credito.saldo !== undefined && credito.saldo <= 0.01)) {
-                    continue;
+                if (porcentajePagado < 0.80) {
+                    return { 
+                        elegible: false, 
+                        message: `El aval garantiza otro crédito (ID: ${credito.historicalIdCredito}) que solo lleva el ${(porcentajePagado*100).toFixed(0)}% pagado.` 
+                    };
                 }
 
-                if (credito.saldo !== undefined && credito.saldo > 0.01) {
-                    if (!credito.montoTotal || credito.montoTotal <= 0) {
-                        return { elegible: false, message: `Aval respalda crédito ${credito.historicalIdCredito || doc.id} con datos inconsistentes.` };
-                    }
-                    const montoPagado = credito.montoTotal - credito.saldo;
-                    const porcentajePagado = (montoPagado / credito.montoTotal) * 100;
-                    if (porcentajePagado < 80) {
-                        return { elegible: false, message: `Aval respalda crédito ${credito.historicalIdCredito || doc.id} (${porcentajePagado.toFixed(0)}% pagado). Se requiere 80% para avalar otro.` };
-                    }
+                if (!buenComportamiento) {
+                    return { 
+                        elegible: false, 
+                        message: `El aval garantiza un crédito (ID: ${credito.historicalIdCredito}) que tiene mal comportamiento (${credito.estado}).` 
+                    };
                 }
             }
-            return { elegible: true };
+
+            return { elegible: true, message: "Aval elegible (créditos anteriores >80% y al corriente)." };
+
         } catch (error) {
-            console.error("Error verificando elegibilidad del aval:", error);
-            if (error.code === 'permission-denied') {
-                 return { elegible: false, message: "Permisos insuficientes para verificar historial del aval en esta oficina." };
-            }
-            return { elegible: false, message: "Error al consultar BD para aval." };
+            console.error("Error verificando aval:", error);
+            if (error.message.includes("permission")) return { elegible: false, message: "Error de permisos verificando aval." };
+            return { elegible: false, message: error.message };
         }
     },
 
@@ -2000,6 +2033,7 @@ const database = {
     },
 
 };
+
 
 
 
