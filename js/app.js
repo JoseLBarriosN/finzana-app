@@ -2266,8 +2266,8 @@ async function handleSearchClientForCredit() {
     const statusColocacion = document.getElementById('status_colocacion');
     const formColocacion = document.getElementById('form-colocacion');
     const btnBuscar = document.getElementById('btnBuscarCliente_colocacion');
+    
     clienteParaCredito = null;
-
     if (!validarFormatoCURP(curp)) {
         showStatus('status_colocacion', 'El CURP debe tener 18 caracteres y formato válido.', 'error');
         formColocacion.classList.add('hidden');
@@ -2275,7 +2275,7 @@ async function handleSearchClientForCredit() {
     }
 
     showButtonLoading(btnBuscar, true, 'Buscando...');
-    statusColocacion.innerHTML = 'Consultando historial...';
+    statusColocacion.innerHTML = 'Consultando historial y elegibilidad...';
     statusColocacion.className = 'status-message status-info';
     formColocacion.classList.add('hidden');
 
@@ -2296,16 +2296,21 @@ async function handleSearchClientForCredit() {
         const tipoCreditoSelect = document.getElementById('tipo_colocacion');
 
         actualizarPlazosSegunCliente(cliente.isComisionista || false, analisis.esRenovacion);
+        
         plazoSelect.disabled = false;
 
         if (analisis.esRenovacion) {
             tipoCreditoSelect.value = 'renovacion';
             tipoCreditoSelect.disabled = true;
             
-            showStatus('status_colocacion', `✅ ${analisis.mensaje}`, 'success');
+            if (analisis.datosCreditoAnterior && analisis.datosCreditoAnterior.saldo > 0) {
+                showStatus('status_colocacion', `✅ ${analisis.mensaje} (Saldo pendiente: $${analisis.datosCreditoAnterior.saldo})`, 'success');
+            } else {
+                showStatus('status_colocacion', `✅ ${analisis.mensaje}`, 'success');
+            }
         } else {
             tipoCreditoSelect.value = 'nuevo';
-            tipoCreditoSelect.disabled = false;
+            tipoCreditoSelect.disabled = false; 
             showStatus('status_colocacion', '✅ Cliente elegible para crédito NUEVO.', 'success');
         }
 
@@ -5154,14 +5159,14 @@ function actualizarPlazosSegunCliente(esComisionista, esRenovacion) {
 
     plazos.push(14);
 
-    const usuarioTienePermiso = currentUserData.canSell13Weeks === true;
+    const tienePermiso13 = currentUserData && currentUserData.canSell13Weeks === true;
     
-    if (esRenovacion && usuarioTienePermiso) {
+    if (esRenovacion && tienePermiso13) {
         plazos.push(13);
     }
 
     plazos.sort((a, b) => a - b);
-
+    
     popularDropdown('plazo_colocacion', plazos.map(p => ({ value: p, text: `${p} semanas` })), 'Selecciona plazo', true);
 }
 
@@ -6771,5 +6776,6 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
