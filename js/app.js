@@ -2379,17 +2379,16 @@ async function handleCreditForm(e) {
     const curpAvalInput = document.getElementById('curpAval_colocacion');
     const curpAval = curpAvalInput.value.trim().toUpperCase();
 
-    // ===================================
-    // 1. VALIDAR CLIENTE Y SESIÓN
-    // ===================================
+    // 1. Validar cliente cargado
     if (!clienteParaCredito || clienteParaCredito.curp !== document.getElementById('curp_colocacion').value.trim().toUpperCase()) {
          showStatus('status_colocacion', 'Error: Se perdieron los datos del cliente. Por favor, busca al cliente de nuevo.', 'error');
          return;
     }
 
+    // 2. Preparar datos
     const creditoData = {
         curpCliente: clienteParaCredito.curp,
-        office: clienteParaCredito.office,
+        office: clienteParaCredito.office, // <--- DATO CRÍTICO: Oficina del cliente
         tipo: document.getElementById('tipo_colocacion').value,
         monto: parseFloat(document.getElementById('monto_colocacion').value),
         plazo: parseInt(document.getElementById('plazo_colocacion').value),
@@ -2397,21 +2396,18 @@ async function handleCreditForm(e) {
         nombreAval: document.getElementById('nombreAval_colocacion').value.trim()
     };
     
+    // Cálculos financieros
     let interesRate = 0;
     if (creditoData.plazo === 14) interesRate = 0.40;
-    else if (creditoData.plazo === 13) interesRate = 0.30;
+    else if (creditoData.plazo === 13) interesRate = 0.30; // Regla 13 semanas (30%)
     else if (creditoData.plazo === 10) interesRate = 0.00;
 
     creditoData.montoTotal = parseFloat((creditoData.monto * (1 + interesRate)).toFixed(2));
     creditoData.saldo = creditoData.montoTotal;
 
-
+    // 3. Validaciones UI
     if (!creditoData.monto || creditoData.monto <= 0 || !creditoData.plazo || !creditoData.tipo || !creditoData.nombreAval) {
-        showStatus('status_colocacion', 'Error: Todos los campos del crédito son obligatorios (Monto, Plazo, Tipo, Nombre Aval).', 'error');
-        return;
-    }
-    if ((creditoData.tipo === 'renovacion' || creditoData.tipo === 'reingreso') && creditoData.plazo !== 14) {
-        showStatus('status_colocacion', 'Error: Las renovaciones y reingresos solo pueden ser a 14 semanas.', 'error');
+        showStatus('status_colocacion', 'Todos los campos son obligatorios.', 'error');
         return;
     }
     if (!validarFormatoCURP(creditoData.curpCliente)) {
@@ -2419,7 +2415,7 @@ async function handleCreditForm(e) {
         return;
     }
     if (!validarFormatoCURP(curpAval)) {
-        showStatus('status_colocacion', 'Error: El CURP del aval debe tener 18 caracteres y formato válido.', 'error');
+        showStatus('status_colocacion', 'Error: El CURP del aval tiene formato inválido.', 'error');
         curpAvalInput.classList.add('input-error');
         return;
     } else {
@@ -2427,34 +2423,37 @@ async function handleCreditForm(e) {
     }
 
     showButtonLoading(submitButton, true, 'Generando...');
-    showFixedProgress(50, 'Validando aval y generando crédito...');
-    statusColocacion.innerHTML = 'Validando elegibilidad y generando crédito...';
+    showFixedProgress(50, 'Validando aval...');
+    statusColocacion.innerHTML = 'Validando aval y generando crédito...';
     statusColocacion.className = 'status-message status-info';
 
     try {
+        // 4. VERIFICACIÓN DE AVAL (CORREGIDA)
+        // Ahora pasamos explícitamente 'creditoData.office'
         const checkAval = await database.verificarElegibilidadAval(creditoData.curpAval, creditoData.office);
         
         if (!checkAval.elegible) {
             throw new Error(`Problema con el Aval: ${checkAval.message}`);
         }
 
+        // 5. Crear Crédito
+        showFixedProgress(70, 'Guardando crédito...');
         const resultado = await database.agregarCredito(creditoData, currentUser.email);
 
         if (resultado.success) {
             showFixedProgress(100, 'Crédito generado');
-            let successMessage = `¡Crédito generado exitosamente! ID Firestore: ${resultado.data.id}.`;
-            if (resultado.data.historicalIdCredito) successMessage += ` (ID Histórico: ${resultado.data.historicalIdCredito})`;
-
+            let successMessage = `¡Crédito generado exitosamente! ID: ${resultado.data.historicalIdCredito || resultado.data.id}`;
+            
             if (!isOnline) {
-                successMessage += ' (Datos guardados localmente, se sincronizarán al conectar).';
+                successMessage += ' (Guardado localmente).';
             }
             showStatus('status_colocacion', successMessage, 'success');
 
+            // Limpieza
             e.target.reset();
             document.getElementById('form-colocacion').classList.add('hidden');
             document.getElementById('curp_colocacion').value = '';
             document.getElementById('nombre_colocacion').value = '';
-            
             clienteParaCredito = null;
 
         } else {
@@ -2463,13 +2462,8 @@ async function handleCreditForm(e) {
 
     } catch (error) {
         console.error("Error en handleCreditForm:", error);
-        showFixedProgress(100, 'Error al generar');
-        
-        let msg = error.message;
-        if (msg.includes("Missing or insufficient permissions")) {
-            msg = "Error de permisos: No puedes verificar avales de otra sucursal.";
-        }
-        showStatus('status_colocacion', `Error al generar crédito: ${msg}`, 'error');
+        showFixedProgress(100, 'Error');
+        showStatus('status_colocacion', `Error: ${error.message}`, 'error');
     } finally {
         showButtonLoading(submitButton, false);
         setTimeout(hideFixedProgress, 2000);
@@ -6751,5 +6745,6 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
