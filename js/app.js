@@ -2317,18 +2317,22 @@ async function handleSearchClientForCredit() {
     formColocacion.classList.add('hidden');
 
     try {
+        // 1. Buscar Cliente
         const cliente = await database.buscarClientePorCURP(curp, currentUserData?.office);
         if (!cliente) {
             throw new Error('CURP no registrada. Debes registrar al cliente primero.');
         }
         clienteParaCredito = cliente;
 
+        // 2. VERIFICACIÓN DE REGLAS (CORREGIDO: Pasa la oficina)
         const analisis = await database.verificarElegibilidadCliente(curp, currentUserData?.office);
 
-        if (!analisis.elegible) {
+        // Si falló la verificación (ej. permisos), analisis.elegible será undefined o false
+        if (analisis.elegible === false) {
             throw new Error(analisis.mensaje);
         }
 
+        // 3. Configuración Exitosa
         const plazoSelect = document.getElementById('plazo_colocacion');
         const tipoCreditoSelect = document.getElementById('tipo_colocacion');
 
@@ -2351,10 +2355,12 @@ async function handleSearchClientForCredit() {
             showStatus('status_colocacion', '✅ Cliente elegible para crédito NUEVO.', 'success');
         }
 
+        // Llenar campos
         document.getElementById('nombre_colocacion').value = cliente.nombre;
         document.getElementById('idCredito_colocacion').value = 'Se asignará automáticamente';
         document.getElementById('monto_colocacion').value = '';
         document.getElementById('montoTotal_colocacion').value = '';
+        
         document.getElementById('curpAval_colocacion').value = '';
         document.getElementById('nombreAval_colocacion').value = '';
         
@@ -6745,6 +6751,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
