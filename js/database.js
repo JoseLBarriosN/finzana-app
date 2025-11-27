@@ -501,10 +501,14 @@ const database = {
         if (!curpAval) return { elegible: false, message: "CURP de aval vacía." };
 
         try {
+            // 1. Consulta base: Buscar créditos donde esta persona es aval y no están pagados
             let query = db.collection('creditos')
                 .where('curpAval', '==', curpAval)
                 .where('estado', '!=', 'liquidado');
 
+            // 2. FILTRO DE SEGURIDAD OBLIGATORIO
+            // Si el usuario tiene una oficina asignada (Área comercial), DEBEMOS filtrar por ella.
+            // Si no lo hacemos, Firebase bloquea la consulta por intentar leer datos ajenos.
             if (office && office !== 'AMBAS') {
                 query = query.where('office', '==', office);
             }
@@ -515,25 +519,30 @@ const database = {
                 return { elegible: true, message: "Aval limpio." };
             }
 
+            // 3. Análisis de créditos encontrados (Regla del 80%)
             const creditosAvalados = snapshot.docs.map(doc => doc.data());
             
             for (const credito of creditosAvalados) {
                 const saldo = credito.saldo !== undefined ? credito.saldo : credito.montoTotal;
                 const montoTotal = credito.montoTotal || 0;
+                
+                // Cálculo de porcentaje pagado
                 const porcentajePagado = montoTotal > 0 ? (1 - (saldo / montoTotal)) : 0;
+                
+                // Verificar comportamiento
                 const buenComportamiento = (credito.estado === 'al corriente' || credito.estado === 'adelantado');
 
                 if (porcentajePagado < 0.80) {
                     return { 
                         elegible: false, 
-                        message: `El aval garantiza otro crédito activo (${credito.historicalIdCredito}) que solo lleva el ${(porcentajePagado*100).toFixed(0)}% pagado.` 
+                        message: `El aval ya garantiza el crédito activo ${credito.historicalIdCredito || ''} que solo lleva el ${(porcentajePagado*100).toFixed(0)}% pagado.` 
                     };
                 }
 
                 if (!buenComportamiento) {
                     return { 
                         elegible: false, 
-                        message: `El aval garantiza un crédito (${credito.historicalIdCredito}) que tiene mal comportamiento o atraso.` 
+                        message: `El aval garantiza el crédito ${credito.historicalIdCredito || ''} que tiene atrasos o mal comportamiento.` 
                     };
                 }
             }
@@ -543,12 +552,14 @@ const database = {
         } catch (error) {
             console.error("Error verificando aval:", error);
             
+            // Manejo específico para falta de índice en Firebase
             if (error.code === 'failed-precondition') {
-                console.warn("⚠️ FALTA ÍNDICE PARA AVAL: Revisa la consola del navegador para el link de creación.");
-                return { elegible: false, message: "Falta configuración interna (Índice de DB) para verificar avales en esta oficina." };
+                console.warn("⚠️ FALTA ÍNDICE: Abre la consola del navegador (F12) y haz clic en el enlace largo para crearlo.");
+                return { elegible: false, message: "Falta crear un índice en la base de datos para esta consulta." };
             }
-
-            return { elegible: false, message: `Error técnico verificando aval: ${error.message}` };
+            
+            // Si es error de permisos, devolvemos el mensaje técnico
+            return { elegible: false, message: `Error de permisos verificando aval: ${error.message}` };
         }
     },
 
@@ -2050,6 +2061,7 @@ const database = {
     },
 
 };
+
 
 
 
