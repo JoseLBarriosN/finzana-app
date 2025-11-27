@@ -429,7 +429,7 @@ function aplicarPermisosUI(role) {
 async function loadClientesTable() {
     // 1. Prevenir doble carga
     if (cargaEnProgreso) {
-        showStatus('status_gestion_clientes', 'Ya hay una búsqueda en progreso. Cancélala primero.', 'warning');
+        showStatus('status_gestion_clientes', 'Ya hay una búsqueda en progreso.', 'warning');
         return;
     }
 
@@ -459,10 +459,9 @@ async function loadClientesTable() {
             grupo: document.getElementById('grupo_filtro')?.value || '',
             soloComisionistas: document.getElementById('comisionista_filtro')?.checked || false,
             
-            // <--- NUEVO: Capturamos las fechas ---
+            // Filtros de Fecha
             fechaCredito: document.getElementById('fecha_credito_filtro')?.value || '', 
             fechaRegistro: document.getElementById('fecha_registro_filtro')?.value || '',
-            // -------------------------------------
 
             userOffice: esAdminConAccesoTotal ? null : currentUserData?.office,
             office: document.getElementById('sucursal_filtro')?.value || '',
@@ -488,12 +487,10 @@ async function loadClientesTable() {
                 if(cliente) {
                     if (filtros.ruta && cliente.ruta !== filtros.ruta) continue;
                     
-                    // Aplicar filtro de fecha aquí también si es necesario
                     if (filtros.fechaCredito) {
                         const fechaCred = cred.fechaCreacion ? new Date(cred.fechaCreacion).toISOString().split('T')[0] : '';
                         if (fechaCred !== filtros.fechaCredito) continue;
                     }
-
                     resultadosFinales.push({ cliente, credito: cred });
                 }
             }
@@ -501,7 +498,6 @@ async function loadClientesTable() {
             // Búsqueda General
             const clientesEncontrados = await database.buscarClientes(filtros);
             
-            // Filtrado adicional de clientes (Fecha Registro)
             const clientesFiltrados = clientesEncontrados.filter(c => {
                 if (filtros.fechaRegistro) {
                     const fechaReg = c.fechaRegistro ? new Date(c.fechaRegistro).toISOString().split('T')[0] : '';
@@ -511,7 +507,6 @@ async function loadClientesTable() {
             });
 
             if (clientesFiltrados.length === 0) {
-                // No lanzamos error inmediato para permitir limpiar filtros, mejor mensaje UI
                 tbody.innerHTML = '<tr><td colspan="6">No se encontraron clientes con esos criterios.</td></tr>';
                 showFixedProgress(100, 'Sin resultados');
                 return; 
@@ -529,48 +524,35 @@ async function loadClientesTable() {
 
                 if (filtros.soloComisionistas && !cliente.isComisionista) continue;
 
-                // Buscar Créditos
-                const creditosCliente = await database.buscarCreditosPorCliente(cliente.curp, filtros.userOffice);
+                // Buscar Créditos (Usando el índice de fecha si existe)
+                const creditosCliente = await database.buscarCreditosPorCliente(cliente.curp, filtros.userOffice, filtros.fechaCredito);
                 
                 if (creditosCliente.length > 0) {
                     let tieneCreditosVisibles = false;
-                    // Ordenar recientes primero
+                    // Ordenar recientes primero (para lógica interna)
                     creditosCliente.sort((a, b) => (parsearFecha(b.fechaCreacion)?.getTime() || 0) - (parsearFecha(a.fechaCreacion)?.getTime() || 0));
                     
                     for (const cred of creditosCliente) {
-                        // Filtros existentes
                         if (filtros.plazo && cred.plazo != filtros.plazo) continue;
                         if (filtros.curpAval && (!cred.curpAval || !cred.curpAval.includes(filtros.curpAval))) continue;
-                        
-                        // <--- NUEVO: Lógica de Filtro de Fecha Crédito ---
-                        if (filtros.fechaCredito) {
-                            // Convertir fecha ISO (ej: 2023-11-25T14:00:00Z) a YYYY-MM-DD
-                            const fechaCred = cred.fechaCreacion ? new Date(cred.fechaCreacion).toISOString().split('T')[0] : '';
-                            if (fechaCred !== filtros.fechaCredito) continue;
-                        }
-                        // -------------------------------------------------
                         
                         resultadosFinales.push({ cliente, credito: cred });
                         tieneCreditosVisibles = true;
                     }
 
-                    // Mostrar cliente sin crédito SOLO si no estamos buscando específicamente por propiedades de crédito
-                    // Si el usuario puso fecha de crédito, y no hay coincidencias, NO mostramos al cliente "vacío".
-                    const buscandoPorCredito = filtros.plazo || filtros.estado || filtros.curpAval || filtros.fechaCredito; // <--- Agregado fechaCredito
+                    const buscandoPorCredito = filtros.plazo || filtros.estado || filtros.curpAval || filtros.fechaCredito;
                     
                     if (!tieneCreditosVisibles && !buscandoPorCredito) {
                         resultadosFinales.push({ cliente, credito: null });
                     }
                 } else {
-                    // Cliente sin créditos (Solo mostrar si no hay filtros de crédito activos)
                     const buscandoPorCredito = filtros.plazo || filtros.estado || filtros.curpAval || filtros.fechaCredito;
                     if (!buscandoPorCredito) {
                         resultadosFinales.push({ cliente, credito: null });
                     }
                 }
 
-                // Actualizar Barra
-                if (index % 3 === 0 || index === total - 1) {
+                if (index % 5 === 0 || index === total - 1) {
                     const pct = 30 + Math.floor(((index + 1) / total) * 60); 
                     showFixedProgress(pct, `Procesando ${index + 1} de ${total}...`);
                     await new Promise(resolve => setTimeout(resolve, 0));
@@ -579,6 +561,15 @@ async function loadClientesTable() {
         }
 
         if (operationId !== currentSearchOperation) throw new Error("Cancelado");
+
+        // --- ORDENAMIENTO CRONOLÓGICO FINAL (NUEVO) ---
+        // Ordenar del más reciente al más antiguo basado en fecha de creación del crédito
+        resultadosFinales.sort((a, b) => {
+            const fechaA = a.credito ? new Date(a.credito.fechaCreacion).getTime() : 0;
+            const fechaB = b.credito ? new Date(b.credito.fechaCreacion).getTime() : 0;
+            return fechaB - fechaA; // Descendente
+        });
+        // ----------------------------------------------
 
         // RENDERIZADO
         showFixedProgress(95, 'Generando tabla...');
@@ -2585,8 +2576,8 @@ async function handlePaymentForm(e) {
     const submitButton = e.target.querySelector('button[type="submit"]');
     const statusCobranza = document.getElementById('status_cobranza');
 
-    if (!creditoActual || !creditoActual.id || !(creditoActual.historicalIdCredito || creditoActual.id)) {
-        showStatus('status_cobranza', 'Error: No hay un crédito válido seleccionado. Por favor, busca el crédito de nuevo.', 'error');
+    if (!creditoActual || !creditoActual.id) {
+        showStatus('status_cobranza', 'Error: No hay crédito seleccionado.', 'error');
         return;
     }
     const historicalId = creditoActual.historicalIdCredito || creditoActual.id;
@@ -2596,27 +2587,25 @@ async function handlePaymentForm(e) {
     const tipoPago = document.getElementById('tipo_cobranza').value;
 
     if (isNaN(montoPago) || montoPago <= 0) {
-        showStatus('status_cobranza', 'Error: El monto del pago debe ser un número positivo.', 'error');
+        showStatus('status_cobranza', 'Error: El monto debe ser positivo.', 'error');
         montoInput.classList.add('input-error');
         return;
     } else {
         montoInput.classList.remove('input-error');
     }
 
-    // *** CORRECCIÓN: Usar el saldo RECALCULADO (si estuviera disponible) o el de la DB para la validación de sobrepago ***
-    // Re-buscamos el estado para tener el saldo más fidedigno posible ANTES de pagar
-    const pagos = await database.getPagosPorCredito(historicalId, creditoActual.office);
-    pagos.sort((a, b) => (parsearFecha(b.fecha)?.getTime() || 0) - (parsearFecha(a.fecha)?.getTime() || 0));
-    const historial = _calcularEstadoCredito(creditoActual, pagos);
+    // --- REGLAS DE COMISIÓN (Pago Individual) ---
+    let comision = 0;
+    const plazo = creditoActual.plazo || 14;
     
-    const saldoActualParaValidar = historial ? historial.saldoRestante : (creditoActual.saldo !== undefined ? creditoActual.saldo : 0);
-
-    const tolerancia = 0.015;
-    if (montoPago > saldoActualParaValidar + tolerancia) {
-        showStatus('status_cobranza', `Error: El monto del pago ($${montoPago.toFixed(2)}) excede el saldo restante ($${saldoActualParaValidar.toFixed(2)}).`, 'error');
-        montoInput.classList.add('input-error');
-        return;
+    // Solo si no es comisionista (10 semanas)
+    if (plazo !== 10) { 
+        if (tipoPago === 'normal' || tipoPago === 'adelanto' || tipoPago === 'actualizado') {
+            comision = 10;
+        }
+        // Extraordinario y Bancario se quedan en 0
     }
+    // --------------------------------------------
 
     showButtonLoading(submitButton, true, 'Registrando...');
     showFixedProgress(50, 'Procesando pago...');
@@ -2627,23 +2616,22 @@ async function handlePaymentForm(e) {
         const pagoData = {
             idCredito: historicalId,
             monto: montoPago,
-            tipoPago: tipoPago
+            tipoPago: tipoPago,
+            comisionGenerada: comision, // Enviamos la comisión calculada
+            origen: 'manual'
         };
 
-        // database.agregarPago usa una transacción y valida contra el saldo actual en la DB
-        // lo cual es la forma correcta de registrar el pago.
         const resultado = await database.agregarPago(pagoData, currentUser.email, creditoActual.id);
 
         if (resultado.success) {
             showFixedProgress(100, 'Pago registrado');
             let successMsg = '¡Pago registrado exitosamente!';
             if (!isOnline) successMsg += ' (Guardado localmente).';
+            
             showStatus('status_cobranza', successMsg, 'success');
-
             document.getElementById('form-cobranza').classList.add('hidden');
             document.getElementById('idCredito_cobranza').value = '';
             creditoActual = null;
-
         } else {
             throw new Error(resultado.message);
         }
@@ -3171,7 +3159,10 @@ function renderizarCobranzaRuta(data, container) {
             const montoSugerido = cred.pagoSemanalAcumulado;
             const estadoClase = `status-${cred.estadoCredito.replace(/\s/g, '-')}`;
             const plazo = cred.plazo || 14;
-            const comisionInicial = (plazo !== 10 && montoSugerido > 0) ? 10 : 0;
+            
+            // Calculamos comisión inicial solo visual (luego se recalcula con JS)
+            let comisionInicial = 0;
+            if (plazo !== 10 && montoSugerido > 0) comisionInicial = 10;
 
             html += `
                 <tr class="fila-cobro" data-plazo="${plazo}" data-grupo-id="${grupoId}" id="row-${linkId}">
@@ -3196,8 +3187,10 @@ function renderizarCobranzaRuta(data, container) {
                                     style="width: 60%; font-weight:bold; border-radius: 6px;"
                                     onchange="recalcularComision('${linkId}')">
                                 <option value="normal" selected>Normal</option>
+                                <option value="adelanto">Adelanto</option>
+                                <option value="actualizado">Actualizado (Renovación)</option>
                                 <option value="extraordinario">Extraordinario</option>
-                                <option value="actualizado">Actualizado</option>
+                                <option value="bancario">Bancario / Transferencia</option>
                             </select>
                             
                             <div style="position:relative; width: 40%;">
@@ -3239,7 +3232,7 @@ function renderizarCobranzaRuta(data, container) {
                         <td style="vertical-align: middle;">
                             <div style="display: flex; justify-content: space-between; font-size: 0.95rem;">
                                 <span style="color: var(--primary);">Pagos: <span id="total-pagos-${grupoId}">$0.00</span></span>
-                                <span style="color: #28a745;">Comisión: <span id="total-comis-${grupoId}">$0.00</span></span>
+                                <span style="color: #28a745;">Comis: <span id="total-comis-${grupoId}">$0.00</span></span>
                             </div>
                         </td>
                         <td></td>
@@ -3249,6 +3242,8 @@ function renderizarCobranzaRuta(data, container) {
     });
 
     container.innerHTML = html;
+
+    // Listeners "Marcar Todos"
     container.querySelectorAll('.check-group-all').forEach(chk => {
         chk.addEventListener('change', (e) => {
             const grp = e.target.getAttribute('data-grupo');
@@ -3258,13 +3253,14 @@ function renderizarCobranzaRuta(data, container) {
                     if (!cb.disabled) {
                         cb.checked = e.target.checked;
                         const idLink = cb.getAttribute('data-id-link');
-                        recalcularComision(idLink);
+                        recalcularComision(idLink); 
                     }
                 });
             }
         });
     });
 
+    // Calcular totales iniciales
     grupos.forEach(grupo => {
         const grupoId = grupo.replace(/\s+/g, '_');
         recalcularTotalesGrupo(grupoId);
@@ -3284,6 +3280,7 @@ function recalcularComision(idLink) {
     const labelComision = document.getElementById(`comision-val-${idLink}`);
     const boxComision = document.getElementById(`comision-box-${idLink}`);
     const grupoId = row.getAttribute('data-grupo-id');
+
     const tipo = select.value;
     const monto = parseFloat(inputMonto.value) || 0;
     const plazo = parseInt(row.getAttribute('data-plazo'));
@@ -3303,11 +3300,26 @@ function recalcularComision(idLink) {
         inputMonto.disabled = false;
     }
 
-    if (!isChecked) comision = 0;
-    else if (plazo === 10) comision = 0;
-    else if (monto <= 0) comision = 0;
-    else if (tipo === 'normal' || tipo === 'extraordinario') comision = 10;
-    else if (tipo === 'actualizado') comision = 0;
+    if (!isChecked || monto <= 0 || plazo === 10) {
+        comision = 0;
+    } 
+    else {
+        switch (tipo) {
+            case 'normal':          // Pago Regular -> SI ($10)
+            case 'adelanto':        // Pago Adelantado -> SI ($10)
+            case 'actualizado':     // Renovación -> SI ($10) - Corregido
+                comision = 10;
+                break;
+            
+            case 'extraordinario':  // Pago Extra -> NO ($0) - Corregido
+            case 'bancario':        // Transferencia -> NO ($0) - Nuevo
+                comision = 0;
+                break;
+                
+            default:
+                comision = 0;
+        }
+    }
 
     labelComision.textContent = formatMoney(comision);
     
@@ -5090,12 +5102,15 @@ async function inicializarDropdowns() {
     console.log('===> Inicializando dropdowns ESTÁTICOS...');
     
     try {
-
         const tiposCredito = ['NUEVO', 'RENOVACION', 'REINGRESO'];
         const montos = [3000, 3500, 4000, 4500, 5000, 6000, 7000, 8000, 9000, 10000];
         const plazosCredito = [10, 13, 14].sort((a, b) => a - b);
         const estadosCredito = ['al corriente', 'atrasado', 'cobranza', 'juridico', 'liquidado'];
-        const tiposPago = ['normal', 'extraordinario', 'actualizado', 'grupal'];
+        
+        // --- ACTUALIZADO: NUEVOS TIPOS DE PAGO ---
+        const tiposPago = ['normal', 'adelanto', 'extraordinario', 'actualizado', 'bancario'];
+        // -----------------------------------------
+
         const roles = [
             { value: 'Super Admin', text: 'Super Admin' },
             { value: 'Gerencia', text: 'Gerencia' },
@@ -5120,10 +5135,13 @@ async function inicializarDropdowns() {
         popularDropdown('nuevo-rol', roles, 'Seleccione un rol', true);
         popularDropdown('tipo_credito_filtro_reporte', tiposCredito.map(t => ({ value: t.toLowerCase(), text: t })), 'Todos', true);
         popularDropdown('estado_credito_filtro_reporte', estadosCredito.map(e => ({ value: e, text: e.toUpperCase() })), 'Todos', true);
+        
+        // Dropdown de Tipos de Pago (Reportes)
         popularDropdown('tipo_pago_filtro_reporte', tiposPago.map(t => ({ value: t, text: t.toUpperCase() })), 'Todos', true);
+        
         popularDropdown('grafico_tipo_reporte', tiposReporteGrafico, 'Selecciona un reporte', true);
 
-        // --- Dropdowns dinámicos (se dejan vacíos, se cargarán en showView) ---
+        // --- Dropdowns dinámicos (vacíos inicialmente) ---
         popularDropdown('poblacion_grupo_cliente', [], 'Selecciona población/grupo');
         popularDropdown('ruta_cliente', [], 'Selecciona una ruta');
         popularDropdown('ruta_filtro_reporte', [], 'Todos');
@@ -6733,4 +6751,5 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
