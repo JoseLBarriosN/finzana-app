@@ -501,10 +501,15 @@ const database = {
         if (!curpAval) return { elegible: false, message: "CURP de aval vacía." };
 
         try {
-            const snapshot = await db.collection('creditos')
+            let query = db.collection('creditos')
                 .where('curpAval', '==', curpAval)
-                .where('estado', '!=', 'liquidado')
-                .get();
+                .where('estado', '!=', 'liquidado');
+
+            if (office && office !== 'AMBAS') {
+                query = query.where('office', '==', office);
+            }
+
+            const snapshot = await query.get();
 
             if (snapshot.empty) {
                 return { elegible: true, message: "Aval limpio." };
@@ -514,30 +519,36 @@ const database = {
             
             for (const credito of creditosAvalados) {
                 const saldo = credito.saldo !== undefined ? credito.saldo : credito.montoTotal;
-                const porcentajePagado = 1 - (saldo / credito.montoTotal);
+                const montoTotal = credito.montoTotal || 0;
+                const porcentajePagado = montoTotal > 0 ? (1 - (saldo / montoTotal)) : 0;
                 const buenComportamiento = (credito.estado === 'al corriente' || credito.estado === 'adelantado');
 
                 if (porcentajePagado < 0.80) {
                     return { 
                         elegible: false, 
-                        message: `El aval garantiza otro crédito (ID: ${credito.historicalIdCredito}) que solo lleva el ${(porcentajePagado*100).toFixed(0)}% pagado.` 
+                        message: `El aval garantiza otro crédito activo (${credito.historicalIdCredito}) que solo lleva el ${(porcentajePagado*100).toFixed(0)}% pagado.` 
                     };
                 }
 
                 if (!buenComportamiento) {
                     return { 
                         elegible: false, 
-                        message: `El aval garantiza un crédito (ID: ${credito.historicalIdCredito}) que tiene mal comportamiento (${credito.estado}).` 
+                        message: `El aval garantiza un crédito (${credito.historicalIdCredito}) que tiene mal comportamiento o atraso.` 
                     };
                 }
             }
 
-            return { elegible: true, message: "Aval elegible (créditos anteriores >80% y al corriente)." };
+            return { elegible: true, message: "Aval elegible." };
 
         } catch (error) {
             console.error("Error verificando aval:", error);
-            if (error.message.includes("permission")) return { elegible: false, message: "Error de permisos verificando aval." };
-            return { elegible: false, message: error.message };
+            
+            if (error.code === 'failed-precondition') {
+                console.warn("⚠️ FALTA ÍNDICE PARA AVAL: Revisa la consola del navegador para el link de creación.");
+                return { elegible: false, message: "Falta configuración interna (Índice de DB) para verificar avales en esta oficina." };
+            }
+
+            return { elegible: false, message: `Error técnico verificando aval: ${error.message}` };
         }
     },
 
@@ -2039,6 +2050,7 @@ const database = {
     },
 
 };
+
 
 
 
