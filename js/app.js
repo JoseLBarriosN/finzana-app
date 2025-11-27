@@ -2286,7 +2286,7 @@ async function handleSearchClientForCredit() {
         }
         clienteParaCredito = cliente;
 
-        const analisis = await database.verificarElegibilidadCliente(curp);
+        const analisis = await database.verificarElegibilidadCliente(curp, currentUserData?.office);
 
         if (!analisis.elegible) {
             throw new Error(analisis.mensaje);
@@ -4516,9 +4516,9 @@ async function eliminarPoblacion(id, nombre) {
     }
 }
 
-/**
- * Elimina una ruta
- */
+//==================================//
+    // ** ELMIINAR UNA RUTA ** //
+//==================================//
 async function eliminarRuta(id, nombre, office) {
     if (!confirm(`¿Estás seguro de que deseas eliminar la ruta "${nombre}"?\nEsta acción también la quitará de todas las poblaciones asignadas.`)) {
         return;
@@ -4526,12 +4526,10 @@ async function eliminarRuta(id, nombre, office) {
 
     showProcessingOverlay(true, 'Eliminando ruta...');
     try {
-        // La nueva función de DB ya se encarga de des-asignar
         const resultado = await database.eliminarRuta(id, nombre, office);
         
         if (resultado.success) {
             showStatus('status_configuracion', `Ruta "${nombre}" eliminada y des-asignada.`, 'success');
-            // Recargar AMBAS pestañas
             await loadConfiguracion(); 
         } else {
             throw new Error(resultado.message);
@@ -4545,20 +4543,17 @@ async function eliminarRuta(id, nombre, office) {
 }
 
 
-// =============================================
-// FUNCIÓN SHOWVIEW (ÚNICA Y DEFINITIVA)
-// =============================================
+//=================================//
+    // ** FUNCION SHOWVIEW ** //
+//=================================//
 async function showView(viewId) {
     console.log(`🚀 Navegando a: ${viewId}`);
     
-    // 1. Ocultar todas las vistas
     document.querySelectorAll('.view').forEach(view => view.classList.add('hidden'));
     
-    // 2. Mostrar la vista objetivo
     const targetView = document.getElementById(viewId);
     if (!targetView) {
         console.error(`❌ Error: No existe la vista con ID "${viewId}"`);
-        // Fallback al menú principal si falla
         const menu = document.getElementById('view-main-menu');
         if (menu) menu.classList.remove('hidden');
         return;
@@ -4566,7 +4561,6 @@ async function showView(viewId) {
     targetView.classList.remove('hidden');
     console.log(`✅ Vista ${viewId} mostrada.`);
     
-    // 3. Lógica específica de inicialización para cada vista
     try {
         switch(viewId) {
             case 'view-configuracion':
@@ -4574,12 +4568,10 @@ async function showView(viewId) {
                 break;
                 
             case 'view-reportes':
-                // Reportes Básicos
                 loadBasicReports(currentUserData?.office);
                 break;
                 
             case 'view-reportes-avanzados':
-                // Inicializar y cargar dropdowns dinámicos
                 inicializarVistaReportesAvanzados();
                 const officeAdv = (currentUserData?.office && currentUserData?.office !== 'AMBAS') ? currentUserData.office : '';
                 if(typeof _actualizarDropdownGrupo === 'function') {
@@ -4603,7 +4595,6 @@ async function showView(viewId) {
                 if (!editingClientId) { 
                     resetClientForm(); 
                 } else {
-                    // Si estamos editando, asegurar que los dropdowns de oficina/ruta se actualicen
                     const officeSelect = document.getElementById('office_cliente');
                     if(officeSelect && typeof handleOfficeChangeForClientForm === 'function') {
                         handleOfficeChangeForClientForm.call(officeSelect);
@@ -4611,7 +4602,6 @@ async function showView(viewId) {
                 }
                 break;
 
-            // *** AQUÍ ESTÁ LA CORRECCIÓN CLAVE PARA PAGO GRUPAL ***
             case 'view-pago-grupo':
                 console.log("⚡ Ejecutando inicialización de Pago Grupal...");
                 if(typeof inicializarVistaPagoGrupal === 'function') {
@@ -4621,7 +4611,6 @@ async function showView(viewId) {
                 }
                 break;
 
-            // *** AQUÍ ESTÁ LA LÓGICA PARA HOJA DE CORTE ***
             case 'view-hoja-corte':
                 const fechaCorte = document.getElementById('corte-fecha');
                 if(fechaCorte) fechaCorte.value = new Date().toISOString().split('T')[0];
@@ -4686,7 +4675,6 @@ async function showView(viewId) {
                 break;
                 
             default:
-                // Vistas estáticas o que no requieren carga (Main Menu, Importar, etc.)
                 break;
         }
     } catch (error) {
@@ -4695,10 +4683,9 @@ async function showView(viewId) {
     }
 }
 
-//========================================
-//             ShowStatus
-//========================================
-
+//=================================//
+    // ** MOSTRAR STATUS** //
+//=================================//
 function showStatus(elementId, message, type) {
     const element = document.getElementById(elementId);
     if (element) {
@@ -4721,7 +4708,9 @@ function showStatus(elementId, message, type) {
     }
 }
 
-
+//=================================//
+    // ** PRECESANDO OVERLAY ** //
+//=================================//
 function showProcessingOverlay(show, message = 'Procesando...') {
     if (show && typeof resetInactivityTimer === 'function') {
         resetInactivityTimer();
@@ -4853,9 +4842,9 @@ function cancelarCarga() {
     showStatus('status_gestion_clientes', 'Operación detenida.', 'warning');
 }
 
-/**
- * CORRECCIÓN: Calcula el monto total basado en plazo (0%, 30%, 40%).
- */
+//===========================================================//
+    // ** CÁLCULO DE MONTO TOTAL BASADO EN EL PLAZO ** //
+//===========================================================//
 function calcularMontoTotalColocacion() {
     const montoInput = document.getElementById('monto_colocacion');
     const plazoInput = document.getElementById('plazo_colocacion');
@@ -4869,7 +4858,6 @@ function calcularMontoTotalColocacion() {
     if (plazo === 14) interesRate = 0.40;
     else if (plazo === 13) interesRate = 0.30;
     else if (plazo === 10) interesRate = 0.00;
-    // Si el plazo no es 10, 13 o 14, el interés es 0 (o podría ser un error, pero 0 es más seguro)
 
     const montoTotal = monto * (1 + interesRate);
 
@@ -4877,7 +4865,6 @@ function calcularMontoTotalColocacion() {
         ? `$${montoTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
         : '';
 
-    // Actualizar nota de interés
     const fieldNote = montoTotalInput.nextElementSibling;
     if (fieldNote && fieldNote.classList.contains('field-note')) {
         fieldNote.textContent = `Incluye ${interesRate * 100}% de interés`;
@@ -4900,12 +4887,13 @@ function validarCURP(inputElement) {
     }
 }
 
-
+//==========================================//
+    // ** VAIDAR FORMATO DE LA CURP ** //
+//==========================================//
 function validarFormatoCURP(curp) {
     const curpRegex = /^[A-Z]{4}\d{6}[HM][A-Z]{5}[A-Z0-9]\d$/;
     return typeof curp === 'string' && curp.length === 18 && curpRegex.test(curp.toUpperCase());
 }
-
 
 const popularDropdown = (elementId, options, placeholder, isObjectValueKey = false) => {
     const select = document.getElementById(elementId);
@@ -4935,7 +4923,9 @@ const popularDropdown = (elementId, options, placeholder, isObjectValueKey = fal
     console.log(`Dropdown ${elementId} actualizado con ${options?.length || 0} opciones`);
 };
 
-//** Manejaer el cambio de oficina ** //
+//=============================================//
+    // ** MANEJAR EL CAMBIO DE OFICINA ** //
+//=============================================//
 async function handleOfficeChangeForClientForm() {
     const office = this.value || document.getElementById('office_cliente')?.value;
     console.log(`handleOfficeChangeForClientForm: Office = ${office}`);
@@ -5007,8 +4997,9 @@ async function handleOfficeChangeForClientForm() {
     }
 }
 
-//** Manejar el cambio de oficina en reportes gráficos **//
-
+//=======================================================//
+    // ** CAMBIO DE OFICINA EN REPORTES GRAFICOS ** //
+//=======================================================//
 async function handleSucursalGraficoChange() {
     const office = this.value;
 
@@ -5018,7 +5009,9 @@ async function handleSucursalGraficoChange() {
     popularDropdown('grafico_grupo', poblacionesNombres, 'Todos');
 }
 
-//** Carga las rutas en el dropdown del formulario de usuario, filtradas por oficina **//
+//===========================================//
+    // ** CARGA DE RUTAS POR OFICINA ** //
+//===========================================//
 async function _cargarRutasParaUsuario(office) {
     const rutaSelect = document.getElementById('nuevo-ruta');
     if (!rutaSelect) return;
@@ -5044,15 +5037,13 @@ async function _cargarRutasParaUsuario(office) {
     }
 }
 
-/**
- * Inicializa todos los dropdowns estáticos y dinámicos al cargar la app.
- */
+//==========================================================//
+    // ** INICIALIZA DROPDOWNS DINAMICO Y ESTATICOS ** //
+//==========================================================//
 async function inicializarDropdowns() {
     console.log('===> Inicializando dropdowns ESTÁTICOS...');
     
     try {
-        // --- YA NO CARGAMOS POBLACIONES NI RUTAS AQUÍ ---
-        // const [poblaciones, rutas] = await Promise.all(...) <-- ELIMINADO
 
         const tiposCredito = ['NUEVO', 'RENOVACION', 'REINGRESO'];
         const montos = [3000, 3500, 4000, 4500, 5000, 6000, 7000, 8000, 9000, 10000];
@@ -5132,7 +5123,9 @@ function actualizarPlazosSegunCliente(esComisionista, esRenovacion) {
     popularDropdown('plazo_colocacion', plazos.map(p => ({ value: p, text: `${p} semanas` })), 'Selecciona plazo', true);
 }
 
-// *** MANEJO DE DUPLICADOS ***
+//=====================================//
+    // ** MANEJO DE DUPLICADOS ** //
+//=====================================//
 async function handleVerificarDuplicados() {
     showProcessingOverlay(true, 'Buscando clientes duplicados (por CURP + Oficina)...');
     showButtonLoading('#btn-verificar-duplicados', true);
@@ -5179,10 +5172,9 @@ async function handleVerificarDuplicados() {
     }
 }
 
-// ====================================================================
-// ** FUNCIÓN PARA MOSTRAR HISTORIAL DE PAGOS **
-// ====================================================================
-// EN app.js - REEMPLAZA ESTA FUNCIÓN
+//===========================================//
+    // ** MOSTRAR HISTORIAL DE PAGOS ** //
+//===========================================//
 async function mostrarHistorialPagos(historicalIdCredito, office) {
     const modal = document.getElementById('generic-modal');
     const modalTitle = document.getElementById('modal-title');
@@ -5204,10 +5196,7 @@ async function mostrarHistorialPagos(historicalIdCredito, office) {
         }
         creditos.sort((a, b) => (parsearFecha(b.fechaCreacion)?.getTime() || 0) - (parsearFecha(a.fechaCreacion)?.getTime() || 0));
         const credito = creditos[0];
-        
-        // Convertir a string JSON para pasarlo a los botones
         const creditoJsonString = JSON.stringify(credito).replace(/'/g, "&apos;").replace(/"/g, "&quot;");
-
         const cliente = await database.buscarClientePorCURP(credito.curpCliente);
         const pagos = await database.getPagosPorCredito(historicalIdCredito, office);
 
@@ -5226,14 +5215,10 @@ async function mostrarHistorialPagos(historicalIdCredito, office) {
         const esAdminTotal = (role === 'Super Admin' || role === 'Gerencia');
         const esAdminOficina = (role === 'Administrador' && (userOffice === creditOffice || userOffice === 'AMBAS'));
         const esComercialOficina = (role === 'Área comercial' && (userOffice === creditOffice || userOffice === 'AMBAS'));
-
-        // Permisos para el CRÉDITO
         const canEditCredit = esAdminTotal || esAdminOficina;
         const canDeleteCredit = esAdminTotal || esAdminOficina;
-
-        // Permisos para PAGOS
-        const canEditPayment = esAdminTotal || esAdminOficina || esComercialOficina; // <-- Área Comercial SÍ PUEDE EDITAR
-        const canDeletePayment = esAdminTotal || esAdminOficina; // <-- Área Comercial NO PUEDE BORRAR
+        const canEditPayment = esAdminTotal || esAdminOficina || esComercialOficina;
+        const canDeletePayment = esAdminTotal || esAdminOficina;
 
         let creditActionsHTML = '';
         if (canEditCredit || canDeleteCredit) {
@@ -5265,7 +5250,6 @@ async function mostrarHistorialPagos(historicalIdCredito, office) {
         if (pagos.length === 0) {
             tablaHTML = '<p class="status-message status-info">Este crédito no tiene pagos registrados.</p>';
         } else {
-            // Reordenar ASC (más antiguo primero) para calcular el saldo secuencialmente
             pagos.sort((a, b) => (parsearFecha(a.fecha)?.getTime() || 0) - (parsearFecha(b.fecha)?.getTime() || 0));
 
             let saldoActual = credito.montoTotal || 0;
@@ -5279,8 +5263,6 @@ async function mostrarHistorialPagos(historicalIdCredito, office) {
                     saldoActual = 0;
                 }
                 const saldoDespuesCalculado = `$${saldoActual.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-
-                // --- 🚀 Lógica para botones de pago ---
                 const pagoJsonString = JSON.stringify(pago).replace(/'/g, "&apos;").replace(/"/g, "&quot;");
                 let paymentActionsHTML = '<div class="action-buttons-modal">';
                 if (canEditPayment) {
@@ -5291,7 +5273,6 @@ async function mostrarHistorialPagos(historicalIdCredito, office) {
                     paymentActionsHTML += `<button class="btn btn-sm btn-danger btn-modal-action" onclick="handleEliminarPago('${pago.id}', '${credito.id}', ${montoPago}, '${credito.office}', '${pagoFecha}')" title="Eliminar Pago"><i class="fas fa-trash"></i></button>`;
                 }
                 paymentActionsHTML += '</div>';
-                // --- 🚀 Fin lógica botones ---
 
                 return `
                     <tr>
@@ -5330,9 +5311,9 @@ async function mostrarHistorialPagos(historicalIdCredito, office) {
     }
 }
 
-// ====================================================================
-// ** FUNCIÓN PARA LA HERRAMIENTA DE DIAGNÓSTICO **
-// ====================================================================
+//=====================================//
+    // ** DIAGNOSTICO DE PAGOS ** //
+//=====================================//
 async function handleDiagnosticarPagos() {
     const historicalIdCredito = document.getElementById('diagnostico-id-credito').value.trim();
     const statusEl = document.getElementById('status-diagnostico');
@@ -5355,8 +5336,7 @@ async function handleDiagnosticarPagos() {
     resultEl.classList.add('hidden');
 
     try {
-        // 1. Buscar TODOS los créditos con ese ID (sin filtro de sucursal/curp)
-        const creditosAsociados = await database.buscarCreditosPorHistoricalId(historicalIdCredito, { userOffice: null }); // Buscar en todas las sucursales
+        const creditosAsociados = await database.buscarCreditosPorHistoricalId(historicalIdCredito, { userOffice: null });
 
         if (creditosAsociados.length === 0) {
             statusEl.textContent = `Diagnóstico: No se encontró NINGÚN crédito con el ID Histórico ${historicalIdCredito}.`;
@@ -5375,8 +5355,6 @@ async function handleDiagnosticarPagos() {
             const curp = credito.curpCliente;
             const office = credito.office;
             const clave = `Cliente: ${curp} (Sucursal: ${office})`;
-            
-            // 2. Buscar pagos CON el CURP
             const pagos = await database.getPagosPorCredito(historicalIdCredito, curp);
             totalPagosEncontrados += pagos.length;
             
@@ -5415,11 +5393,10 @@ async function handleDiagnosticarPagos() {
     }
 }
 
-// EN app.js - AÑADIR NUEVAS FUNCIONES AL FINAL DEL ARCHIVO
 
-/**
- * Inicializa la vista de reporte contable, aplicando filtros de oficina y cargando agentes.
- */
+//============================================//
+    // ** INICIALIZA REPORTE CONTABLE ** //
+//============================================//
 async function inicializarVistaReporteContable() {
     const statusEl = 'status_reporte_contable';
     const selectSucursal = document.getElementById('reporte-contable-sucursal');
@@ -5428,41 +5405,36 @@ async function inicializarVistaReporteContable() {
     const btnImprimir = document.getElementById('btn-imprimir-reporte-contable');
     const wrapper = document.getElementById('reporte-contable-wrapper');
 
-    // Resetear vista
     wrapper.classList.add('hidden');
     btnImprimir.classList.add('hidden');
     showStatus(statusEl, 'Selecciona los filtros para generar un reporte.', 'info');
     
-    // Poner fechas por defecto (mes actual)
     const hoy = new Date();
     const primerDiaMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
     document.getElementById('reporte-contable-fecha-inicio').value = primerDiaMes.toISOString().split('T')[0];
     document.getElementById('reporte-contable-fecha-fin').value = hoy.toISOString().split('T')[0];
 
-    // Aplicar segregación de oficina al dropdown de sucursal
     const userOffice = currentUserData?.office;
     const esAdminTotal = (currentUserData?.role === 'Super Admin' || currentUserData?.role === 'Gerencia');
 
     if (esAdminTotal && (!userOffice || userOffice === 'AMBAS')) {
         selectSucursal.disabled = false;
-        selectSucursal.value = ''; // Permitir seleccionar
+        selectSucursal.value = '';
     } else if (userOffice && userOffice !== 'AMBAS') {
         selectSucursal.value = userOffice;
         selectSucursal.disabled = true;
     } else {
-        // Caso raro (ej. Rol bajo sin oficina)
         selectSucursal.value = '';
         selectSucursal.disabled = true;
         showStatus(statusEl, 'No tienes una oficina asignada para generar reportes.', 'error');
     }
     
-    // Cargar agentes basado en la sucursal seleccionada (o la forzada)
     await handleSucursalReporteContableChange();
 }
 
-/**
- * Carga los agentes en el dropdown de reporte contable según la sucursal seleccionada.
- */
+//=====================================================//
+    // ** CARGA DE AGENTES EN REPORTE CONTABLE ** //
+//=====================================================//
 async function handleSucursalReporteContableChange() {
     const statusEl = 'status_reporte_contable';
     const selectSucursal = document.getElementById('reporte-contable-sucursal');
@@ -5478,7 +5450,7 @@ async function handleSucursalReporteContableChange() {
     }
 
     try {
-        const resultado = await database.obtenerUsuarios(); // Obtiene todos
+        const resultado = await database.obtenerUsuarios();
         if (!resultado.success) throw new Error(resultado.message);
 
         const agentes = resultado.data.filter(u =>
@@ -5496,9 +5468,9 @@ async function handleSucursalReporteContableChange() {
     }
 }
 
-/**
- * Genera el contenido del reporte contable basado en los filtros.
- */
+//======================================================//
+    // ** REPORTE CONTABLE GENERADO POR FILTROS ** //
+//======================================================//
 async function handleGenerarReporteContable() {
     const statusEl = 'status_reporte_contable';
     const btnGenerar = document.getElementById('btn-generar-reporte-contable');
@@ -5625,12 +5597,11 @@ async function handleGenerarReporteContable() {
     }
 }
 
-/**
- * Helper para renderizar la tabla de movimientos del reporte contable.
- */
+//========================================================//
+    // ** HELPER PARA RENDERIZAR REPORTE CONTABLE ** //
+//========================================================//
 function renderTablaMovimientos(movimientos) {
     let rows = '';
-    // Ordenar por fecha ASC para el reporte
     movimientos.sort((a, b) => (parsearFecha(a.fecha)?.getTime() || 0) - (parsearFecha(b.fecha)?.getTime() || 0));
 
     movimientos.forEach(mov => {
@@ -5665,9 +5636,10 @@ function renderTablaMovimientos(movimientos) {
         </table>
     `;
 }
-/**
- * Extrae los números de teléfono de la tabla de clientes visible y los muestra en un modal.
- */
+
+//=======================================================//
+    // ** EXTRAER TELEFONOS DE LISTA DE CLIENTES ** //
+//=======================================================//
 function handleExportarTelefonos() {
     const tbody = document.getElementById('tabla-clientes');
     if (!tbody) {
@@ -5685,7 +5657,6 @@ function handleExportarTelefonos() {
         if (editButton) {
             clientesEncontrados++;
             try {
-                // 1. Extraer el string JSON del atributo onclick
                 const onclickAttr = editButton.getAttribute('onclick');
                 const jsonString = onclickAttr.substring(
                     onclickAttr.indexOf('(') + 1, 
@@ -5694,10 +5665,8 @@ function handleExportarTelefonos() {
                 .replace(/&quot;/g, '"')
                 .replace(/&apos;/g, "'");
                 
-                // 2. Parsear el JSON
                 const cliente = JSON.parse(jsonString);
 
-                // 3. Obtener y limpiar el teléfono
                 if (cliente && cliente.telefono) {
                     let telefonoLimpio = cliente.telefono.replace(/\D/g, '');
                     if (telefonoLimpio.length > 10) {
@@ -6089,7 +6058,6 @@ function configurarEventListenersConfiguracion() {
                 }
             });
 
-            // Ocultar secciones vacías
             document.querySelectorAll('#tab-poblaciones .office-section').forEach(section => {
                 const visibleCards = section.querySelectorAll('.poblacion-card[style*="display: flex"]').length;
                 section.style.display = visibleCards > 0 ? 'block' : 'none';
@@ -6097,19 +6065,16 @@ function configurarEventListenersConfiguracion() {
         });
     }
 
-    // Configurar filtros por oficina en poblaciones
     document.querySelectorAll('#tab-poblaciones .filter-tab').forEach(tab => {
         tab.addEventListener('click', function() {
             document.querySelectorAll('#tab-poblaciones .filter-tab').forEach(t => t.classList.remove('active'));
             this.classList.add('active');
             
-            // Disparar búsqueda para re-filtrar
             const searchInput = document.getElementById('search-poblaciones');
             if (searchInput) searchInput.dispatchEvent(new Event('input'));
         });
     });
 
-    // Configurar búsqueda en rutas
     const searchRutas = document.getElementById('search-rutas');
     if (searchRutas) {
         searchRutas.addEventListener('input', function() {
@@ -6122,7 +6087,6 @@ function configurarEventListenersConfiguracion() {
                 card.style.display = matchesSearch ? 'flex' : 'none';
             });
 
-            // Ocultar secciones vacías
             document.querySelectorAll('#tab-rutas .office-section').forEach(section => {
                 const visibleCards = section.querySelectorAll('.ruta-card[style*="display: flex"]').length;
                 section.style.display = visibleCards > 0 ? 'block' : 'none';
@@ -6186,43 +6150,31 @@ async function registrarYubiKey() {
     showProcessingOverlay(true, "Preparando registro de llave...");
 
     try {
-        // 1. Generar un "challenge" (desafío)
-        // En un sistema de producción, esto vendría de un servidor (Firebase Function).
-        // Para esta prueba, generamos uno en el cliente (suficientemente seguro para esto).
         const challengeBuffer = new Uint8Array(32);
         crypto.getRandomValues(challengeBuffer);
 
-        // 2. Crear las opciones de credencial
         const createOptions = {
             publicKey: {
-                // Información del "Relying Party" (tu app)
                 rp: {
                     name: "Finzana App",
-                    id: window.location.hostname // Ej: "localhost" o "finzana.web.app"
+                    id: window.location.hostname
                 },
-                // Información del usuario
                 user: {
-                    id: new TextEncoder().encode(currentUserData.id), // ID de usuario como buffer
+                    id: new TextEncoder().encode(currentUserData.id),
                     name: currentUserData.email,
                     displayName: currentUserData.name
                 },
-                // El desafío
                 challenge: challengeBuffer,
-                // Algoritmos de cifrado que aceptamos (estándar para YubiKey)
                 pubKeyCredParams: [
-                    { type: "public-key", alg: -7 },  // ES256
-                    { type: "public-key", alg: -257 } // RS256
+                    { type: "public-key", alg: -7 },
+                    { type: "public-key", alg: -257 }
                 ],
                 timeout: 60000,
                 attestation: "direct"
             }
         };
 
-        // 3. Pedir al navegador que cree la credencial (aquí te pedirá tocar la llave)
         const credential = await navigator.credentials.create(createOptions);
-        
-        // 4. El navegador nos devuelve un ID. ¡Este es el ID que guardamos!
-        // Necesitamos convertirlo de un ArrayBuffer a un string Base64URL para guardarlo.
         const credentialIdBase64URL = btoa(
             String.fromCharCode.apply(null, new Uint8Array(credential.rawId))
         ).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
@@ -6230,12 +6182,10 @@ async function registrarYubiKey() {
         console.log("Llave registrada, ID de credencial:", credentialIdBase64URL);
         showProcessingOverlay(true, "Guardando credencial...");
 
-        // 5. Guardar el ID de la credencial en Firestore
         await db.collection('users').doc(currentUserData.id).update({
             yubiKeyCredentialId: credentialIdBase64URL
         });
         
-        // Actualizar nuestros datos locales
         currentUserData.yubiKeyCredentialId = credentialIdBase64URL;
 
         showProcessingOverlay(false);
@@ -6248,9 +6198,9 @@ async function registrarYubiKey() {
     }
 }
 
-// =========================
-// ** VERIFICAR YUBIKEY ** 
-// =========================
+//==================================//
+    // ** VERIFICAR YUBIKEY ** //
+//==================================//
 async function verificarYubiKey() {
     if (!currentUserData || !currentUserData.yubiKeyCredentialId) {
         alert("Error: No hay llave de seguridad registrada para este usuario.");
@@ -6298,9 +6248,9 @@ async function verificarYubiKey() {
     }
 }
 
-// =========================
-// ** HOJA DE CORTE ** 
-// =========================
+//===============================//
+    // ** HOJA DE CORTE ** //
+//===============================//
 async function loadHojaCorte() {
     const fechaInput = document.getElementById('corte-fecha');
     const fecha = fechaInput.value;
@@ -6547,10 +6497,9 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 });
 
-///===========================================================///
+///==============================================///
   ///  EVENT LISTENERS ---- DISPARADORES ///
-///===========================================================///
-
+///==============================================///
 function setupEventListeners() {
     console.log('Configurando event listeners...');
     window.addEventListener('online', updateConnectionStatus);
@@ -6738,7 +6687,3 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
-
-
-
-
