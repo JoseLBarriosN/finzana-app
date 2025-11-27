@@ -427,23 +427,28 @@ function aplicarPermisosUI(role) {
     // ** CARGAR TABLA DE CLIENTES ** //
 //=========================================//
 async function loadClientesTable() {
+    // 1. Prevenir doble carga
     if (cargaEnProgreso) {
-        showStatus('status_gestion_clientes', 'Ya hay una búsqueda en progreso. Por favor, espera o cancela la actual.', 'warning');
+        showStatus('status_gestion_clientes', 'Ya hay una búsqueda en progreso. Cancélala primero.', 'warning');
         return;
     }
 
+    // 2. Iniciar Token de Cancelación
     clearTimeout(inactivityTimer);
     cargaEnProgreso = true;
-    currentSearchOperation = Date.now();
+    currentSearchOperation = Date.now(); 
     const operationId = currentSearchOperation;
+
+    // 3. UI Inicial
     const tbody = document.getElementById('tabla-clientes');
-    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">Iniciando búsqueda...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">Buscando...</td></tr>';
     showButtonLoading('#btn-aplicar-filtros', true, 'Buscando...');
-    showFixedProgress(10, 'Leyendo filtros...');
+    showFixedProgress(5, 'Iniciando...');
 
     try {
         const esAdminConAccesoTotal = (currentUserData?.role === 'Super Admin' || currentUserData?.role === 'Gerencia');
-        const userRole = currentUserData?.role;
+        
+        // --- RECOLECCIÓN DE FILTROS ---
         const filtros = {
             curp: document.getElementById('curp_filtro')?.value?.trim() || '',
             nombre: document.getElementById('nombre_filtro')?.value?.trim() || '',
@@ -453,110 +458,151 @@ async function loadClientesTable() {
             plazo: document.getElementById('plazo_filtro')?.value || '',
             grupo: document.getElementById('grupo_filtro')?.value || '',
             soloComisionistas: document.getElementById('comisionista_filtro')?.checked || false,
+            
+            // <--- NUEVO: Capturamos las fechas ---
+            fechaCredito: document.getElementById('fecha_credito_filtro')?.value || '', 
+            fechaRegistro: document.getElementById('fecha_registro_filtro')?.value || '',
+            // -------------------------------------
+
             userOffice: esAdminConAccesoTotal ? null : currentUserData?.office,
             office: document.getElementById('sucursal_filtro')?.value || '',
-            ruta: (userRole === 'Área comercial') ? currentUserData?.ruta : null
+            ruta: (currentUserData?.role === 'Área comercial') ? currentUserData?.ruta : null
         };
-        
-        if (userRole === 'Área comercial' && !currentUserData?.ruta) {
-            throw new Error("Error de Permisos: Tu usuario de Área Comercial no tiene una ruta asignada.");
+
+        if (currentUserData?.role === 'Área comercial' && !currentUserData?.ruta) {
+            throw new Error("Tu usuario no tiene ruta asignada.");
         }
 
         if (operationId !== currentSearchOperation) throw new Error("Cancelado");
-        showFixedProgress(30, 'Consultando base de datos...');
+
+        showFixedProgress(20, 'Consultando base de datos...');
         let resultadosFinales = [];
 
+        // --- LÓGICA DE BÚSQUEDA ---
         if (filtros.idCredito) {
-            const creditos = await database.buscarCreditosPorHistoricalId(filtros.idCredito, { 
-                userOffice: filtros.userOffice, 
-                office: filtros.office 
-            });
-            
+            // Búsqueda por ID
+            const creditos = await database.buscarCreditosPorHistoricalId(filtros.idCredito, { userOffice: filtros.userOffice, office: filtros.office });
             for (const cred of creditos) {
                 if (operationId !== currentSearchOperation) throw new Error("Cancelado");
-
                 const cliente = await database.buscarClientePorCURP(cred.curpCliente, filtros.userOffice);
                 if(cliente) {
-                    if (userRole === 'Área comercial' && cliente.ruta !== filtros.ruta) continue;
+                    if (filtros.ruta && cliente.ruta !== filtros.ruta) continue;
+                    
+                    // Aplicar filtro de fecha aquí también si es necesario
+                    if (filtros.fechaCredito) {
+                        const fechaCred = cred.fechaCreacion ? new Date(cred.fechaCreacion).toISOString().split('T')[0] : '';
+                        if (fechaCred !== filtros.fechaCredito) continue;
+                    }
+
                     resultadosFinales.push({ cliente, credito: cred });
                 }
             }
-
         } else {
+            // Búsqueda General
             const clientesEncontrados = await database.buscarClientes(filtros);
+            
+            // Filtrado adicional de clientes (Fecha Registro)
+            const clientesFiltrados = clientesEncontrados.filter(c => {
+                if (filtros.fechaRegistro) {
+                    const fechaReg = c.fechaRegistro ? new Date(c.fechaRegistro).toISOString().split('T')[0] : '';
+                    if (fechaReg !== filtros.fechaRegistro) return false;
+                }
+                return true;
+            });
 
-            if (clientesEncontrados.length === 0) {
-                throw new Error("No se encontraron clientes con los criterios seleccionados.");
+            if (clientesFiltrados.length === 0) {
+                // No lanzamos error inmediato para permitir limpiar filtros, mejor mensaje UI
+                tbody.innerHTML = '<tr><td colspan="6">No se encontraron clientes con esos criterios.</td></tr>';
+                showFixedProgress(100, 'Sin resultados');
+                return; 
             }
 
             if (operationId !== currentSearchOperation) throw new Error("Cancelado");
 
-            const total = clientesEncontrados.length;
-            showFixedProgress(45, `Analizando ${total} clientes...`);
-            
-            for (const [index, cliente] of clientesEncontrados.entries()) {
+            const total = clientesFiltrados.length;
+            showFixedProgress(30, `Analizando ${total} clientes...`);
+
+            // --- BUCLE PRINCIPAL ---
+            for (const [index, cliente] of clientesFiltrados.entries()) {
                 
                 if (operationId !== currentSearchOperation) throw new Error("Cancelado");
+
                 if (filtros.soloComisionistas && !cliente.isComisionista) continue;
+
+                // Buscar Créditos
                 const creditosCliente = await database.buscarCreditosPorCliente(cliente.curp, filtros.userOffice);
+                
                 if (creditosCliente.length > 0) {
                     let tieneCreditosVisibles = false;
-                    
+                    // Ordenar recientes primero
                     creditosCliente.sort((a, b) => (parsearFecha(b.fechaCreacion)?.getTime() || 0) - (parsearFecha(a.fechaCreacion)?.getTime() || 0));
-
-                    for (const credito of creditosCliente) {
-                        if (filtros.plazo && credito.plazo != filtros.plazo) continue;
-                        if (filtros.curpAval && (!credito.curpAval || !credito.curpAval.includes(filtros.curpAval))) continue;
+                    
+                    for (const cred of creditosCliente) {
+                        // Filtros existentes
+                        if (filtros.plazo && cred.plazo != filtros.plazo) continue;
+                        if (filtros.curpAval && (!cred.curpAval || !cred.curpAval.includes(filtros.curpAval))) continue;
                         
-                        resultadosFinales.push({ cliente, credito: credito });
+                        // <--- NUEVO: Lógica de Filtro de Fecha Crédito ---
+                        if (filtros.fechaCredito) {
+                            // Convertir fecha ISO (ej: 2023-11-25T14:00:00Z) a YYYY-MM-DD
+                            const fechaCred = cred.fechaCreacion ? new Date(cred.fechaCreacion).toISOString().split('T')[0] : '';
+                            if (fechaCred !== filtros.fechaCredito) continue;
+                        }
+                        // -------------------------------------------------
+                        
+                        resultadosFinales.push({ cliente, credito: cred });
                         tieneCreditosVisibles = true;
                     }
-                
-                    if (!tieneCreditosVisibles && !filtros.plazo && !filtros.estado && !filtros.curpAval) {
-                         resultadosFinales.push({ cliente, credito: null });
-                    }
 
+                    // Mostrar cliente sin crédito SOLO si no estamos buscando específicamente por propiedades de crédito
+                    // Si el usuario puso fecha de crédito, y no hay coincidencias, NO mostramos al cliente "vacío".
+                    const buscandoPorCredito = filtros.plazo || filtros.estado || filtros.curpAval || filtros.fechaCredito; // <--- Agregado fechaCredito
+                    
+                    if (!tieneCreditosVisibles && !buscandoPorCredito) {
+                        resultadosFinales.push({ cliente, credito: null });
+                    }
                 } else {
-                    if (!filtros.plazo && !filtros.estado && !filtros.curpAval && !filtros.idCredito) {
+                    // Cliente sin créditos (Solo mostrar si no hay filtros de crédito activos)
+                    const buscandoPorCredito = filtros.plazo || filtros.estado || filtros.curpAval || filtros.fechaCredito;
+                    if (!buscandoPorCredito) {
                         resultadosFinales.push({ cliente, credito: null });
                     }
                 }
-                
-                if(index % 5 === 0 || index === total - 1) {
-                    const porcentaje = 45 + Math.floor(((index + 1) / total) * 45);
-                    showFixedProgress(porcentaje, `Procesando ${index + 1}/${total}...`);
-                    
-                    await new Promise(r => setTimeout(r, 0)); 
+
+                // Actualizar Barra
+                if (index % 3 === 0 || index === total - 1) {
+                    const pct = 30 + Math.floor(((index + 1) / total) * 60); 
+                    showFixedProgress(pct, `Procesando ${index + 1} de ${total}...`);
+                    await new Promise(resolve => setTimeout(resolve, 0));
                 }
             }
         }
 
         if (operationId !== currentSearchOperation) throw new Error("Cancelado");
 
-        showFixedProgress(95, 'Dibujando tabla...');
+        // RENDERIZADO
+        showFixedProgress(95, 'Generando tabla...');
         tbody.innerHTML = '';
         
         if (resultadosFinales.length === 0) {
             tbody.innerHTML = '<tr><td colspan="6">No se encontraron registros coincidentes.</td></tr>';
         } else {
             for (const item of resultadosFinales) {
-                if (operationId !== currentSearchOperation) throw new Error("Cancelado"); 
+                if (operationId !== currentSearchOperation) throw new Error("Cancelado");
                 await renderFilaTablaClientes(tbody, item.cliente, item.credito, filtros.estado);
             }
         }
-        
-        showFixedProgress(100, `Completado (${resultadosFinales.length} resultados).`);
+
+        showFixedProgress(100, 'Finalizado');
 
     } catch (error) {
         if (error.message === "Cancelado") {
-            console.log("Búsqueda detenida por el usuario.");
-            if(tbody.innerHTML.includes("Buscando")) {
-                 tbody.innerHTML = '<tr><td colspan="6" style="color:orange; text-align:center;">Búsqueda cancelada.</td></tr>';
-            }
+            console.warn("Proceso interrumpido.");
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:red; font-weight:bold;">⚠️ Búsqueda cancelada por el usuario.</td></tr>';
         } else {
-            console.error('Error en loadClientesTable:', error);
-            tbody.innerHTML = `<tr><td colspan="6">Mensaje: ${error.message}</td></tr>`;
-            showStatus('status_gestion_clientes', error.message, 'warning');
+            console.error(error);
+            tbody.innerHTML = `<tr><td colspan="6">Error: ${error.message}</td></tr>`;
+            showStatus('status_gestion_clientes', error.message, 'error');
         }
     } finally {
         if (operationId === currentSearchOperation) {
@@ -6687,3 +6733,4 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
