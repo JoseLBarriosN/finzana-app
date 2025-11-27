@@ -3347,12 +3347,13 @@ function handleGuardarCobranzaOffline() {
     }
 }
 
-// =============================================
-// SECCIÓN DE REPORTES GRÁFICOS (MODIFICADA)
-// =============================================
+/// ================================================= ///
+    /// SECCIÓN DE REPORTES GRÁFICOS (MODIFICADA) ///
+/// ================================================= ///
 
-// EN app.js - REEMPLAZA ESTA FUNCIÓN COMPLETA
-
+//=================================//
+    // ** GENERAR GRAFICO ** //
+//=================================//
 async function handleGenerarGrafico() {
     if (cargaEnProgreso) {
         showStatus('status_graficos', 'Ya hay una operación en progreso. Por favor, espera.', 'warning');
@@ -3677,27 +3678,22 @@ async function handleGenerarGrafico() {
     }
 }
 
-// EN app.js: REEMPLAZA TODA LA SECCIÓN DE "NUEVA INTERFAZ DE GESTIÓN - CONFIGURACIÓN" CON ESTO
+/// ============================================================= ///
+    /// NUEVA INTERFAZ DE GESTIÓN - CONFIGURACIÓN (REHECHA) ///
+/// ============================================================= ///
 
-// =============================================
-// NUEVA INTERFAZ DE GESTIÓN - CONFIGURACIÓN (REHECHA)
-// =============================================
-
-/**
- * Carga la nueva interfaz de gestión de poblaciones y rutas (Entry Point)
- * Se llama cuando se muestra 'view-configuracion'.
-*/
+//===============================================================//
+    // ** CARGA LA CONFIGURACIÓN DE RUTAS Y POBLACIONES ** //
+//===============================================================//
 async function loadConfiguracion() {
     console.log("🚀 EJECUTANDO loadConfiguracion - INICIO");
     const statusEl = 'status_configuracion';
     
-    // 1. Verificar permisos de acceso
     if (!currentUserData || !['Super Admin', 'Gerencia', 'Administrador'].includes(currentUserData.role)) {
         showStatus(statusEl, 'No tienes permisos para acceder a esta sección.', 'error');
         return;
     }
 
-    // Determinar filtro de oficina
     let officeFiltro = null;
     if (currentUserData.role === 'Administrador' && currentUserData.office && currentUserData.office !== 'AMBAS') {
         officeFiltro = currentUserData.office;
@@ -3725,11 +3721,10 @@ async function loadConfiguracion() {
     }
 }
 
-/**
- * Configura los botones de las pestañas "Poblaciones" y "Rutas"
- */
+//======================================================//
+    // ** GENERA BOTONES DE POBLACIONES Y RUTAS ** //
+//======================================================//
 function setupNuevosTabsConfiguracion() {
-    // Remover listeners antiguos para evitar duplicados
     const tabsContainer = document.querySelector('#view-configuracion .tabs');
     if (tabsContainer) {
         const newTabsContainer = tabsContainer.cloneNode(true);
@@ -3738,14 +3733,10 @@ function setupNuevosTabsConfiguracion() {
 
     document.querySelectorAll('#view-configuracion .tab-button').forEach(button => {
         button.addEventListener('click', function() {
-            // Remover active de todos los botones
             document.querySelectorAll('#view-configuracion .tab-button').forEach(btn => btn.classList.remove('active'));
-            // Ocultar todos los contenidos
             document.querySelectorAll('#view-configuracion .tab-content').forEach(content => content.classList.remove('active'));
             
-            // Activar el botón clickeado
             this.classList.add('active');
-            // Mostrar el contenido correspondiente
             const tabId = this.getAttribute('data-tab');
             document.getElementById(`tab-${tabId}`).classList.add('active');
         });
@@ -3757,10 +3748,9 @@ function setupNuevosTabsConfiguracion() {
 // LÓGICA DE POBLACIONES
 // =============================================
 
-/**
- * Carga la interfaz de la pestaña "Poblaciones"
- * @param {string | null} officeFiltro - 'GDL', 'LEON', o null (para todos)
-*/
+//===============================================//
+    // ** CARGAR INTERFAZ DE POBLACIONES ** //
+//===============================================//
 async function cargarInterfazPoblaciones(officeFiltro) {
     const container = document.getElementById('tabla-poblaciones-container');
     if (!container) {
@@ -3784,7 +3774,6 @@ async function cargarInterfazPoblaciones(officeFiltro) {
 
         console.log(`Se obtuvieron ${poblaciones.length} poblaciones`);
         
-        // 1. Construir el Header
         const headerHTML = `
             <div class="config-header">
                 <h3>Poblaciones (${poblaciones.length})</h3>
@@ -3800,7 +3789,6 @@ async function cargarInterfazPoblaciones(officeFiltro) {
             </div>
         `;
 
-        // 2. Mostrar estado vacío si no hay datos
         if (poblaciones.length === 0) {
             container.innerHTML = headerHTML + `
                 <div class="empty-state">
@@ -3813,7 +3801,6 @@ async function cargarInterfazPoblaciones(officeFiltro) {
             return;
         }
 
-        // 3. Agrupar poblaciones por oficina
         const poblacionesPorOficina = {};
         const oficinasAMostrar = [];
 
@@ -3827,10 +3814,8 @@ async function cargarInterfazPoblaciones(officeFiltro) {
             oficinasAMostrar.push('GDL', 'LEON', 'OTROS');
         }
 
-        // 4. Construir HTML de la lista
         let html = headerHTML;
         
-        // Añadir pestañas de filtro GDL/LEON solo si es admin total
         if (!officeFiltro) {
             html += `
                 <div class="filter-tabs">
@@ -3859,7 +3844,6 @@ async function cargarInterfazPoblaciones(officeFiltro) {
                 }
                 html += `<div class="poblaciones-list">`;
                 
-                // Ordenar alfabéticamente
                 poblacionesOffice.sort((a,b) => (a.nombre || '').localeCompare(b.nombre || ''));
                 
                 poblacionesOffice.forEach(poblacion => {
@@ -3873,7 +3857,6 @@ async function cargarInterfazPoblaciones(officeFiltro) {
         html += `</div>`;
         container.innerHTML = html;
 
-        // 5. Activar listeners
         configurarBusquedaPoblaciones();
         if (!officeFiltro) {
             configurarFiltrosPoblaciones();
@@ -3894,9 +3877,9 @@ async function cargarInterfazPoblaciones(officeFiltro) {
     }
 }
 
-/**
- * Helper: Crea el HTML para una tarjeta de población
- */
+//==============================================//
+    // ** CREAR AL TARJETA DE POBLACION ** //
+//==============================================//
 function crearTarjetaPoblacion(poblacion) {
     const id = poblacion.id || 'ID_DESCONOCIDO';
     const nombre = poblacion.nombre || 'SIN NOMBRE';
@@ -3939,14 +3922,13 @@ function crearTarjetaPoblacion(poblacion) {
     `;
 }
 
-/**
- * Configura la búsqueda en tiempo real para poblaciones
- */
+//=======================================================//
+    // ** BUSQUEDA EN TIEMPO REAL DE POBLACIONES ** //
+//=======================================================//
 function configurarBusquedaPoblaciones() {
     const searchInput = document.getElementById('search-poblaciones');
     if (!searchInput) return;
 
-    // Prevenir listeners duplicados
     searchInput.replaceWith(searchInput.cloneNode(true));
     document.getElementById('search-poblaciones').addEventListener('input', function() {
         const searchTerm = this.value.toLowerCase().trim();
@@ -3968,7 +3950,6 @@ function configurarBusquedaPoblaciones() {
             }
         });
 
-        // Ocultar secciones de oficina si quedan vacías (para Super Admin)
         document.querySelectorAll('#tab-poblaciones .office-section').forEach(section => {
             const visibleCardsInSection = section.querySelectorAll('.poblacion-card[style*="display: flex"]').length;
             section.style.display = visibleCardsInSection > 0 ? 'block' : 'none';
@@ -3976,12 +3957,11 @@ function configurarBusquedaPoblaciones() {
     });
 }
 
-/**
- * Configura los filtros por oficina (GDL, LEON, etc.) para poblaciones
- */
+//=========================================================//
+    // ** FILTROS DE OFICINA PARA LAS POBLACIONES ** //
+//=========================================================//
 function configurarFiltrosPoblaciones() {
     document.querySelectorAll('#tab-poblaciones .filter-tab').forEach(tab => {
-        // Prevenir listeners duplicados
         const newTab = tab.cloneNode(true);
         tab.parentNode.replaceChild(newTab, tab);
         
@@ -3989,7 +3969,6 @@ function configurarFiltrosPoblaciones() {
             document.querySelectorAll('#tab-poblaciones .filter-tab').forEach(t => t.classList.remove('active'));
             this.classList.add('active');
             
-            // Disparar el evento 'input' de la búsqueda para re-filtrar todo
             const searchInput = document.getElementById('search-poblaciones');
             searchInput.dispatchEvent(new Event('input'));
         });
@@ -4000,10 +3979,9 @@ function configurarFiltrosPoblaciones() {
 // LÓGICA DE RUTAS
 // =============================================
 
-/**
- * Carga la interfaz de la pestaña "Rutas"
- * @param {string | null} officeFiltro - 'GDL', 'LEON', o null (para todos)
-*/
+//===========================================//
+    // ** CARGA LA INTERFAZ DE RUTAS ** //
+//===========================================//
 async function cargarInterfazRutas(officeFiltro) {
     const container = document.getElementById('tabla-rutas-container');
     if (!container) {
@@ -4097,7 +4075,6 @@ async function cargarInterfazRutas(officeFiltro) {
         html += `</div>`;
         container.innerHTML = html;
 
-        // 5. Activar listeners
         configurarBusquedaRutas();
         configurarEdicionRutas();
     
@@ -4116,12 +4093,11 @@ async function cargarInterfazRutas(officeFiltro) {
     }
 }
 
-/**
-Listener a todos los botones de "Editar" de las rutas
-*/
+//=============================================//
+    // ** LISTENER DE BOTONES DE RUTAS ** //
+//=============================================//
 function configurarEdicionRutas() {
     document.querySelectorAll('#tab-rutas .btn-editar-ruta').forEach(btn => {
-        // Prevenir listeners duplicados
         const newBtn = btn.cloneNode(true);
         btn.parentNode.replaceChild(newBtn, btn);
         
@@ -4130,24 +4106,20 @@ function configurarEdicionRutas() {
             const nombreElement = card.querySelector('.ruta-nombre-editable');
             const originalNombre = nombreElement.textContent.trim();
             
-            // Guardar nombre original en el botón cancelar
             card.querySelector('.btn-cancelar-ruta').setAttribute('data-original-nombre', originalNombre);
 
-            // Activar edición
             nombreElement.contentEditable = true;
             nombreElement.classList.add('editing');
             nombreElement.focus();
-            document.execCommand('selectAll',false,null); // Seleccionar texto
+            document.execCommand('selectAll',false,null);
 
-            // Mostrar/ocultar botones
             this.classList.add('hidden');
             card.querySelector('.btn-guardar-ruta').classList.remove('hidden');
             card.querySelector('.btn-cancelar-ruta').classList.remove('hidden');
-            card.querySelector('.btn-outline-danger').classList.add('hidden'); // Ocultar eliminar
+            card.querySelector('.btn-outline-danger').classList.add('hidden');
         });
     });
 
-    // Configurar botones de cancelar
     document.querySelectorAll('#tab-rutas .btn-cancelar-ruta').forEach(btn => {
         const newBtn = btn.cloneNode(true);
         btn.parentNode.replaceChild(newBtn, btn);
@@ -4168,7 +4140,6 @@ function configurarEdicionRutas() {
         });
     });
 
-    // Configurar botones de guardar
     document.querySelectorAll('#tab-rutas .btn-guardar-ruta').forEach(btn => {
         const newBtn = btn.cloneNode(true);
         btn.parentNode.replaceChild(newBtn, btn);
@@ -4187,7 +4158,6 @@ function configurarEdicionRutas() {
             }
 
             if (nuevoNombre === originalNombre.toUpperCase()) {
-                // No hay cambios, solo cancelar
                 card.querySelector('.btn-cancelar-ruta').click();
                 return;
             }
@@ -4198,19 +4168,18 @@ function configurarEdicionRutas() {
 
             if (resultado.success) {
                 showStatus('status_configuracion', 'Ruta actualizada. Se recargarán ambas listas.', 'success');
-                // Recargar todo para reflejar el cambio en las poblaciones
                 await loadConfiguracion(); 
             } else {
                 showStatus('status_configuracion', `Error: ${resultado.message}`, 'error');
-                card.querySelector('.btn-cancelar-ruta').click(); // Revertir
+                card.querySelector('.btn-cancelar-ruta').click();
             }
         });
     });
 }
 
-/**
- * Helper: Crea el HTML para una tarjeta de ruta
- */
+//=======================================//
+    // ** CREA LA TARJETA DE RUTA ** //
+//=======================================//
 function crearTarjetaRuta(ruta) {
     const id = ruta.id || 'ID_DESCONOCIDO';
     const nombre = ruta.nombre || 'SIN NOMBRE';
@@ -4242,14 +4211,13 @@ function crearTarjetaRuta(ruta) {
     `;
 }
 
-/**
- * Configura la búsqueda en tiempo real para rutas
- */
+//====================================================//
+    // ** BUSQUEDA EN TIEMPO REAL PARA RATUTAS ** //
+//====================================================//
 function configurarBusquedaRutas() {
     const searchInput = document.getElementById('search-rutas');
     if (!searchInput) return;
     
-    // Prevenir listeners duplicados
     searchInput.replaceWith(searchInput.cloneNode(true));
     document.getElementById('search-rutas').addEventListener('input', function() {
         const searchTerm = this.value.toLowerCase().trim();
@@ -4261,7 +4229,6 @@ function configurarBusquedaRutas() {
             card.style.display = matchesSearch ? 'flex' : 'none';
         });
 
-        // Ocultar secciones de oficina si quedan vacías
         document.querySelectorAll('#tab-rutas .office-section').forEach(section => {
             const visibleCardsInSection = section.querySelectorAll('.ruta-card[style*="display: flex"]').length;
             section.style.display = visibleCardsInSection > 0 ? 'block' : 'none';
@@ -4273,9 +4240,9 @@ function configurarBusquedaRutas() {
 // LÓGICA DE MODALES Y ACCIONES (CRUD)
 // =============================================
 
-/**
- * Muestra modal para agregar nueva población
- */
+//==============================================//
+    // ** MODAL PARA AGREGAR POBLACIONES ** //
+//==============================================//
 function mostrarModalPoblacion() {
     const userRole = currentUserData?.role;
     const userOffice = currentUserData?.office;
@@ -4283,10 +4250,8 @@ function mostrarModalPoblacion() {
     
     let officeOptionsHTML = '';
     if (isAdminRestringido) {
-        // Opción única, bloqueada
         officeOptionsHTML = `<option value="${userOffice}" selected>${userOffice}</option>`;
     } else {
-        // Opciones para Super Admin/Gerencia
         officeOptionsHTML = `
             <option value="" selected disabled>Selecciona una oficina...</option>
             <option value="GDL">Guadalajara</option>
@@ -4327,9 +4292,9 @@ function mostrarModalPoblacion() {
     document.getElementById('modal-poblacion-nombre').focus();
 }
 
-/**
- * Muestra modal para agregar nueva ruta
- */
+//===========================================//
+    // ** MODAL PARA AGREGAR UNA RUTA ** //
+//===========================================//
 function mostrarModalRuta() {
     const userRole = currentUserData?.role;
     const userOffice = currentUserData?.office;
@@ -4379,9 +4344,9 @@ function mostrarModalRuta() {
     document.getElementById('modal-ruta-nombre').focus();
 }
 
-/**
- * Procesa el guardado de la nueva población desde el modal
- */
+//===========================================//
+    // ** GUARDADO DE NUEVA POBLACION ** //
+//===========================================//
 async function agregarPoblacionDesdeModal() {
     const nombreInput = document.getElementById('modal-poblacion-nombre');
     const officeInput = document.getElementById('modal-poblacion-office');
@@ -4400,7 +4365,6 @@ async function agregarPoblacionDesdeModal() {
         if (resultado.success) {
             document.getElementById('generic-modal').classList.add('hidden');
             showStatus('status_configuracion', 'Población agregada correctamente', 'success');
-            // Recargar solo la pestaña de poblaciones
             const officeFiltro = (currentUserData.role === 'Administrador' && currentUserData.office !== 'AMBAS') ? currentUserData.office : null;
             await cargarInterfazPoblaciones(officeFiltro);
         } else {
@@ -4408,15 +4372,15 @@ async function agregarPoblacionDesdeModal() {
         }
     } catch (error) {
         console.error("Error agregando población:", error);
-        alert(`Error: ${error.message}`); // Mostrar error en el modal
+        alert(`Error: ${error.message}`);
     } finally {
         showProcessingOverlay(false);
     }
 }
 
-/**
- * Procesa el guardado de la nueva ruta desde el modal
- */
+//======================================//
+    // ** GUARDADO DE NUEVA RUTA ** //
+//======================================//
 async function agregarRutaDesdeModal() {
     const nombreInput = document.getElementById('modal-ruta-nombre');
     const officeInput = document.getElementById('modal-ruta-office');
@@ -4435,7 +4399,6 @@ async function agregarRutaDesdeModal() {
         if (resultado.success) {
             document.getElementById('generic-modal').classList.add('hidden');
             showStatus('status_configuracion', 'Ruta agregada correctamente', 'success');
-            // Recargar solo la pestaña de rutas
             const officeFiltro = (currentUserData.role === 'Administrador' && currentUserData.office !== 'AMBAS') ? currentUserData.office : null;
             await cargarInterfazRutas(officeFiltro);
         } else {
@@ -4449,9 +4412,9 @@ async function agregarRutaDesdeModal() {
     }
 }
 
-/**
- * Muestra modal para ASIGNAR una ruta a una población
- */
+//================================================//
+    // ** ASIGNAR UNA RUTA A UNA POBLACION** //
+//================================================//
 async function asignarRutaPoblacion(poblacionId, poblacionNombre, poblacionOffice) {
     console.log("=== ASIGNAR RUTA POBLACIÓN ===");
     console.log("Población ID:", poblacionId);
@@ -4460,7 +4423,6 @@ async function asignarRutaPoblacion(poblacionId, poblacionNombre, poblacionOffic
     
     showProcessingOverlay(true, 'Cargando rutas disponibles...');
     try {
-        // Obtener rutas disponibles SOLO para esta oficina
         const rutasDisponibles = await database.obtenerRutas(poblacionOffice);
         const opcionesRutas = rutasDisponibles.map(r => r.nombre).sort();
 
@@ -4527,9 +4489,9 @@ async function asignarRutaPoblacion(poblacionId, poblacionNombre, poblacionOffic
     }
 }
 
-/**
- * Elimina una población
- */
+//=================================//
+    // ** ELEGIR POBLACIÓN ** //
+//=================================//
 async function eliminarPoblacion(id, nombre) {
     if (!confirm(`¿Estás seguro de que deseas eliminar la población "${nombre}"?\nEsta acción no se puede deshacer.`)) {
         return;
@@ -6776,6 +6738,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
