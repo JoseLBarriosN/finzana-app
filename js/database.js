@@ -451,6 +451,8 @@ const database = {
                 .where('curpCliente', '==', curp)
                 .where('estado', '!=', 'liquidado');
 
+            // *** CORRECCIÓN CRÍTICA DE SEGURIDAD ***
+            // Si hay oficina y no es admin global, filtramos.
             if (office && office !== 'AMBAS') {
                 query = query.where('office', '==', office);
             }
@@ -461,6 +463,7 @@ const database = {
                 return { elegible: true, mensaje: "Cliente sin créditos activos.", esRenovacion: false };
             }
 
+            // Analizar el crédito activo más reciente
             const creditos = creditosActivosSnapshot.docs.map(doc => doc.data());
             creditos.sort((a, b) => new Date(b.fechaCreacion) - new Date(a.fechaCreacion));
             
@@ -470,7 +473,8 @@ const database = {
             const idCreditoVisual = creditoActual.historicalIdCredito || creditoActual.id;
             
             const pagado = montoTotal - saldo;
-            const porcentajePagado = (pagado / montoTotal);
+            // Evitar división por cero
+            const porcentajePagado = montoTotal > 0 ? (pagado / montoTotal) : 0;
 
             if (porcentajePagado >= 0.80) {
                 return { 
@@ -489,6 +493,10 @@ const database = {
 
         } catch (error) {
             console.error("Error verificando cliente:", error);
+            // Si falta índice, avisar específicamente
+            if (error.code === 'failed-precondition') {
+                 console.warn("⚠️ FALTA ÍNDICE CLIENTE: Revisa la consola (F12) para el link.");
+            }
             return { elegible: false, mensaje: `Error de verificación: ${error.message}` };
         }
     },
@@ -2061,6 +2069,7 @@ const database = {
     },
 
 };
+
 
 
 
