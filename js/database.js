@@ -121,18 +121,23 @@ const database = {
         }
     },
 
-    // --- MÉTODOS DE USUARIOS ---
-    obtenerUsuarios: async () => {
+    // --- OBTENER USUARIOS ---
+    async obtenerUsuarios() {
         try {
             const snapshot = await db.collection('users').get();
-            const users = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            const users = snapshot.docs.map(doc => doc.data());
             return { success: true, data: users };
         } catch (error) {
-            console.error("Error obteniendo usuarios:", error);
-            return { success: false, message: 'Error al obtener usuarios: ' + error.message };
+            if (error.code === 'permission-denied') {
+                console.log("Info: Usuario actual no tiene permiso para listar usuarios (normal para agentes).");
+                return { success: false, data: [], message: "Sin permisos" };
+            }
+            console.warn("Error obtenerUsuarios:", error);
+            return { success: false, message: error.message, data: [] };
         }
     },
 
+    // --- OBTENER USUARIOS POR ID ---
     obtenerUsuarioPorId: async (uid) => {
         try {
             const docRef = db.collection('users').doc(uid);
@@ -158,13 +163,13 @@ const database = {
         }
     },
 
+    // --- ACTUALIZAR USUARIOS ---
     actualizarUsuario: async (uid, userData) => {
         try {
             const dataToUpdate = { ...userData };
             delete dataToUpdate.email;
             delete dataToUpdate.id;
 
-            // AHORA VALIDA 'office'
             if (!dataToUpdate.role || !dataToUpdate.office) {
                 return { success: false, message: 'Rol y Oficina son obligatorios.' };
             }
@@ -182,6 +187,7 @@ const database = {
         }
     },
 
+    // --- DESHABILITAR USUARIOS ---
     deshabilitarUsuario: async (uid) => {
         try {
             await db.collection('users').doc(uid).update({ status: 'disabled' });
@@ -192,7 +198,7 @@ const database = {
         }
     },
 
-    // --- MÉTODOS DE CLIENTES ---
+    // --- OBTENER CLIENTES POR ID ---
     obtenerClientePorId: async (id) => {
         try {
             const doc = await db.collection('clientes').doc(id).get();
@@ -204,6 +210,7 @@ const database = {
         }
     },
 
+    // --- ACTUALIZAR CLIENTES ---
     actualizarCliente: async (id, clienteData, userEmail) => {
         try {
             clienteData.curp = clienteData.curp.toUpperCase();
@@ -217,6 +224,7 @@ const database = {
         }
     },
 
+    // --- ELIMINAR CLIENTE ---
     eliminarCliente: async (id) => {
         try {
             await db.collection('clientes').doc(id).delete();
@@ -227,11 +235,11 @@ const database = {
         }
     },
 
+    // --- BUSCAR CLIENTES POR CURP ---
     buscarClientePorCURP: async (curp, userOffice = null) => {
         try {
             let query = db.collection('clientes').where('curp', '==', curp.toUpperCase());
 
-            // *** CORRECCIÓN: Aplicar filtro de sucursal ***
             if (userOffice && userOffice !== 'AMBAS') {
                 query = query.where('office', '==', userOffice);
             }
@@ -246,6 +254,7 @@ const database = {
         }
     },
 
+    // --- BUSCAR CLIENTES POR CURPS 2 ---
     buscarClientesPorCURPs: async (curps, userOffice = null) => {
         if (!curps || curps.length === 0) return [];
         const upperCaseCurps = curps.map(c => String(c).toUpperCase());
@@ -258,7 +267,6 @@ const database = {
 
             const promises = chunks.map(chunk => {
                 let query = db.collection('clientes').where('curp', 'in', chunk);
-                // *** CORRECCIÓN: Aplicar filtro de sucursal ***
                 if (userOffice && userOffice !== 'AMBAS') {
                     query = query.where('office', '==', userOffice);
                 }
@@ -276,9 +284,9 @@ const database = {
         }
     },
 
+    // --- AGREGAR CLIENTES NUEVOS ---
     agregarCliente: async (clienteData, userEmail) => {
         try {
-            // No filtrar por sucursal aquí, la CURP debe ser única en el sistema
             const existe = await database.buscarClientePorCURP(clienteData.curp);
             if (existe) {
                 return { success: false, message: `Ya existe cliente (${existe.nombre}) con CURP ${clienteData.curp} en ${existe.office}.` };
@@ -300,11 +308,11 @@ const database = {
         }
     },
 
+    // --- BUSCAR CLIENTES ---
     buscarClientes: async (filtros) => {
         try {
             let query = db.collection('clientes');
 
-            // *** CORRECCIÓN: Priorizar filtro de sucursal del usuario ***
             if (filtros.userOffice && filtros.userOffice !== 'AMBAS') {
                 query = query.where('office', '==', filtros.userOffice);
             } else if (filtros.office) {
@@ -327,14 +335,13 @@ const database = {
                 } else if (curpArray.length <= MAX_IN_VALUES) {
                     query = query.where('curp', 'in', curpArray);
                 } else {
-                    applyCurpInFilter = true; // Demasiados CURPs, filtrar en memoria
+                    applyCurpInFilter = true;
                 }
             }
 
             const snapshot = await query.get();
             let clientes = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-            // Filtrado en memoria
             if (applyCurpInFilter) {
                 const curpsSet = new Set(curpArray);
                 clientes = clientes.filter(c => curpsSet.has(c.curp));
@@ -351,8 +358,8 @@ const database = {
         }
     },
 
-    // --- MÉTODOS DE CRÉDITOS ---
-    buscarCreditosPorCliente: async (curp, userOffice = null) => { // <-- 1. Aceptar parámetro
+    // --- BUSCAR CREDITOS POR CLIENTE ---
+    buscarCreditosPorCliente: async (curp, userOffice = null) => {
         try {
             let query = db.collection('creditos').where('curpCliente', '==', curp.toUpperCase());
             if (userOffice && userOffice !== 'AMBAS') {
@@ -366,11 +373,11 @@ const database = {
         }
     },
 
+    // --- BUSCAR CREDITOS POR ID HISTORICO ---
     buscarCreditosPorHistoricalId: async (historicalId, options = {}) => {
         try {
             let query = db.collection('creditos').where('historicalIdCredito', '==', historicalId);
 
-            // *** CORRECCIÓN: Aplicar filtro de sucursal del usuario ***
             if (options.userOffice && options.userOffice !== 'AMBAS') {
                 query = query.where('office', '==', options.userOffice);
             } else if (options.office) {
@@ -386,6 +393,7 @@ const database = {
         }
     },
 
+    // --- BUSCAR CREDITO POR ID ---
     buscarCreditoPorId: async (firestoreId) => {
         try {
             const doc = await db.collection('creditos').doc(firestoreId).get();
@@ -397,18 +405,17 @@ const database = {
         }
     },
 
+    // --- BUSCAR CREDITOS ---
     buscarCreditos: async (filtros) => {
         try {
             let query = db.collection('creditos');
 
-            // *** CORRECCIÓN: Priorizar filtro de sucursal del usuario ***
             if (filtros.userOffice && filtros.userOffice !== 'AMBAS') {
                 query = query.where('office', '==', filtros.userOffice);
             } else if (filtros.office) {
                 query = query.where('office', '==', filtros.office);
             }
 
-            // Estado se filtra mejor en app.js con _calcularEstadoCredito
             if (filtros.curpAval) query = query.where('curpAval', '==', filtros.curpAval.toUpperCase());
             if (filtros.plazo) query = query.where('plazo', '==', parseInt(filtros.plazo, 10));
             if (filtros.idCredito) query = query.where('historicalIdCredito', '==', filtros.idCredito);
@@ -424,6 +431,7 @@ const database = {
         }
     },
 
+    // --- BUSCAR CREDITOS ACTIVOS POR CLIENTE ---
     buscarCreditoActivoPorCliente: async (curp, userOffice = null) => {
         try {
             const creditos = await database.buscarCreditosPorCliente(curp, userOffice);
@@ -441,17 +449,13 @@ const database = {
         }
     },
 
-    /**
-     * Verifica si un cliente es elegible (Regla del 80% pagado).
-     * CORREGIDO: Recibe 'office' para pasar las reglas de seguridad.
-     */
+    // --- VERIFICAR ELEGIBILIDAD DE CLIENTE ---
     async verificarElegibilidadCliente(curp, office) {
         try {
             let query = db.collection('creditos')
                 .where('curpCliente', '==', curp)
                 .where('estado', '!=', 'liquidado');
 
-            // FILTRO DE SEGURIDAD OBLIGATORIO
             if (office && office !== 'AMBAS') {
                 query = query.where('office', '==', office);
             }
@@ -462,7 +466,6 @@ const database = {
                 return { elegible: true, mensaje: "Cliente sin créditos activos.", esRenovacion: false };
             }
 
-            // Ordenar por fecha para tomar el más reciente
             const creditos = creditosActivosSnapshot.docs.map(doc => doc.data());
             creditos.sort((a, b) => new Date(b.fechaCreacion) - new Date(a.fechaCreacion));
             
@@ -493,27 +496,18 @@ const database = {
             if (error.code === 'failed-precondition') {
                  console.warn("⚠️ FALTA ÍNDICE CLIENTE: Revisa la consola (F12) para el link.");
             }
-            // Retornamos el error para que la UI sepa que falló
             throw error; 
         }
     },
 
-    /**
-     * Verifica si una persona puede ser Aval.
-     * REGLA: Solo 1 crédito activo avalado, a menos que el anterior esté al 80% y sin atrasos.
-     */
+    // --- VERIFICAR ELEGIBILIDAD DE AVAL ---
     async verificarElegibilidadAval(curpAval, office) {
         if (!curpAval) return { elegible: false, message: "CURP de aval vacía." };
 
         try {
-            // 1. Consulta base: Buscar créditos donde esta persona es aval y no están pagados
             let query = db.collection('creditos')
                 .where('curpAval', '==', curpAval)
                 .where('estado', '!=', 'liquidado');
-
-            // 2. FILTRO DE SEGURIDAD OBLIGATORIO
-            // Si el usuario tiene una oficina asignada (Área comercial), DEBEMOS filtrar por ella.
-            // Si no lo hacemos, Firebase bloquea la consulta por intentar leer datos ajenos.
             if (office && office !== 'AMBAS') {
                 query = query.where('office', '==', office);
             }
@@ -524,17 +518,12 @@ const database = {
                 return { elegible: true, message: "Aval limpio." };
             }
 
-            // 3. Análisis de créditos encontrados (Regla del 80%)
             const creditosAvalados = snapshot.docs.map(doc => doc.data());
             
             for (const credito of creditosAvalados) {
                 const saldo = credito.saldo !== undefined ? credito.saldo : credito.montoTotal;
                 const montoTotal = credito.montoTotal || 0;
-                
-                // Cálculo de porcentaje pagado
                 const porcentajePagado = montoTotal > 0 ? (1 - (saldo / montoTotal)) : 0;
-                
-                // Verificar comportamiento
                 const buenComportamiento = (credito.estado === 'al corriente' || credito.estado === 'adelantado');
 
                 if (porcentajePagado < 0.80) {
@@ -557,64 +546,44 @@ const database = {
         } catch (error) {
             console.error("Error verificando aval:", error);
             
-            // Manejo específico para falta de índice en Firebase
             if (error.code === 'failed-precondition') {
                 console.warn("⚠️ FALTA ÍNDICE: Abre la consola del navegador (F12) y haz clic en el enlace largo para crearlo.");
                 return { elegible: false, message: "Falta crear un índice en la base de datos para esta consulta." };
             }
             
-            // Si es error de permisos, devolvemos el mensaje técnico
             return { elegible: false, message: `Error de permisos verificando aval: ${error.message}` };
         }
     },
 
-    /**
-     * Genera un nuevo crédito.
-     * INCLUYE: Validación de oficina, contadores secuenciales, liquidación de anteriores y registro de flujos.
-     */
+    // --- GENERAR UN CREDITO NUEVO ---
     async agregarCredito(creditoData, userEmail) {
         try {
             
-            // 1. Validar la oficina (CRUCIAL PARA SEGURIDAD Y CONTADORES)
             const office = creditoData.office;
             if (!office || (office !== 'GDL' && office !== 'LEON')) {
                 return { success: false, message: 'Error crítico: La oficina del cliente no es válida (GDL o LEON).' };
             }
 
-            // 2. Validaciones de elegibilidad básicas
             if ((creditoData.tipo === 'renovacion' || creditoData.tipo === 'reingreso') && creditoData.plazo !== 14) {
-                // Excepción para la regla de 13 semanas (si el sistema lo permite en el frontend, aquí asumimos que es válido, 
-                // pero si quieres ser estricto puedes agregar la validación de 'canSell13Weeks' aquí también).
                 if (creditoData.plazo !== 13) { 
                     return { success: false, message: 'Créditos de renovación/reingreso deben ser a 14 semanas (o 13 si está autorizado).' };
                 }
             }
             
-            // =============================================================================
-            // --- 🚀 CORRECCIÓN DE SEGURIDAD: Pasamos 'office' a las verificaciones ---
-            // =============================================================================
-            
-            // Validación Cliente (Regla 80%)
             const elegibilidadCliente = await this.verificarElegibilidadCliente(creditoData.curpCliente, office);
             if (!elegibilidadCliente.elegible) return { success: false, message: elegibilidadCliente.mensaje };
-            
-            // Validación Aval (Regla 80% y comportamiento)
-            // Solo verificamos si hay CURP de Aval (algunos créditos podrían no tener)
             if (creditoData.curpAval) {
                 const elegibilidadAval = await this.verificarElegibilidadAval(creditoData.curpAval, office); 
                 if (!elegibilidadAval.elegible) return { success: false, message: `Problema con el Aval: ${elegibilidadAval.message}` };
             }
             
-            // Obtener datos frescos del cliente
             const cliente = await this.buscarClientePorCURP(creditoData.curpCliente, office); 
             if (!cliente) return { success: false, message: "Cliente no encontrado en esta oficina." };
             
-            // Validación Comisionista
             if (creditoData.plazo === 10 && !cliente.isComisionista) {
                 return { success: false, message: "Solo comisionistas pueden acceder a créditos de 10 semanas." };
             }
             
-            // 3. Preparar datos del nuevo crédito
             const fechaCreacionISO = new Date().toISOString();
             const nuevoCreditoData = {
                 monto: parseFloat(creditoData.monto),
@@ -625,95 +594,73 @@ const database = {
                 curpCliente: creditoData.curpCliente.toUpperCase(),
                 curpAval: (creditoData.curpAval || '').toUpperCase(),
                 nombreAval: creditoData.nombreAval || '',
-                office: cliente.office, // Usamos la oficina del cliente por seguridad
+                office: cliente.office,
                 poblacion_grupo: cliente.poblacion_grupo,
                 ruta: cliente.ruta,
-                estado: 'al corriente', // Estado inicial
+                estado: 'al corriente',
                 fechaCreacion: fechaCreacionISO,
                 creadoPor: userEmail,
-                // Campos para búsqueda rápida (Arrays)
                 busqueda: [
                     creditoData.curpCliente.toUpperCase(),
                     (creditoData.curpAval || '').toUpperCase()
                 ]
-                // 'historicalIdCredito' se añadirá dentro de la transacción
             };
 
-            // 4. Referencias para la transacción
             const contadorRef = db.doc(`contadores/${office}`);
             const nuevoCreditoRef = db.collection('creditos').doc();
 
-            // 5. Lógica de Renovación (Saldo Anterior)
             let saldoCreditoAnterior = 0;
             let creditoAnteriorRef = null;
             
-            // Si es renovación, buscamos el crédito activo para liquidarlo y restar saldo
             if (elegibilidadCliente.esRenovacion && elegibilidadCliente.datosCreditoAnterior) {
                 const creditoAnterior = elegibilidadCliente.datosCreditoAnterior;
-                // Asegurarnos que no sea el mismo documento (raro, pero posible en concurrencia)
                 if (creditoAnterior.id !== nuevoCreditoRef.id) {
                     saldoCreditoAnterior = creditoAnterior.saldo !== undefined ? creditoAnterior.saldo : creditoAnterior.montoTotal;
                     creditoAnteriorRef = db.collection('creditos').doc(creditoAnterior.id);
                 }
             }
 
-            // 6. Cálculos Financieros (Efectivo a Entregar)
             const esCreditoComisionista = (creditoData.plazo === 10 && cliente.isComisionista);
             let montoPolizaDeduccion = 0;
             
-            // Regla: Póliza de $100 se descuenta a todos MENOS a los créditos de 10 semanas (comisionistas)
             if (!esCreditoComisionista) {
                 montoPolizaDeduccion = 100; 
             }
             
-            // Lo que recibe el cliente en mano = Monto Solicitado - Póliza - Deuda Anterior
             const montoEfectivoEntregado = nuevoCreditoData.monto - montoPolizaDeduccion - saldoCreditoAnterior;
 
-            // 7. Ejecutar Transacción (Todo o Nada)
             let nuevoHistoricalId = null; 
 
             await db.runTransaction(async (transaction) => {
-                // a. Leer contador atómico para ID secuencial
                 const contadorDoc = await transaction.get(contadorRef);
                 let ultimoId;
                 if (!contadorDoc.exists) {
-                    // Inicializar si no existe (GDL 30M, LEON 20M)
                     ultimoId = (office === 'GDL') ? 30000000 : 20000000;
                 } else {
                     ultimoId = contadorDoc.data().ultimoId;
                 }
                 
-                // b. Incrementar ID
                 nuevoHistoricalId = ultimoId + 1;
-                
-                // c. Guardar nuevo contador
                 transaction.set(contadorRef, { ultimoId: nuevoHistoricalId }, { merge: true });
-
-                // d. Guardar el Crédito
                 nuevoCreditoData.historicalIdCredito = String(nuevoHistoricalId);
-                // Actualizamos el array de búsqueda con el ID nuevo
                 nuevoCreditoData.busqueda.push(String(nuevoHistoricalId));
-                
                 transaction.set(nuevoCreditoRef, nuevoCreditoData);
 
-                // e. Liquidar crédito anterior (Renovación)
                 if (creditoAnteriorRef) {
                     transaction.update(creditoAnteriorRef, {
                         estado: 'liquidado',
-                        saldo: 0, // Forzar saldo a 0 al renovar
+                        saldo: 0,
                         fechaLiquidacion: fechaCreacionISO,
                         nota: `Liquidado por renovación (Nuevo Crédito: ${nuevoHistoricalId})`
                     });
                 }
 
-                // f. Registrar SALIDA DE EFECTIVO (Movimiento de Caja)
-                // Este dinero sale de la caja del administrador/agente hacia el cliente
                 const movimientoEfectivo = {
                     userId: (await auth.currentUser).uid,
                     fecha: fechaCreacionISO,
-                    tipo: 'COLOCACION', // Etiqueta para hoja de corte
-                    categoria: 'COLOCACION', // Nueva etiqueta para agrupación más fácil
-                    monto: -Math.abs(montoEfectivoEntregado), // NEGATIVO (Salida)
+                    tipo: 'COLOCACION',
+                    categoria: 'COLOCACION',
+                    monto: -Math.abs(montoEfectivoEntregado),
                     descripcion: `Colocación a ${cliente.nombre} (ID: ${nuevoHistoricalId}) | Monto: $${nuevoCreditoData.monto} - Póliza: $${montoPolizaDeduccion} - Renovación: $${saldoCreditoAnterior.toFixed(2)}`,
                     creditoId: nuevoCreditoRef.id,
                     registradoPor: userEmail,
@@ -721,29 +668,21 @@ const database = {
                 };
                 const movimientoRef = db.collection('movimientos_efectivo').doc();
                 transaction.set(movimientoRef, movimientoEfectivo);
-
-                // g. Registrar COMISIÓN DE COLOCACIÓN (Salida adicional)
-                // Regla: $100 de comisión al vendedor por colocar un crédito (excepto los de 10 semanas)
                 if (!esCreditoComisionista) {
                     const comisionData = {
                         userId: (await auth.currentUser).uid,
                         fecha: fechaCreacionISO,
-                        tipo: 'COMISION_COLOCACION', // Diferente a 'COMISION_PAGO'
-                        categoria: 'COMISION', // Para agrupar en hoja de corte junto con las de pago
-                        monto: -100, // Salida de $100 de la caja
-                        montoComision: 100, // Valor positivo referencial
+                        tipo: 'COMISION_COLOCACION',
+                        categoria: 'COMISION',
+                        monto: -100,
+                        montoComision: 100,
                         descripcion: `Comisión por colocación a ${cliente.nombre} (ID: ${nuevoHistoricalId})`,
                         creditoId: nuevoCreditoRef.id,
                         registradoPor: userEmail,
                         office: office
                     };
-                    // Guardamos en 'movimientos_efectivo' para que salga en la hoja de corte
                     const comisionMovRef = db.collection('movimientos_efectivo').doc();
                     transaction.set(comisionMovRef, comisionData);
-                    
-                    // Opcional: Guardar también en colección 'comisiones' si la usas para nómina aparte
-                    // const comisionRef = db.collection('comisiones').doc();
-                    // transaction.set(comisionRef, comisionData);
                 }
             }); 
             
@@ -763,13 +702,7 @@ const database = {
         }
     },
 
-    // --- MÉTODOS DE PAGOS ---
-    /**
-     * Obtiene los pagos de un crédito específico, desambiguando por SUCURSAL (office).
-     * @param {string} historicalIdCredito El ID histórico del crédito.
-     * @param {string} office La sucursal (GDL o LEON) del crédito.
-     * @returns {Array<object>} Un array de objetos de pago.
-     */
+    // --- METODO DE PAGOS ---
     getPagosPorCredito: async (historicalIdCredito, office) => {
         try {
             if (!office || (office !== 'GDL' && office !== 'LEON')) {
@@ -778,7 +711,7 @@ const database = {
             }
             const snapshot = await db.collection('pagos')
                 .where('idCredito', '==', historicalIdCredito)
-                .where('office', '==', office) // <-- Filtro por SUCURSAL
+                .where('office', '==', office)
                 .get();
             return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         } catch (error) {
@@ -787,11 +720,7 @@ const database = {
         }
     },
 
-    /**
-     * (PARA DIAGNÓSTICO) Obtiene TODOS los pagos de un ID histórico, sin importar la sucursal.
-     * @param {string} historicalIdCredito El ID histórico del crédito.
-     * @returns {Array<object>} Un array de objetos de pago.
-     */
+    // --- PAGO POR ID HISTORICO ---
     getAllPagosPorHistoricalId: async (historicalIdCredito) => {
         try {
             const snapshot = await db.collection('pagos')
@@ -804,75 +733,53 @@ const database = {
         }
     },
 
-    /**
-     * Registra un nuevo pago, actualiza el saldo del crédito y 
-     * registra la COMISIÓN (salida) si corresponde.
-     */
+   // --- REGISTRAR PAGO ---
     async agregarPago(pagoData, emailUsuario, firestoreIdCredito) {
         try {
-            // 1. Referencias necesarias
             const creditoRef = db.collection('creditos').doc(firestoreIdCredito);
             const pagosRef = db.collection('pagos').doc();
-            
-            // Usamos una transacción o batch para asegurar consistencia
-            // En este caso, Batch es eficiente para operaciones offline
             const batch = db.batch();
-
-            // 2. Obtener datos actuales del crédito para saber su oficina y saldo
             const doc = await creditoRef.get();
             if (!doc.exists) {
                 throw new Error("No se encontró el crédito especificado.");
             }
             const credito = doc.data();
             const saldoActual = credito.saldo !== undefined ? credito.saldo : credito.montoTotal;
-            const officeCredito = credito.office || 'GDL'; // Fallback por seguridad
-
-            // 3. Preparar datos del PAGO (Entrada de dinero)
-            // Aseguramos que la fecha sea ISO
+            const officeCredito = credito.office || 'GDL';
             const fechaISO = new Date().toISOString();
             
             const nuevoPago = {
                 id: pagosRef.id,
-                idCredito: pagoData.idCredito, // ID Histórico
+                idCredito: pagoData.idCredito,
                 firestoreIdCredito: firestoreIdCredito,
                 monto: parseFloat(pagoData.monto),
                 fecha: fechaISO,
                 tipoPago: pagoData.tipoPago || 'normal',
                 registradoPor: emailUsuario,
-                office: officeCredito, // Importante para la hoja de corte
-                origen: pagoData.origen || 'manual' // 'ruta_offline' o 'manual'
+                office: officeCredito,
+                origen: pagoData.origen || 'manual'
             };
 
-            // 4. Calcular nuevo saldo
             const nuevoSaldo = parseFloat((saldoActual - nuevoPago.monto).toFixed(2));
-
-            // 5. Agendar operaciones en el Batch
-            
-            // A) Guardar el Pago
             batch.set(pagosRef, nuevoPago);
-
-            // B) Actualizar el Crédito
             batch.update(creditoRef, {
                 saldo: nuevoSaldo,
                 fechaUltimoPago: fechaISO,
-                // Si el saldo llega a 0 (o muy cerca), marcamos como liquidado
                 ...(nuevoSaldo < 0.05 ? { estado: 'liquidado' } : {})
             });
 
-            // C) LÓGICA DE COMISIÓN (NUEVO)
-            // Si el frontend nos envió una comisión generada (> 0), creamos el registro de SALIDA
             if (pagoData.comisionGenerada && pagoData.comisionGenerada > 0) {
                 
                 const movimientoRef = db.collection('movimientos_efectivo').doc();
                 
                 const nuevaComision = {
                     id: movimientoRef.id,
-                    tipo: 'COMISION_PAGO', // Diferente a 'COLOCACION'
-                    categoria: 'COMISION', // Etiqueta para agrupar en Hoja de Corte
-                    monto: -Math.abs(pagoData.comisionGenerada), // NEGATIVO porque es SALIDA de dinero de la mano del agente
+                    tipo: 'COMISION_PAGO',
+                    categoria: 'COMISION',
+                    monto: -Math.abs(pagoData.comisionGenerada),
                     descripcion: `Comisión cobro crédito ${pagoData.idCredito}`,
                     fecha: fechaISO,
-                    userId: currentUserData ? currentUserData.id : null, // ID del agente que cobra
+                    userId: currentUserData ? currentUserData.id : null,
                     registradoPor: emailUsuario,
                     office: officeCredito,
                     creditoIdAsociado: firestoreIdCredito
@@ -882,10 +789,8 @@ const database = {
                 console.log(`💰 Comisión de $${pagoData.comisionGenerada} agendada para registro.`);
             }
 
-            // 6. Ejecutar todo junto
             await batch.commit();
 
-            // Retornamos datos útiles para la UI
             return { 
                 success: true, 
                 message: "Pago registrado correctamente",
@@ -900,7 +805,7 @@ const database = {
     },
 
     // --- IMPORTACIÓN MASIVA ---
-    importarDatosDesdeCSV: async (csvData, tipo, office) => { // 'office' aquí es la sucursal seleccionada para importar
+    importarDatosDesdeCSV: async (csvData, tipo, office) => {
         const lineas = csvData.split('\n').filter(linea => linea.trim() && linea.includes(','));
         if (lineas.length === 0) return { success: true, total: 0, importados: 0, errores: [] };
 
@@ -968,7 +873,7 @@ const database = {
                     importados++;
 
                 } else if (tipo === 'colocacion') {
-                    const minCols = 13; // Ajustar si el formato cambia
+                    const minCols = 13;
                     if (campos.length < minCols) { 
                         errores.push(`L${lineaNum}: Faltan columnas (Esperadas ${minCols}+, encontradas ${campos.length})`); 
                         continue; 
@@ -1004,7 +909,7 @@ const database = {
                     const montoIndex = 5; 
                     const plazoIndex = 6; 
                     const montoTotalIndex = 7;
-                    const saldoIndex = (office === 'LEON' && campos.length > 13) ? 13 : 12; // Ajustar si cambia
+                    const saldoIndex = (office === 'LEON' && campos.length > 13) ? 13 : 12;
                     const monto = parseFloat(campos[montoIndex] || 0); 
                     const plazo = parseInt(campos[plazoIndex] || 0);
                     let montoTotal = parseFloat(campos[montoTotalIndex] || 0); 
@@ -1056,10 +961,7 @@ const database = {
                     importados++;
 
                 } else if (tipo === 'cobranza') {
-                    // =============================================
-                    // *** INICIO MODIFICACIÓN IMPORTACIÓN COBRANZA ***
-                    // =============================================
-                    const minCols = 8; // Ahora esperamos 8 columnas
+                    const minCols = 8;
                     if (campos.length < minCols) {
                         errores.push(`L${lineaNum}: Faltan columnas (Esperadas ${minCols}, encontradas ${campos.length}) Formato: NOMBRE, ID CREDITO, FECHA, MONTO PAGO, TIPO PAGO, GRUPO, RUTA, OFICINA`);
                         continue;
@@ -1068,10 +970,10 @@ const database = {
                     const historicalIdCredito = campos[1].trim();
                     const fechaPagoISO = _parsearFechaImportacion(campos[2]);
                     const montoPago = parseFloat(campos[3] || 0);
-                    const tipoPago = (campos[4] || 'normal').toLowerCase(); // Índice 4
-                    const grupo = campos[5] || ''; // Índice 5
-                    const ruta = campos[6] || ''; // Índice 6
-                    const officePagoCSV = campos[7] ? campos[7].toUpperCase() : ''; // Índice 7, NUEVA COLUMNA
+                    const tipoPago = (campos[4] || 'normal').toLowerCase();
+                    const grupo = campos[5] || '';
+                    const ruta = campos[6] || '';
+                    const officePagoCSV = campos[7] ? campos[7].toUpperCase() : '';
 
                     if (!historicalIdCredito) { 
                         errores.push(`L${lineaNum}: ID Crédito (histórico) vacío.`); 
@@ -1086,23 +988,20 @@ const database = {
                         continue; 
                     }
 
-                    // Validar la oficina del CSV
                     let officePagoFinal = '';
                     if (officePagoCSV === 'GDL' || officePagoCSV === 'LEON') {
                         officePagoFinal = officePagoCSV;
                     } else {
-                        // Si la columna está vacía o es inválida, usar la oficina seleccionada para la importación (fallback)
                         errores.push(`L${lineaNum}: Oficina inválida o vacía ('${campos[7]}') en CSV. Usando la oficina seleccionada para importar: ${office}.`);
-                        officePagoFinal = office; // Usar la oficina de la importación como fallback
+                        officePagoFinal = office;
                     }
 
-                    // Intentar obtener el CURP del cliente asociado al crédito y oficina correctos
                     let curpClientePago = '';
-                    const creditosAsoc = await database.buscarCreditosPorHistoricalId(historicalIdCredito, { office: officePagoFinal }); // Buscar con la oficina determinada
+                    const creditosAsoc = await database.buscarCreditosPorHistoricalId(historicalIdCredito, { office: officePagoFinal });
                     
                     if (creditosAsoc.length > 0) {
                         const nombreClientePagoCSV = campos[0] || '';
-                        let creditoEncontrado = creditosAsoc[0]; // Default al más reciente si hay varios
+                        let creditoEncontrado = creditosAsoc[0];
                         if (creditosAsoc.length > 1 && nombreClientePagoCSV) {
                             const matchPorNombre = creditosAsoc.find(c => c.nombreCliente === nombreClientePagoCSV);
                             if (matchPorNombre) creditoEncontrado = matchPorNombre;
@@ -1110,10 +1009,9 @@ const database = {
                         curpClientePago = creditoEncontrado.curpCliente;
                     } else {
                         errores.push(`L${lineaNum}: No se encontró crédito asociado (${historicalIdCredito}, ${officePagoFinal}) para obtener CURP.`);
-                        curpClientePago = ''; // No se pudo determinar
+                        curpClientePago = '';
                     }
 
-                    // Crear objeto pago con los datos correctos
                     const pago = {
                         idCredito: historicalIdCredito,
                         fecha: fechaPagoISO,
@@ -1121,19 +1019,16 @@ const database = {
                         tipoPago: tipoPago,
                         grupo: grupo,
                         ruta: ruta,
-                        nombreCliente: campos[0] || '', // Nombre del CSV
+                        nombreCliente: campos[0] || '',
                         registradoPor: 'importacion_csv',
                         fechaImportacion: fechaImportacion,
-                        curpCliente: curpClientePago, // CURP encontrado (o vacío)
-                        office: officePagoFinal, // Oficina determinada (CSV o fallback)
+                        curpCliente: curpClientePago,
+                        office: officePagoFinal,
                     };
 
                     const docRef = db.collection('pagos').doc();
                     batch.set(docRef, pago);
                     importados++;
-                    // =============================================
-                    // *** FIN MODIFICACIÓN IMPORTACIÓN COBRANZA ***
-                    // =============================================
                 }
 
                 batchCounter++;
@@ -1144,7 +1039,7 @@ const database = {
                     batchCounter = 0;
                     await new Promise(resolve => setTimeout(resolve, 50));
                 }
-            } // Fin del bucle for
+            }
 
             if (batchCounter > 0) {
                 await batch.commit();
@@ -1198,9 +1093,7 @@ const database = {
                 return fechaPago && fechaPago >= primerDiaMes && fechaPago < primerDiaMesSiguiente;
             });
             const cobradoMes = pagosDelMes.reduce((sum, p) => sum + (p.monto || 0), 0);
-            const totalComisionesMes = 0; // O eliminar esta línea y la métrica
-
-            // Usar Map seguro (ID + Office) para pagos
+            const totalComisionesMes = 0;
             const pagosMapSeguro = new Map();
             pagos.forEach(p => {
                 const key = `${p.idCredito}_${p.office}`;
@@ -1254,6 +1147,7 @@ const database = {
         }
     },
 
+    // -- GENERACION DE REPORTES AVANZADOS ---
     generarReporteAvanzado: async (filtros) => {
         if (filtros.userOffice && filtros.userOffice !== 'AMBAS') filtros.office = filtros.userOffice;
         console.log("Generando reporte avanzado con filtros:", filtros);
@@ -1375,6 +1269,7 @@ const database = {
         }
     },
 
+    // --- OBTENER DATOS PARA GRAFICOS ---
     obtenerDatosParaGraficos: async (filtros) => {
         try { 
             if (filtros.userOffice && filtros.userOffice !== 'AMBAS') filtros.office = filtros.userOffice;
@@ -1417,6 +1312,7 @@ const database = {
         }
     },
 
+    // --- FILTRO POR FECHA ---
     _cumpleFiltroFecha: (fecha, fechaInicio, fechaFin) => {
         if (!fechaInicio && !fechaFin) return true; 
         const fechaObj = parsearFecha(fecha); 
@@ -1432,6 +1328,7 @@ const database = {
         return true;
     },
 
+    // --- CREDITOS VENCIDOS ---
     esCreditoVencido: (credito, pagos) => {
         if (!credito || credito.estado === 'liquidado' || (credito.saldo !== undefined && credito.saldo <= 0.01)) return { vencido: false };
         const hoy = new Date(); 
@@ -1447,6 +1344,7 @@ const database = {
         return { vencido: diasDesdeReferencia > 7 };
     },
 
+    // --- CLIENTE DUPLICADOS ---
     encontrarClientesDuplicados: async () => {
         try { 
             const clientesSnapshot = await db.collection('clientes').orderBy('fechaCreacion', 'desc').get(); 
@@ -1485,6 +1383,7 @@ const database = {
         }
     },
 
+    // --- EJECUTAR ELIMINAION DE DUPLICADOS ---
     ejecutarEliminacionDuplicados: async (ids) => {
         if (!ids || ids.length === 0) return { success: true, message: 'No hay IDs para eliminar.' }; 
         let batch = db.batch(); 
@@ -1528,14 +1427,12 @@ const database = {
         }
     },
 
+    // --- OBTENER POBLACIONES ---
     obtenerPoblaciones: async (office = null) => {
         console.log(`>>> obtenerPoblaciones (Corregido) llamada con office: ${office}`);
         try {
-            // --- INICIO CORRECCIÓN ---
-            // 1. Definir la consulta base
             let query = db.collection('poblaciones');
             
-            // 2. Aplicar filtro SI ES NECESARIO (para Admin)
             if (office && office !== 'AMBAS') {
                 console.log(`>>> Filtrando poblaciones por office: ${office}`);
                 query = query.where('office', '==', office);
@@ -1543,14 +1440,11 @@ const database = {
                 console.log(">>> Obteniendo todas las poblaciones (sin filtro office).");
             }
             
-            // 3. Ejecutar la consulta
             const snapshot = await query.get();
             let poblacionesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             console.log(`>>> Se obtuvieron ${poblacionesData.length} poblaciones.`);
             
-            // 4. Ordenar en JavaScript
             poblacionesData.sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
-            // --- FIN CORRECCIÓN ---
 
             return poblacionesData;
         } catch (error) {
@@ -1559,6 +1453,7 @@ const database = {
         }
     },
 
+    // --- AGREGAR POBLACIONES ---
     agregarPoblacion: async (nombre, office) => {
         try {
             const nombreUpper = nombre.toUpperCase();
@@ -1577,6 +1472,7 @@ const database = {
         }
     },
 
+    // --- ELIMINAR POBLACIONES ---
     eliminarPoblacion: async (id) => {
         try { 
             await db.collection('poblaciones').doc(id).delete(); 
@@ -1587,14 +1483,12 @@ const database = {
         }
     },
 
+    // --- OBTENER RUTAS ---
     obtenerRutas: async (office = null) => {
         console.log(`>>> obtenerRutas (Corregido) llamada con office: ${office}`);
         try {
-            // --- INICIO CORRECCIÓN ---
-            // 1. Definir la consulta base
             let query = db.collection('rutas');
             
-            // 2. Aplicar filtro SI ES NECESARIO (para Admin)
             if (office && office !== 'AMBAS') {
                 console.log(`>>> Filtrando rutas por office: ${office}`);
                 query = query.where('office', '==', office);
@@ -1602,14 +1496,11 @@ const database = {
                 console.log(">>> Obteniendo todas las rutas.");
             }
 
-            // 3. Ejecutar la consulta
             const snapshot = await query.get();
             let rutasData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             console.log(`>>> Se obtuvieron ${rutasData.length} rutas en total.`);
 
-            // 4. Ordenar en JavaScript
             rutasData.sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
-            // --- FIN CORRECCIÓN ---
             
             return rutasData;
         } catch (error) {
@@ -1618,7 +1509,7 @@ const database = {
         }
     },
 
-    // Actualiza el nombre de una ruta específica
+    // ACTUALIZAR NOMBRE DE RUTA ---
     actualizarNombreRuta: async (id, nuevoNombre) => {
         if (!id || !nuevoNombre || !nuevoNombre.trim()) {
             return { success: false, message: 'ID o nombre inválido.' };
@@ -1630,8 +1521,6 @@ const database = {
             if (!rutaDoc.exists) throw new Error("Ruta no encontrada.");
             const rutaData = rutaDoc.data();
             const nombreOriginal = rutaData.nombre;
-
-            // Verificar si el nuevo nombre ya existe en la misma oficina
             const existeSnap = await db.collection('rutas')
                 .where('nombre', '==', nombreUpper)
                 .where('office', '==', rutaData.office)
@@ -1640,10 +1529,8 @@ const database = {
                  return { success: false, message: `El nombre "${nombreUpper}" ya existe en la oficina ${rutaData.office}.` };
             }
 
-            // Actualizar en 'rutas'
             await rutaRef.update({ nombre: nombreUpper });
             
-            // Actualizar en 'poblaciones' (batch)
             const poblacionesSnap = await db.collection('poblaciones')
                 .where('office', '==', rutaData.office)
                 .where('ruta', '==', nombreOriginal)
@@ -1664,7 +1551,7 @@ const database = {
         }
     },
 
-    // Asigna o cambia la ruta de una población específica
+    // --- ASIGNAR RUTA A POBLACION ---
     asignarRutaAPoblacion: async (poblacionId, rutaNombre) => {
         if (!poblacionId) {
             return { success: false, message: 'ID de población inválido.' };
@@ -1682,6 +1569,7 @@ const database = {
         }
     },
 
+    // --- AGREGAR RUTA ---
     agregarRuta: async (nombre, office) => {
         try {
             const nombreUpper = nombre.toUpperCase();
@@ -1700,12 +1588,11 @@ const database = {
         }
     },
 
+    // --- ELIMINAR RUTA ---
     eliminarRuta: async (id, nombre, office) => {
         try {
-            // 1. Eliminar la ruta
             await db.collection('rutas').doc(id).delete();
             
-            // 2. Des-asignar la ruta de las poblaciones
             const poblacionesSnap = await db.collection('poblaciones')
                 .where('office', '==', office)
                 .where('ruta', '==', nombre)
@@ -1731,11 +1618,9 @@ const database = {
     // =============================================
     agregarMovimientoEfectivo: async (movimientoData) => {
         try {
-            // Asegurar que los datos esenciales estén
             if (!movimientoData.userId || !movimientoData.tipo || !movimientoData.monto) {
                 throw new Error("UserID, Tipo y Monto son requeridos para un movimiento.");
             }
-            // Asegurar que la fecha exista
             movimientoData.fecha = movimientoData.fecha || new Date().toISOString();
             
             await db.collection('movimientos_efectivo').add(movimientoData);
@@ -1746,10 +1631,7 @@ const database = {
         }
     },
 
-    /**
-     * Obtiene movimientos de efectivo según filtros (userId, fechas, etc.)
-     * Requiere índice: userId (ASC), fecha (DESC)
-     */
+    // --- OBTENER MOVIMIENTOS DE EFECTIVO ---
     getMovimientosEfectivo: async (filtros) => {
         try {
             if (!filtros.userId) {
@@ -1778,11 +1660,7 @@ const database = {
         }
     },
 
-    /**
-     * Obtiene movimientos de efectivo para un reporte contable, filtrado por oficina y fechas.
-     * Requiere índice: office (ASC), fecha (DESC)
-     * O: office (ASC), userId (ASC), fecha (DESC)
-     */
+    // --- OBTENER MOVIMIENTOS PARA REPORTE ---
     getMovimientosParaReporte: async (filtros) => {
         try {
             if (!filtros.office || filtros.office === 'AMBAS') {
@@ -1840,12 +1718,8 @@ const database = {
             return { success: false, message: error.message, data: [] };
         }
     },
-    
 
-    /**
-     * Agrega una comisión a la colección 'comisiones'.
-     * @param {object} comisionData Datos de la comisión (userId, fecha, tipo, montoComision, etc.)
-     */
+    // --- AGREGAR COMISION ---
     agregarComision: async (comisionData) => {
         try {
             if (!comisionData.userId || !comisionData.tipo || !comisionData.montoComision) {
@@ -1861,12 +1735,7 @@ const database = {
         }
     },
 
-// EN database.js - AÑADE ESTAS FUNCIONES DENTRO DEL OBJETO 'database = {'
-
-    /**
-     * Actualiza campos de un documento de CRÉDITO.
-     * ADVERTENCIA: No recalcula saldos ni totales.
-     */
+    // --- ACTUALIZAR CREDITO ---
     actualizarCredito: async (creditoId, dataToUpdate) => {
         try {
             dataToUpdate.fechaModificacion = new Date().toISOString();
@@ -1878,9 +1747,7 @@ const database = {
         }
     },
 
-    /**
-     * Elimina un CRÉDITO y todos sus PAGOS, COMISIONES y MOVIMIENTOS asociados.
-     */
+    // --- ELIMINAR CREDITO ---
     eliminarCredito: async (creditoId, historicalId, office) => {
         try {
             if (!creditoId || !historicalId || !office) {
@@ -1888,31 +1755,25 @@ const database = {
             }
             
             const batch = db.batch();
-            
-            // 1. Marcar el crédito para eliminar
             const creditoRef = db.collection('creditos').doc(creditoId);
             batch.delete(creditoRef);
             
-            // 2. Buscar y eliminar Pagos
             const pagosSnap = await db.collection('pagos')
                 .where('idCredito', '==', historicalId)
                 .where('office', '==', office)
                 .get();
             pagosSnap.docs.forEach(doc => batch.delete(doc.ref));
 
-            // 3. Buscar y eliminar Comisiones
             const comisionesSnap = await db.collection('comisiones')
                 .where('creditoId', '==', creditoId)
                 .get();
             comisionesSnap.docs.forEach(doc => batch.delete(doc.ref));
                 
-            // 4. Buscar y eliminar Movimientos de Efectivo (Colocación)
             const movimientosSnap = await db.collection('movimientos_efectivo')
                 .where('creditoId', '==', creditoId)
                 .get();
             movimientosSnap.docs.forEach(doc => batch.delete(doc.ref));
 
-            // Ejecutar el batch
             await batch.commit();
             
             return { 
@@ -1927,9 +1788,7 @@ const database = {
         }
     },
 
-    /**
-     * Actualiza un PAGO y recalcula el saldo del crédito en una transacción.
-     */
+    // --- ACTUALIZAR PAGOS ---
     actualizarPago: async (pagoId, creditoId, dataToUpdate, diferenciaMonto) => {
         try {
             const creditoRef = db.collection('creditos').doc(creditoId);
@@ -1940,23 +1799,16 @@ const database = {
                 if (!creditoDoc.exists) throw new Error("Crédito no encontrado.");
                 
                 const credito = creditoDoc.data();
-                
-                // Aplicar la diferencia al saldo
-                // Si nuevoMonto > montoOriginal, diferenciaMonto es POSITIVO.
-                // El saldo debe DISMINUIR.
                 let nuevoSaldo = (credito.saldo || 0) - diferenciaMonto;
                 if (nuevoSaldo < 0.01) nuevoSaldo = 0;
-                
                 const nuevoEstado = (nuevoSaldo === 0) ? 'liquidado' : 'activo';
 
-                // Actualizar Saldo del Crédito
                 transaction.update(creditoRef, {
                     saldo: nuevoSaldo,
                     estado: nuevoEstado
                 });
                 
-                // Actualizar el Pago
-                dataToUpdate.saldoDespues = nuevoSaldo; // Actualizar el saldo histórico del pago
+                dataToUpdate.saldoDespues = nuevoSaldo;
                 transaction.update(pagoRef, dataToUpdate);
             });
             
@@ -1967,14 +1819,12 @@ const database = {
         }
     },
 
-    /**
-     * Elimina un PAGO y REEMBOLSA el monto al saldo del crédito en una transacción.
-     */
+    // -- ELIMINAR PAGOS ---
     eliminarPago: async (pagoId, creditoId, montoAReembolsar, office) => {
         try {
             const creditoRef = db.collection('creditos').doc(creditoId);
             const pagoRef = db.collection('pagos').doc(pagoId);
-            let historicalIdCredito = ''; // Para devolverlo a la UI
+            let historicalIdCredito = '';
 
             await db.runTransaction(async (transaction) => {
                 const creditoDoc = await transaction.get(creditoRef);
@@ -1983,23 +1833,20 @@ const database = {
                 const credito = creditoDoc.data();
                 historicalIdCredito = credito.historicalIdCredito || '';
                 
-                // Reembolsar el monto al saldo
                 let nuevoSaldo = (credito.saldo || 0) + montoAReembolsar;
                 
-                // Actualizar Saldo del Crédito
                 transaction.update(creditoRef, {
                     saldo: nuevoSaldo,
-                    estado: 'activo' // Forzar a 'activo' ya que no puede estar 'liquidado'
+                    estado: 'activo'
                 });
                 
-                // Eliminar el Pago
                 transaction.delete(pagoRef);
             });
             
             return { 
                 success: true, 
                 message: 'Pago eliminado y saldo recalculado.',
-                historicalIdCredito: historicalIdCredito // Devolver para refrescar el modal
+                historicalIdCredito: historicalIdCredito
             };
         } catch (error) {
             console.error("Error eliminando pago:", error);
@@ -2007,16 +1854,14 @@ const database = {
         }
     },
 
-    // Obtiene las poblaciones filtradas por Ruta y Oficina (Para el checkbox)
+    // --- OBTENER POBLACIONES POR RUTA ---
     async obtenerPoblacionesPorRuta(ruta, office) {
         console.log(`📡 DB: Buscando poblaciones para Ruta: "${ruta}" en Oficina: "${office}"`);
         try {
             let query = db.collection('poblaciones');
             
-            // Filtro 1: Por Ruta (Obligatorio)
             query = query.where('ruta', '==', ruta);
 
-            // Filtro 2: Por Oficina (Si aplica, para seguridad)
             if (office && office !== 'AMBAS') {
                 query = query.where('office', '==', office);
             }
@@ -2038,42 +1883,35 @@ const database = {
 
         } catch (error) {
             console.error("❌ DB Error en obtenerPoblacionesPorRuta:", error);
-            // Devolvemos array vacío para no romper la UI, pero mostramos error
             throw error; 
         }
     },
 
-    // Obtiene TODOS los movimientos financieros del día para la Hoja de Corte
+    // --- OBTENER DATOS DE HOJA DE CORTE ---
     obtenerDatosHojaCorte: async (fecha, userOffice, userId = null) => {
-        // Definir rango del día en UTC para coincidir con ISO Strings almacenados
         const fechaInicio = new Date(fecha + 'T00:00:00Z').toISOString();
         const fechaFin = new Date(fecha + 'T23:59:59Z').toISOString();
         
         try {
             const promises = [];
             
-            // 1. Movimientos Efectivo (Gastos, Colocación, Entradas Iniciales)
             let qMovs = db.collection('movimientos_efectivo')
                 .where('fecha', '>=', fechaInicio)
                 .where('fecha', '<=', fechaFin);
             
             if (userOffice && userOffice !== 'AMBAS') qMovs = qMovs.where('office', '==', userOffice);
-            if (userId) qMovs = qMovs.where('userId', '==', userId); // Filtro estricto para Agentes
+            if (userId) qMovs = qMovs.where('userId', '==', userId);
             
             promises.push(qMovs.get());
 
-            // 2. Pagos (Cobranza - Entradas)
             let qPagos = db.collection('pagos')
                 .where('fecha', '>=', fechaInicio)
                 .where('fecha', '<=', fechaFin);
             
             if (userOffice && userOffice !== 'AMBAS') qPagos = qPagos.where('office', '==', userOffice);
-            // Nota: Si la colección pagos no tiene userId indexado, filtramos en memoria después,
-            // pero si el agente registró el pago, su email/id debería estar trazable.
             
             promises.push(qPagos.get());
 
-            // 3. Comisiones (Salidas)
             let qComis = db.collection('comisiones')
                 .where('fecha', '>=', fechaInicio)
                 .where('fecha', '<=', fechaFin);
@@ -2084,15 +1922,10 @@ const database = {
             promises.push(qComis.get());
 
             const [snapMovs, snapPagos, snapComis] = await Promise.all(promises);
-
-            // Mapeo y normalización de datos
             const movimientos = snapMovs.docs.map(d => ({...d.data(), categoria: 'MOVIMIENTO', rawDate: d.data().fecha}));
-            
             const pagos = snapPagos.docs.map(d => ({...d.data(), categoria: 'COBRANZA', tipo: 'PAGO', rawDate: d.data().fecha, descripcion: `Pago Crédito ${d.data().idCredito}`}));
-            
             const comisiones = snapComis.docs.map(d => ({...d.data(), categoria: 'COMISION', tipo: 'COMISION', rawDate: d.data().fecha})); 
 
-            // Unificar todos los arrays
             return [...movimientos, ...pagos, ...comisiones];
 
         } catch (error) {
@@ -2102,13 +1935,3 @@ const database = {
     },
 
 };
-
-
-
-
-
-
-
-
-
-
