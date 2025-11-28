@@ -558,30 +558,28 @@ const database = {
     // --- GENERAR UN CREDITO NUEVO ---
     async agregarCredito(creditoData, userEmail) {
         try {
-            
             const office = creditoData.office;
             if (!office || (office !== 'GDL' && office !== 'LEON')) {
-                return { success: false, message: 'Error crítico: La oficina del cliente no es válida (GDL o LEON).' };
+                return { success: false, message: 'Error crítico: Oficina inválida.' };
             }
 
-            if ((creditoData.tipo === 'renovacion' || creditoData.tipo === 'reingreso') && creditoData.plazo !== 14) {
-                if (creditoData.plazo !== 13) { 
-                    return { success: false, message: 'Créditos de renovación/reingreso deben ser a 14 semanas (o 13 si está autorizado).' };
-                }
+            if ((creditoData.tipo === 'renovacion' || creditoData.tipo === 'reingreso') && creditoData.plazo !== 14 && creditoData.plazo !== 13) {
+                return { success: false, message: 'Plazo no permitido para renovación.' };
             }
             
             const elegibilidadCliente = await this.verificarElegibilidadCliente(creditoData.curpCliente, office);
             if (!elegibilidadCliente.elegible) return { success: false, message: elegibilidadCliente.mensaje };
+            
             if (creditoData.curpAval) {
                 const elegibilidadAval = await this.verificarElegibilidadAval(creditoData.curpAval, office); 
                 if (!elegibilidadAval.elegible) return { success: false, message: `Problema con el Aval: ${elegibilidadAval.message}` };
             }
             
             const cliente = await this.buscarClientePorCURP(creditoData.curpCliente, office); 
-            if (!cliente) return { success: false, message: "Cliente no encontrado en esta oficina." };
+            if (!cliente) return { success: false, message: "Cliente no encontrado." };
             
             if (creditoData.plazo === 10 && !cliente.isComisionista) {
-                return { success: false, message: "Solo comisionistas pueden acceder a créditos de 10 semanas." };
+                return { success: false, message: "Solo comisionistas pueden acceder a 10 semanas." };
             }
             
             const fechaCreacionISO = new Date().toISOString();
@@ -624,7 +622,7 @@ const database = {
             let montoPolizaDeduccion = 0;
             
             if (!esCreditoComisionista) {
-                montoPolizaDeduccion = 100; 
+                montoPolizaDeduccion = 100; // $100 de póliza
             }
             
             const montoEfectivoEntregado = nuevoCreditoData.monto - montoPolizaDeduccion - saldoCreditoAnterior;
@@ -633,15 +631,10 @@ const database = {
 
             await db.runTransaction(async (transaction) => {
                 const contadorDoc = await transaction.get(contadorRef);
-                let ultimoId;
-                if (!contadorDoc.exists) {
-                    ultimoId = (office === 'GDL') ? 30000000 : 20000000;
-                } else {
-                    ultimoId = contadorDoc.data().ultimoId;
-                }
-                
+                let ultimoId = (!contadorDoc.exists) ? ((office === 'GDL') ? 30000000 : 20000000) : contadorDoc.data().ultimoId;
                 nuevoHistoricalId = ultimoId + 1;
                 transaction.set(contadorRef, { ultimoId: nuevoHistoricalId }, { merge: true });
+
                 nuevoCreditoData.historicalIdCredito = String(nuevoHistoricalId);
                 nuevoCreditoData.busqueda.push(String(nuevoHistoricalId));
                 transaction.set(nuevoCreditoRef, nuevoCreditoData);
@@ -651,49 +644,45 @@ const database = {
                         estado: 'liquidado',
                         saldo: 0,
                         fechaLiquidacion: fechaCreacionISO,
-                        nota: `Liquidado por renovación (Nuevo Crédito: ${nuevoHistoricalId})`
+                        nota: `Renovado por ${nuevoHistoricalId}`
                     });
                 }
 
+                const salidaBruta = montoEfectivoEntregado + montoPolizaDeduccion;
                 const movimientoEfectivo = {
                     userId: (await auth.currentUser).uid,
                     fecha: fechaCreacionISO,
                     tipo: 'COLOCACION',
                     categoria: 'COLOCACION',
-                    monto: -Math.abs(montoEfectivoEntregado),
-                    descripcion: `Colocación a ${cliente.nombre} (ID: ${nuevoHistoricalId}) | Monto: $${nuevoCreditoData.monto} - Póliza: $${montoPolizaDeduccion} - Renovación: $${saldoCreditoAnterior.toFixed(2)}`,
+                    monto: -Math.abs(salidaBruta),
+                    descripcion: `Colocación a ${cliente.nombre} (${nuevoHistoricalId})`,
                     creditoId: nuevoCreditoRef.id,
                     registradoPor: userEmail,
                     office: office
                 };
                 const movimientoRef = db.collection('movimientos_efectivo').doc();
                 transaction.set(movimientoRef, movimientoEfectivo);
-                if (!esCreditoComisionista) {
-                    const comisionData = {
+                if (montoPolizaDeduccion > 0) {
+                    const polizaData = {
                         userId: (await auth.currentUser).uid,
                         fecha: fechaCreacionISO,
-                        tipo: 'COMISION_COLOCACION',
-                        categoria: 'COMISION',
-                        monto: -100,
-                        montoComision: 100,
-                        descripcion: `Comisión por colocación a ${cliente.nombre} (ID: ${nuevoHistoricalId})`,
+                        tipo: 'INGRESO_POLIZA',
+                        categoria: 'ENTREGA_INICIAL',
+                        monto: montoPolizaDeduccion,
+                        descripcion: `Cobro de Póliza - Crédito ${nuevoHistoricalId}`,
                         creditoId: nuevoCreditoRef.id,
                         registradoPor: userEmail,
                         office: office
                     };
-                    const comisionMovRef = db.collection('movimientos_efectivo').doc();
-                    transaction.set(comisionMovRef, comisionData);
+                    const polizaRef = db.collection('movimientos_efectivo').doc();
+                    transaction.set(polizaRef, polizaData);
                 }
             }); 
             
             return { 
                 success: true, 
                 message: 'Crédito generado exitosamente.', 
-                data: { 
-                    id: nuevoCreditoRef.id, 
-                    historicalIdCredito: String(nuevoHistoricalId), 
-                    ...nuevoCreditoData 
-                } 
+                data: { id: nuevoCreditoRef.id, historicalIdCredito: String(nuevoHistoricalId) } 
             };
 
         } catch (error) {
@@ -1935,3 +1924,4 @@ const database = {
     },
 
 };
+
