@@ -669,17 +669,28 @@
 
                 <div id="status_pago_grupo" class="status-message hidden"></div>
 
-                <div id="selector-poblaciones-card" class="card hidden" style="margin-bottom: 20px; padding: 15px; border-left: 4px solid var(--primary);">
-                    <h4 style="margin-top:0; border-bottom: 1px solid #eee; padding-bottom: 10px;">
-                        <i class="fas fa-map-marked-alt"></i> 1. Selecciona Poblaciones para Cobro
-                    </h4>
-                    <div id="checkboxes-poblaciones-container" style="display: flex; flex-wrap: wrap; gap: 15px; margin: 15px 0;">
-                        <p>Cargando poblaciones...</p>
+                <div id="selector-poblaciones-card" class="card hidden" style="margin-bottom: 20px; padding: 0; border: 1px solid #dee2e6; border-left: 5px solid var(--primary); overflow: hidden;">
+                    
+                    <div class="group-header-clickable" onclick="toggleSelectorMain()" 
+                         style="background-color: #f8f9fa; padding: 15px; display:flex; justify-content:space-between; align-items:center; border-bottom: 1px solid #eee;">
+                        <div style="display:flex; align-items:center;">
+                            <i class="fas fa-chevron-down toggle-icon" id="icon-selector-main"></i>
+                            <h4 style="margin:0; color:var(--primary);">
+                                <i class="fas fa-map-marked-alt"></i> 1. Selecciona Poblaciones
+                            </h4>
+                        </div>
+                        <small style="color:#666;">(Clic para mostrar/ocultar)</small>
                     </div>
-                    <div style="text-align: right;">
-                        <button id="btn-calcular-seleccion" class="btn btn-primary">
-                            <i class="fas fa-calculator"></i> 2. Calcular Cobranza
-                        </button>
+
+                    <div id="selector-body-wrapper" class="group-content-wrapper" style="padding: 15px;">
+                        <div id="checkboxes-poblaciones-container" style="display: flex; flex-wrap: wrap; gap: 15px; margin-bottom: 15px;">
+                            <p>Cargando poblaciones...</p>
+                        </div>
+                        <div style="text-align: right; border-top: 1px solid #eee; padding-top: 15px;">
+                            <button id="btn-calcular-seleccion" class="btn btn-primary">
+                                <i class="fas fa-calculator"></i> 2. Calcular Cobranza
+                            </button>
+                        </div>
                     </div>
                 </div>
 
@@ -1152,3 +1163,4 @@
     <script src="js/app.js"></script>
 </body>
 </html>
+
