@@ -2807,6 +2807,11 @@ async function handleCalcularCobranzaRuta() {
 
         renderizarCobranzaRuta(cobranzaRutaData, container);
 
+        const selectorCard = document.getElementById('selector-poblaciones-card');
+        if (selectorCard && !selectorCard.classList.contains('closed')) {
+            selectorCard.classList.add('closed');
+        }
+        
         if(btnGuardar) btnGuardar.classList.remove('hidden');
         if(btnRegistrar) btnRegistrar.classList.remove('hidden');
         if (btnMapa) {
@@ -6644,6 +6649,15 @@ function calcularRutaGoogle(origen) {
     });
 }
 
+// --- Función para colapsar/expandir el Selector Principal ---
+function toggleSelectorMain() {
+    const card = document.getElementById('selector-poblaciones-card');
+    if (card) {
+        // Reutilizamos la clase 'closed' y el CSS que ya creamos para las otras tarjetas
+        card.classList.toggle('closed');
+    }
+}
+
 // --- Función para colapsar/expandir grupos de población ---
 function togglePoblacionGroup(grupoId) {
     const card = document.getElementById(`group-card-${grupoId}`);
@@ -6934,5 +6948,6 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
