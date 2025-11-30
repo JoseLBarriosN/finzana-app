@@ -2703,9 +2703,12 @@ async function handleCalcularCobranzaRuta() {
     const statusPagoGrupo = document.getElementById('status_pago_grupo');
     const container = document.getElementById('cobranza-ruta-container');
     const placeholder = document.getElementById('cobranza-ruta-placeholder');
+    
     const btnGuardar = document.getElementById('btn-guardar-cobranza-offline');
     const btnRegistrar = document.getElementById('btn-registrar-pagos-offline');
     const btnMapa = document.getElementById('btn-ver-ruta-maps');
+
+    // 1. Obtener Poblaciones Seleccionadas
     const checkboxes = document.querySelectorAll('.poblacion-check:checked');
     const poblacionesSeleccionadas = Array.from(checkboxes).map(cb => cb.value);
 
@@ -2717,18 +2720,21 @@ async function handleCalcularCobranzaRuta() {
     cargaEnProgreso = true;
     showProcessingOverlay(true, `Calculando cobranza para ${poblacionesSeleccionadas.length} poblaciones...`);
     
+    // Reset visual
     container.innerHTML = '';
     placeholder.classList.add('hidden');
     if(btnGuardar) btnGuardar.classList.add('hidden');
     if(btnRegistrar) btnRegistrar.classList.add('hidden');
     if(btnMapa) btnMapa.classList.add('hidden');
 
+    // LIMPIAR LISTA DE DIRECCIONES PARA EL MAPA
     waypointsComisionistas = []; 
 
     try {
         const userOffice = currentUserData.office;
         let creditosPendientes = [];
         
+        // --- LÓGICA DE BÚSQUEDA ---
         const MAX_IN = 10;
         for (let i = 0; i < poblacionesSeleccionadas.length; i += MAX_IN) {
             const chunk = poblacionesSeleccionadas.slice(i, i + MAX_IN);
@@ -2741,10 +2747,10 @@ async function handleCalcularCobranzaRuta() {
             const clientesDelChunk = clientesSnapshot.docs.map(doc => ({id: doc.id, ...doc.data()}));
 
             for (const cliente of clientesDelChunk) {
-          
+                
                 if (cliente.isComisionista && cliente.domicilio && cliente.domicilio.length > 5) {
-                    const ciudad = userOffice === 'GDL' ? 'Guadalajara, Jalisco' : 'León, Guanajuato';
-                    const direccionFull = `${cliente.domicilio}, ${ciudad}`;
+                    const estadoMx = userOffice === 'GDL' ? 'Jalisco' : 'Guanajuato';
+                    const direccionFull = `${cliente.domicilio}, ${cliente.poblacion_grupo}, ${estadoMx}, México`;
                     const existe = waypointsComisionistas.some(w => w.poblacion === cliente.poblacion_grupo);
                     
                     if (!existe) {
@@ -2753,7 +2759,7 @@ async function handleCalcularCobranzaRuta() {
                             location: direccionFull,
                             nombre: cliente.nombre
                         });
-                        console.log(`📍 Punto de ruta añadido: ${cliente.poblacion_grupo}`);
+                        console.log(`📍 Punto añadido para mapa: ${direccionFull}`);
                     }
                 }
 
@@ -2762,13 +2768,21 @@ async function handleCalcularCobranzaRuta() {
                      const histId = credito.historicalIdCredito || credito.id;
                      const pagos = await database.getPagosPorCredito(histId, userOffice);
                      const estadoCalc = _calcularEstadoCredito(credito, pagos);
+                     
                      if (estadoCalc && estadoCalc.estado !== 'liquidado' && estadoCalc.pagoSemanal > 0.01) {
+                         
+                        const pagoSemanalRef = estadoCalc.pagoSemanal;
+                        const semanasAtraso = estadoCalc.semanasAtraso || 0;
+                        let montoAcumulado = (semanasAtraso > 0) ? semanasAtraso * pagoSemanalRef : pagoSemanalRef;
+                        let montoAPagarFinal = Math.min(montoAcumulado, estadoCalc.saldoRestante + 0.05);
+                        montoAPagarFinal = Math.max(0, parseFloat(montoAPagarFinal.toFixed(2)));
+
                          creditosPendientes.push({
                             firestoreId: credito.id,
                             historicalIdCredito: histId,
                             nombreCliente: cliente.nombre,
                             curpCliente: cliente.curp,
-                            pagoSemanalAcumulado: estadoCalc.pagoSemanal,
+                            pagoSemanalAcumulado: montoAPagarFinal,
                             saldoRestante: estadoCalc.saldoRestante,
                             estadoCredito: estadoCalc.estado,
                             poblacion_grupo: cliente.poblacion_grupo,
@@ -2793,7 +2807,6 @@ async function handleCalcularCobranzaRuta() {
 
         renderizarCobranzaRuta(cobranzaRutaData, container);
 
-        // MOSTRAR BOTONES
         if(btnGuardar) btnGuardar.classList.remove('hidden');
         if(btnRegistrar) btnRegistrar.classList.remove('hidden');
         if (btnMapa) {
@@ -2803,10 +2816,10 @@ async function handleCalcularCobranzaRuta() {
                 btnMapa.parentNode.replaceChild(newBtnMapa, btnMapa);
                 newBtnMapa.addEventListener('click', generarRutaMaps);
                 
-                showStatus('status_pago_grupo', `Cálculo completado. ${waypointsComisionistas.length} puntos de ruta (comisionistas) identificados.`, 'success');
+                showStatus('status_pago_grupo', `Cálculo completado. ${waypointsComisionistas.length} puntos de ruta para mapa.`, 'success');
             } else {
                 btnMapa.classList.add('hidden');
-                showStatus('status_pago_grupo', 'Cálculo completado, pero no se encontraron direcciones de comisionistas para el mapa.', 'warning');
+                showStatus('status_pago_grupo', 'Cálculo listo (Sin direcciones para mapa).', 'warning');
             }
         }
 
@@ -6905,3 +6918,4 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
