@@ -2263,13 +2263,23 @@ body.has-connection-status #progress-container-fixed {
     color: var(--primary);
 }
 
+.closed .toggle-icon {
+    transform: rotate(-90deg);
+}
+
+.closed .group-content-wrapper {
+    display: none;
+}
+
 /* Cuando el grupo está cerrado, rotamos la flecha */
-.poblacion-group.closed .toggle-icon {
+.poblacion-group.closed .toggle-icon,
+.card.closed .toggle-icon {
     transform: rotate(-90deg);
 }
 
 /* Ocultar el contenido cuando tiene la clase closed */
-.poblacion-group.closed .group-content-wrapper {
+.poblacion-group.closed .group-content-wrapper,
+.card.closed .group-content-wrapper {
     display: none;
 }
 
@@ -2277,4 +2287,5 @@ body.has-connection-status #progress-container-fixed {
 .header-check-wrapper {
     z-index: 2; /* Asegura que esté por encima */
 }
+
 
