@@ -19,6 +19,17 @@ let cobranzaRutaData = null;
 let dropdownUpdateInProgress = false;
 let clienteParaCredito = null;
 const OFFLINE_STORAGE_KEY = 'cobranza_ruta_';
+let mapInstance = null;
+let directionsService = null;
+let directionsRenderer = null;
+let waypointsComisionistas = [];
+
+// Función Callback que Google Maps llama cuando carga
+window.initMap = function() {
+    console.log("🗺️ Google Maps API cargada.");
+    directionsService = new google.maps.DirectionsService();
+    directionsRenderer = new google.maps.DirectionsRenderer();
+};
 
 /** Parsea de forma robusta una fecha que puede ser un string (ISO 8601, yyyy-mm-dd, etc.) **/
 function parsearFecha(fechaInput) {
@@ -2694,8 +2705,7 @@ async function handleCalcularCobranzaRuta() {
     const placeholder = document.getElementById('cobranza-ruta-placeholder');
     const btnGuardar = document.getElementById('btn-guardar-cobranza-offline');
     const btnRegistrar = document.getElementById('btn-registrar-pagos-offline');
-
-    // 1. Obtener Poblaciones Seleccionadas
+    const btnMapa = document.getElementById('btn-ver-ruta-maps');
     const checkboxes = document.querySelectorAll('.poblacion-check:checked');
     const poblacionesSeleccionadas = Array.from(checkboxes).map(cb => cb.value);
 
@@ -2705,72 +2715,68 @@ async function handleCalcularCobranzaRuta() {
     }
 
     cargaEnProgreso = true;
-    currentSearchOperation = Date.now();
-    const operationId = currentSearchOperation;
-
     showProcessingOverlay(true, `Calculando cobranza para ${poblacionesSeleccionadas.length} poblaciones...`);
+    
     container.innerHTML = '';
     placeholder.classList.add('hidden');
     if(btnGuardar) btnGuardar.classList.add('hidden');
     if(btnRegistrar) btnRegistrar.classList.add('hidden');
+    if(btnMapa) btnMapa.classList.add('hidden');
+
+    waypointsComisionistas = []; 
 
     try {
         const userOffice = currentUserData.office;
         let creditosPendientes = [];
-        let clientesConErrores = 0;
-
-        // 2. Buscar Clientes en las poblaciones seleccionadas (por lotes de 10 para no exceder límite de Firestore)
+        
         const MAX_IN = 10;
         for (let i = 0; i < poblacionesSeleccionadas.length; i += MAX_IN) {
-            if (operationId !== currentSearchOperation) throw new Error("Operación cancelada");
-            
             const chunk = poblacionesSeleccionadas.slice(i, i + MAX_IN);
+            
             const clientesSnapshot = await db.collection('clientes')
                 .where('poblacion_grupo', 'in', chunk)
-                .where('office', '==', userOffice) // Seguridad estricta
+                .where('office', '==', userOffice)
                 .get();
 
             const clientesDelChunk = clientesSnapshot.docs.map(doc => ({id: doc.id, ...doc.data()}));
 
-            // 3. Procesar clientes del lote
             for (const cliente of clientesDelChunk) {
-                // Buscar créditos del cliente
-                const creditos = await database.buscarCreditosPorCliente(cliente.curp, userOffice);
-                
-                for (const credito of creditos) {
-                    const histId = credito.historicalIdCredito || credito.id;
-                    const pagos = await database.getPagosPorCredito(histId, userOffice);
-                    pagos.sort((a, b) => (parsearFecha(b.fecha)?.getTime() || 0) - (parsearFecha(a.fecha)?.getTime() || 0));
+          
+                if (cliente.isComisionista && cliente.domicilio && cliente.domicilio.length > 5) {
+                    const ciudad = userOffice === 'GDL' ? 'Guadalajara, Jalisco' : 'León, Guanajuato';
+                    const direccionFull = `${cliente.domicilio}, ${ciudad}`;
+                    const existe = waypointsComisionistas.some(w => w.poblacion === cliente.poblacion_grupo);
                     
-                    const estadoCalc = _calcularEstadoCredito(credito, pagos);
+                    if (!existe) {
+                        waypointsComisionistas.push({
+                            poblacion: cliente.poblacion_grupo,
+                            location: direccionFull,
+                            nombre: cliente.nombre
+                        });
+                        console.log(`📍 Punto de ruta añadido: ${cliente.poblacion_grupo}`);
+                    }
+                }
 
-                    // Filtro: Solo mostramos si NO está liquidado y tiene pago semanal > 0
-                    if (estadoCalc && estadoCalc.estado !== 'liquidado' && estadoCalc.pagoSemanal > 0.01) {
-                        
-                        // Lógica de Monto Sugerido (Tu lógica original)
-                        const pagoSemanalRef = estadoCalc.pagoSemanal;
-                        const semanasAtraso = estadoCalc.semanasAtraso || 0;
-                        let montoAcumulado = (semanasAtraso > 0) ? semanasAtraso * pagoSemanalRef : pagoSemanalRef;
-                        let montoAPagarFinal = Math.min(montoAcumulado, estadoCalc.saldoRestante + 0.015);
-                        montoAPagarFinal = Math.max(0, parseFloat(montoAPagarFinal.toFixed(2)));
-
-                        creditosPendientes.push({
+                 const creditos = await database.buscarCreditosPorCliente(cliente.curp, userOffice);
+                 for (const credito of creditos) {
+                     const histId = credito.historicalIdCredito || credito.id;
+                     const pagos = await database.getPagosPorCredito(histId, userOffice);
+                     const estadoCalc = _calcularEstadoCredito(credito, pagos);
+                     if (estadoCalc && estadoCalc.estado !== 'liquidado' && estadoCalc.pagoSemanal > 0.01) {
+                         creditosPendientes.push({
                             firestoreId: credito.id,
                             historicalIdCredito: histId,
                             nombreCliente: cliente.nombre,
                             curpCliente: cliente.curp,
-                            pagoSemanalAcumulado: montoAPagarFinal, // Sugerido
-                            pagoSemanalReferencia: pagoSemanalRef,
+                            pagoSemanalAcumulado: estadoCalc.pagoSemanal,
                             saldoRestante: estadoCalc.saldoRestante,
                             estadoCredito: estadoCalc.estado,
                             poblacion_grupo: cliente.poblacion_grupo,
-                            office: credito.office
+                            office: credito.office,
+                            plazo: credito.plazo
                         });
-
-                    } else if (!estadoCalc) {
-                        clientesConErrores++;
-                    }
-                }
+                     }
+                 }
             }
         }
 
@@ -2778,7 +2784,6 @@ async function handleCalcularCobranzaRuta() {
             throw new Error("No hay cobros pendientes en las poblaciones seleccionadas.");
         }
 
-        // 4. Agrupar Datos
         cobranzaRutaData = {};
         creditosPendientes.forEach(cred => {
             const grupo = cred.poblacion_grupo || 'Sin Grupo';
@@ -2786,23 +2791,32 @@ async function handleCalcularCobranzaRuta() {
             cobranzaRutaData[grupo].push(cred);
         });
 
-        // 5. Renderizar
         renderizarCobranzaRuta(cobranzaRutaData, container);
 
+        // MOSTRAR BOTONES
         if(btnGuardar) btnGuardar.classList.remove('hidden');
         if(btnRegistrar) btnRegistrar.classList.remove('hidden');
-        showStatus('status_pago_grupo', `Cálculo completado: ${creditosPendientes.length} créditos.`, 'success');
+        if (btnMapa) {
+            if (waypointsComisionistas.length > 0) {
+                btnMapa.classList.remove('hidden');
+                const newBtnMapa = btnMapa.cloneNode(true);
+                btnMapa.parentNode.replaceChild(newBtnMapa, btnMapa);
+                newBtnMapa.addEventListener('click', generarRutaMaps);
+                
+                showStatus('status_pago_grupo', `Cálculo completado. ${waypointsComisionistas.length} puntos de ruta (comisionistas) identificados.`, 'success');
+            } else {
+                btnMapa.classList.add('hidden');
+                showStatus('status_pago_grupo', 'Cálculo completado, pero no se encontraron direcciones de comisionistas para el mapa.', 'warning');
+            }
+        }
 
     } catch (error) {
         console.error("Error calculando ruta:", error);
         showStatus('status_pago_grupo', `Error: ${error.message}`, 'error');
-        if (error.message.includes("No hay cobros")) {
-            container.innerHTML = `<div style="text-align:center; padding:20px;">${error.message}</div>`;
-        }
+        container.innerHTML = `<div style="text-align:center; padding:20px;">${error.message}</div>`;
     } finally {
         cargaEnProgreso = false;
         showProcessingOverlay(false);
-        resetInactivityTimer();
     }
 }
 
@@ -6468,10 +6482,150 @@ if(btnGenerarCorte) {
     btnGenerarCorte.addEventListener('click', loadHojaCorte);
 }
 
+// ==========================================
+// FUNCIONES DE GOOGLE MAPS (RUTA ÓPTIMA)
+// ==========================================
+
+async function generarRutaMaps() {
+    if (waypointsComisionistas.length === 0) {
+        alert("No hay direcciones de comisionistas cargadas.");
+        return;
+    }
+
+    const modal = document.getElementById('map-modal');
+    const detailsDiv = document.getElementById('route-details');
+    const closeBtn = document.getElementById('close-map-btn');
+    
+    if(modal) modal.classList.remove('hidden');
+    if(detailsDiv) detailsDiv.innerHTML = '<div style="text-align:center; padding:20px;"><div class="spinner"></div> Optimizando ruta...</div>';
+    if(closeBtn) {
+        closeBtn.onclick = () => modal.classList.add('hidden');
+    }
+
+    if (!mapInstance) {
+        const mapDiv = document.getElementById("google-map");
+        if (!mapDiv) return;
+
+        const defaultCenter = { lat: 20.6597, lng: -103.3496 };
+        mapInstance = new google.maps.Map(mapDiv, {
+            zoom: 12,
+            center: defaultCenter,
+            mapTypeControl: false,
+            streetViewControl: false
+        });
+        directionsRenderer.setMap(mapInstance);
+        
+    }
+
+    showProcessingOverlay(true, "Obteniendo tu ubicación...");
+
+    if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+            (position) => {
+                const origen = {
+                    lat: position.coords.latitude,
+                    lng: position.coords.longitude
+                };
+                calcularRutaGoogle(origen);
+            },
+            () => {
+                usarOficinaComoOrigen();
+            },
+            { enableHighAccuracy: true, timeout: 5000 }
+        );
+    } else {
+        usarOficinaComoOrigen();
+    }
+}
+
+function usarOficinaComoOrigen() {
+    console.warn("GPS no disponible. Usando oficina.");
+    const office = currentUserData?.office || 'GDL';
+    const direccionOficina = (office === 'GDL') 
+        ? "Av Vallarta 2440, Guadalajara, Jalisco" 
+        : "Centro, León, Guanajuato";
+    
+    calcularRutaGoogle(direccionOficina);
+}
+
+function calcularRutaGoogle(origen) {
+    showProcessingOverlay(true, "Google Maps está optimizando tu ruta...");
+
+    const waypointsGoogle = waypointsComisionistas.map(w => ({
+        location: w.location,
+        stopover: true
+    }));
+
+    const waypointsFinales = waypointsGoogle.slice(0, 23); 
+
+    const request = {
+        origin: origen,
+        destination: origen,
+        waypoints: waypointsFinales,
+        optimizeWaypoints: true,
+        travelMode: 'DRIVING'
+    };
+
+    if(!directionsService) directionsService = new google.maps.DirectionsService();
+
+    directionsService.route(request, function(result, status) {
+        showProcessingOverlay(false);
+
+        if (status === 'OK') {
+            directionsRenderer.setDirections(result);
+            
+            const route = result.routes[0];
+            const order = route.waypoint_order;
+            let totalDist = 0;
+            let totalSecs = 0;
+
+            route.legs.forEach(leg => {
+                totalDist += leg.distance.value;
+                totalSecs += leg.duration.value;
+            });
+            
+            const km = (totalDist / 1000).toFixed(1);
+            const horas = Math.floor(totalSecs / 3600);
+            const min = Math.round((totalSecs % 3600) / 60);
+            const tiempoStr = horas > 0 ? `${horas}h ${min}min` : `${min}min`;
+
+            let html = `
+                <div style="margin-bottom:10px; padding-bottom:10px; border-bottom:1px solid #eee;">
+                    <h4 style="margin:0; color:var(--primary);">🏁 Ruta Optimizada</h4>
+                    <span style="font-size:0.9em;"><strong>${km} km</strong> estimadoss | Tiempo conducción: <strong>${tiempoStr}</strong></span>
+                </div>
+                <ol style="margin:0; padding-left:25px; list-style: decimal;">
+            `;
+            
+            for (let i = 0; i < order.length; i++) {
+                const idxOriginal = order[i];
+                const punto = waypointsComisionistas[idxOriginal];
+                
+                const linkNav = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(punto.location)}`;
+                
+                html += `
+                    <li style="margin-bottom:8px;">
+                        <strong>${punto.poblacion}</strong> <br>
+                        <small style="color:#666;">${punto.location}</small>
+                        <a href="${linkNav}" target="_blank" style="margin-left:5px; text-decoration:none;">🚗 Ir</a>
+                    </li>
+                `;
+            }
+            html += `</ol>`;
+
+            document.getElementById('route-details').innerHTML = html;
+
+        } else {
+            console.error("Error Maps:", status);
+            alert('Google Maps no pudo calcular la ruta. Verifica las direcciones de las comisionistas.\nError: ' + status);
+            document.getElementById('route-details').innerHTML = `<p class="status-error">Error: ${status}</p>`;
+        }
+    });
+}
+
 // =============================================
 // INICIALIZACIÓN Y EVENT LISTENERS PRINCIPALES
 // =============================================
-
 document.addEventListener('DOMContentLoaded', function () {
     console.log('DOM cargado, inicializando aplicación...');
     setupEventListeners();
@@ -6751,9 +6905,3 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
-
-
-
-
-
-
