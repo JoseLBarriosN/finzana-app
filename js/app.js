@@ -3151,44 +3151,53 @@ function renderizarCobranzaRuta(data, container) {
 
     grupos.forEach(grupo => {
         const creditos = data[grupo];
-        const grupoId = grupo.replace(/\s+/g, '_'); 
+        const grupoId = grupo.replace(/\s+/g, '_'); // ID único seguro
         
+        // --- CAMBIOS EN EL HTML ---
         html += `
-            <div class="poblacion-group card" style="margin-bottom: 20px; border: 1px solid #dee2e6; border-radius: 12px; overflow:hidden;">
-                <div style="background-color: #f8f9fa; padding: 12px 15px; border-bottom: 1px solid #ddd; display:flex; justify-content:space-between; align-items:center;">
-                    <h4 style="margin:0; color:var(--primary); font-size: 1.1rem;">
-                        <i class="fas fa-map-marker-alt"></i> ${grupo} 
-                        <span style="font-weight:normal; font-size:0.8em; color:#666; margin-left: 5px;">(${creditos.length} clientes)</span>
-                    </h4>
+            <div class="poblacion-group card" id="group-card-${grupoId}" style="margin-bottom: 15px; border: 1px solid #dee2e6; border-radius: 12px; overflow:hidden;">
+                
+                <div class="group-header-clickable" onclick="togglePoblacionGroup('${grupoId}')" 
+                     style="background-color: #f8f9fa; padding: 12px 15px; border-bottom: 1px solid #ddd; display:flex; justify-content:space-between; align-items:center;">
                     
-                    <label class="custom-check-wrapper" title="Marcar/Desmarcar Todos">
+                    <div style="display:flex; align-items:center;">
+                        <i class="fas fa-chevron-down toggle-icon" id="icon-${grupoId}"></i>
+                        
+                        <h4 style="margin:0; color:var(--primary); font-size: 1.1rem;">
+                            ${grupo} 
+                            <span style="font-weight:normal; font-size:0.8em; color:#666; margin-left: 5px;">(${creditos.length})</span>
+                        </h4>
+                    </div>
+                    
+                    <label class="custom-check-wrapper header-check-wrapper" title="Marcar/Desmarcar Todos" onclick="event.stopPropagation()">
                         <span style="font-weight:bold; font-size: 0.9rem; color: #555; margin-right: 8px;">Marcar Todos</span>
                         <input type="checkbox" class="check-group-all" data-grupo="${grupo}" checked>
                         <i class="fas fa-check-circle custom-check-icon" style="font-size: 1.4rem;"></i>
                     </label>
                 </div>
                 
-                <div class="table-responsive">
-                    <table class="cobranza-ruta-table table table-hover" id="tabla-grupo-${grupoId}" data-grupo-name="${grupo}" style="margin-bottom:0;">
-                        <thead style="background:#fff;">
-                            <tr>
-                                <th style="width:25%;">Cliente</th>
-                                <th style="width:15%;">Estado</th>
-                                <th style="width:15%;">Saldo</th>
-                                <th style="width:35%;">Pago y Comisión</th>
-                                <th style="width:10%; text-align:center;">Registrar</th>
-                            </tr>
-                        </thead>
-                        <tbody>`;
+                <div id="content-${grupoId}" class="group-content-wrapper">
+                    <div class="table-responsive">
+                        <table class="cobranza-ruta-table table table-hover" id="tabla-grupo-${grupoId}" data-grupo-name="${grupo}" style="margin-bottom:0;">
+                            <thead style="background:#fff;">
+                                <tr>
+                                    <th style="width:25%;">Cliente</th>
+                                    <th style="width:15%;">Estado</th>
+                                    <th style="width:15%;">Saldo</th>
+                                    <th style="width:35%;">Pago y Comisión</th>
+                                    <th style="width:10%; text-align:center;">Registrar</th>
+                                </tr>
+                            </thead>
+                            <tbody>`;
 
         creditos.forEach(cred => {
             const linkId = cred.firestoreId;
             const montoSugerido = cred.pagoSemanalAcumulado;
             const estadoClase = `status-${cred.estadoCredito.replace(/\s/g, '-')}`;
             const plazo = cred.plazo || 14;
-            
-            // Calculamos comisión inicial solo visual (luego se recalcula con JS)
             let comisionInicial = 0;
+            
+            // Lógica inicial de comisión visual (si no es comisionista)
             if (plazo !== 10 && montoSugerido > 0) comisionInicial = 10;
 
             html += `
@@ -3259,18 +3268,17 @@ function renderizarCobranzaRuta(data, container) {
                         <td style="vertical-align: middle;">
                             <div style="display: flex; justify-content: space-between; font-size: 0.95rem;">
                                 <span style="color: var(--primary);">Pagos: <span id="total-pagos-${grupoId}">$0.00</span></span>
-                                <span style="color: #28a745;">Comisión: <span id="total-comis-${grupoId}">$0.00</span></span>
+                                <span style="color: #28a745;">Comis: <span id="total-comis-${grupoId}">$0.00</span></span>
                             </div>
                         </td>
                         <td></td>
                     </tr>
                 </tfoot>
-            </table></div></div>`;
+            </table></div></div></div>`;
     });
 
     container.innerHTML = html;
 
-    // Listeners "Marcar Todos"
     container.querySelectorAll('.check-group-all').forEach(chk => {
         chk.addEventListener('change', (e) => {
             const grp = e.target.getAttribute('data-grupo');
@@ -6636,6 +6644,14 @@ function calcularRutaGoogle(origen) {
     });
 }
 
+// --- Función para colapsar/expandir grupos de población ---
+function togglePoblacionGroup(grupoId) {
+    const card = document.getElementById(`group-card-${grupoId}`);
+    if (card) {
+        card.classList.toggle('closed');
+    }
+}
+
 // =============================================
 // INICIALIZACIÓN Y EVENT LISTENERS PRINCIPALES
 // =============================================
@@ -6918,4 +6934,5 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
