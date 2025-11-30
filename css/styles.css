@@ -2242,3 +2242,39 @@ body.has-connection-status #progress-container-fixed {
 .header-check-wrapper .custom-check-icon {
     font-size: 1.3rem; /* Un poco más pequeño en el header */
 }
+
+/* --- ESTILOS ACORDEÓN POBLACIONES --- */
+
+/* El encabezado gris ahora es clicable */
+.group-header-clickable {
+    cursor: pointer;
+    transition: background-color 0.2s;
+    user-select: none; /* Evita que se seleccione el texto al hacer clic rápido */
+}
+
+.group-header-clickable:hover {
+    background-color: #e2e6ea !important; /* Un poco más oscuro al pasar el mouse */
+}
+
+/* Icono de flecha (chevron) */
+.toggle-icon {
+    margin-right: 10px;
+    transition: transform 0.3s ease;
+    color: var(--primary);
+}
+
+/* Cuando el grupo está cerrado, rotamos la flecha */
+.poblacion-group.closed .toggle-icon {
+    transform: rotate(-90deg);
+}
+
+/* Ocultar el contenido cuando tiene la clase closed */
+.poblacion-group.closed .group-content-wrapper {
+    display: none;
+}
+
+/* Ajuste para que el checkbox de "Marcar Todos" no interfiera con el clic del acordeón */
+.header-check-wrapper {
+    z-index: 2; /* Asegura que esté por encima */
+}
+
