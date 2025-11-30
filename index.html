@@ -694,6 +694,9 @@
                     <button id="btn-guardar-cobranza-offline" class="btn btn-warning hidden" title="Guardar lista para modo sin conexión">
                         <i class="fas fa-save"></i> Guardar Offline
                     </button>
+                    <button id="btn-ver-ruta-maps" class="btn btn-info hidden" style="margin: 0 10px;" title="Ver ruta optimizada">
+                        <i class="fas fa-map-signs"></i> Ruta Óptima
+                    </button>
                     <button id="btn-registrar-pagos-offline" class="btn btn-success hidden" title="Registrar todos los pagos seleccionados">
                         <i class="fas fa-check-double"></i> Registrar Pagos
                     </button>
@@ -1125,6 +1128,22 @@
         </div>
     </div>
 
+    <div id="map-modal" class="modal-overlay hidden" style="z-index: 11000;">
+        <div class="modal-content" style="width: 95%; height: 90%; max-width: none; display: flex; flex-direction: column;">
+            <div class="modal-header">
+                <h2 id="map-modal-title"><i class="fas fa-map-marked-alt"></i> Ruta de Cobranza Óptima</h2>
+                <button id="close-map-btn" class="modal-close-btn" style="font-size: 2rem;">&times;</button>
+            </div>
+            
+            <div id="google-map" style="flex-grow: 1; width: 100%; background: #e9ecef; min-height: 300px;"></div>
+            
+            <div id="route-details" style="padding: 15px; font-size: 0.9em; background: #fff; border-top: 1px solid #ddd; max-height: 150px; overflow-y: auto;">
+                <p style="color:#666; text-align:center;">Calculando ruta óptima...</p>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyB_MthfXzkr-DZk_xY5iajGXmH9xPjEuLU&libraries=places&callback=initMap" async defer></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
@@ -1133,5 +1152,3 @@
     <script src="js/app.js"></script>
 </body>
 </html>
-
-
