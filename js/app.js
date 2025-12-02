@@ -1894,53 +1894,21 @@ async function mostrarFormularioUsuario(usuario = null) {
     const emailInput = document.getElementById('nuevo-email');
     const officeSelect = document.getElementById('nuevo-sucursal'); 
     const rutaSelect = document.getElementById('nuevo-ruta');
-    
-    // Elementos del control global
-    const checkbox13Semanas = document.getElementById('usuario-permiso-13semanas');
-    const container13Semanas = document.getElementById('container-permiso-13semanas');
 
     if (!formContainer || !formTitulo || !form || !officeSelect) return;
 
-    // 1. LIMPIAR EL FORMULARIO PRIMERO (Esto borraba el check antes)
-    form.reset(); 
-    
+    form.reset();
     let userOffice = '';
 
-    // 2. CONFIGURAR VISIBILIDAD Y ESTADO DEL CHECKBOX GLOBAL
-    const rolesAdmin = ['Super Admin', 'Gerencia', 'Administrador'];
-    const esAdmin = currentUserData && rolesAdmin.includes(currentUserData.role);
-
-    if (container13Semanas) {
-        if (esAdmin) {
-            container13Semanas.style.display = 'block';
-            
-            // --- CORRECCIÓN CRÍTICA ---
-            // Forzamos el valor visual basado en la variable global ACTUAL
-            // Lo hacemos AQUÍ, después del reset.
-            if (checkbox13Semanas) {
-                // Aseguramos que sea booleano
-                const estadoActual = (configSistema.oferta13Semanas === true);
-                checkbox13Semanas.checked = estadoActual;
-                console.log("🔘 UI Checkbox ajustado a:", estadoActual);
-            }
-        } else {
-            container13Semanas.style.display = 'none';
-        }
-    }
-
-    // 3. LLENAR DATOS DEL USUARIO (Si es edición)
     if (usuario) {
         editingUserId = usuario.id;
         formTitulo.textContent = 'Editar Usuario';
-        
         document.getElementById('nuevo-nombre').value = usuario.name || '';
         emailInput.value = usuario.email || '';
-        emailInput.readOnly = true;
+        emailInput.readOnly = true; 
         document.getElementById('nuevo-rol').value = usuario.role || '';
-        
         userOffice = usuario.office || '';
         officeSelect.value = userOffice;
-        
         passwordInput.required = false;
         passwordInput.placeholder = "Dejar en blanco para no cambiar";
     } else {
@@ -1953,7 +1921,6 @@ async function mostrarFormularioUsuario(usuario = null) {
         officeSelect.value = '';
     }
 
-    // Cargar rutas
     await _cargarRutasParaUsuario(userOffice);
 
     if (usuario && usuario.ruta && rutaSelect) {
@@ -2015,36 +1982,6 @@ async function handleUserForm(e) {
     statusUsuarios.className = 'status-message status-info';
 
     try {
-        // =================================================================
-        // 1. GUARDAR SWITCH GLOBAL (Lógica Robusta)
-        // =================================================================
-        const checkboxGlobal = document.getElementById('usuario-permiso-13semanas');
-        
-        // Solo intentamos guardar si el elemento existe y es visible (es Admin)
-        if (checkboxGlobal && checkboxGlobal.offsetParent !== null) {
-            const nuevoEstado = checkboxGlobal.checked;
-            
-            // Si el estado visual es diferente al estado en memoria, GUARDAMOS
-            if (nuevoEstado !== configSistema.oferta13Semanas) {
-                console.log(`🌎 Cambio detectado en Switch Global: ${configSistema.oferta13Semanas} -> ${nuevoEstado}`);
-                
-                // A. Actualizar en Firebase
-                await db.collection('configuracion').doc('parametros_generales').set({
-                    oferta13Semanas: nuevoEstado
-                }, { merge: true });
-                
-                // B. Actualizar MEMORIA LOCAL (Crucial para que el dropdown reaccione ya)
-                configSistema.oferta13Semanas = nuevoEstado;
-                
-                console.log("✅ Memoria actualizada. Nuevo estado:", configSistema.oferta13Semanas);
-            }
-        }
-
-        // =================================================================
-        // 2. GUARDAR USUARIO (Lógica existente)
-        // =================================================================
-        
-        // Validaciones comunes
         const nombre = document.getElementById('nuevo-nombre').value.trim();
         const rol = document.getElementById('nuevo-rol').value;
         const office = document.getElementById('nuevo-sucursal').value;
@@ -2053,32 +1990,24 @@ async function handleUserForm(e) {
         if (!nombre || !rol || !office) throw new Error('Nombre, Rol y Oficina son obligatorios.');
 
         if (editingUserId) {
-            // --- UPDATE ---
             const userData = { name: nombre, role: rol, office: office, ruta: ruta };
             const password = document.getElementById('nuevo-password').value;
             if (password && password.trim() !== "") userData.password = password; 
 
             const res = await database.actualizarUsuario(editingUserId, userData);
             if (!res.success) throw new Error(res.message);
-            
             showStatus('status_usuarios', res.message, 'success');
         } else {
-            // --- CREATE ---
             const email = document.getElementById('nuevo-email').value.trim();
             const password = document.getElementById('nuevo-password').value;
-            
-            if (!email || !password) throw new Error('Email y Contraseña son obligatorios.');
+            if (!email || !password) throw new Error('Email y contraseña requeridos.');
             if (password.length < 6) throw new Error('Contraseña muy corta.');
-            if (!isOnline) throw new Error("Se requiere internet.");
 
             let user;
             try {
                 const cred = await auth.createUserWithEmailAndPassword(email, password);
                 user = cred.user;
-            } catch (err) {
-                if (err.code === 'auth/email-already-in-use') throw new Error('Correo ya registrado.');
-                throw err;
-            }
+            } catch (err) { throw new Error(`Error Auth: ${err.message}`); }
 
             await db.collection('users').doc(user.uid).set({
                 id: user.uid, email, name: nombre, role: rol, office, ruta,
@@ -2086,13 +2015,10 @@ async function handleUserForm(e) {
             });
             showStatus('status_usuarios', 'Usuario creado exitosamente.', 'success');
         }
-
-        // Limpieza final
         ocultarFormularioUsuario();
         await loadUsersTable();
-
     } catch (error) {
-        console.error("Error en handleUserForm:", error);
+        console.error("Error:", error);
         showStatus('status_usuarios', error.message, 'error');
     } finally {
         showButtonLoading(submitButton, false);
@@ -2182,31 +2108,106 @@ async function loadUsersTable() {
 function inicializarVistaUsuarios() {
     const tbody = document.getElementById('tabla-usuarios');
     if (tbody) {
-        tbody.innerHTML = '<tr><td colspan="7">Usa los filtros para buscar usuarios.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">Usa los filtros para buscar usuarios.</td></tr>';
     }
+    
+    // Ocultar formulario si está visible
     ocultarFormularioUsuario();
-    const filtroEmail = document.getElementById('filtro-email-usuario');
-    if (filtroEmail) filtroEmail.value = '';
     
-    const filtroNombre = document.getElementById('filtro-nombre-usuario');
-    if (filtroNombre) filtroNombre.value = '';
+    // Limpiar filtros de texto
+    if(document.getElementById('filtro-email-usuario')) document.getElementById('filtro-email-usuario').value = '';
+    if(document.getElementById('filtro-nombre-usuario')) document.getElementById('filtro-nombre-usuario').value = '';
+    if(document.getElementById('filtro-rol-usuario')) document.getElementById('filtro-rol-usuario').value = '';
     
-    const filtroRol = document.getElementById('filtro-rol-usuario');
-    if (filtroRol) filtroRol.value = '';
-
+    // Filtro sucursal (respetar si está deshabilitado por rol)
     const filtroSucursal = document.getElementById('filtro-sucursal-usuario');
     if (filtroSucursal && !filtroSucursal.disabled) {
         filtroSucursal.value = '';
     }
+
+    // ============================================================
+    // 🚀 LÓGICA DEL CONTROL GLOBAL (13 SEMANAS)
+    // ============================================================
+    const containerGlobal = document.getElementById('global-config-container');
+    const checkboxGlobal = document.getElementById('toggle-13-global');
+    const btnGuardar = document.getElementById('btn-guardar-config-global');
+
+    // 1. Verificar Permisos (Solo Admins ven esto)
+    const rolesAdmin = ['Super Admin', 'Gerencia', 'Administrador'];
+    const esAdmin = currentUserData && rolesAdmin.includes(currentUserData.role);
+
+    if (containerGlobal) {
+        if (esAdmin) {
+            containerGlobal.classList.remove('hidden'); // Mostrar caja azul
+            containerGlobal.style.display = 'flex'; // Asegurar flex
+            
+            // 2. Poner el estado actual del sistema
+            if (checkboxGlobal) {
+                checkboxGlobal.checked = (configSistema.oferta13Semanas === true);
+            }
+
+            // 3. Reactivar Listener del Botón (Por si acaso se perdió)
+            if (btnGuardar) {
+                // Clonar para limpiar listeners viejos
+                const newBtn = btnGuardar.cloneNode(true);
+                btnGuardar.parentNode.replaceChild(newBtn, btnGuardar);
+                newBtn.addEventListener('click', guardarConfiguracionGlobal);
+            }
+
+        } else {
+            containerGlobal.classList.add('hidden'); // Ocultar a mortales
+            containerGlobal.style.display = 'none';
+        }
+    }
 }
 
-function limpiarFiltrosUsuarios() {
-    if (cargaEnProgreso) {
-        console.warn("Intento de limpiar filtros mientras carga estaba en progreso. Cancelando carga.");
-        cancelarCarga();
+/**
+ * Guarda la configuración global desde la vista de Usuarios.
+ */
+async function guardarConfiguracionGlobal() {
+    // OJO: Nuevo ID del checkbox
+    const checkbox = document.getElementById('toggle-13-global');
+    const btn = document.getElementById('btn-guardar-config-global');
+    
+    if (!checkbox) return;
+    
+    const nuevoEstado = checkbox.checked;
+    const originalText = btn.innerHTML;
+    
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Guardando...';
+
+    try {
+        console.log(`🌎 Guardando configuración global: ${nuevoEstado}`);
+        
+        // 1. Guardar en Firebase
+        await db.collection('configuracion').doc('parametros_generales').set({
+            oferta13Semanas: nuevoEstado
+        }, { merge: true });
+
+        // 2. Actualizar memoria local
+        configSistema.oferta13Semanas = nuevoEstado;
+
+        // Feedback visual rápido
+        // No usamos alert() para no ser intrusivos, cambiamos el texto del botón temporalmente
+        btn.innerHTML = '<i class="fas fa-check"></i> ¡Guardado!';
+        btn.classList.remove('btn-primary');
+        btn.classList.add('btn-success');
+
+        setTimeout(() => {
+            btn.innerHTML = originalText;
+            btn.classList.remove('btn-success');
+            btn.classList.add('btn-primary');
+            btn.disabled = false;
+        }, 2000);
+
+    } catch (error) {
+        console.error("Error guardando config:", error);
+        alert("Error al guardar: " + error.message);
+        checkbox.checked = !nuevoEstado; // Revertir
+        btn.innerHTML = originalText;
+        btn.disabled = false;
     }
-    inicializarVistaUsuarios();
-    showStatus('status_usuarios', 'Filtros limpiados. Ingresa nuevos criterios para buscar.', 'info');
 }
 
 /**
@@ -7064,6 +7065,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
