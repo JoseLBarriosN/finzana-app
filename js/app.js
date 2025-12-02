@@ -2103,6 +2103,36 @@ async function loadUsersTable() {
 }
 
 /**
+ * Limpia los filtros de la vista de Gestión de Usuarios.
+ */
+function limpiarFiltrosUsuarios() {
+    // Si hay una carga en progreso, la cancelamos primero
+    if (cargaEnProgreso) {
+        console.warn("Limpiando filtros mientras cargaba...");
+        cancelarCarga();
+    }
+
+    // Limpiar inputs de texto
+    const emailInput = document.getElementById('filtro-email-usuario');
+    const nombreInput = document.getElementById('filtro-nombre-usuario');
+    const rolInput = document.getElementById('filtro-rol-usuario');
+    const sucursalInput = document.getElementById('filtro-sucursal-usuario');
+
+    if (emailInput) emailInput.value = '';
+    if (nombreInput) nombreInput.value = '';
+    if (rolInput) rolInput.value = '';
+
+    // Limpiar sucursal solo si no está bloqueada por permisos
+    if (sucursalInput && !sucursalInput.disabled) {
+        sucursalInput.value = '';
+    }
+
+    // Recargar la vista inicial
+    inicializarVistaUsuarios();
+    showStatus('status_usuarios', 'Filtros limpiados. Ingresa nuevos criterios.', 'info');
+}
+
+/**
  * Resetea la tabla de usuarios a su estado inicial
  */
 function inicializarVistaUsuarios() {
@@ -7065,6 +7095,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
