@@ -1866,14 +1866,37 @@ async function mostrarFormularioUsuario(usuario = null) {
     const emailInput = document.getElementById('nuevo-email');
     const officeSelect = document.getElementById('nuevo-sucursal'); 
     const rutaSelect = document.getElementById('nuevo-ruta');
+    
+    // Elementos del control global de 13 semanas
     const checkbox13Semanas = document.getElementById('usuario-permiso-13semanas');
+    const container13Semanas = document.getElementById('container-permiso-13semanas');
 
-    if (!formContainer || !formTitulo || !form || !officeSelect || !rutaSelect) return;
+    if (!formContainer || !formTitulo || !form || !officeSelect) return;
 
     form.reset();
     let userOffice = '';
 
+    // --- LÓGICA DE VISIBILIDAD DEL CHECKBOX (SEGURIDAD) ---
+    // Solo los roles administrativos pueden ver este control maestro
+    const rolesConPermiso = ['Super Admin', 'Gerencia', 'Administrador'];
+    const esAdmin = currentUserData && rolesConPermiso.includes(currentUserData.role);
+
+    if (container13Semanas) {
+        if (esAdmin) {
+            container13Semanas.style.display = 'block'; // Mostrar a los jefes
+            
+            // --- ESTADO DEL CHECKBOX (GLOBAL) ---
+            // Mostramos si la oferta está activa A NIVEL SISTEMA, independientemente del usuario que edites
+            if (checkbox13Semanas) {
+                checkbox13Semanas.checked = configSistema.oferta13Semanas === true;
+            }
+        } else {
+            container13Semanas.style.display = 'none';  // Ocultar a los demás
+        }
+    }
+
     if (usuario) {
+        // --- MODO EDICIÓN ---
         editingUserId = usuario.id;
         formTitulo.textContent = 'Editar Usuario';
         
@@ -1886,12 +1909,8 @@ async function mostrarFormularioUsuario(usuario = null) {
         
         passwordInput.required = false;
         passwordInput.placeholder = "Dejar en blanco para no cambiar";
-
-        if (checkbox13Semanas) {
-            checkbox13Semanas.checked = usuario.canSell13Weeks === true;
-        }
-
     } else {
+        // --- MODO CREACIÓN ---
         editingUserId = null;
         formTitulo.textContent = 'Nuevo Usuario';
         
@@ -1900,20 +1919,15 @@ async function mostrarFormularioUsuario(usuario = null) {
         passwordInput.placeholder = "Mínimo 6 caracteres";
         userOffice = '';
         officeSelect.value = '';
-
-        if (checkbox13Semanas) {
-            checkbox13Semanas.checked = false;
-        }
     }
 
+    // Cargar rutas de la oficina seleccionada
     await _cargarRutasParaUsuario(userOffice);
 
-    if (usuario && usuario.ruta) {
+    // Si editamos, seleccionar la ruta guardada
+    if (usuario && usuario.ruta && rutaSelect) {
          setTimeout(() => {
             rutaSelect.value = usuario.ruta;
-            if(rutaSelect.value !== usuario.ruta) {
-                console.warn(`La ruta guardada "${usuario.ruta}" no coincide con la oficina actual.`);
-            }
          }, 100);
     }
 
@@ -1965,20 +1979,47 @@ async function handleUserForm(e) {
     e.preventDefault();
     const submitButton = e.target.querySelector('button[type="submit"]');
     const statusUsuarios = document.getElementById('status_usuarios');
-    const permiso13Semanas = document.getElementById('usuario-permiso-13semanas')?.checked || false;
-
+    
     showButtonLoading(submitButton, true, editingUserId ? 'Actualizando...' : 'Creando...');
     statusUsuarios.textContent = editingUserId ? 'Actualizando usuario...' : 'Creando nuevo usuario...';
     statusUsuarios.className = 'status-message status-info';
 
     try {
+        // =================================================================
+        // 1. ACTUALIZACIÓN DE CONFIGURACIÓN GLOBAL (EL SWITCH MAESTRO)
+        // =================================================================
+        // Si el usuario actual es Admin, revisamos el checkbox y actualizamos la config global.
+        // Esto ocurre independientemente de si estamos creando o editando un usuario.
+        const rolesPermitidos = ['Super Admin', 'Gerencia', 'Administrador'];
+        if (currentUserData && rolesPermitidos.includes(currentUserData.role)) {
+            const checkbox13 = document.getElementById('usuario-permiso-13semanas');
+            if (checkbox13) {
+                const nuevoEstadoGlobal = checkbox13.checked;
+                
+                // Solo actualizamos si cambió respecto a lo que tenemos en memoria
+                if (nuevoEstadoGlobal !== configSistema.oferta13Semanas) {
+                    await db.collection('configuracion').doc('parametros_generales').set({
+                        oferta13Semanas: nuevoEstadoGlobal
+                    }, { merge: true });
+                    
+                    // Actualizar variable local inmediatamente
+                    configSistema.oferta13Semanas = nuevoEstadoGlobal;
+                    console.log("🌎 Configuración Global de 13 Semanas actualizada a:", nuevoEstadoGlobal);
+                }
+            }
+        }
+
+        // =================================================================
+        // 2. GESTIÓN DEL USUARIO INDIVIDUAL (CREATE / UPDATE)
+        // =================================================================
         if (editingUserId) {
+            // --- ACTUALIZAR USUARIO ---
             const userData = {
                 name: document.getElementById('nuevo-nombre').value.trim(),
                 role: document.getElementById('nuevo-rol').value,
                 office: document.getElementById('nuevo-sucursal').value,
-                ruta: document.getElementById('nuevo-ruta').value || null,
-                canSell13Weeks: permiso13Semanas
+                ruta: document.getElementById('nuevo-ruta').value || null
+                // NOTA: Ya no guardamos 'canSell13Weeks' aquí porque es global
             };
 
             if (!userData.name || !userData.role || !userData.office) {
@@ -1994,13 +2035,14 @@ async function handleUserForm(e) {
             if (!resultado.success) throw new Error(resultado.message);
 
             let message = resultado.message;
-            if (!isOnline) message += ' (Guardado localmente, se sincronizará).';
+            if (!isOnline) message += ' (Guardado localmente).';
             
             showStatus('status_usuarios', message, 'success');
             ocultarFormularioUsuario();
             await loadUsersTable();
 
         } else {
+            // --- CREAR NUEVO USUARIO ---
             const email = document.getElementById('nuevo-email').value.trim();
             const password = document.getElementById('nuevo-password').value;
             const nombre = document.getElementById('nuevo-nombre').value.trim();
@@ -2009,27 +2051,26 @@ async function handleUserForm(e) {
             const ruta = document.getElementById('nuevo-ruta').value || null;
 
             if (!email || !password || !nombre || !rol || !office) {
-                throw new Error('Email, Contraseña, Nombre, Rol y Oficina son obligatorios.');
+                throw new Error('Todos los campos marcados son obligatorios.');
             }
             if (password.length < 6) {
                 throw new Error('La contraseña debe tener al menos 6 caracteres.');
             }
             if (!isOnline) {
-                throw new Error("La creación de nuevos usuarios requiere conexión a internet.");
+                throw new Error("Se requiere internet para crear usuarios.");
             }
 
+            // Crear Auth
             let user;
             try {
                 const userCredential = await auth.createUserWithEmailAndPassword(email, password);
                 user = userCredential.user;
             } catch (authError) {
-                console.error("Error en Auth createUser:", authError);
-                if (authError.code === 'auth/email-already-in-use') throw new Error('Error: El correo electrónico ya está registrado.');
-                if (authError.code === 'auth/weak-password') throw new Error('Error: La contraseña es demasiado débil.');
-                if (authError.code === 'auth/invalid-email') throw new Error('Error: El formato del correo no es válido.');
-                throw new Error(`Error de autenticación: ${authError.message}`);
+                if (authError.code === 'auth/email-already-in-use') throw new Error('El correo ya está registrado.');
+                throw new Error(`Error Auth: ${authError.message}`);
             }
 
+            // Guardar Firestore
             await db.collection('users').doc(user.uid).set({
                 id: user.uid, 
                 email: email, 
@@ -2037,9 +2078,9 @@ async function handleUserForm(e) {
                 role: rol,
                 office: office,
                 ruta: ruta,
-                canSell13Weeks: permiso13Semanas,
                 createdAt: new Date().toISOString(), 
                 status: 'active'
+                // NOTA: No guardamos permisos individuales aquí
             });
 
             showStatus('status_usuarios', 'Usuario creado exitosamente.', 'success');
@@ -6995,6 +7036,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
