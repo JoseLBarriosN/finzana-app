@@ -22,6 +22,7 @@ const OFFLINE_STORAGE_KEY = 'cobranza_ruta_';
 let mapInstance = null;
 let directionsService = null;
 let directionsRenderer = null;
+let configSistema = { oferta13Semanas: false };
 let waypointsComisionistas = [];
 
 // Función Callback que Google Maps llama cuando carga
@@ -5299,17 +5300,18 @@ function actualizarPlazosSegunCliente(esComisionista, esRenovacion) {
 
     let plazos = [];
 
-    if (esComisionista) {
-        plazos.push(10);
-    }
+    // Regla Comisionista: 10 semanas
+    if (esComisionista) plazos.push(10);
 
+    // Regla General: 14 semanas
     plazos.push(14);
 
-    const agenteTienePermiso = currentUserData && currentUserData.canSell13Weeks === true;
-
-    if (agenteTienePermiso) {
+    // REGLA 13 SEMANAS (GLOBAL)
+    // Si el switch global está encendido, agregamos 13 semanas.
+    // Ya no validamos 'esRenovacion' aquí, porque pediste disponibilidad general.
+    if (configSistema && configSistema.oferta13Semanas === true) {
         plazos.push(13);
-    } 
+    }
 
     plazos.sort((a, b) => a - b);
     popularDropdown('plazo_colocacion', plazos.map(p => ({ value: p, text: `${p} semanas` })), 'Selecciona plazo', true);
@@ -6754,88 +6756,133 @@ function togglePoblacionGroup(grupoId) {
     }
 }
 
+//========================================================//
+      // ** CARGAR CONFIGURACION DE 13 SEMANAS ** //
+//========================================================//
+async function cargarConfiguracionSistema() {
+    console.log("⚙️ Cargando configuración del sistema...");
+    try {
+        // Intentamos leer el documento de configuración global
+        const doc = await db.collection('configuracion').doc('parametros_generales').get();
+        
+        if (doc.exists) {
+            configSistema = doc.data();
+            console.log("✅ Configuración cargada:", configSistema);
+        } else {
+            console.log("⚠️ No existe configuración, usando valores por defecto.");
+            // Si no existe, usamos el default (false)
+            configSistema = { oferta13Semanas: false };
+        }
+    } catch (error) {
+        console.warn("⚠️ No se pudo cargar la configuración (posible error de permisos):", error);
+        // Si falla (ej. permisos), asumimos cerrado por seguridad
+        configSistema = { oferta13Semanas: false };
+    }
+}
+
 // =============================================
 // INICIALIZACIÓN Y EVENT LISTENERS PRINCIPALES
 // =============================================
 document.addEventListener('DOMContentLoaded', function () {
     console.log('DOM cargado, inicializando aplicación...');
+
+    // 1. Configurar escuchadores de eventos (botones, inputs)
     setupEventListeners();
     setupSecurityListeners();
 
+    // 2. Escuchar cambios en la autenticación (Login/Logout)
     auth.onAuthStateChanged(async user => {
         console.log('Estado de autenticación cambiado:', user ? user.uid : 'No user');
+        
         const loadingOverlay = document.getElementById('loading-overlay');
         const loginScreen = document.getElementById('login-screen');
         const mainApp = document.getElementById('main-app');
 
-        loadingOverlay.classList.add('hidden');
+        // Ocultar el spinner de carga inicial del HTML
+        if (loadingOverlay) loadingOverlay.classList.add('hidden');
 
         if (user) {
+            // --- USUARIO LOGUEADO ---
             currentUser = user;
+
             try {
+                // A. Obtener datos del perfil del usuario (Rol, Oficina, Ruta)
                 currentUserData = await database.obtenerUsuarioPorId(user.uid);
 
                 if (currentUserData && !currentUserData.error) {
+                    // Actualizar UI de cabecera
                     document.getElementById('user-name').textContent = currentUserData.name || user.email;
                     document.getElementById('user-role-display').textContent = currentUserData.role || 'Rol Desconocido';
+
+                    // ============================================================
+                    // B. CORRECCIÓN SOLICITADA: CARGAR CONFIGURACIÓN GLOBAL
+                    // ============================================================
+                    // Llamamos a esta función AHORA para saber si las 13 semanas están activas
+                    // antes de que el usuario intente abrir cualquier dropdown.
+                    await cargarConfiguracionSistema(); 
+                    // ============================================================
+
+                    // C. Inicializar Dropdowns Estáticos
                     await inicializarDropdowns();
+
+                    // D. Aplicar permisos visuales según el rol
                     aplicarPermisosUI(currentUserData.role);
 
-                } else {
-                    console.warn(`No se encontraron datos válidos en Firestore para el usuario ${user.uid} o faltan campos requeridos.`);
-                    document.getElementById('user-name').textContent = user.email;
-                    document.getElementById('user-role-display').textContent = 'Datos Incompletos';
-                    aplicarPermisosUI('default');
-                }
-
-                // ===================================
-                // --- 🚀 INICIO: LÓGICA DE VERIFICACIÓN MFA ---
-                // ===================================
-                
-                loginScreen.classList.add('hidden');
-                mainApp.classList.remove('hidden');
-
-                if (currentUserData && currentUserData.mfaEnabled === true) {
-                    document.querySelectorAll('.view').forEach(view => view.classList.add('hidden'));
-                    showProcessingOverlay(true, "Se requiere verificación de seguridad...");
-                    const mfaExitoso = await verificarYubiKey();
-                    
-                    if (mfaExitoso) {
-                        showProcessingOverlay(false);
-                        showView('view-main-menu');
+                    // E. Manejo de MFA (YubiKey) o Entrada Directa
+                    if (currentUserData.mfaEnabled === true) {
+                        // Si tiene MFA activo, verificamos antes de mostrar la App
+                        loginScreen.classList.add('hidden');
+                        showProcessingOverlay(true, "Verificando llave de seguridad...");
+                        
+                        const mfaExitoso = await verificarYubiKey();
+                        
+                        if (mfaExitoso) {
+                            showProcessingOverlay(false);
+                            mainApp.classList.remove('hidden');
+                            updateConnectionStatus();
+                            resetInactivityTimer();
+                            showView('view-main-menu');
+                        } else {
+                            showProcessingOverlay(false);
+                            alert("Falló la verificación de seguridad. Cerrando sesión.");
+                            auth.signOut();
+                        }
+                    } else {
+                        // Usuario normal: Entrar directo
+                        loginScreen.classList.add('hidden');
+                        mainApp.classList.remove('hidden');
                         updateConnectionStatus();
                         resetInactivityTimer();
-                    } else {
-                        showProcessingOverlay(false);
-                        alert("Falló la verificación de seguridad. Se cerrará la sesión.");
-                        auth.signOut();
+                        showView('view-main-menu');
                     }
 
                 } else {
-                    showView('view-main-menu');
-                    updateConnectionStatus();
-                    resetInactivityTimer();
+                    console.warn("Datos de usuario incompletos.");
+                    alert("Error al cargar tu perfil. Contacta a soporte.");
+                    auth.signOut();
                 }
 
             } catch (error) {
-                console.error("Error crítico al obtener datos del usuario:", error);
-                document.getElementById('user-name').textContent = user.email;
-                document.getElementById('user-role-display').textContent = 'Error al cargar datos';
+                console.error("Error crítico al inicializar:", error);
+                // Si falla algo crítico, regresamos al login por seguridad
                 mainApp.classList.add('hidden');
                 loginScreen.classList.remove('hidden');
             }
 
         } else {
+            // --- USUARIO DESLOGUEADO ---
             currentUser = null;
             currentUserData = null;
-            clearTimeout(inactivityTimer);
-            mainApp.classList.add('hidden');
-            loginScreen.classList.remove('hidden');
+            configSistema = { oferta13Semanas: false }; // Resetear config global
 
+            clearTimeout(inactivityTimer);
+            
+            if (mainApp) mainApp.classList.add('hidden');
+            if (loginScreen) loginScreen.classList.remove('hidden');
+
+            // Restaurar botón de login
             const loginButton = document.querySelector('#login-form button[type="submit"]');
-            if (loginButton) {
-                showButtonLoading(loginButton, false);
-            }
+            if (loginButton) showButtonLoading(loginButton, false);
 
             const authStatus = document.getElementById('auth-status');
             if (authStatus) {
@@ -7036,6 +7083,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
