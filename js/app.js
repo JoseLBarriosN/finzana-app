@@ -438,34 +438,28 @@ function aplicarPermisosUI(role) {
     // ** CARGAR TABLA DE CLIENTES ** //
 //=========================================//
 async function loadClientesTable() {
-    // 1. Prevenir doble carga
     if (cargaEnProgreso) {
-        showStatus('status_gestion_clientes', 'Ya hay una búsqueda en progreso. Cancélala primero.', 'warning');
+        showStatus('status_gestion_clientes', 'Ya hay una búsqueda en progreso.', 'warning');
         return;
     }
 
-    // 2. Iniciar Token
     clearTimeout(inactivityTimer);
     cargaEnProgreso = true;
     currentSearchOperation = Date.now(); 
     const operationId = currentSearchOperation;
 
     const tbody = document.getElementById('tabla-clientes');
-    // Solo limpiamos al INICIO de una NUEVA búsqueda, no al cancelar.
-    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">Buscando...</td></tr>';
+    const btnBuscar = document.querySelector('#btn-aplicar-filtros');
     
-    showButtonLoading('#btn-aplicar-filtros', true, 'Buscando...');
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">Iniciando búsqueda...</td></tr>';
+    showButtonLoading(btnBuscar, true, 'Buscando...');
     showFixedProgress(5, 'Iniciando...');
 
-    // Bandera para saber si se detuvo a medias
     let busquedaDetenida = false;
     let resultadosFinales = [];
 
     try {
-        const esAdminConAccesoTotal = (currentUserData?.role === 'Super Admin' || currentUserData?.role === 'Gerencia');
-        const userRole = currentUserData?.role;
-        
-        // --- FILTROS ---
+        // --- 1. RECOLECCIÓN DE FILTROS ---
         const filtros = {
             curp: document.getElementById('curp_filtro')?.value?.trim() || '',
             nombre: document.getElementById('nombre_filtro')?.value?.trim() || '',
@@ -477,55 +471,51 @@ async function loadClientesTable() {
             soloComisionistas: document.getElementById('comisionista_filtro')?.checked || false,
             fechaCredito: document.getElementById('fecha_credito_filtro')?.value || '', 
             fechaRegistro: document.getElementById('fecha_registro_filtro')?.value || '',
-            userOffice: esAdminConAccesoTotal ? null : currentUserData?.office,
+            userOffice: (currentUserData?.role === 'Super Admin' || currentUserData?.role === 'Gerencia') ? null : currentUserData?.office,
             office: document.getElementById('sucursal_filtro')?.value || '',
-            ruta: (userRole === 'Área comercial') ? currentUserData?.ruta : null
+            ruta: (currentUserData?.role === 'Área comercial') ? currentUserData?.ruta : null
         };
 
-        if (userRole === 'Área comercial' && !currentUserData?.ruta) {
-            throw new Error("Error de Permisos: Tu usuario no tiene ruta asignada.");
+        if (currentUserData?.role === 'Área comercial' && !currentUserData?.ruta) {
+            throw new Error("Tu usuario no tiene ruta asignada.");
         }
 
-        // Checkpoint 1: Si cancela antes de empezar, no hay nada que mostrar.
-        if (operationId !== currentSearchOperation) {
-            throw new Error("Cancelado_Inicio"); 
-        }
+        // CHECKPOINT
+        if (operationId !== currentSearchOperation) throw new Error("Cancelado");
 
         showFixedProgress(20, 'Consultando base de datos...');
 
-        // --- LÓGICA DE BÚSQUEDA ---
+        // --- 2. LÓGICA DE BÚSQUEDA ---
         if (filtros.idCredito) {
-            // RAMA A: Búsqueda por ID
-            const creditos = await database.buscarCreditosPorHistoricalId(filtros.idCredito, { userOffice: filtros.userOffice, office: filtros.office });
-            
-            for (const cred of creditos) {
-                // SI CANCELA AQUÍ: Rompemos el bucle pero guardamos lo que llevamos
-                if (operationId !== currentSearchOperation) {
-                    busquedaDetenida = true;
-                    break; 
-                }
-
+            // ... (Lógica de búsqueda por ID, igual que antes) ...
+             const creditos = await database.buscarCreditosPorHistoricalId(filtros.idCredito, { userOffice: filtros.userOffice, office: filtros.office });
+             for (const cred of creditos) {
+                if (operationId !== currentSearchOperation) { busquedaDetenida = true; break; }
                 const cliente = await database.buscarClientePorCURP(cred.curpCliente, filtros.userOffice);
                 if(cliente) {
                     if (filtros.ruta && cliente.ruta !== filtros.ruta) continue;
-                    
                     if (filtros.fechaCredito) {
-                        const fechaObj = parsearFecha(cred.fechaCreacion);
-                        if (!fechaObj || fechaObj.toISOString().split('T')[0] !== filtros.fechaCredito) continue;
+                        const fObj = parsearFecha(cred.fechaCreacion);
+                        if (!fObj || fObj.toISOString().split('T')[0] !== filtros.fechaCredito) continue;
                     }
                     resultadosFinales.push({ cliente, credito: cred });
                 }
             }
+
         } else {
-            // RAMA B: Búsqueda General
+            // Búsqueda General
             const clientesEncontrados = await database.buscarClientes(filtros);
             
-            // Filtro Fecha Registro (Blindado contra teléfonos)
+            // --- FILTRO DE FECHA REGISTRO (ANTI-TELÉFONOS) ---
             const clientesFiltrados = clientesEncontrados.filter(c => {
+                // Si se canceló la operación, dejamos de filtrar para salir rápido
+                if (operationId !== currentSearchOperation) return false; 
+
                 if (filtros.fechaRegistro) {
                     const rawDate = c.fechaRegistro || c.fechaCreacion;
-                    if (String(rawDate).match(/^\d{8,15}$/)) return false; // Es un teléfono
-                    
+                    // Detección de basura (Teléfonos)
+                    if (String(rawDate).match(/^\d{8,15}$/)) return false; 
+
                     const fechaObj = parsearFecha(rawDate);
                     if (!fechaObj || isNaN(fechaObj.getTime())) return false;
                     
@@ -534,74 +524,73 @@ async function loadClientesTable() {
                 return true;
             });
 
-            if (clientesFiltrados.length === 0) {
+            if (operationId !== currentSearchOperation) {
+                 busquedaDetenida = true; // Marcamos que se detuvo
+            } else if (clientesFiltrados.length === 0) {
                 tbody.innerHTML = '<tr><td colspan="6">No se encontraron clientes.</td></tr>';
                 showFixedProgress(100, 'Sin resultados');
                 return; 
-            }
+            } else {
+                const total = clientesFiltrados.length;
+                showFixedProgress(30, `Analizando ${total} clientes...`);
 
-            const total = clientesFiltrados.length;
-            showFixedProgress(30, `Analizando ${total} clientes...`);
-
-            // --- BUCLE PRINCIPAL ---
-            for (const [index, cliente] of clientesFiltrados.entries()) {
-                
-                // 🛑 CHECKPOINT CRÍTICO: DETENCIÓN SUAVE 🛑
-                if (operationId !== currentSearchOperation) {
-                    busquedaDetenida = true;
-                    console.warn("Usuario detuvo la búsqueda. Mostrando resultados parciales.");
-                    break; // SALIR DEL BUCLE, PERO SEGUIR AL RENDERIZADO
-                }
-
-                if (filtros.soloComisionistas && !cliente.isComisionista) continue;
-
-                const creditosCliente = await database.buscarCreditosPorCliente(cliente.curp, filtros.userOffice, filtros.fechaCredito);
-                
-                if (creditosCliente.length > 0) {
-                    let tieneCreditosVisibles = false;
-                    creditosCliente.sort((a, b) => {
-                        const tA = parsearFecha(a.fechaCreacion)?.getTime() || 0;
-                        const tB = parsearFecha(b.fechaCreacion)?.getTime() || 0;
-                        return tB - tA;
-                    });
+                // --- BUCLE PRINCIPAL ---
+                for (const [index, cliente] of clientesFiltrados.entries()) {
                     
-                    for (const cred of creditosCliente) {
-                        if (filtros.plazo && cred.plazo != filtros.plazo) continue;
-                        if (filtros.curpAval && (!cred.curpAval || !cred.curpAval.includes(filtros.curpAval))) continue;
-                        if (filtros.fechaCredito) {
-                            const fObj = parsearFecha(cred.fechaCreacion);
-                            if(!fObj || fObj.toISOString().split('T')[0] !== filtros.fechaCredito) continue;
-                        }
+                    // 🛑 CHECKPOINT CRÍTICO 🛑
+                    if (operationId !== currentSearchOperation) {
+                        busquedaDetenida = true;
+                        break; // ROMPER BUCLE
+                    }
+
+                    if (filtros.soloComisionistas && !cliente.isComisionista) continue;
+
+                    // Buscar Créditos
+                    const creditosCliente = await database.buscarCreditosPorCliente(cliente.curp, filtros.userOffice, filtros.fechaCredito);
+                    
+                    // Lógica de visualización (con o sin crédito)
+                    if (creditosCliente.length > 0) {
+                        let visible = false;
+                        // Ordenar recientes
+                        creditosCliente.sort((a, b) => {
+                            const tA = parsearFecha(a.fechaCreacion)?.getTime() || 0;
+                            const tB = parsearFecha(b.fechaCreacion)?.getTime() || 0;
+                            return tB - tA;
+                        });
                         
-                        resultadosFinales.push({ cliente, credito: cred });
-                        tieneCreditosVisibles = true;
+                        for (const cred of creditosCliente) {
+                             if (filtros.plazo && cred.plazo != filtros.plazo) continue;
+                             if (filtros.curpAval && (!cred.curpAval || !cred.curpAval.includes(filtros.curpAval))) continue;
+                             if (filtros.fechaCredito) {
+                                const fObj = parsearFecha(cred.fechaCreacion);
+                                if(!fObj || fObj.toISOString().split('T')[0] !== filtros.fechaCredito) continue;
+                             }
+                             resultadosFinales.push({ cliente, credito: cred });
+                             visible = true;
+                        }
+                        const buscandoCredito = filtros.plazo || filtros.estado || filtros.curpAval || filtros.fechaCredito;
+                        if (!visible && !buscandoCredito) resultadosFinales.push({ cliente, credito: null });
+
+                    } else {
+                        const buscandoCredito = filtros.plazo || filtros.estado || filtros.curpAval || filtros.fechaCredito;
+                        if (!buscandoCredito) resultadosFinales.push({ cliente, credito: null });
                     }
 
-                    const buscandoPorCredito = filtros.plazo || filtros.estado || filtros.curpAval || filtros.fechaCredito;
-                    if (!tieneCreditosVisibles && !buscandoPorCredito) {
-                        resultadosFinales.push({ cliente, credito: null });
+                    // Actualizar Barra + PAUSA OBLIGATORIA
+                    if (index % 5 === 0 || index === total - 1) {
+                        const pct = 30 + Math.floor(((index + 1) / total) * 60); 
+                        showFixedProgress(pct, `Procesando ${index + 1}/${total}...`);
+                        // Pausa para que el navegador procese el click de "Cancelar"
+                        await new Promise(resolve => setTimeout(resolve, 0));
                     }
-                } else {
-                    const buscandoPorCredito = filtros.plazo || filtros.estado || filtros.curpAval || filtros.fechaCredito;
-                    if (!buscandoPorCredito) {
-                        resultadosFinales.push({ cliente, credito: null });
-                    }
-                }
-
-                // Barra + Pausa UI
-                if (index % 5 === 0 || index === total - 1) {
-                    const pct = 30 + Math.floor(((index + 1) / total) * 60); 
-                    showFixedProgress(pct, `Procesando ${index + 1} de ${total}...`);
-                    await new Promise(resolve => setTimeout(resolve, 0));
                 }
             }
         }
 
-        // --- FASE DE RENDERIZADO (Se ejecuta aunque se haya detenido) ---
+        // --- RENDERIZADO FINAL ---
+        // Si se detuvo, mostramos lo que tenemos hasta ahora
+        showFixedProgress(95, 'Generando tabla...');
         
-        showFixedProgress(95, 'Mostrando resultados...');
-        
-        // Ordenar Cronológicamente
         resultadosFinales.sort((a, b) => {
             const tA = a.credito ? parsearFecha(a.credito.fechaCreacion)?.getTime() || 0 : 0;
             const tB = b.credito ? parsearFecha(b.credito.fechaCreacion)?.getTime() || 0 : 0;
@@ -609,43 +598,47 @@ async function loadClientesTable() {
         });
 
         tbody.innerHTML = '';
-        
         if (resultadosFinales.length === 0) {
             if (busquedaDetenida) {
-                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:#e67e22; font-weight:bold;">Búsqueda detenida antes de encontrar resultados.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:#e67e22;">Búsqueda detenida antes de encontrar resultados.</td></tr>';
             } else {
-                tbody.innerHTML = '<tr><td colspan="6">No se encontraron registros coincidentes.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="6">No se encontraron registros.</td></tr>';
             }
         } else {
             for (const item of resultadosFinales) {
-                // Aquí no verificamos cancelación para asegurar que se dibuje lo que se encontró
+                // Si se cancela DURANTE el renderizado, paramos también
+                if (operationId !== currentSearchOperation) { busquedaDetenida = true; break; }
                 await renderFilaTablaClientes(tbody, item.cliente, item.credito, filtros.estado);
             }
         }
 
-        // MENSAJE FINAL SEGÚN ESTADO
+        // Estado Final
         if (busquedaDetenida) {
             showFixedProgress(100, 'Detenido');
-            showStatus('status_gestion_clientes', `⚠️ Búsqueda detenida. Mostrando ${resultadosFinales.length} resultados encontrados hasta el momento.`, 'warning');
+            showStatus('status_gestion_clientes', `⚠️ Búsqueda detenida. Mostrando ${resultadosFinales.length} resultados parciales.`, 'warning');
         } else {
             showFixedProgress(100, 'Completado');
-            showStatus('status_gestion_clientes', `Búsqueda completada. ${resultadosFinales.length} resultados.`, 'success');
+            // Solo mostramos éxito si no se canceló
+            if(operationId === currentSearchOperation) {
+                showStatus('status_gestion_clientes', `Búsqueda completada. ${resultadosFinales.length} resultados.`, 'success');
+            }
         }
 
     } catch (error) {
-        if (error.message === "Cancelado_Inicio") {
-             console.log("Cancelado al inicio.");
-             tbody.innerHTML = '<tr><td colspan="6">Búsqueda cancelada.</td></tr>';
+        if (error.message === "Cancelado") {
+            console.log("Interrupción controlada.");
         } else {
-            console.error('Error loadClientesTable:', error);
+            console.error('Error:', error);
             tbody.innerHTML = `<tr><td colspan="6">Error: ${error.message}</td></tr>`;
             showStatus('status_gestion_clientes', error.message, 'error');
         }
     } finally {
-        // Siempre restaurar botones
-        cargaEnProgreso = false;
-        showButtonLoading('#btn-aplicar-filtros', false);
-        setTimeout(hideFixedProgress, 2000);
+        // SIEMPRE LIMPIAR ESTADO al final
+        if (operationId === currentSearchOperation) {
+            cargaEnProgreso = false;
+            showButtonLoading(btnBuscar, false);
+            setTimeout(hideFixedProgress, 1500);
+        }
     }
 }
 
@@ -4964,19 +4957,39 @@ function cancelarCarga(e) {
         return;
     }
 
-    console.warn("🛑 SEÑAL DE ALTO: Usuario presionó cancelar.");
+    console.warn("🛑 FUERZA BRUTA: Cancelando operación...");
 
-    // 1. CAMBIAR EL TOKEN DE OPERACIÓN
-    // Esto es lo único necesario. loadClientesTable detectará esto en su siguiente vuelta
-    // y ejecutará el 'break' para salir del bucle y renderizar.
+    // 1. CAMBIAR TOKEN (Rompe el bucle lógico)
     currentSearchOperation = Date.now(); 
     
-    // Actualizar texto visualmente para feedback inmediato
-    const textFixed = document.getElementById('progress-text-fixed');
-    if(textFixed) textFixed.textContent = "Deteniendo y mostrando resultados...";
+    // 2. DESBLOQUEO INMEDIATO DE UI (No esperar al finally)
+    cargaEnProgreso = false;
     
-    // NO ponemos cargaEnProgreso = false aquí.
-    // Dejamos que loadClientesTable termine su renderizado parcial y lo haga en su 'finally'.
+    hideFixedProgress();
+    showProcessingOverlay(false);
+    
+    // Restaurar TODOS los botones de carga inmediatamente
+    document.querySelectorAll('.btn-loading').forEach(btn => {
+        // Restaurar texto original si existe
+        const originalText = btn.getAttribute('data-original-text');
+        if (originalText) {
+            btn.innerHTML = originalText;
+            btn.removeAttribute('data-original-text');
+        }
+        btn.classList.remove('btn-loading');
+        btn.disabled = false;
+    });
+
+    // Mostrar mensaje visual en la tabla
+    const tbody = document.getElementById('tabla-clientes');
+    if(tbody) {
+        // Si la tabla estaba vacía o cargando, mostramos mensaje
+        if (tbody.rows.length < 2 || tbody.innerHTML.includes('Buscando')) {
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:#dc3545; font-weight:bold;">🚫 Operación cancelada.</td></tr>';
+        }
+    }
+    
+    showStatus('status_gestion_clientes', 'Operación detenida manualmente.', 'warning');
 }
 
 //===========================================================//
@@ -6987,6 +7000,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
