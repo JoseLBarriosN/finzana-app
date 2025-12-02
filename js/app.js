@@ -32,6 +32,33 @@ window.initMap = function() {
     directionsRenderer = new google.maps.DirectionsRenderer();
 };
 
+//========================================================//
+      // ** CARGAR CONFIGURACION DE 13 SEMANAS ** //
+//========================================================//
+async function cargarConfiguracionSistema() {
+    console.log("⚙️ Iniciando carga de configuración del sistema...");
+    try {
+        // Referencia directa al documento único de configuración
+        const docRef = db.collection('configuracion').doc('parametros_generales');
+        const doc = await docRef.get();
+        
+        if (doc.exists) {
+            configSistema = doc.data();
+            console.log("✅ Configuración cargada desde DB:", configSistema);
+        } else {
+            console.warn("⚠️ No existe configuración en DB. Creando valores por defecto...");
+            // Si no existe, lo creamos automáticamente para evitar errores futuros
+            await docRef.set({ oferta13Semanas: false });
+            configSistema = { oferta13Semanas: false };
+        }
+    } catch (error) {
+        console.error("❌ Error CRÍTICO cargando configuración:", error);
+        // Importante: Si falla por permisos (Área comercial), intentamos dejarlo en false
+        // pero mostramos el error para depurar.
+        configSistema = { oferta13Semanas: false };
+    }
+}
+
 /** Parsea de forma robusta una fecha que puede ser un string (ISO 8601, yyyy-mm-dd, etc.) **/
 function parsearFecha(fechaInput) {
     if (!fechaInput) return null;
@@ -1887,12 +1914,14 @@ async function mostrarFormularioUsuario(usuario = null) {
             container13Semanas.style.display = 'block'; // Mostrar a los jefes
             
             // --- ESTADO DEL CHECKBOX (GLOBAL) ---
-            // Mostramos si la oferta está activa A NIVEL SISTEMA, independientemente del usuario que edites
+            // IMPORTANTE: El estado checked depende de la CONFIGURACIÓN GLOBAL DEL SISTEMA,
+            // NO del usuario que estamos editando.
             if (checkbox13Semanas) {
-                checkbox13Semanas.checked = configSistema.oferta13Semanas === true;
+                checkbox13Semanas.checked = (configSistema.oferta13Semanas === true);
+                console.log("🔘 Checkbox inicializado con estado global:", configSistema.oferta13Semanas);
             }
         } else {
-            container13Semanas.style.display = 'none';  // Ocultar a los demás
+            container13Semanas.style.display = 'none';  // Ocultar a los demás (Área Comercial)
         }
     }
 
@@ -1903,8 +1932,9 @@ async function mostrarFormularioUsuario(usuario = null) {
         
         document.getElementById('nuevo-nombre').value = usuario.name || '';
         emailInput.value = usuario.email || '';
-        emailInput.readOnly = true;
+        emailInput.readOnly = true; // No se puede cambiar el email
         document.getElementById('nuevo-rol').value = usuario.role || '';
+        
         userOffice = usuario.office || '';
         officeSelect.value = userOffice;
         
@@ -1925,8 +1955,9 @@ async function mostrarFormularioUsuario(usuario = null) {
     // Cargar rutas de la oficina seleccionada
     await _cargarRutasParaUsuario(userOffice);
 
-    // Si editamos, seleccionar la ruta guardada
+    // Si editamos y el usuario tiene ruta, seleccionarla
     if (usuario && usuario.ruta && rutaSelect) {
+         // Pequeño timeout para asegurar que el dropdown de rutas se llenó
          setTimeout(() => {
             rutaSelect.value = usuario.ruta;
          }, 100);
@@ -1979,33 +2010,31 @@ async function disableUsuario(userId, userName) {
 async function handleUserForm(e) {
     e.preventDefault();
     const submitButton = e.target.querySelector('button[type="submit"]');
-    const statusUsuarios = document.getElementById('status_usuarios');
     
-    showButtonLoading(submitButton, true, editingUserId ? 'Actualizando...' : 'Creando...');
-    statusUsuarios.textContent = editingUserId ? 'Actualizando usuario...' : 'Creando nuevo usuario...';
-    statusUsuarios.className = 'status-message status-info';
+    // 1. Capturar estado del checkbox (puede ser null si el usuario no tiene permisos de verlo)
+    const checkboxGlobal = document.getElementById('usuario-permiso-13semanas');
+    const nuevoEstadoGlobal = checkboxGlobal ? checkboxGlobal.checked : null;
+
+    showButtonLoading(submitButton, true, 'Guardando...');
 
     try {
-        // =================================================================
-        // 1. ACTUALIZACIÓN DE CONFIGURACIÓN GLOBAL (EL SWITCH MAESTRO)
-        // =================================================================
-        // Si el usuario actual es Admin, revisamos el checkbox y actualizamos la config global.
-        // Esto ocurre independientemente de si estamos creando o editando un usuario.
-        const rolesPermitidos = ['Super Admin', 'Gerencia', 'Administrador'];
-        if (currentUserData && rolesPermitidos.includes(currentUserData.role)) {
-            const checkbox13 = document.getElementById('usuario-permiso-13semanas');
-            if (checkbox13) {
-                const nuevoEstadoGlobal = checkbox13.checked;
-                
-                // Solo actualizamos si cambió respecto a lo que tenemos en memoria
+        // ========================================================
+        // A. ACTUALIZAR SWITCH GLOBAL (Solo si el checkbox existe y cambió)
+        // ========================================================
+        if (nuevoEstadoGlobal !== null) {
+            // Solo Admins pueden escribir en esta colección (según reglas de seguridad)
+            const rolesAdmin = ['Super Admin', 'Gerencia', 'Administrador'];
+            
+            if (currentUserData && rolesAdmin.includes(currentUserData.role)) {
                 if (nuevoEstadoGlobal !== configSistema.oferta13Semanas) {
+                    console.log("🌎 Actualizando Switch Global a:", nuevoEstadoGlobal);
+                    
                     await db.collection('configuracion').doc('parametros_generales').set({
                         oferta13Semanas: nuevoEstadoGlobal
                     }, { merge: true });
                     
-                    // Actualizar variable local inmediatamente
+                    // Actualizar memoria local inmediatamente
                     configSistema.oferta13Semanas = nuevoEstadoGlobal;
-                    console.log("🌎 Configuración Global de 13 Semanas actualizada a:", nuevoEstadoGlobal);
                 }
             }
         }
@@ -5300,19 +5329,23 @@ function actualizarPlazosSegunCliente(esComisionista, esRenovacion) {
 
     let plazos = [];
 
-    // Regla Comisionista: 10 semanas
-    if (esComisionista) plazos.push(10);
+    // 1. Regla Comisionista (10)
+    if (esComisionista) {
+        plazos.push(10);
+    }
 
-    // Regla General: 14 semanas
+    // 2. Regla General (14)
     plazos.push(14);
 
-    // REGLA 13 SEMANAS (GLOBAL)
-    // Si el switch global está encendido, agregamos 13 semanas.
-    // Ya no validamos 'esRenovacion' aquí, porque pediste disponibilidad general.
+    // 3. REGLA 13 SEMANAS (GLOBAL)
+    // Verificamos la variable en memoria que cargamos al inicio
+    console.log("🔍 Verificando oferta 13 semanas. Estado Global:", configSistema.oferta13Semanas);
+    
     if (configSistema && configSistema.oferta13Semanas === true) {
         plazos.push(13);
     }
 
+    // Ordenar y Renderizar
     plazos.sort((a, b) => a - b);
     popularDropdown('plazo_colocacion', plazos.map(p => ({ value: p, text: `${p} semanas` })), 'Selecciona plazo', true);
 }
@@ -6756,30 +6789,6 @@ function togglePoblacionGroup(grupoId) {
     }
 }
 
-//========================================================//
-      // ** CARGAR CONFIGURACION DE 13 SEMANAS ** //
-//========================================================//
-async function cargarConfiguracionSistema() {
-    console.log("⚙️ Cargando configuración del sistema...");
-    try {
-        // Intentamos leer el documento de configuración global
-        const doc = await db.collection('configuracion').doc('parametros_generales').get();
-        
-        if (doc.exists) {
-            configSistema = doc.data();
-            console.log("✅ Configuración cargada:", configSistema);
-        } else {
-            console.log("⚠️ No existe configuración, usando valores por defecto.");
-            // Si no existe, usamos el default (false)
-            configSistema = { oferta13Semanas: false };
-        }
-    } catch (error) {
-        console.warn("⚠️ No se pudo cargar la configuración (posible error de permisos):", error);
-        // Si falla (ej. permisos), asumimos cerrado por seguridad
-        configSistema = { oferta13Semanas: false };
-    }
-}
-
 // =============================================
 // INICIALIZACIÓN Y EVENT LISTENERS PRINCIPALES
 // =============================================
@@ -6815,14 +6824,12 @@ document.addEventListener('DOMContentLoaded', function () {
                     document.getElementById('user-role-display').textContent = currentUserData.role || 'Rol Desconocido';
 
                     // ============================================================
-                    // B. CORRECCIÓN SOLICITADA: CARGAR CONFIGURACIÓN GLOBAL
+                    // B. CARGAR CONFIGURACIÓN GLOBAL (CRUCIAL PARA 13 SEMANAS)
                     // ============================================================
-                    // Llamamos a esta función AHORA para saber si las 13 semanas están activas
-                    // antes de que el usuario intente abrir cualquier dropdown.
+                    // Es vital llamar a esto ANTES de inicializarDropdowns
                     await cargarConfiguracionSistema(); 
-                    // ============================================================
-
-                    // C. Inicializar Dropdowns Estáticos
+                    
+                    // C. Inicializar Dropdowns Estáticos (Ahora ya saben si mostrar el 13)
                     await inicializarDropdowns();
 
                     // D. Aplicar permisos visuales según el rol
@@ -6857,23 +6864,23 @@ document.addEventListener('DOMContentLoaded', function () {
                     }
 
                 } else {
-                    console.warn("Datos de usuario incompletos.");
-                    alert("Error al cargar tu perfil. Contacta a soporte.");
+                    console.warn("Datos de usuario incompletos o error de lectura.");
+                    alert("Error al cargar tu perfil. Verifica tu conexión o contacta a soporte.");
                     auth.signOut();
                 }
 
             } catch (error) {
                 console.error("Error crítico al inicializar:", error);
                 // Si falla algo crítico, regresamos al login por seguridad
-                mainApp.classList.add('hidden');
-                loginScreen.classList.remove('hidden');
+                if(mainApp) mainApp.classList.add('hidden');
+                if(loginScreen) loginScreen.classList.remove('hidden');
             }
 
         } else {
             // --- USUARIO DESLOGUEADO ---
             currentUser = null;
             currentUserData = null;
-            configSistema = { oferta13Semanas: false }; // Resetear config global
+            configSistema = { oferta13Semanas: false }; // Resetear config global por seguridad
 
             clearTimeout(inactivityTimer);
             
@@ -7083,6 +7090,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
