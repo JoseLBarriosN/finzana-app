@@ -444,23 +444,28 @@ async function loadClientesTable() {
         return;
     }
 
-    // 2. Iniciar Token de Cancelación
+    // 2. Iniciar Token
     clearTimeout(inactivityTimer);
     cargaEnProgreso = true;
     currentSearchOperation = Date.now(); 
     const operationId = currentSearchOperation;
 
-    // 3. UI Inicial
     const tbody = document.getElementById('tabla-clientes');
+    // Solo limpiamos al INICIO de una NUEVA búsqueda, no al cancelar.
     tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">Buscando...</td></tr>';
+    
     showButtonLoading('#btn-aplicar-filtros', true, 'Buscando...');
     showFixedProgress(5, 'Iniciando...');
+
+    // Bandera para saber si se detuvo a medias
+    let busquedaDetenida = false;
+    let resultadosFinales = [];
 
     try {
         const esAdminConAccesoTotal = (currentUserData?.role === 'Super Admin' || currentUserData?.role === 'Gerencia');
         const userRole = currentUserData?.role;
         
-        // --- RECOLECCIÓN DE FILTROS ---
+        // --- FILTROS ---
         const filtros = {
             curp: document.getElementById('curp_filtro')?.value?.trim() || '',
             nombre: document.getElementById('nombre_filtro')?.value?.trim() || '',
@@ -470,99 +475,90 @@ async function loadClientesTable() {
             plazo: document.getElementById('plazo_filtro')?.value || '',
             grupo: document.getElementById('grupo_filtro')?.value || '',
             soloComisionistas: document.getElementById('comisionista_filtro')?.checked || false,
-            
-            // Filtros de Fecha
             fechaCredito: document.getElementById('fecha_credito_filtro')?.value || '', 
             fechaRegistro: document.getElementById('fecha_registro_filtro')?.value || '',
-
             userOffice: esAdminConAccesoTotal ? null : currentUserData?.office,
             office: document.getElementById('sucursal_filtro')?.value || '',
             ruta: (userRole === 'Área comercial') ? currentUserData?.ruta : null
         };
 
         if (userRole === 'Área comercial' && !currentUserData?.ruta) {
-            throw new Error("Error de Permisos: Tu usuario de Área Comercial no tiene una ruta asignada.");
+            throw new Error("Error de Permisos: Tu usuario no tiene ruta asignada.");
         }
 
-        if (operationId !== currentSearchOperation) throw new Error("Cancelado");
+        // Checkpoint 1: Si cancela antes de empezar, no hay nada que mostrar.
+        if (operationId !== currentSearchOperation) {
+            throw new Error("Cancelado_Inicio"); 
+        }
 
         showFixedProgress(20, 'Consultando base de datos...');
-        let resultadosFinales = [];
 
         // --- LÓGICA DE BÚSQUEDA ---
         if (filtros.idCredito) {
-            // RAMA A: Búsqueda por ID (Específica)
+            // RAMA A: Búsqueda por ID
             const creditos = await database.buscarCreditosPorHistoricalId(filtros.idCredito, { userOffice: filtros.userOffice, office: filtros.office });
             
             for (const cred of creditos) {
-                if (operationId !== currentSearchOperation) throw new Error("Cancelado");
-                
+                // SI CANCELA AQUÍ: Rompemos el bucle pero guardamos lo que llevamos
+                if (operationId !== currentSearchOperation) {
+                    busquedaDetenida = true;
+                    break; 
+                }
+
                 const cliente = await database.buscarClientePorCURP(cred.curpCliente, filtros.userOffice);
                 if(cliente) {
-                    // Validar Ruta
-                    if (userRole === 'Área comercial' && cliente.ruta !== filtros.ruta) continue;
+                    if (filtros.ruta && cliente.ruta !== filtros.ruta) continue;
                     
-                    // Validar Fecha Crédito (Uso seguro de parsearFecha)
                     if (filtros.fechaCredito) {
                         const fechaObj = parsearFecha(cred.fechaCreacion);
-                        // Si la fecha en DB no es válida, saltamos este registro
-                        if (!fechaObj || isNaN(fechaObj.getTime())) continue;
-                        
-                        const fechaIso = fechaObj.toISOString().split('T')[0];
-                        if (fechaIso !== filtros.fechaCredito) continue;
+                        if (!fechaObj || fechaObj.toISOString().split('T')[0] !== filtros.fechaCredito) continue;
                     }
-
                     resultadosFinales.push({ cliente, credito: cred });
                 }
             }
         } else {
-            // RAMA B: Búsqueda General de Clientes
+            // RAMA B: Búsqueda General
             const clientesEncontrados = await database.buscarClientes(filtros);
             
-            // --- CORRECCIÓN PRINCIPAL: FILTRADO SEGURO POR FECHA REGISTRO ---
+            // Filtro Fecha Registro (Blindado contra teléfonos)
             const clientesFiltrados = clientesEncontrados.filter(c => {
                 if (filtros.fechaRegistro) {
-                    // parsearFecha maneja Timestamps de Firebase y Strings ISO correctamente
-                    const fechaObj = parsearFecha(c.fechaRegistro || c.fechaCreacion);
+                    const rawDate = c.fechaRegistro || c.fechaCreacion;
+                    if (String(rawDate).match(/^\d{8,15}$/)) return false; // Es un teléfono
                     
-                    // Si el dato es nulo o inválido (ej. un teléfono mal guardado), devolvemos false
-                    // Esto evita que la app explote y permite que los demás registros se vean.
+                    const fechaObj = parsearFecha(rawDate);
                     if (!fechaObj || isNaN(fechaObj.getTime())) return false;
                     
-                    const fechaIso = fechaObj.toISOString().split('T')[0];
-                    // Comparamos solo la parte YYYY-MM-DD
-                    if (fechaIso !== filtros.fechaRegistro) return false;
+                    return fechaObj.toISOString().split('T')[0] === filtros.fechaRegistro;
                 }
                 return true;
             });
 
             if (clientesFiltrados.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="6">No se encontraron clientes con esos criterios.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="6">No se encontraron clientes.</td></tr>';
                 showFixedProgress(100, 'Sin resultados');
                 return; 
             }
 
-            if (operationId !== currentSearchOperation) throw new Error("Cancelado");
-
             const total = clientesFiltrados.length;
             showFixedProgress(30, `Analizando ${total} clientes...`);
 
-            // --- BUCLE PRINCIPAL DE PROCESAMIENTO ---
+            // --- BUCLE PRINCIPAL ---
             for (const [index, cliente] of clientesFiltrados.entries()) {
                 
-                // Checkpoint de cancelación (permite detener el proceso con el botón)
-                if (operationId !== currentSearchOperation) throw new Error("Cancelado");
+                // 🛑 CHECKPOINT CRÍTICO: DETENCIÓN SUAVE 🛑
+                if (operationId !== currentSearchOperation) {
+                    busquedaDetenida = true;
+                    console.warn("Usuario detuvo la búsqueda. Mostrando resultados parciales.");
+                    break; // SALIR DEL BUCLE, PERO SEGUIR AL RENDERIZADO
+                }
 
                 if (filtros.soloComisionistas && !cliente.isComisionista) continue;
 
-                // Buscar Créditos del cliente
-                // Nota: Pasamos la fechaCredito para que la DB filtre si es posible (usando índices)
                 const creditosCliente = await database.buscarCreditosPorCliente(cliente.curp, filtros.userOffice, filtros.fechaCredito);
                 
                 if (creditosCliente.length > 0) {
                     let tieneCreditosVisibles = false;
-                    
-                    // Ordenar créditos del más reciente al más antiguo para mostrarlos en orden
                     creditosCliente.sort((a, b) => {
                         const tA = parsearFecha(a.fechaCreacion)?.getTime() || 0;
                         const tB = parsearFecha(b.fechaCreacion)?.getTime() || 0;
@@ -570,89 +566,86 @@ async function loadClientesTable() {
                     });
                     
                     for (const cred of creditosCliente) {
-                        // Filtros adicionales
                         if (filtros.plazo && cred.plazo != filtros.plazo) continue;
                         if (filtros.curpAval && (!cred.curpAval || !cred.curpAval.includes(filtros.curpAval))) continue;
-                        
-                        // Filtro Fecha Crédito (Doble verificación segura)
                         if (filtros.fechaCredito) {
-                            const fechaObj = parsearFecha(cred.fechaCreacion);
-                            if (!fechaObj || isNaN(fechaObj.getTime())) continue;
-                            if (fechaObj.toISOString().split('T')[0] !== filtros.fechaCredito) continue;
+                            const fObj = parsearFecha(cred.fechaCreacion);
+                            if(!fObj || fObj.toISOString().split('T')[0] !== filtros.fechaCredito) continue;
                         }
                         
                         resultadosFinales.push({ cliente, credito: cred });
                         tieneCreditosVisibles = true;
                     }
 
-                    // Si el cliente existe pero sus créditos fueron filtrados (ej. por fecha),
-                    // verificamos si el usuario quería ver solo créditos.
                     const buscandoPorCredito = filtros.plazo || filtros.estado || filtros.curpAval || filtros.fechaCredito;
-                    
-                    // Si NO buscaba específicamente detalles de crédito, mostramos al cliente solo.
                     if (!tieneCreditosVisibles && !buscandoPorCredito) {
                         resultadosFinales.push({ cliente, credito: null });
                     }
                 } else {
-                    // Cliente sin créditos registrados
                     const buscandoPorCredito = filtros.plazo || filtros.estado || filtros.curpAval || filtros.fechaCredito;
                     if (!buscandoPorCredito) {
                         resultadosFinales.push({ cliente, credito: null });
                     }
                 }
 
-                // Actualizar Barra de Progreso + Pausa para la UI
+                // Barra + Pausa UI
                 if (index % 5 === 0 || index === total - 1) {
                     const pct = 30 + Math.floor(((index + 1) / total) * 60); 
                     showFixedProgress(pct, `Procesando ${index + 1} de ${total}...`);
-                    // Esta pausa es VITAL para que el botón cancelar responda
                     await new Promise(resolve => setTimeout(resolve, 0));
                 }
             }
         }
 
-        if (operationId !== currentSearchOperation) throw new Error("Cancelado");
-
-        // --- ORDENAMIENTO FINAL CRONOLÓGICO ---
-        // Ordenar los resultados finales por la fecha del crédito (Reciente -> Antiguo)
+        // --- FASE DE RENDERIZADO (Se ejecuta aunque se haya detenido) ---
+        
+        showFixedProgress(95, 'Mostrando resultados...');
+        
+        // Ordenar Cronológicamente
         resultadosFinales.sort((a, b) => {
-            const fechaA = a.credito ? parsearFecha(a.credito.fechaCreacion)?.getTime() || 0 : 0;
-            const fechaB = b.credito ? parsearFecha(b.credito.fechaCreacion)?.getTime() || 0 : 0;
-            return fechaB - fechaA; // Descendente
+            const tA = a.credito ? parsearFecha(a.credito.fechaCreacion)?.getTime() || 0 : 0;
+            const tB = b.credito ? parsearFecha(b.credito.fechaCreacion)?.getTime() || 0 : 0;
+            return tB - tA;
         });
 
-        // RENDERIZADO
-        showFixedProgress(95, 'Generando tabla...');
         tbody.innerHTML = '';
         
         if (resultadosFinales.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="6">No se encontraron registros coincidentes.</td></tr>';
+            if (busquedaDetenida) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:#e67e22; font-weight:bold;">Búsqueda detenida antes de encontrar resultados.</td></tr>';
+            } else {
+                tbody.innerHTML = '<tr><td colspan="6">No se encontraron registros coincidentes.</td></tr>';
+            }
         } else {
             for (const item of resultadosFinales) {
-                if (operationId !== currentSearchOperation) throw new Error("Cancelado");
-                // Renderizar fila
+                // Aquí no verificamos cancelación para asegurar que se dibuje lo que se encontró
                 await renderFilaTablaClientes(tbody, item.cliente, item.credito, filtros.estado);
             }
         }
 
-        showFixedProgress(100, `Completado (${resultadosFinales.length} resultados).`);
+        // MENSAJE FINAL SEGÚN ESTADO
+        if (busquedaDetenida) {
+            showFixedProgress(100, 'Detenido');
+            showStatus('status_gestion_clientes', `⚠️ Búsqueda detenida. Mostrando ${resultadosFinales.length} resultados encontrados hasta el momento.`, 'warning');
+        } else {
+            showFixedProgress(100, 'Completado');
+            showStatus('status_gestion_clientes', `Búsqueda completada. ${resultadosFinales.length} resultados.`, 'success');
+        }
 
     } catch (error) {
-        if (error.message === "Cancelado") {
-            console.warn("Proceso interrumpido.");
-            // No borramos la tabla si se cancela, dejamos lo que estaba o mostramos mensaje en status
+        if (error.message === "Cancelado_Inicio") {
+             console.log("Cancelado al inicio.");
+             tbody.innerHTML = '<tr><td colspan="6">Búsqueda cancelada.</td></tr>';
         } else {
             console.error('Error loadClientesTable:', error);
             tbody.innerHTML = `<tr><td colspan="6">Error: ${error.message}</td></tr>`;
             showStatus('status_gestion_clientes', error.message, 'error');
         }
     } finally {
-        // Limpieza final
-        if (operationId === currentSearchOperation) {
-            cargaEnProgreso = false;
-            showButtonLoading('#btn-aplicar-filtros', false);
-            setTimeout(hideFixedProgress, 1500);
-        }
+        // Siempre restaurar botones
+        cargaEnProgreso = false;
+        showButtonLoading('#btn-aplicar-filtros', false);
+        setTimeout(hideFixedProgress, 2000);
     }
 }
 
@@ -4965,24 +4958,25 @@ function hideFixedProgress() {
 //============================//
 function cancelarCarga(e) {
     if(e) e.preventDefault();
-    
+
     if (!cargaEnProgreso) {
         hideFixedProgress();
         return;
     }
 
-    console.warn("🛑 Usuario solicitó DETENER la búsqueda.");
+    console.warn("🛑 SEÑAL DE ALTO: Usuario presionó cancelar.");
 
-    // CAMBIAR LA SEÑAL: Esto hará que el bucle en loadClientesTable 
-    // detecte el cambio, se detenga (break) y muestre lo que tenga.
+    // 1. CAMBIAR EL TOKEN DE OPERACIÓN
+    // Esto es lo único necesario. loadClientesTable detectará esto en su siguiente vuelta
+    // y ejecutará el 'break' para salir del bucle y renderizar.
     currentSearchOperation = Date.now(); 
     
-    // Nota: NO ponemos cargaEnProgreso = false aquí todavía, 
-    // dejamos que loadClientesTable termine su renderizado parcial y lo haga en su 'finally'.
-    
-    // Solo actualizamos texto visual
+    // Actualizar texto visualmente para feedback inmediato
     const textFixed = document.getElementById('progress-text-fixed');
-    if(textFixed) textFixed.textContent = "Deteniendo...";
+    if(textFixed) textFixed.textContent = "Deteniendo y mostrando resultados...";
+    
+    // NO ponemos cargaEnProgreso = false aquí.
+    // Dejamos que loadClientesTable termine su renderizado parcial y lo haga en su 'finally'.
 }
 
 //===========================================================//
@@ -6993,5 +6987,6 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
