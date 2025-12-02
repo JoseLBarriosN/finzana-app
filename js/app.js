@@ -1895,44 +1895,47 @@ async function mostrarFormularioUsuario(usuario = null) {
     const officeSelect = document.getElementById('nuevo-sucursal'); 
     const rutaSelect = document.getElementById('nuevo-ruta');
     
-    // Elementos del control global de 13 semanas
+    // Elementos del control global
     const checkbox13Semanas = document.getElementById('usuario-permiso-13semanas');
     const container13Semanas = document.getElementById('container-permiso-13semanas');
 
     if (!formContainer || !formTitulo || !form || !officeSelect) return;
 
-    form.reset();
+    // 1. LIMPIAR EL FORMULARIO PRIMERO (Esto borraba el check antes)
+    form.reset(); 
+    
     let userOffice = '';
 
-    // --- LÓGICA DE VISIBILIDAD DEL CHECKBOX (SEGURIDAD) ---
-    // Solo los roles administrativos pueden ver este control maestro
-    const rolesConPermiso = ['Super Admin', 'Gerencia', 'Administrador'];
-    const esAdmin = currentUserData && rolesConPermiso.includes(currentUserData.role);
+    // 2. CONFIGURAR VISIBILIDAD Y ESTADO DEL CHECKBOX GLOBAL
+    const rolesAdmin = ['Super Admin', 'Gerencia', 'Administrador'];
+    const esAdmin = currentUserData && rolesAdmin.includes(currentUserData.role);
 
     if (container13Semanas) {
         if (esAdmin) {
-            container13Semanas.style.display = 'block'; // Mostrar a los jefes
+            container13Semanas.style.display = 'block';
             
-            // --- ESTADO DEL CHECKBOX (GLOBAL) ---
-            // IMPORTANTE: El estado checked depende de la CONFIGURACIÓN GLOBAL DEL SISTEMA,
-            // NO del usuario que estamos editando.
+            // --- CORRECCIÓN CRÍTICA ---
+            // Forzamos el valor visual basado en la variable global ACTUAL
+            // Lo hacemos AQUÍ, después del reset.
             if (checkbox13Semanas) {
-                checkbox13Semanas.checked = (configSistema.oferta13Semanas === true);
-                console.log("🔘 Checkbox inicializado con estado global:", configSistema.oferta13Semanas);
+                // Aseguramos que sea booleano
+                const estadoActual = (configSistema.oferta13Semanas === true);
+                checkbox13Semanas.checked = estadoActual;
+                console.log("🔘 UI Checkbox ajustado a:", estadoActual);
             }
         } else {
-            container13Semanas.style.display = 'none';  // Ocultar a los demás (Área Comercial)
+            container13Semanas.style.display = 'none';
         }
     }
 
+    // 3. LLENAR DATOS DEL USUARIO (Si es edición)
     if (usuario) {
-        // --- MODO EDICIÓN ---
         editingUserId = usuario.id;
         formTitulo.textContent = 'Editar Usuario';
         
         document.getElementById('nuevo-nombre').value = usuario.name || '';
         emailInput.value = usuario.email || '';
-        emailInput.readOnly = true; // No se puede cambiar el email
+        emailInput.readOnly = true;
         document.getElementById('nuevo-rol').value = usuario.role || '';
         
         userOffice = usuario.office || '';
@@ -1941,10 +1944,8 @@ async function mostrarFormularioUsuario(usuario = null) {
         passwordInput.required = false;
         passwordInput.placeholder = "Dejar en blanco para no cambiar";
     } else {
-        // --- MODO CREACIÓN ---
         editingUserId = null;
         formTitulo.textContent = 'Nuevo Usuario';
-        
         emailInput.readOnly = false;
         passwordInput.required = true;
         passwordInput.placeholder = "Mínimo 6 caracteres";
@@ -1952,12 +1953,10 @@ async function mostrarFormularioUsuario(usuario = null) {
         officeSelect.value = '';
     }
 
-    // Cargar rutas de la oficina seleccionada
+    // Cargar rutas
     await _cargarRutasParaUsuario(userOffice);
 
-    // Si editamos y el usuario tiene ruta, seleccionarla
     if (usuario && usuario.ruta && rutaSelect) {
-         // Pequeño timeout para asegurar que el dropdown de rutas se llenó
          setTimeout(() => {
             rutaSelect.value = usuario.ruta;
          }, 100);
@@ -2010,115 +2009,88 @@ async function disableUsuario(userId, userName) {
 async function handleUserForm(e) {
     e.preventDefault();
     const submitButton = e.target.querySelector('button[type="submit"]');
+    const statusUsuarios = document.getElementById('status_usuarios');
     
-    // 1. Capturar estado del checkbox (puede ser null si el usuario no tiene permisos de verlo)
-    const checkboxGlobal = document.getElementById('usuario-permiso-13semanas');
-    const nuevoEstadoGlobal = checkboxGlobal ? checkboxGlobal.checked : null;
-
-    showButtonLoading(submitButton, true, 'Guardando...');
+    showButtonLoading(submitButton, true, editingUserId ? 'Actualizando...' : 'Creando...');
+    statusUsuarios.className = 'status-message status-info';
 
     try {
-        // ========================================================
-        // A. ACTUALIZAR SWITCH GLOBAL
-        // ========================================================
-        if (nuevoEstadoGlobal !== null) {
-            const rolesAdmin = ['Super Admin', 'Gerencia', 'Administrador'];
+        // =================================================================
+        // 1. GUARDAR SWITCH GLOBAL (Lógica Robusta)
+        // =================================================================
+        const checkboxGlobal = document.getElementById('usuario-permiso-13semanas');
+        
+        // Solo intentamos guardar si el elemento existe y es visible (es Admin)
+        if (checkboxGlobal && checkboxGlobal.offsetParent !== null) {
+            const nuevoEstado = checkboxGlobal.checked;
             
-            if (currentUserData && rolesAdmin.includes(currentUserData.role)) {
-                // Si el valor del checkbox es diferente a lo que tenemos en memoria
-                if (nuevoEstadoGlobal !== configSistema.oferta13Semanas) {
-                    console.log(`🌎 Guardando cambio global: ${configSistema.oferta13Semanas} -> ${nuevoEstadoGlobal}`);
-                    
-                    // 1. Guardar en Firebase
-                    await db.collection('configuracion').doc('parametros_generales').set({
-                        oferta13Semanas: nuevoEstadoGlobal
-                    }, { merge: true });
-                    
-                    // 2. ACTUALIZAR VARIABLE LOCAL (CRUCIAL)
-                    configSistema.oferta13Semanas = nuevoEstadoGlobal; 
-                    console.log("✅ Memoria local actualizada:", configSistema);
-                }
+            // Si el estado visual es diferente al estado en memoria, GUARDAMOS
+            if (nuevoEstado !== configSistema.oferta13Semanas) {
+                console.log(`🌎 Cambio detectado en Switch Global: ${configSistema.oferta13Semanas} -> ${nuevoEstado}`);
+                
+                // A. Actualizar en Firebase
+                await db.collection('configuracion').doc('parametros_generales').set({
+                    oferta13Semanas: nuevoEstado
+                }, { merge: true });
+                
+                // B. Actualizar MEMORIA LOCAL (Crucial para que el dropdown reaccione ya)
+                configSistema.oferta13Semanas = nuevoEstado;
+                
+                console.log("✅ Memoria actualizada. Nuevo estado:", configSistema.oferta13Semanas);
             }
         }
 
         // =================================================================
-        // 2. GESTIÓN DEL USUARIO INDIVIDUAL (CREATE / UPDATE)
+        // 2. GUARDAR USUARIO (Lógica existente)
         // =================================================================
+        
+        // Validaciones comunes
+        const nombre = document.getElementById('nuevo-nombre').value.trim();
+        const rol = document.getElementById('nuevo-rol').value;
+        const office = document.getElementById('nuevo-sucursal').value;
+        const ruta = document.getElementById('nuevo-ruta').value || null;
+
+        if (!nombre || !rol || !office) throw new Error('Nombre, Rol y Oficina son obligatorios.');
+
         if (editingUserId) {
-            // --- ACTUALIZAR USUARIO ---
-            const userData = {
-                name: document.getElementById('nuevo-nombre').value.trim(),
-                role: document.getElementById('nuevo-rol').value,
-                office: document.getElementById('nuevo-sucursal').value,
-                ruta: document.getElementById('nuevo-ruta').value || null
-                // NOTA: Ya no guardamos 'canSell13Weeks' aquí porque es global
-            };
-
-            if (!userData.name || !userData.role || !userData.office) {
-                throw new Error('Nombre, Rol y Oficina son obligatorios.');
-            }
-
+            // --- UPDATE ---
+            const userData = { name: nombre, role: rol, office: office, ruta: ruta };
             const password = document.getElementById('nuevo-password').value;
-            if (password && password.trim() !== "") {
-                userData.password = password; 
-            }
+            if (password && password.trim() !== "") userData.password = password; 
 
-            const resultado = await database.actualizarUsuario(editingUserId, userData);
-            if (!resultado.success) throw new Error(resultado.message);
-
-            let message = resultado.message;
-            if (!isOnline) message += ' (Guardado localmente).';
+            const res = await database.actualizarUsuario(editingUserId, userData);
+            if (!res.success) throw new Error(res.message);
             
-            showStatus('status_usuarios', message, 'success');
-            ocultarFormularioUsuario();
-            await loadUsersTable();
-
+            showStatus('status_usuarios', res.message, 'success');
         } else {
-            // --- CREAR NUEVO USUARIO ---
+            // --- CREATE ---
             const email = document.getElementById('nuevo-email').value.trim();
             const password = document.getElementById('nuevo-password').value;
-            const nombre = document.getElementById('nuevo-nombre').value.trim();
-            const rol = document.getElementById('nuevo-rol').value;
-            const office = document.getElementById('nuevo-sucursal').value;
-            const ruta = document.getElementById('nuevo-ruta').value || null;
+            
+            if (!email || !password) throw new Error('Email y Contraseña son obligatorios.');
+            if (password.length < 6) throw new Error('Contraseña muy corta.');
+            if (!isOnline) throw new Error("Se requiere internet.");
 
-            if (!email || !password || !nombre || !rol || !office) {
-                throw new Error('Todos los campos marcados son obligatorios.');
-            }
-            if (password.length < 6) {
-                throw new Error('La contraseña debe tener al menos 6 caracteres.');
-            }
-            if (!isOnline) {
-                throw new Error("Se requiere internet para crear usuarios.");
-            }
-
-            // Crear Auth
             let user;
             try {
-                const userCredential = await auth.createUserWithEmailAndPassword(email, password);
-                user = userCredential.user;
-            } catch (authError) {
-                if (authError.code === 'auth/email-already-in-use') throw new Error('El correo ya está registrado.');
-                throw new Error(`Error Auth: ${authError.message}`);
+                const cred = await auth.createUserWithEmailAndPassword(email, password);
+                user = cred.user;
+            } catch (err) {
+                if (err.code === 'auth/email-already-in-use') throw new Error('Correo ya registrado.');
+                throw err;
             }
 
-            // Guardar Firestore
             await db.collection('users').doc(user.uid).set({
-                id: user.uid, 
-                email: email, 
-                name: nombre, 
-                role: rol,
-                office: office,
-                ruta: ruta,
-                createdAt: new Date().toISOString(), 
-                status: 'active'
-                // NOTA: No guardamos permisos individuales aquí
+                id: user.uid, email, name: nombre, role: rol, office, ruta,
+                createdAt: new Date().toISOString(), status: 'active'
             });
-
             showStatus('status_usuarios', 'Usuario creado exitosamente.', 'success');
-            ocultarFormularioUsuario();
-            await loadUsersTable();
         }
+
+        // Limpieza final
+        ocultarFormularioUsuario();
+        await loadUsersTable();
+
     } catch (error) {
         console.error("Error en handleUserForm:", error);
         showStatus('status_usuarios', error.message, 'error');
@@ -7092,6 +7064,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
