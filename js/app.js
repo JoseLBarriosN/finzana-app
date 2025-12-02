@@ -1840,9 +1840,9 @@ async function handleClientForm(e) {
             if (!isOnline) {
                 successMessage += ' (Datos guardados localmente, se sincronizarán al conectar).';
             }
-            showStatus('status_gestion_clientes', successMessage, 'success');
+            showStatus('status_main_menu', successMessage, 'success');
             resetClientForm();
-            showView('view-gestion-clientes');
+            showView('view-main-menu');
         } else {
             throw new Error(resultado.message || 'Ocurrió un error desconocido.');
         }
@@ -5249,13 +5249,9 @@ async function inicializarDropdowns() {
     }
 }
 
-
-/**
- * Actualiza el dropdown de plazos según reglas de negocio:
- * - Comisionista: 10, 13, 14 semanas.
- * - Normal: 13, 14 semanas.
- * - Regla 13 Semanas: Solo disponible si es RENOVACIÓN Y el usuario tiene permiso.
- */
+//===============================================//
+    // ** HABILITAR PLAZO DE 13 SEMANAS ** //
+//===============================================//
 function actualizarPlazosSegunCliente(esComisionista, esRenovacion) {
     const plazoSelect = document.getElementById('plazo_colocacion');
     if(!plazoSelect) return;
@@ -5268,14 +5264,13 @@ function actualizarPlazosSegunCliente(esComisionista, esRenovacion) {
 
     plazos.push(14);
 
-    const tienePermiso13 = currentUserData && currentUserData.canSell13Weeks === true;
-    
-    if (esRenovacion && tienePermiso13) {
+    const agenteTienePermiso = currentUserData && currentUserData.canSell13Weeks === true;
+
+    if (agenteTienePermiso) {
         plazos.push(13);
-    }
+    } 
 
     plazos.sort((a, b) => a - b);
-    
     popularDropdown('plazo_colocacion', plazos.map(p => ({ value: p, text: `${p} semanas` })), 'Selecciona plazo', true);
 }
 
@@ -7000,6 +6995,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
