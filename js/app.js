@@ -2019,22 +2019,24 @@ async function handleUserForm(e) {
 
     try {
         // ========================================================
-        // A. ACTUALIZAR SWITCH GLOBAL (Solo si el checkbox existe y cambió)
+        // A. ACTUALIZAR SWITCH GLOBAL
         // ========================================================
         if (nuevoEstadoGlobal !== null) {
-            // Solo Admins pueden escribir en esta colección (según reglas de seguridad)
             const rolesAdmin = ['Super Admin', 'Gerencia', 'Administrador'];
             
             if (currentUserData && rolesAdmin.includes(currentUserData.role)) {
+                // Si el valor del checkbox es diferente a lo que tenemos en memoria
                 if (nuevoEstadoGlobal !== configSistema.oferta13Semanas) {
-                    console.log("🌎 Actualizando Switch Global a:", nuevoEstadoGlobal);
+                    console.log(`🌎 Guardando cambio global: ${configSistema.oferta13Semanas} -> ${nuevoEstadoGlobal}`);
                     
+                    // 1. Guardar en Firebase
                     await db.collection('configuracion').doc('parametros_generales').set({
                         oferta13Semanas: nuevoEstadoGlobal
                     }, { merge: true });
                     
-                    // Actualizar memoria local inmediatamente
-                    configSistema.oferta13Semanas = nuevoEstadoGlobal;
+                    // 2. ACTUALIZAR VARIABLE LOCAL (CRUCIAL)
+                    configSistema.oferta13Semanas = nuevoEstadoGlobal; 
+                    console.log("✅ Memoria local actualizada:", configSistema);
                 }
             }
         }
@@ -7090,6 +7092,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
