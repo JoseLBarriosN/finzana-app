@@ -4762,6 +4762,14 @@ async function showView(viewId) {
     targetView.classList.remove('hidden');
     console.log(`✅ Vista ${viewId} mostrada.`);
     
+    // --- HELPER LOCAL PARA OBTENER FECHA "HOY" EN ZONA HORARIA LOCAL ---
+    const obtenerFechaLocalYMD = () => {
+        const ahora = new Date();
+        const offset = ahora.getTimezoneOffset() * 60000;
+        const local = new Date(ahora.getTime() - offset);
+        return local.toISOString().split('T')[0];
+    };
+
     try {
         switch(viewId) {
             case 'view-configuracion':
@@ -4814,7 +4822,8 @@ async function showView(viewId) {
 
             case 'view-hoja-corte':
                 const fechaCorte = document.getElementById('corte-fecha');
-                if(fechaCorte) fechaCorte.value = new Date().toISOString().split('T')[0];
+                // --- CORRECCIÓN AQUÍ: USAR FECHA LOCAL ---
+                if(fechaCorte) fechaCorte.value = obtenerFechaLocalYMD();
                 
                 const containerResumen = document.getElementById('corte-resumen-cards');
                 if(containerResumen) containerResumen.innerHTML = '';
@@ -4825,11 +4834,18 @@ async function showView(viewId) {
 
             case 'view-reportes-graficos':
                 if(document.getElementById('grafico_fecha_inicio')) {
-                    const hoy = new Date();
-                    const haceMes = new Date();
-                    haceMes.setMonth(hoy.getMonth() - 1);
-                    document.getElementById('grafico_fecha_inicio').value = haceMes.toISOString().split('T')[0];
-                    document.getElementById('grafico_fecha_fin').value = hoy.toISOString().split('T')[0];
+                    // --- CORRECCIÓN AQUÍ TAMBIÉN ---
+                    // Calcular "Hoy" y "Hace un mes" usando zona horaria local
+                    const hoyDate = new Date();
+                    const offset = hoyDate.getTimezoneOffset() * 60000;
+                    const hoyLocal = new Date(hoyDate.getTime() - offset);
+                    
+                    const haceMesDate = new Date();
+                    haceMesDate.setMonth(haceMesDate.getMonth() - 1);
+                    const haceMesLocal = new Date(haceMesDate.getTime() - offset);
+
+                    document.getElementById('grafico_fecha_inicio').value = haceMesLocal.toISOString().split('T')[0];
+                    document.getElementById('grafico_fecha_fin').value = hoyLocal.toISOString().split('T')[0];
                     
                     const officeGraf = (currentUserData?.office && currentUserData?.office !== 'AMBAS') ? currentUserData.office : '';
                     if(typeof handleSucursalGraficoChange === 'function') {
@@ -7104,6 +7120,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
