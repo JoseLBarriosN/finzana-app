@@ -558,6 +558,7 @@ const database = {
     // --- GENERAR UN CREDITO NUEVO ---
     async agregarCredito(creditoData, userEmail) {
         try {
+            // 1. Validaciones iniciales
             const office = creditoData.office;
             if (!office || (office !== 'GDL' && office !== 'LEON')) {
                 return { success: false, message: 'Error crítico: Oficina inválida.' };
@@ -567,6 +568,7 @@ const database = {
                 return { success: false, message: 'Plazo no permitido para renovación.' };
             }
             
+            // Verificaciones de Elegibilidad
             const elegibilidadCliente = await this.verificarElegibilidadCliente(creditoData.curpCliente, office);
             if (!elegibilidadCliente.elegible) return { success: false, message: elegibilidadCliente.mensaje };
             
@@ -582,6 +584,7 @@ const database = {
                 return { success: false, message: "Solo comisionistas pueden acceder a 10 semanas." };
             }
             
+            // 2. Preparar datos
             const fechaCreacionISO = new Date().toISOString();
             const nuevoCreditoData = {
                 monto: parseFloat(creditoData.monto),
@@ -598,15 +601,14 @@ const database = {
                 estado: 'al corriente',
                 fechaCreacion: fechaCreacionISO,
                 creadoPor: userEmail,
-                busqueda: [
-                    creditoData.curpCliente.toUpperCase(),
-                    (creditoData.curpAval || '').toUpperCase()
-                ]
+                busqueda: [creditoData.curpCliente.toUpperCase(), (creditoData.curpAval || '').toUpperCase()]
             };
 
+            // 3. Referencias
             const contadorRef = db.doc(`contadores/${office}`);
             const nuevoCreditoRef = db.collection('creditos').doc();
 
+            // 4. Saldo Anterior (Renovación)
             let saldoCreditoAnterior = 0;
             let creditoAnteriorRef = null;
             
@@ -618,27 +620,33 @@ const database = {
                 }
             }
 
+            // 5. Cálculos de Efectivo
             const esCreditoComisionista = (creditoData.plazo === 10 && cliente.isComisionista);
             let montoPolizaDeduccion = 0;
             
+            // La póliza de $100 se cobra a todos MENOS a los créditos de 10 semanas
             if (!esCreditoComisionista) {
-                montoPolizaDeduccion = 100; // $100 de póliza
+                montoPolizaDeduccion = 100; 
             }
             
             const montoEfectivoEntregado = nuevoCreditoData.monto - montoPolizaDeduccion - saldoCreditoAnterior;
 
+            // 6. Ejecutar Transacción
             let nuevoHistoricalId = null; 
 
             await db.runTransaction(async (transaction) => {
+                // a. Contador
                 const contadorDoc = await transaction.get(contadorRef);
                 let ultimoId = (!contadorDoc.exists) ? ((office === 'GDL') ? 30000000 : 20000000) : contadorDoc.data().ultimoId;
                 nuevoHistoricalId = ultimoId + 1;
                 transaction.set(contadorRef, { ultimoId: nuevoHistoricalId }, { merge: true });
 
+                // b. Guardar Crédito
                 nuevoCreditoData.historicalIdCredito = String(nuevoHistoricalId);
                 nuevoCreditoData.busqueda.push(String(nuevoHistoricalId));
                 transaction.set(nuevoCreditoRef, nuevoCreditoData);
 
+                // c. Liquidar anterior
                 if (creditoAnteriorRef) {
                     transaction.update(creditoAnteriorRef, {
                         estado: 'liquidado',
@@ -648,13 +656,16 @@ const database = {
                     });
                 }
 
+                // d. Registrar SALIDA PRINCIPAL (Préstamo)
+                // Salida bruta = Efectivo + Póliza (para que cuadre con la entrada de póliza)
                 const salidaBruta = montoEfectivoEntregado + montoPolizaDeduccion;
+
                 const movimientoEfectivo = {
                     userId: (await auth.currentUser).uid,
                     fecha: fechaCreacionISO,
                     tipo: 'COLOCACION',
                     categoria: 'COLOCACION',
-                    monto: -Math.abs(salidaBruta),
+                    monto: -Math.abs(salidaBruta), // NEGATIVO (Salida)
                     descripcion: `Colocación a ${cliente.nombre} (${nuevoHistoricalId})`,
                     creditoId: nuevoCreditoRef.id,
                     registradoPor: userEmail,
@@ -662,13 +673,15 @@ const database = {
                 };
                 const movimientoRef = db.collection('movimientos_efectivo').doc();
                 transaction.set(movimientoRef, movimientoEfectivo);
+
+                // e. Registrar ENTRADA DE PÓLIZA (+$100)
                 if (montoPolizaDeduccion > 0) {
                     const polizaData = {
                         userId: (await auth.currentUser).uid,
                         fecha: fechaCreacionISO,
-                        tipo: 'INGRESO_POLIZA',
-                        categoria: 'ENTREGA_INICIAL',
-                        monto: montoPolizaDeduccion,
+                        tipo: 'INGRESO_POLIZA', 
+                        categoria: 'ENTREGA_INICIAL', // Categoría "Entrada" para la hoja de corte
+                        monto: montoPolizaDeduccion, // POSITIVO
                         descripcion: `Cobro de Póliza - Crédito ${nuevoHistoricalId}`,
                         creditoId: nuevoCreditoRef.id,
                         registradoPor: userEmail,
@@ -676,6 +689,25 @@ const database = {
                     };
                     const polizaRef = db.collection('movimientos_efectivo').doc();
                     transaction.set(polizaRef, polizaData);
+                }
+
+                // f. Registrar SALIDA DE COMISIÓN POR COLOCACIÓN (-$100)
+                // Se paga comisión en TODO crédito que NO sea de 10 semanas
+                if (!esCreditoComisionista) {
+                    const comisionData = {
+                        userId: (await auth.currentUser).uid,
+                        fecha: fechaCreacionISO,
+                        tipo: 'COMISION_COLOCACION', // <--- TIPO CLAVE PARA HOJA DE CORTE
+                        categoria: 'COMISION',       // <--- CATEGORÍA CLAVE
+                        monto: -100,                 // NEGATIVO (Salida de caja)
+                        descripcion: `Comisión colocación ${cliente.nombre} (${nuevoHistoricalId})`,
+                        creditoId: nuevoCreditoRef.id,
+                        registradoPor: userEmail,
+                        office: office
+                    };
+                    // Guardar en movimientos_efectivo para que afecte el balance del día
+                    const comisionRef = db.collection('movimientos_efectivo').doc();
+                    transaction.set(comisionRef, comisionData);
                 }
             }); 
             
@@ -687,7 +719,7 @@ const database = {
 
         } catch (error) {
             console.error("Error agregando crédito:", error);
-            return { success: false, message: `Error al generar crédito: ${error.message}` };
+            return { success: false, message: `Error: ${error.message}` };
         }
     },
 
@@ -1924,4 +1956,5 @@ const database = {
     },
 
 };
+
 
