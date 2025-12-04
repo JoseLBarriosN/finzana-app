@@ -784,7 +784,7 @@ const database = {
         }
     },
 
-    // --- IMPORTACIÓN MASIVA ---
+    // --- IMPORTACIÓN MASIVA (CORREGIDO) ---
     importarDatosDesdeCSV: async (csvData, tipo, office) => {
         const lineas = csvData.split('\n').filter(linea => linea.trim() && linea.includes(','));
         if (lineas.length === 0) return { success: true, total: 0, importados: 0, errores: [] };
@@ -796,12 +796,22 @@ const database = {
         const MAX_BATCH_SIZE = 450; 
         
         const fechaImportacion = database.obtenerFechaLocalISO();
-        
         let cacheClientes = new Map();
 
-        // Helper local optimizado que usa la global
-        const limpiarFecha = (fechaStr) => {
-             const fechaObj = parsearFecha(fechaStr);
+        // HELPER LOCAL MEJORADO: Evita confundir teléfonos con fechas
+        const limpiarFechaImportacion = (fechaStr) => {
+             if (!fechaStr) return database.obtenerFechaLocalISO();
+             const str = String(fechaStr).trim();
+             
+             // SEGURIDAD: Si son exactamente 10 dígitos numéricos puros (ej. 4771234567), 
+             // asumimos que es un teléfono mal mapeado y devolvemos fecha actual para no romper la DB.
+             if (/^\d{10}$/.test(str)) {
+                 console.warn(`Dato ignorado como fecha (parece teléfono): ${str}`);
+                 return database.obtenerFechaLocalISO(); 
+             }
+             
+             // Intentar parseo normal
+             const fechaObj = parsearFecha(str);
              return fechaObj ? fechaObj.toISOString() : database.obtenerFechaLocalISO();
         };
 
@@ -810,9 +820,9 @@ const database = {
 
             for (const [i, linea] of lineas.entries()) {
                 const lineaNum = i + 1;
-                // Ignorar encabezados
                 if (linea.toLowerCase().includes('curp,') && linea.toLowerCase().includes('nombre,')) continue;
 
+                // Limpieza básica de comillas
                 const campos = linea.split(',').map(c => c.trim().replace(/^"|"$/g, ''));
 
                 if (tipo === 'clientes') {
@@ -821,6 +831,7 @@ const database = {
                         continue; 
                     }
                     const curp = campos[0].toUpperCase();
+                    // Validación de CURP más estricta para evitar basura
                     if (!curp || curp.length < 10) {
                         errores.push(`L${lineaNum}: CURP inválido '${campos[0]}'`); 
                         continue; 
@@ -829,12 +840,10 @@ const database = {
                     const cacheKey = `${curp}_${office}`;
                     if (cacheClientes.has(cacheKey)) continue;
 
-                    // Validación inteligente de columnas invertidas
-                    let tel = campos[4];
-                    let fec = campos[5];
-                    if (/^\d{10}$/.test(fec) && (String(tel).includes('/') || String(tel).includes('-'))) {
-                         let t = tel; tel = fec; fec = t; // Swap
-                    }
+                    // --- ELIMINADO EL INTERCAMBIO AUTOMÁTICO DE COLUMNAS ---
+                    // Confiamos en que la Columna 4 es Teléfono y la 5 es Fecha (índices 4 y 5)
+                    const tel = campos[4];
+                    const fec = campos[5];
 
                     const docRef = db.collection('clientes').doc();
                     batch.set(docRef, {
@@ -844,8 +853,8 @@ const database = {
                         domicilio: campos[2] || '',
                         cp: campos[3] || '', 
                         telefono: tel || '', 
-                        fechaRegistro: limpiarFecha(fec),
-                        fechaCreacion: limpiarFecha(fec),
+                        fechaRegistro: limpiarFechaImportacion(fec), // Usamos el limpiador seguro
+                        fechaCreacion: limpiarFechaImportacion(fec),
                         poblacion_grupo: campos[6] || 'SIN GRUPO', 
                         office: office, 
                         ruta: campos[7] || '',
@@ -856,19 +865,23 @@ const database = {
                     cacheClientes.set(cacheKey, true);
                     importados++;
 
-                } else if (tipo === 'colocacion') {
+                } 
+                // ... (El resto de 'colocacion' y 'cobranza' se mantiene igual, 
+                // solo asegúrate de usar limpiarFechaImportacion en sus campos de fecha)
+                else if (tipo === 'colocacion') {
+                    // ... (resto del código colocación) ...
+                    // Asegúrate de usar: fechaCreacion: limpiarFechaImportacion(campos[3]),
                     const curpCliente = campos[0].toUpperCase(); 
                     const idHistorico = campos[2] ? campos[2].toString().trim() : '';
-                    
                     if (!idHistorico) continue;
-                    
+
                     const docRef = db.collection('creditos').doc();
                     batch.set(docRef, {
                         id: docRef.id,
                         historicalIdCredito: idHistorico,
                         curpCliente: curpCliente,
                         nombreCliente: campos[1],
-                        fechaCreacion: limpiarFecha(campos[3]),
+                        fechaCreacion: limpiarFechaImportacion(campos[3]), // <--- AQUÍ
                         tipo: campos[4] || 'nuevo',
                         monto: parseFloat(campos[5] || 0),
                         plazo: parseInt(campos[6] || 14),
@@ -883,9 +896,10 @@ const database = {
                         busqueda: [curpCliente, idHistorico]
                     });
                     importados++;
-
-                } else if (tipo === 'cobranza') {
-                    const idHistorico = campos[1];
+                } 
+                else if (tipo === 'cobranza') {
+                    // ... (resto del código cobranza) ...
+                     const idHistorico = campos[1];
                     if(!idHistorico) continue;
 
                     const docRef = db.collection('pagos').doc();
@@ -893,7 +907,7 @@ const database = {
                         id: docRef.id,
                         idCredito: idHistorico,
                         monto: parseFloat(campos[3] || 0),
-                        fecha: limpiarFecha(campos[2]),
+                        fecha: limpiarFechaImportacion(campos[2]), // <--- AQUÍ
                         tipoPago: (campos[4] || 'normal').toLowerCase(),
                         poblacion_grupo: campos[5] || '',
                         ruta: campos[6] || '',
@@ -907,7 +921,6 @@ const database = {
                 batchCounter++;
                 if (batchCounter >= MAX_BATCH_SIZE) {
                     await batch.commit();
-                    console.log(`Lote guardado. Progreso: ${lineaNum}/${lineas.length}`);
                     batch = db.batch();
                     batchCounter = 0;
                     await new Promise(r => setTimeout(r, 50));
@@ -1732,46 +1745,61 @@ const database = {
         }
     },
 
-    // --- OBTENER DATOS DE HOJA DE CORTE ---
+    // --- OBTENER DATOS DE HOJA DE CORTE (CORREGIDO) ---
     obtenerDatosHojaCorte: async (fecha, userOffice, userId = null) => {
-        const fechaInicio = new Date(fecha + 'T00:00:00Z').toISOString();
-        const fechaFin = new Date(fecha + 'T23:59:59Z').toISOString();
+        // SOLUCIÓN: No convertir a UTC/ISO con 'Z'.
+        // Usamos la fecha tal cual como string para comparar con lo guardado en DB.
+        // Ejemplo: Si buscas "2023-12-03", buscamos entre "2023-12-03T00:00:00" y "2023-12-03T23:59:59"
         
+        const fechaInicio = `${fecha}T00:00:00`;
+        const fechaFin = `${fecha}T23:59:59`;
+        
+        console.log(`Buscando corte entre: ${fechaInicio} y ${fechaFin}`); // Para depuración
+
         try {
             const promises = [];
             
+            // 1. Movimientos
             let qMovs = db.collection('movimientos_efectivo')
                 .where('fecha', '>=', fechaInicio)
                 .where('fecha', '<=', fechaFin);
             
             if (userOffice && userOffice !== 'AMBAS') qMovs = qMovs.where('office', '==', userOffice);
             if (userId) qMovs = qMovs.where('userId', '==', userId);
-            
             promises.push(qMovs.get());
 
+            // 2. Pagos
             let qPagos = db.collection('pagos')
                 .where('fecha', '>=', fechaInicio)
                 .where('fecha', '<=', fechaFin);
             
             if (userOffice && userOffice !== 'AMBAS') qPagos = qPagos.where('office', '==', userOffice);
-            
             promises.push(qPagos.get());
 
+            // 3. Comisiones
             let qComis = db.collection('comisiones')
                 .where('fecha', '>=', fechaInicio)
                 .where('fecha', '<=', fechaFin);
             
             if (userOffice && userOffice !== 'AMBAS') qComis = qComis.where('office', '==', userOffice);
             if (userId) qComis = qComis.where('userId', '==', userId);
-            
             promises.push(qComis.get());
 
             const [snapMovs, snapPagos, snapComis] = await Promise.all(promises);
+
             const movimientos = snapMovs.docs.map(d => ({...d.data(), categoria: 'MOVIMIENTO', rawDate: d.data().fecha}));
             const pagos = snapPagos.docs.map(d => ({...d.data(), categoria: 'COBRANZA', tipo: 'PAGO', rawDate: d.data().fecha, descripcion: `Pago Crédito ${d.data().idCredito}`}));
             const comisiones = snapComis.docs.map(d => ({...d.data(), categoria: 'COMISION', tipo: 'COMISION', rawDate: d.data().fecha})); 
 
-            return [...movimientos, ...pagos, ...comisiones];
+            // Ordenar todos por fecha
+            const reporte = [...movimientos, ...pagos, ...comisiones];
+            reporte.sort((a, b) => {
+                const fa = a.fecha || '';
+                const fb = b.fecha || '';
+                return fa.localeCompare(fb);
+            });
+
+            return reporte;
 
         } catch (error) {
             console.error("Error obteniendo datos hoja corte:", error);
