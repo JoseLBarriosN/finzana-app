@@ -6501,11 +6501,14 @@ async function loadHojaCorte() {
     try {
         const esAgente = currentUserData.role === 'Área comercial';
         const userIdFiltro = esAgente ? currentUserData.id : null;
+        
         const datos = await database.obtenerDatosHojaCorte(fecha, currentUserData.office, userIdFiltro);
 
         let totalEntradas = 0;
         let totalSalidas = 0;
+        
         let subCobranza = 0;
+        let subPolizas = 0;
         let subColocacion = 0;
         let subGastos = 0;
         let subComisiones = 0;
@@ -6515,40 +6518,49 @@ async function loadHojaCorte() {
             let monto = 0;
             let esEntrada = false; 
             let concepto = '';
-            let colorMonto = '';
 
+            // 1. ENTRADAS
             if (item.categoria === 'COBRANZA') {
                 monto = Math.abs(item.monto || 0);
                 esEntrada = true;
                 concepto = 'COBRANZA';
                 subCobranza += monto;
-            } 
-            else if (item.tipo === 'COMISION_PAGO' || item.categoria === 'COMISION') {
+            } else if (item.tipo === 'INGRESO_POLIZA') {
+                monto = Math.abs(item.monto || 0);
+                esEntrada = true;
+                concepto = 'PÓLIZA';
+                subPolizas += monto;
+            } else if (item.tipo === 'ENTREGA_INICIAL') {
+                monto = Math.abs(item.monto || 0);
+                esEntrada = true;
+                concepto = 'FONDEO';
+                subFondeo += monto;
+            }
+            // 2. SALIDAS
+            else if (item.tipo === 'COLOCACION') {
                 monto = Math.abs(item.monto || 0);
                 esEntrada = false;
-                concepto = 'COMISIÓN';
+                concepto = 'COLOCACIÓN';
+                subColocacion += monto;
+            } else if (item.tipo === 'GASTO') {
+                monto = Math.abs(item.monto || 0);
+                esEntrada = false;
+                concepto = 'GASTO';
+                subGastos += monto;
+            } 
+            // AQUÍ ESTÁ EL CAMBIO CLAVE PARA LAS COMISIONES
+            else if (item.tipo === 'COMISION_COLOCACION' || item.tipo === 'COMISION_PAGO' || item.categoria === 'COMISION') {
+                monto = Math.abs(item.monto || 0);
+                esEntrada = false;
+                // Diferenciar visualmente el tipo de comisión
+                concepto = (item.tipo === 'COMISION_COLOCACION') ? 'COMISIÓN (Colocación)' : 'COMISIÓN (Cobranza)';
                 subComisiones += monto;
             } 
             else {
                 const rawMonto = item.monto || 0;
                 monto = Math.abs(rawMonto);
-
-                if (item.tipo === 'COLOCACION') {
-                    esEntrada = false;
-                    concepto = 'COLOCACIÓN';
-                    subColocacion += monto;
-                } else if (item.tipo === 'GASTO') {
-                    esEntrada = false;
-                    concepto = 'GASTO OPERATIVO';
-                    subGastos += monto;
-                } else if (item.tipo === 'ENTREGA_INICIAL') {
-                    esEntrada = true;
-                    concepto = 'FONDEO / RECIBIDO';
-                    subFondeo += monto;
-                } else {
-                    esEntrada = rawMonto >= 0;
-                    concepto = item.tipo || 'OTRO';
-                }
+                esEntrada = rawMonto >= 0;
+                concepto = 'OTRO';
             }
 
             if (esEntrada) totalEntradas += monto;
@@ -6557,7 +6569,7 @@ async function loadHojaCorte() {
             return {
                 hora: new Date(item.rawDate),
                 concepto: concepto,
-                descripcion: item.descripcion || (item.categoria === 'COBRANZA' ? `Pago crédito: ${item.idCredito || 'N/A'}` : '-'),
+                descripcion: item.descripcion || '-',
                 monto: monto,
                 esEntrada: esEntrada,
                 ref: item.registradoPor || 'Sistema'
@@ -6565,7 +6577,6 @@ async function loadHojaCorte() {
         });
 
         filasRenderizadas.sort((a, b) => a.hora - b.hora);
-        
         const efectivoEnMano = totalEntradas - totalSalidas;
 
         if (containerResumen) {
@@ -6573,14 +6584,14 @@ async function loadHojaCorte() {
                 <div class="card" style="border-left: 5px solid var(--info); flex: 1;">
                     <h5 style="color:#666; margin-bottom:5px;">EFECTIVO EN MANO</h5>
                     <h2 style="color:var(--dark); font-weight:bold; margin:0;">$${efectivoEnMano.toLocaleString('es-MX', {minimumFractionDigits: 2})}</h2>
-                    <small style="color:#888;">(Entradas - Salidas)</small>
                 </div>
                 
                 <div class="card" style="border-left: 5px solid var(--success); flex: 1;">
                     <h5 style="color:#666; margin-bottom:5px;">ENTRADAS (+)</h5>
                     <h3 style="color:var(--success); margin:0;">$${totalEntradas.toLocaleString('es-MX', {minimumFractionDigits: 2})}</h3>
-                    <div style="margin-top:10px; font-size:0.85em;">
+                    <div style="margin-top:10px; font-size:0.8em;">
                         <div style="display:flex; justify-content:space-between;"><span>Cobranza:</span> <strong>$${subCobranza.toLocaleString()}</strong></div>
+                        <div style="display:flex; justify-content:space-between; color:#2e8b57;"><span>Pólizas:</span> <strong>$${subPolizas.toLocaleString()}</strong></div>
                         <div style="display:flex; justify-content:space-between;"><span>Fondeo:</span> <strong>$${subFondeo.toLocaleString()}</strong></div>
                     </div>
                 </div>
@@ -6588,9 +6599,9 @@ async function loadHojaCorte() {
                 <div class="card" style="border-left: 5px solid var(--danger); flex: 1;">
                     <h5 style="color:#666; margin-bottom:5px;">SALIDAS (-)</h5>
                     <h3 style="color:var(--danger); margin:0;">$${totalSalidas.toLocaleString('es-MX', {minimumFractionDigits: 2})}</h3>
-                    <div style="margin-top:10px; font-size:0.85em;">
+                    <div style="margin-top:10px; font-size:0.8em;">
                         <div style="display:flex; justify-content:space-between;"><span>Colocación:</span> <strong>$${subColocacion.toLocaleString()}</strong></div>
-                        <div style="display:flex; justify-content:space-between;"><span>Comisiones:</span> <strong>$${subComisiones.toLocaleString()}</strong></div>
+                        <div style="display:flex; justify-content:space-between; color:#d63384;"><span>Comisiones:</span> <strong>$${subComisiones.toLocaleString()}</strong></div>
                         <div style="display:flex; justify-content:space-between;"><span>Gastos:</span> <strong>$${subGastos.toLocaleString()}</strong></div>
                     </div>
                 </div>
@@ -6599,14 +6610,17 @@ async function loadHojaCorte() {
 
         if (tbody) {
             if (filasRenderizadas.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:20px;">No hay movimientos registrados para esta fecha.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:20px;">No hay movimientos.</td></tr>';
             } else {
                 let htmlRows = '';
                 filasRenderizadas.forEach(row => {
                     const horaStr = row.hora.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
                     const entradaStr = row.esEntrada ? `$${row.monto.toFixed(2)}` : '';
                     const salidaStr = !row.esEntrada ? `$${row.monto.toFixed(2)}` : '';
-                    const rowStyle = row.concepto === 'COMISIÓN' ? 'background-color: #fff3cd;' : '';
+                    
+                    let rowStyle = '';
+                    if (row.concepto.includes('PÓLIZA')) rowStyle = 'background-color: #e8f5e9;'; 
+                    if (row.concepto.includes('COMISIÓN')) rowStyle = 'background-color: #fff3cd;'; 
 
                     htmlRows += `
                         <tr style="${rowStyle}">
@@ -6629,11 +6643,6 @@ async function loadHojaCorte() {
     } finally {
         showProcessingOverlay(false);
     }
-}
-
-const btnGenerarCorte = document.getElementById('btn-generar-corte');
-if(btnGenerarCorte) {
-    btnGenerarCorte.addEventListener('click', loadHojaCorte);
 }
 
 // ==========================================
@@ -7095,6 +7104,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
