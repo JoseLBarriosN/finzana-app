@@ -1,66 +1,37 @@
 // =============================================
-// CAPA DE SERVICIO DE FIREBASE (database.js) - CORREGIDO COMPLETO
+// CAPA DE SERVICIO DE FIREBASE (database.js) - CORREGIDO Y OPTIMIZADO
 // =============================================
 
-/**
-CONVERTIR A FECHA LOCAL
-**/
-const database = {
-    obtenerFechaLocalISO: () => {
-        const now = new Date();
-        const timezoneOffset = now.getTimezoneOffset() * 60000;
-        const localDate = new Date(now.getTime() - timezoneOffset);
-        return localDate.toISOString().slice(0, -1); 
-    },
+// --- FUNCIONES AUXILIARES (HELPERS) ---
+// Estas funciones están fuera del objeto para ser usadas internamente sin problemas de 'this'
 
 /**
- * Parsea de forma robusta una fecha desde un string de importación.
- * Intenta varios formatos comunes (D-M-Y, Y-M-D, M-D-Y) para máxima compatibilidad.
- * @param {string} fechaStr La cadena de texto de la fecha.
- * @returns {string|null} Un string en formato ISO 8601 válido o null si el formato es incorrecto.
+ * Parsea de forma robusta una fecha desde un string.
+ * Intenta varios formatos comunes (D-M-Y, Y-M-D, M-D-Y, ISO).
  */
 function _parsearFechaImportacion(fechaStr) {
     if (!fechaStr || typeof fechaStr !== 'string') return null;
 
     const fechaTrimmed = fechaStr.trim();
 
-    // Intenta parsear directamente si es un formato estándar (ISO, YYYY-MM-DD)
+    // 1. Intenta parsear directamente (ISO, YYYY-MM-DD)
     let fecha = new Date(fechaTrimmed);
-    if (!isNaN(fecha.getTime())) {
-        if (fecha.getFullYear() > 1970 && (fechaTrimmed.includes('-') || fechaTrimmed.includes('/'))) {
-            if (fechaTrimmed.includes('-')) {
-                const parts = fechaTrimmed.split('-');
-                if (parts.length === 3 && parseInt(parts[0], 10) === fecha.getFullYear()) {
-                    // Formato YYYY-MM-DD
-                    if (parseInt(parts[1], 10) === fecha.getMonth() + 1 && parseInt(parts[2], 10) === fecha.getDate()) {
-                        return fecha.toISOString();
-                    }
-                }
-            } else if (fechaTrimmed.includes('/')) {
-                const parts = fechaTrimmed.split('/');
-                if (parts.length === 3) {
-                    // Asumir MM/DD/YYYY si el primero es <= 12
-                    if (parseInt(parts[0], 10) <= 12 && parseInt(parts[0], 10) === fecha.getMonth() + 1 && parseInt(parts[1], 10) === fecha.getDate()) {
-                        return fecha.toISOString();
-                    }
-                    // Asumir DD/MM/YYYY si el segundo es <= 12
-                    if (parseInt(parts[1], 10) <= 12 && parseInt(parts[1], 10) === fecha.getMonth() + 1 && parseInt(parts[0], 10) === fecha.getDate()) {
-                        const dia = parseInt(parts[0], 10);
-                        const mes = parseInt(parts[1], 10);
-                        const anio = parseInt(parts[2], 10);
-                        if (anio > 1970 && mes >= 1 && mes <= 12 && dia >= 1 && dia <= 31) {
-                            const fechaUTC = new Date(Date.UTC(anio, mes - 1, dia));
-                            if (!isNaN(fechaUTC.getTime()) && fechaUTC.getUTCDate() === dia) {
-                                return fechaUTC.toISOString();
-                            }
-                        }
-                    }
-                }
+    if (!isNaN(fecha.getTime()) && fecha.getFullYear() > 1970) {
+        // Validaciones extra para evitar falsos positivos
+        if (fechaTrimmed.includes('-')) {
+            const parts = fechaTrimmed.split('-');
+            if (parts.length === 3 && parseInt(parts[0], 10) === fecha.getFullYear()) {
+                 // Formato YYYY-MM-DD confirmado
+                 return fecha.toISOString();
             }
+        }
+        // Si funcionó directo y parece confiable
+        if (fechaTrimmed.includes('T') || fechaTrimmed.length >= 10) {
+            return fecha.toISOString();
         }
     }
 
-    // Si el parseo directo falló o fue ambiguo, intentar formatos específicos DD-MM-YYYY, YYYY-MM-DD, MM-DD-YYYY
+    // 2. Si falla, intentar parseo manual por separadores / o -
     const separador = fechaTrimmed.includes('/') ? '/' : '-';
     const partes = fechaTrimmed.split(separador);
     if (partes.length !== 3) return null;
@@ -70,35 +41,36 @@ function _parsearFechaImportacion(fechaStr) {
 
     let anio, mes, dia;
 
+    // Lógica de heurística para determinar formato
     // Prioridad DD-MM-YYYY
     if (p3 > 1000 && p1 <= 31 && p2 <= 12) { anio = p3; dia = p1; mes = p2; }
     // Formato YYYY-MM-DD
     else if (p1 > 1000 && p2 <= 12 && p3 <= 31) { anio = p1; mes = p2; dia = p3; }
-    // Formato MM-DD-YYYY
+    // Formato MM-DD-YYYY (Uso común en USA)
     else if (p3 > 1000 && p1 <= 12 && p2 <= 31) { anio = p3; mes = p1; dia = p2; }
     else { return null; }
 
     if (mes < 1 || mes > 12 || dia < 1 || dia > 31) return null;
 
+    // Crear fecha en UTC para evitar desfases de zona horaria al guardar solo la fecha
     fecha = new Date(Date.UTC(anio, mes - 1, dia));
 
-    if (isNaN(fecha.getTime()) || fecha.getUTCFullYear() !== anio || fecha.getUTCMonth() !== mes - 1 || fecha.getUTCDate() !== dia) {
-        console.warn(`Fecha inválida (post-parseo): ${fechaStr} -> ${anio}-${mes}-${dia}`);
-        return null;
-    }
+    if (isNaN(fecha.getTime())) return null;
 
     return fecha.toISOString();
 }
 
-// Función auxiliar para parsear fechas de forma segura (usada internamente por database.js)
+/**
+ * Función general para convertir cualquier input a objeto Date
+ */
 function parsearFecha(fechaInput) {
     if (!fechaInput) return null;
     if (fechaInput instanceof Date) return fechaInput;
-    if (typeof fechaInput === 'object' && typeof fechaInput.toDate === 'function') return fechaInput.toDate(); // Timestamps Firestore
+    if (typeof fechaInput === 'object' && typeof fechaInput.toDate === 'function') return fechaInput.toDate(); // Firestore Timestamp
 
     if (typeof fechaInput === 'string') {
         const fechaStr = fechaInput.trim();
-        // Prioridad ISO 8601
+        // Prioridad ISO 8601 estricto
         if (fechaStr.includes('T') && fechaStr.includes('Z') && fechaStr.length >= 20) {
             const fecha = new Date(fechaStr);
             if (!isNaN(fecha.getTime())) return fecha;
@@ -106,21 +78,32 @@ function parsearFecha(fechaInput) {
         // Intentar con la función robusta
         const fechaISO = _parsearFechaImportacion(fechaStr);
         if (fechaISO) {
-            const fecha = new Date(fechaISO);
-            if (!isNaN(fecha.getTime())) return fecha;
+            return new Date(fechaISO);
         }
-        // Fallback directo (menos fiable)
+        // Fallback final
         const fechaDirecta = new Date(fechaStr);
         if (!isNaN(fechaDirecta.getTime()) && fechaDirecta.getFullYear() > 1970) {
-            console.warn("Parseo directo usado como fallback:", fechaInput);
             return fechaDirecta;
         }
     }
-    console.error("No se pudo parsear fecha interna:", fechaInput);
     return null;
 }
 
+// --- OBJETO PRINCIPAL DATABASE ---
+
 const database = {
+
+    /**
+     * Obtiene la fecha actual ajustada a la zona horaria local en formato ISO,
+     * eliminando la 'Z' para mantener la hora "reloj" local.
+     */
+    obtenerFechaLocalISO: () => {
+        const now = new Date();
+        const timezoneOffset = now.getTimezoneOffset() * 60000;
+        const localDate = new Date(now.getTime() - timezoneOffset);
+        return localDate.toISOString().slice(0, -1); 
+    },
+
     // --- MÉTODOS GENERALES ---
     getAll: async (collection) => {
         try {
@@ -140,7 +123,7 @@ const database = {
             return { success: true, data: users };
         } catch (error) {
             if (error.code === 'permission-denied') {
-                console.log("Info: Usuario actual no tiene permiso para listar usuarios (normal para agentes).");
+                console.log("Info: Usuario actual no tiene permiso para listar usuarios.");
                 return { success: false, data: [], message: "Sin permisos" };
             }
             console.warn("Error obtenerUsuarios:", error);
@@ -148,7 +131,7 @@ const database = {
         }
     },
 
-    // --- OBTENER USUARIOS POR ID ---
+    // --- OBTENER USUARIO POR ID ---
     obtenerUsuarioPorId: async (uid) => {
         try {
             const docRef = db.collection('users').doc(uid);
@@ -162,9 +145,7 @@ const database = {
                 console.error(`Datos incompletos para usuario ${uid}: Falta rol.`);
                 return { id: doc.id, ...userData, error: "Datos incompletos (falta rol)" };
             }
-            // AHORA USA 'office', ASIGNA 'AMBAS' SI FALTA
             if (!userData.office) {
-                console.warn(`Usuario ${uid} no tiene 'office' definida. Asignando 'AMBAS' por defecto.`);
                 userData.office = 'AMBAS';
             }
             return { id: doc.id, ...userData };
@@ -198,7 +179,6 @@ const database = {
         }
     },
 
-    // --- DESHABILITAR USUARIOS ---
     deshabilitarUsuario: async (uid) => {
         try {
             await db.collection('users').doc(uid).update({ status: 'disabled' });
@@ -209,7 +189,7 @@ const database = {
         }
     },
 
-    // --- OBTENER CLIENTES POR ID ---
+    // --- GESTIÓN DE CLIENTES ---
     obtenerClientePorId: async (id) => {
         try {
             const doc = await db.collection('clientes').doc(id).get();
@@ -221,7 +201,6 @@ const database = {
         }
     },
 
-    // --- ACTUALIZAR CLIENTES ---
     actualizarCliente: async (id, clienteData, userEmail) => {
         try {
             clienteData.curp = clienteData.curp.toUpperCase();
@@ -235,7 +214,6 @@ const database = {
         }
     },
 
-    // --- ELIMINAR CLIENTE ---
     eliminarCliente: async (id) => {
         try {
             await db.collection('clientes').doc(id).delete();
@@ -246,7 +224,6 @@ const database = {
         }
     },
 
-    // --- BUSCAR CLIENTES POR CURP ---
     buscarClientePorCURP: async (curp, userOffice = null) => {
         try {
             let query = db.collection('clientes').where('curp', '==', curp.toUpperCase());
@@ -265,7 +242,6 @@ const database = {
         }
     },
 
-    // --- BUSCAR CLIENTES POR CURPS 2 ---
     buscarClientesPorCURPs: async (curps, userOffice = null) => {
         if (!curps || curps.length === 0) return [];
         const upperCaseCurps = curps.map(c => String(c).toUpperCase());
@@ -295,21 +271,19 @@ const database = {
         }
     },
 
-    // --- AGREGAR CLIENTES NUEVOS ---
     async agregarCliente(clienteData, userEmail) {
         try {
-            const existingCliente = await this.buscarClientePorCURP(clienteData.curp);
+            const existingCliente = await database.buscarClientePorCURP(clienteData.curp);
             if (existingCliente) {
                 return { success: false, message: 'El cliente con esta CURP ya existe.' };
             }
 
-            // --- USAR FECHA LOCAL ---
-            const fechaLocal = this.obtenerFechaLocalISO();
+            const fechaLocal = database.obtenerFechaLocalISO();
             
             const nuevoCliente = {
                 ...clienteData,
-                fechaRegistro: fechaLocal, // <--- CAMBIO
-                fechaCreacion: fechaLocal, // <--- CAMBIO
+                fechaRegistro: fechaLocal,
+                fechaCreacion: fechaLocal,
                 registradoPor: userEmail,
                 fechaUltimaModificacion: fechaLocal
             };
@@ -322,7 +296,6 @@ const database = {
         }
     },
 
-    // --- BUSCAR CLIENTES ---
     buscarClientes: async (filtros) => {
         try {
             let query = db.collection('clientes');
@@ -372,22 +345,21 @@ const database = {
         }
     },
 
-    // --- BUSCAR CREDITOS POR CLIENTE ---
+    // --- GESTIÓN DE CRÉDITOS ---
     buscarCreditosPorCliente: async (curp, userOffice = null) => {
-        try {
-            let query = db.collection('creditos').where('curpCliente', '==', curp.toUpperCase());
-            if (userOffice && userOffice !== 'AMBAS') {
-                query = query.where('office', '==', userOffice);
-            }
-            const snapshot = await query.get();
-            return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        } catch (error) {
-            console.error("Error buscando créditos por cliente:", error);
-            return [];
-        }
-    },
+        try {
+            let query = db.collection('creditos').where('curpCliente', '==', curp.toUpperCase());
+            if (userOffice && userOffice !== 'AMBAS') {
+                query = query.where('office', '==', userOffice);
+            }
+            const snapshot = await query.get();
+            return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        } catch (error) {
+            console.error("Error buscando créditos por cliente:", error);
+            return [];
+        }
+    },
 
-    // --- BUSCAR CREDITOS POR ID HISTORICO ---
     buscarCreditosPorHistoricalId: async (historicalId, options = {}) => {
         try {
             let query = db.collection('creditos').where('historicalIdCredito', '==', historicalId);
@@ -407,7 +379,6 @@ const database = {
         }
     },
 
-    // --- BUSCAR CREDITO POR ID ---
     buscarCreditoPorId: async (firestoreId) => {
         try {
             const doc = await db.collection('creditos').doc(firestoreId).get();
@@ -419,7 +390,6 @@ const database = {
         }
     },
 
-    // --- BUSCAR CREDITOS ---
     buscarCreditos: async (filtros) => {
         try {
             let query = db.collection('creditos');
@@ -445,26 +415,24 @@ const database = {
         }
     },
 
-    // --- BUSCAR CREDITOS ACTIVOS POR CLIENTE ---
     buscarCreditoActivoPorCliente: async (curp, userOffice = null) => {
-        try {
-            const creditos = await database.buscarCreditosPorCliente(curp, userOffice);
-            const estadosNoActivos = ['liquidado'];
-            const creditosActivos = creditos.filter(c =>
-                !estadosNoActivos.includes(c.estado) &&
-                (c.saldo === undefined || c.saldo > 0.01)
-            );
-            if (creditosActivos.length === 0) return null;
-            creditosActivos.sort((a, b) => (parsearFecha(b.fechaCreacion)?.getTime() || 0) - (parsearFecha(a.fechaCreacion)?.getTime() || 0));
-            return creditosActivos[0];
-        } catch (error) {
-            console.error("Error buscando crédito activo:", error);
-            return null;
-        }
-    },
+        try {
+            const creditos = await database.buscarCreditosPorCliente(curp, userOffice);
+            const estadosNoActivos = ['liquidado'];
+            const creditosActivos = creditos.filter(c =>
+                !estadosNoActivos.includes(c.estado) &&
+                (c.saldo === undefined || c.saldo > 0.01)
+            );
+            if (creditosActivos.length === 0) return null;
+            creditosActivos.sort((a, b) => (parsearFecha(b.fechaCreacion)?.getTime() || 0) - (parsearFecha(a.fechaCreacion)?.getTime() || 0));
+            return creditosActivos[0];
+        } catch (error) {
+            console.error("Error buscando crédito activo:", error);
+            return null;
+        }
+    },
 
-    // --- VERIFICAR ELEGIBILIDAD DE CLIENTE ---
-    async verificarElegibilidadCliente(curp, office) {
+    verificarElegibilidadCliente: async (curp, office) => {
         try {
             let query = db.collection('creditos')
                 .where('curpCliente', '==', curp)
@@ -504,18 +472,13 @@ const database = {
                     esRenovacion: false
                 };
             }
-
         } catch (error) {
             console.error("Error verificando cliente:", error);
-            if (error.code === 'failed-precondition') {
-                 console.warn("⚠️ FALTA ÍNDICE CLIENTE: Revisa la consola (F12) para el link.");
-            }
             throw error; 
         }
     },
 
-    // --- VERIFICAR ELEGIBILIDAD DE AVAL ---
-    async verificarElegibilidadAval(curpAval, office) {
+    verificarElegibilidadAval: async (curpAval, office) => {
         if (!curpAval) return { elegible: false, message: "CURP de aval vacía." };
 
         try {
@@ -559,20 +522,11 @@ const database = {
 
         } catch (error) {
             console.error("Error verificando aval:", error);
-            
-            if (error.code === 'failed-precondition') {
-                console.warn("⚠️ FALTA ÍNDICE: Abre la consola del navegador (F12) y haz clic en el enlace largo para crearlo.");
-                return { elegible: false, message: "Falta crear un índice en la base de datos para esta consulta." };
-            }
-            
             return { elegible: false, message: `Error de permisos verificando aval: ${error.message}` };
         }
     },
 
-    /**
-     * Genera un nuevo crédito.
-     * INCLUYE: Fecha Local, Póliza como Entrada y Comisiones.
-     */
+    // --- AGREGAR CRÉDITO ---
     async agregarCredito(creditoData, userEmail) {
         try {
             // 1. Validaciones
@@ -585,23 +539,23 @@ const database = {
                 return { success: false, message: 'Plazo no permitido para renovación.' };
             }
             
-            const elegibilidadCliente = await this.verificarElegibilidadCliente(creditoData.curpCliente, office);
+            const elegibilidadCliente = await database.verificarElegibilidadCliente(creditoData.curpCliente, office);
             if (!elegibilidadCliente.elegible) return { success: false, message: elegibilidadCliente.mensaje };
             
             if (creditoData.curpAval) {
-                const elegibilidadAval = await this.verificarElegibilidadAval(creditoData.curpAval, office); 
+                const elegibilidadAval = await database.verificarElegibilidadAval(creditoData.curpAval, office); 
                 if (!elegibilidadAval.elegible) return { success: false, message: `Problema con el Aval: ${elegibilidadAval.message}` };
             }
             
-            const cliente = await this.buscarClientePorCURP(creditoData.curpCliente, office); 
+            const cliente = await database.buscarClientePorCURP(creditoData.curpCliente, office); 
             if (!cliente) return { success: false, message: "Cliente no encontrado." };
             
             if (creditoData.plazo === 10 && !cliente.isComisionista) {
                 return { success: false, message: "Solo comisionistas pueden acceder a 10 semanas." };
             }
             
-            // 2. Datos del Crédito (USANDO FECHA LOCAL)
-            const fechaCreacionISO = this.obtenerFechaLocalISO(); // <--- CAMBIO DE FECHA
+            // 2. Datos del Crédito
+            const fechaCreacionISO = database.obtenerFechaLocalISO(); 
             
             const nuevoCreditoData = {
                 monto: parseFloat(creditoData.monto),
@@ -737,7 +691,7 @@ const database = {
     getPagosPorCredito: async (historicalIdCredito, office) => {
         try {
             if (!office || (office !== 'GDL' && office !== 'LEON')) {
-                console.warn(`getPagosPorCredito fue llamado para ID ${historicalIdCredito} sin una 'office' (sucursal) válida. Devolviendo vacío.`);
+                console.warn(`getPagosPorCredito fue llamado para ID ${historicalIdCredito} sin una 'office' válida.`);
                 return [];
             }
             const snapshot = await db.collection('pagos')
@@ -746,12 +700,11 @@ const database = {
                 .get();
             return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         } catch (error) {
-            console.error(`Error obteniendo pagos por historicalIdCredito (${historicalIdCredito}) y Office (${office}):`, error);
+            console.error(`Error obteniendo pagos:`, error);
             return [];
         }
     },
 
-    // --- PAGO POR ID HISTORICO ---
     getAllPagosPorHistoricalId: async (historicalIdCredito) => {
         try {
             const snapshot = await db.collection('pagos')
@@ -777,15 +730,14 @@ const database = {
             const saldoActual = credito.saldo !== undefined ? credito.saldo : credito.montoTotal;
             const officeCredito = credito.office || 'GDL';
 
-            // --- USAR FECHA LOCAL ---
-            const fechaISO = this.obtenerFechaLocalISO();
+            const fechaISO = database.obtenerFechaLocalISO();
             
             const nuevoPago = {
                 id: pagosRef.id,
                 idCredito: pagoData.idCredito, 
                 firestoreIdCredito: firestoreIdCredito,
                 monto: parseFloat(pagoData.monto),
-                fecha: fechaISO, // <--- CAMBIO
+                fecha: fechaISO,
                 tipoPago: pagoData.tipoPago || 'normal',
                 registradoPor: emailUsuario,
                 office: officeCredito, 
@@ -809,8 +761,8 @@ const database = {
                     categoria: 'COMISION', 
                     monto: -Math.abs(pagoData.comisionGenerada), 
                     descripcion: `Comisión cobro crédito ${pagoData.idCredito}`,
-                    fecha: fechaISO, // <--- CAMBIO
-                    userId: currentUserData ? currentUserData.id : null,
+                    fecha: fechaISO,
+                    userId: (await auth.currentUser) ? (await auth.currentUser).uid : null,
                     registradoPor: emailUsuario,
                     office: officeCredito,
                     creditoIdAsociado: firestoreIdCredito
@@ -841,41 +793,16 @@ const database = {
         let importados = 0;
         let batch = db.batch();
         let batchCounter = 0;
-        const MAX_BATCH_SIZE = 450; // Reducido un poco por seguridad (limite es 500)
+        const MAX_BATCH_SIZE = 450; 
         
-        // 1. USAR FECHA LOCAL
-        // const fechaImportacion = new Date().toISOString(); // <-- REEMPLAZADO
-        const fechaImportacion = database.obtenerFechaLocalISO(); // <-- CORRECTO (Usa 'this.' si es método interno, o 'database.' si es externo)
+        const fechaImportacion = database.obtenerFechaLocalISO();
         
         let cacheClientes = new Map();
-        let cacheCreditos = new Map();
 
-        // HELPER LOCAL PARA FECHAS (Blindado)
+        // Helper local optimizado que usa la global
         const limpiarFecha = (fechaStr) => {
-            if (!fechaStr) return database.obtenerFechaLocalISO();
-            let str = fechaStr.trim();
-            if (/^\d{8,15}$/.test(str)) return database.obtenerFechaLocalISO(); // Es un teléfono
-            
-            // Convertir DD-MM-YYYY a ISO Local
-            if (str.includes('/') || str.includes('-')) {
-                const p = str.split(/[-/]/);
-                if (p.length === 3) {
-                    // Asumimos DD-MM-YYYY
-                    const dia = parseInt(p[0]);
-                    const mes = parseInt(p[1]) - 1;
-                    const anio = parseInt(p[2]);
-                    if(anio > 1900) {
-                        const fecha = new Date(anio, mes, dia);
-                        // Ajuste manual a ISO local
-                        const offset = fecha.getTimezoneOffset() * 60000;
-                        return new Date(fecha.getTime() - offset).toISOString().slice(0, -1);
-                    }
-                }
-            }
-            // Intento directo
-            const d = new Date(str);
-            if (!isNaN(d.getTime())) return d.toISOString();
-            return database.obtenerFechaLocalISO();
+             const fechaObj = parsearFecha(fechaStr);
+             return fechaObj ? fechaObj.toISOString() : database.obtenerFechaLocalISO();
         };
 
         try {
@@ -894,13 +821,13 @@ const database = {
                         continue; 
                     }
                     const curp = campos[0].toUpperCase();
-                    if (!curp || curp.length < 10) { // Validación CURP más laxa para evitar saltar válidos cortos
+                    if (!curp || curp.length < 10) {
                         errores.push(`L${lineaNum}: CURP inválido '${campos[0]}'`); 
                         continue; 
                     }
                     
                     const cacheKey = `${curp}_${office}`;
-                    if (cacheClientes.has(cacheKey)) continue; // Ya procesado en este lote
+                    if (cacheClientes.has(cacheKey)) continue;
 
                     // Validación inteligente de columnas invertidas
                     let tel = campos[4];
@@ -908,15 +835,6 @@ const database = {
                     if (/^\d{10}$/.test(fec) && (String(tel).includes('/') || String(tel).includes('-'))) {
                          let t = tel; tel = fec; fec = t; // Swap
                     }
-
-                    // Solo validamos duplicados en DB si es un lote pequeño o crítico
-                    // Para velocidad masiva, a veces se omite, pero aquí lo dejaremos
-                    /* const existe = await database.buscarClientePorCURP(curp);
-                    if (existe && existe.office === office) {
-                        cacheClientes.set(cacheKey, true);
-                        continue;
-                    }
-                    */
 
                     const docRef = db.collection('clientes').doc();
                     batch.set(docRef, {
@@ -927,11 +845,11 @@ const database = {
                         cp: campos[3] || '', 
                         telefono: tel || '', 
                         fechaRegistro: limpiarFecha(fec),
-                        fechaCreacion: limpiarFecha(fec), // Respaldo
+                        fechaCreacion: limpiarFecha(fec),
                         poblacion_grupo: campos[6] || 'SIN GRUPO', 
                         office: office, 
                         ruta: campos[7] || '',
-                        isComisionista: false, // Default
+                        isComisionista: false,
                         fechaImportacion: fechaImportacion, 
                         creadoPor: 'importacion_csv'
                     });
@@ -939,11 +857,6 @@ const database = {
                     importados++;
 
                 } else if (tipo === 'colocacion') {
-                    // ... (Tu lógica de colocación está bien, solo usa limpiarFecha) ...
-                    // Asegúrate de usar limpiarFecha(campos[3])
-                    // Y database.obtenerFechaLocalISO() para fechas nuevas
-                    
-                    // ... (Lógica igual a la tuya pero con helper de fecha)
                     const curpCliente = campos[0].toUpperCase(); 
                     const idHistorico = campos[2] ? campos[2].toString().trim() : '';
                     
@@ -964,16 +877,14 @@ const database = {
                         nombreAval: campos[9] || '',
                         poblacion_grupo: campos[10] || '',
                         ruta: campos[11] || '',
-                        // Lógica de saldo inteligente
                         saldo: campos[12] ? parseFloat(campos[12]) : parseFloat(campos[7] || 0),
                         office: office,
-                        estado: 'al corriente', // O calcular si saldo < total
+                        estado: 'al corriente', 
                         busqueda: [curpCliente, idHistorico]
                     });
                     importados++;
 
                 } else if (tipo === 'cobranza') {
-                    // ... (Lógica de cobranza) ...
                     const idHistorico = campos[1];
                     if(!idHistorico) continue;
 
@@ -986,26 +897,23 @@ const database = {
                         tipoPago: (campos[4] || 'normal').toLowerCase(),
                         poblacion_grupo: campos[5] || '',
                         ruta: campos[6] || '',
-                        office: office, // Asumimos la oficina de carga
+                        office: office,
                         registradoPor: 'importacion_csv',
                         origen: 'csv'
                     });
                     importados++;
                 }
 
-                // Control de Lotes
                 batchCounter++;
                 if (batchCounter >= MAX_BATCH_SIZE) {
                     await batch.commit();
                     console.log(`Lote guardado. Progreso: ${lineaNum}/${lineas.length}`);
                     batch = db.batch();
                     batchCounter = 0;
-                    // Pequeña pausa para no saturar
                     await new Promise(r => setTimeout(r, 50));
                 }
             }
 
-            // Guardar remanente
             if (batchCounter > 0) {
                 await batch.commit();
             }
@@ -1013,7 +921,7 @@ const database = {
             return { success: true, total: lineas.length, importados: importados, errores: errores };
 
         } catch (error) {
-            console.error("Error CRÍTICO:", error);
+            console.error("Error CRÍTICO importación:", error);
             return { success: false, message: error.message, errores: errores };
         }
     },
@@ -1386,189 +1294,176 @@ const database = {
 
     // --- OBTENER POBLACIONES ---
     obtenerPoblaciones: async (office = null) => {
-        console.log(`>>> obtenerPoblaciones (Corregido) llamada con office: ${office}`);
-        try {
-            let query = db.collection('poblaciones');
-            
-            if (office && office !== 'AMBAS') {
-                console.log(`>>> Filtrando poblaciones por office: ${office}`);
-                query = query.where('office', '==', office);
-            } else {
-                console.log(">>> Obteniendo todas las poblaciones (sin filtro office).");
-            }
-            
-            const snapshot = await query.get();
-            let poblacionesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            console.log(`>>> Se obtuvieron ${poblacionesData.length} poblaciones.`);
-            
-            poblacionesData.sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
+        try {
+            let query = db.collection('poblaciones');
+            
+            if (office && office !== 'AMBAS') {
+                query = query.where('office', '==', office);
+            }
+            
+            const snapshot = await query.get();
+            let poblacionesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            
+            poblacionesData.sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
 
-            return poblacionesData;
-        } catch (error) {
-            console.error("Error obteniendo poblaciones:", error);
-            return [];
-        }
-    },
+            return poblacionesData;
+        } catch (error) {
+            console.error("Error obteniendo poblaciones:", error);
+            return [];
+        }
+    },
 
     // --- AGREGAR POBLACIONES ---
-    agregarPoblacion: async (nombre, office) => {
-        try {
-            const nombreUpper = nombre.toUpperCase();
-            const existeSnap = await db.collection('poblaciones')
-                .where('nombre', '==', nombreUpper)
-                .where('office', '==', office)
-                .limit(1).get();
-            if (!existeSnap.empty) {
-                return { success: false, message: `La población "${nombreUpper}" ya existe en la oficina ${office}.` };
-            }
-            await db.collection('poblaciones').add({ nombre: nombreUpper, office, ruta: null });
-            return { success: true, message: 'Población agregada.' };
-        } catch (error) {
-            console.error("Error agregando población:", error);
-            return { success: false, message: `Error: ${error.message}` };
-        }
-    },
+    agregarPoblacion: async (nombre, office) => {
+        try {
+            const nombreUpper = nombre.toUpperCase();
+            const existeSnap = await db.collection('poblaciones')
+                .where('nombre', '==', nombreUpper)
+                .where('office', '==', office)
+                .limit(1).get();
+            if (!existeSnap.empty) {
+                return { success: false, message: `La población "${nombreUpper}" ya existe en la oficina ${office}.` };
+            }
+            await db.collection('poblaciones').add({ nombre: nombreUpper, office, ruta: null });
+            return { success: true, message: 'Población agregada.' };
+        } catch (error) {
+            console.error("Error agregando población:", error);
+            return { success: false, message: `Error: ${error.message}` };
+        }
+    },
 
     // --- ELIMINAR POBLACIONES ---
-    eliminarPoblacion: async (id) => {
-        try { 
-            await db.collection('poblaciones').doc(id).delete(); 
-            return { success: true, message: 'Población eliminada.' }; 
-        } catch (error) { 
-            console.error("Error eliminando población:", error); 
-            return { success: false, message: `Error: ${error.message}` }; 
-        }
-    },
+    eliminarPoblacion: async (id) => {
+        try { 
+            await db.collection('poblaciones').doc(id).delete(); 
+            return { success: true, message: 'Población eliminada.' }; 
+        } catch (error) { 
+            console.error("Error eliminando población:", error); 
+            return { success: false, message: `Error: ${error.message}` }; 
+        }
+    },
 
     // --- OBTENER RUTAS ---
-    obtenerRutas: async (office = null) => {
-        console.log(`>>> obtenerRutas (Corregido) llamada con office: ${office}`);
-        try {
-            let query = db.collection('rutas');
-            
-            if (office && office !== 'AMBAS') {
-                console.log(`>>> Filtrando rutas por office: ${office}`);
-                query = query.where('office', '==', office);
-            } else {
-                console.log(">>> Obteniendo todas las rutas.");
-            }
+    obtenerRutas: async (office = null) => {
+        try {
+            let query = db.collection('rutas');
+            if (office && office !== 'AMBAS') {
+                query = query.where('office', '==', office);
+            }
+            const snapshot = await query.get();
+            let rutasData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            rutasData.sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
+            
+            return rutasData;
+        } catch (error) {
+            console.error("Error obteniendo rutas:", error);
+            return [];
+        }
+    },
 
-            const snapshot = await query.get();
-            let rutasData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            console.log(`>>> Se obtuvieron ${rutasData.length} rutas en total.`);
+    // ACTUALIZAR NOMBRE DE RUTA ---
+    actualizarNombreRuta: async (id, nuevoNombre) => {
+        if (!id || !nuevoNombre || !nuevoNombre.trim()) {
+            return { success: false, message: 'ID o nombre inválido.' };
+        }
+        try {
+            const nombreUpper = nuevoNombre.toUpperCase();
+            const rutaRef = db.collection('rutas').doc(id);
+            const rutaDoc = await rutaRef.get();
+            if (!rutaDoc.exists) throw new Error("Ruta no encontrada.");
+            const rutaData = rutaDoc.data();
+            const nombreOriginal = rutaData.nombre;
+            const existeSnap = await db.collection('rutas')
+                .where('nombre', '==', nombreUpper)
+                .where('office', '==', rutaData.office)
+                .limit(1).get();
+            if (!existeSnap.empty && existeSnap.docs[0].id !== id) {
+                 return { success: false, message: `El nombre "${nombreUpper}" ya existe en la oficina ${rutaData.office}.` };
+            }
 
-            rutasData.sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
-            
-            return rutasData;
-        } catch (error) {
-            console.error("Error obteniendo rutas:", error);
-            return [];
-        }
-    },
+            await rutaRef.update({ nombre: nombreUpper });
+            
+            const poblacionesSnap = await db.collection('poblaciones')
+                .where('office', '==', rutaData.office)
+                .where('ruta', '==', nombreOriginal)
+                .get();
+            
+            if (!poblacionesSnap.empty) {
+                const batch = db.batch();
+                poblacionesSnap.docs.forEach(doc => {
+                    batch.update(doc.ref, { ruta: nombreUpper });
+                });
+                await batch.commit();
+            }
 
-    // ACTUALIZAR NOMBRE DE RUTA ---
-    actualizarNombreRuta: async (id, nuevoNombre) => {
-        if (!id || !nuevoNombre || !nuevoNombre.trim()) {
-            return { success: false, message: 'ID o nombre inválido.' };
-        }
-        try {
-            const nombreUpper = nuevoNombre.toUpperCase();
-            const rutaRef = db.collection('rutas').doc(id);
-            const rutaDoc = await rutaRef.get();
-            if (!rutaDoc.exists) throw new Error("Ruta no encontrada.");
-            const rutaData = rutaDoc.data();
-            const nombreOriginal = rutaData.nombre;
-            const existeSnap = await db.collection('rutas')
-                .where('nombre', '==', nombreUpper)
-                .where('office', '==', rutaData.office)
-                .limit(1).get();
-            if (!existeSnap.empty && existeSnap.docs[0].id !== id) {
-                 return { success: false, message: `El nombre "${nombreUpper}" ya existe en la oficina ${rutaData.office}.` };
-            }
+            return { success: true, message: 'Nombre de ruta actualizado.' };
+        } catch (error) {
+            console.error("Error actualizando nombre de ruta:", error);
+            return { success: false, message: `Error: ${error.message}` };
+        }
+    },
 
-            await rutaRef.update({ nombre: nombreUpper });
-            
-            const poblacionesSnap = await db.collection('poblaciones')
-                .where('office', '==', rutaData.office)
-                .where('ruta', '==', nombreOriginal)
-                .get();
-            
-            if (!poblacionesSnap.empty) {
-                const batch = db.batch();
-                poblacionesSnap.docs.forEach(doc => {
-                    batch.update(doc.ref, { ruta: nombreUpper });
-                });
-                await batch.commit();
-            }
-
-            return { success: true, message: 'Nombre de ruta actualizado.' };
-        } catch (error) {
-            console.error("Error actualizando nombre de ruta:", error);
-            return { success: false, message: `Error: ${error.message}` };
-        }
-    },
-
-    // --- ASIGNAR RUTA A POBLACION ---
-    asignarRutaAPoblacion: async (poblacionId, rutaNombre) => {
-        if (!poblacionId) {
-            return { success: false, message: 'ID de población inválido.' };
-        }
-        try {
-            const poblacionRef = db.collection('poblaciones').doc(poblacionId);
-            const updateData = {
-                ruta: rutaNombre ? rutaNombre.toUpperCase() : null
-            };
-            await poblacionRef.update(updateData);
-            return { success: true, message: `Ruta ${rutaNombre ? 'asignada/actualizada' : 'eliminada'} para la población.` };
-        } catch (error) {
-            console.error("Error asignando ruta a población:", error);
-            return { success: false, message: `Error: ${error.message}` };
-        }
-    },
+    // --- ASIGNAR RUTA A POBLACION ---
+    asignarRutaAPoblacion: async (poblacionId, rutaNombre) => {
+        if (!poblacionId) {
+            return { success: false, message: 'ID de población inválido.' };
+        }
+        try {
+            const poblacionRef = db.collection('poblaciones').doc(poblacionId);
+            const updateData = {
+                ruta: rutaNombre ? rutaNombre.toUpperCase() : null
+            };
+            await poblacionRef.update(updateData);
+            return { success: true, message: `Ruta ${rutaNombre ? 'asignada/actualizada' : 'eliminada'} para la población.` };
+        } catch (error) {
+            console.error("Error asignando ruta a población:", error);
+            return { success: false, message: `Error: ${error.message}` };
+        }
+    },
 
     // --- AGREGAR RUTA ---
-    agregarRuta: async (nombre, office) => {
-        try {
-            const nombreUpper = nombre.toUpperCase();
-            const existeSnap = await db.collection('rutas')
-                .where('nombre', '==', nombreUpper)
-                .where('office', '==', office)
-                .limit(1).get();
-            if (!existeSnap.empty) {
-                return { success: false, message: `La ruta "${nombreUpper}" ya existe en la oficina ${office}.` };
-            }
-            await db.collection('rutas').add({ nombre: nombreUpper, office });
-            return { success: true, message: 'Ruta agregada.' };
-        } catch (error) {
-            console.error("Error agregando ruta:", error);
-            return { success: false, message: `Error: ${error.message}` };
-        }
-    },
+    agregarRuta: async (nombre, office) => {
+        try {
+            const nombreUpper = nombre.toUpperCase();
+            const existeSnap = await db.collection('rutas')
+                .where('nombre', '==', nombreUpper)
+                .where('office', '==', office)
+                .limit(1).get();
+            if (!existeSnap.empty) {
+                return { success: false, message: `La ruta "${nombreUpper}" ya existe en la oficina ${office}.` };
+            }
+            await db.collection('rutas').add({ nombre: nombreUpper, office });
+            return { success: true, message: 'Ruta agregada.' };
+        } catch (error) {
+            console.error("Error agregando ruta:", error);
+            return { success: false, message: `Error: ${error.message}` };
+        }
+    },
 
     // --- ELIMINAR RUTA ---
-    eliminarRuta: async (id, nombre, office) => {
-        try {
-            await db.collection('rutas').doc(id).delete();
-            
-            const poblacionesSnap = await db.collection('poblaciones')
-                .where('office', '==', office)
-                .where('ruta', '==', nombre)
-                .get();
-            
-            if (!poblacionesSnap.empty) {
-                const batch = db.batch();
-                poblacionesSnap.docs.forEach(doc => {
-                    batch.update(doc.ref, { ruta: null });
-                });
-                await batch.commit();
-            }
-            
-            return { success: true, message: 'Ruta eliminada y des-asignada.' };
-        } catch (error) {
-            console.error("Error eliminando ruta:", error);
-            return { success: false, message: `Error: ${error.message}` };
-        }
-    },
+    eliminarRuta: async (id, nombre, office) => {
+        try {
+            await db.collection('rutas').doc(id).delete();
+            
+            const poblacionesSnap = await db.collection('poblaciones')
+                .where('office', '==', office)
+                .where('ruta', '==', nombre)
+                .get();
+            
+            if (!poblacionesSnap.empty) {
+                const batch = db.batch();
+                poblacionesSnap.docs.forEach(doc => {
+                    batch.update(doc.ref, { ruta: null });
+                });
+                await batch.commit();
+            }
+            
+            return { success: true, message: 'Ruta eliminada y des-asignada.' };
+        } catch (error) {
+            console.error("Error eliminando ruta:", error);
+            return { success: false, message: `Error: ${error.message}` };
+        }
+    },
 
     // =============================================
     // *** NUEVAS FUNCIONES: EFECTIVO Y COMISIONES ***
@@ -1611,7 +1506,7 @@ const database = {
         } catch (error) {
             console.error("Error obteniendo movimientos de efectivo:", error);
             if (error.message.includes("requires an index")) {
-               console.warn(">>> Firestore requiere un índice en 'movimientos_efectivo': userId ASC, office ASC, fecha DESC (o similar según la consulta)");
+               console.warn(">>> Firestore requiere un índice en 'movimientos_efectivo'.");
             }
             return [];
         }
@@ -1669,9 +1564,6 @@ const database = {
             
         } catch (error) {
             console.error("Error obteniendo movimientos para reporte:", error);
-            if (error.message.includes("requires an index")) {
-                console.warn(">>> Firestore requiere índices en 'movimientos_efectivo' Y 'comisiones': office(ASC), userId(ASC), fecha(DESC)");
-            }
             return { success: false, message: error.message, data: [] };
         }
     },
@@ -1813,10 +1705,8 @@ const database = {
 
     // --- OBTENER POBLACIONES POR RUTA ---
     async obtenerPoblacionesPorRuta(ruta, office) {
-        console.log(`📡 DB: Buscando poblaciones para Ruta: "${ruta}" en Oficina: "${office}"`);
         try {
             let query = db.collection('poblaciones');
-            
             query = query.where('ruta', '==', ruta);
 
             if (office && office !== 'AMBAS') {
@@ -1826,7 +1716,6 @@ const database = {
             const snapshot = await query.get();
             
             if (snapshot.empty) {
-                console.warn("⚠️ DB: No se encontraron poblaciones para esta ruta.");
                 return [];
             }
 
@@ -1835,11 +1724,10 @@ const database = {
                 ...doc.data()
             }));
 
-            console.log(`✅ DB: ${poblaciones.length} poblaciones encontradas.`);
             return poblaciones;
 
         } catch (error) {
-            console.error("❌ DB Error en obtenerPoblacionesPorRuta:", error);
+            console.error("Error en obtenerPoblacionesPorRuta:", error);
             throw error; 
         }
     },
@@ -1892,6 +1780,3 @@ const database = {
     },
 
 };
-
-
-
