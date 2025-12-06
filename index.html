@@ -155,9 +155,17 @@
                     <div class="menu-card" data-view="view-hoja-corte">
                         <div class="menu-icon" style="color: #dc3545;"><i class="fas fa-cut"></i></div>
                         <h3>Hoja de Corte</h3>
-                        <p>Cuadre de caja diario</p>
+                        <p>Corte de caja diario</p>
                         <button class="btn btn-primary" data-view="view-hoja-corte"><i class="fas fa-arrow-right"></i> Acceder</button>
-                    </div>       
+                    </div> 
+                    <div class="menu-card admin-only" data-view="view-multicreditos" style="border-left: 5px solid #6f42c1;">
+                        <div class="menu-icon" style="color: #6f42c1;"><i class="fas fa-network-wired"></i></div>
+                        <h3>Auditoría Histórica</h3>
+                        <p>Detectar multicréditos (>2)</p>
+                        <button class="btn btn-primary" data-view="view-multicreditos" style="background-color: #6f42c1; border-color: #6f42c1;">
+                            <i class="fas fa-arrow-right"></i> Acceder
+                        </button>
+                    </div>
                 </div>
             </div>
 
@@ -1115,6 +1123,47 @@
                 </div>
                 <div id="status_hoja_corte" class="status-message hidden"></div>
             </div>
+            <div id="view-multicreditos" class="view hidden">
+                <div class="view-header">
+                    <h2><i class="fas fa-network-wired"></i> Auditoría Histórica (Multicréditos)</h2>
+                    <button class="btn btn-secondary" data-view="view-main-menu">
+                        <i class="fas fa-arrow-left"></i> Volver al Menú
+                    </button>
+                </div>
+                <div class="card">
+                    <div class="card-body">
+                        <div class="alert alert-info" style="margin-bottom: 20px;">
+                            <i class="fas fa-info-circle"></i> 
+                            Este módulo detecta clientes que exceden el límite de 2 créditos activos (debido a la carga histórica) 
+                            y muestra el desglose completo de sus pagos.
+                        </div>
+
+                        <div class="filtros-container" style="margin-bottom: 20px;">
+                            <div class="filtros-grid" style="display: flex; gap: 15px; align-items: flex-end;">
+                                <div class="form-group" style="flex: 1;">
+                                    <label for="multicredito-sucursal">Selecciona Sucursal</label>
+                                    <select id="multicredito-sucursal" class="form-control">
+                                        <option value="GDL">Guadalajara</option>
+                                        <option value="LEON">León</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <button id="btn-generar-multicreditos" class="btn btn-primary" style="background-color: #6f42c1; border-color: #6f42c1; min-width: 180px;">
+                                        <i class="fas fa-search"></i> Buscar Anomalías
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="multicreditos-resultados">
+                            <div class="empty-state" style="text-align:center; color:#ccc; padding:40px;">
+                                <i class="fas fa-network-wired" style="font-size: 4em; margin-bottom:10px;"></i>
+                                <p>Selecciona una sucursal para auditar la cartera histórica.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
 
         </main> </div> <div id="processing-overlay" class="processing-overlay hidden">
         <div class="processing-spinner"></div>
@@ -1169,6 +1218,7 @@
     <script src="js/app.js"></script>
 </body>
 </html>
+
 
 
 
