@@ -62,101 +62,100 @@
             <div id="view-main-menu" class="view">
                 <h2>Panel de Control</h2>
                 <div class="menu-grid">
-                    <div class="menu-card" data-view="view-gestion-clientes">
-                        <div class="menu-icon icon-clientes"><i class="fas fa-users"></i></div>
+                    <div class="menu-card" onclick="showView('view-gestion-clientes')" style="--card-color: #2E8B57;">
+                        <div class="menu-icon"><i class="fas fa-users"></i></div>
                         <h3>Gestión de Clientes</h3>
                         <p>Consulta y administra clientes</p>
-                        <button class="btn btn-primary" data-view="view-gestion-clientes"><i class="fas fa-arrow-right"></i> Acceder</button>
                     </div>
-                    <div class="menu-card" data-view="view-cliente">
-                        <div class="menu-icon icon-registrar"><i class="fas fa-user-plus"></i></div>
+
+                    <div class="menu-card" onclick="showView('view-cliente')" style="--card-color: #2E8B57;">
+                        <div class="menu-icon"><i class="fas fa-user-plus"></i></div>
                         <h3>Registrar Cliente</h3>
                         <p>Agrega nuevos clientes</p>
-                        <button class="btn btn-primary" data-view="view-cliente"><i class="fas fa-arrow-right"></i> Acceder</button>
                     </div>
-                    <div class="menu-card" data-view="view-colocacion">
-                        <div class="menu-icon icon-colocacion"><i class="fas fa-hand-holding-usd"></i></div>
+
+                    <div class="menu-card" onclick="showView('view-colocacion')" style="--card-color: #2E8B57;">
+                        <div class="menu-icon"><i class="fas fa-hand-holding-usd"></i></div>
                         <h3>Generar Crédito</h3>
                         <p>Crea nuevos créditos</p>
-                        <button class="btn btn-primary" data-view="view-colocacion"><i class="fas fa-arrow-right"></i> Acceder</button>
                     </div>
-                    <div class="menu-card" data-view="view-cobranza">
-                        <div class="menu-icon icon-cobranza"><i class="fas fa-cash-register"></i></div>
+
+                    <div class="menu-card" onclick="showView('view-cobranza')" style="--card-color: #2E8B57;">
+                        <div class="menu-icon"><i class="fas fa-cash-register"></i></div>
                         <h3>Registrar Pago</h3>
                         <p>Registra pagos individuales</p>
-                        <button class="btn btn-primary" data-view="view-cobranza"><i class="fas fa-arrow-right"></i> Acceder</button>
                     </div>
-                    <div class="menu-card" data-view="view-pago-grupo">
-                        <div class="menu-icon icon-cobranza"><i class="fas fa-users-cog"></i></div>
+
+                    <div class="menu-card" onclick="showView('view-pago-grupo')" style="--card-color: #2E8B57;">
+                        <div class="menu-icon"><i class="fas fa-users-cog"></i></div>
                         <h3>Pago Grupal</h3>
                         <p>Registra el pago de un grupo</p>
-                        <button class="btn btn-primary" data-view="view-pago-grupo"><i class="fas fa-arrow-right"></i> Acceder</button>
                     </div>
-                    <div class="menu-card" data-view="view-reportes">
-                        <div class="menu-icon icon-reportes"><i class="fas fa-chart-bar"></i></div>
+
+                    <div class="menu-card" onclick="showView('view-reportes')" style="--card-color: #0d6efd;">
+                        <div class="menu-icon"><i class="fas fa-chart-bar"></i></div>
                         <h3>Reportes Básicos</h3>
-                        <p>Consulta estadísticas generales</p>
-                        <button class="btn btn-primary" data-view="view-reportes"><i class="fas fa-arrow-right"></i> Acceder</button>
+                        <p>Estadísticas del mes actual</p>
                     </div>
-                    <div class="menu-card" data-view="view-reportes-avanzados">
-                        <div class="menu-icon icon-reportes-avanzados"><i class="fas fa-chart-line"></i></div>
+
+                    <div class="menu-card" onclick="showView('view-reportes-avanzados')" style="--card-color: #0d6efd;">
+                        <div class="menu-icon"><i class="fas fa-chart-line"></i></div>
                         <h3>Reportes Avanzados</h3>
                         <p>Reportes detallados con filtros</p>
-                        <button class="btn btn-primary" data-view="view-reportes-avanzados"><i class="fas fa-arrow-right"></i> Acceder</button>
                     </div>
-                    <div class="menu-card" data-view="view-reportes-graficos">
-                        <div class="menu-icon icon-reportes"><i class="fas fa-chart-pie"></i></div>
+
+                    <div class="menu-card" onclick="showView('view-reportes-graficos')" style="--card-color: #0d6efd;">
+                        <div class="menu-icon"><i class="fas fa-chart-pie"></i></div>
                         <h3>Reportes con Gráficos</h3>
-                        <p>Visualiza el comportamiento del negocio</p>
-                        <button class="btn btn-primary" data-view="view-reportes-graficos"><i class="fas fa-arrow-right"></i> Acceder</button>
+                        <p>Visualiza el comportamiento</p>
                     </div>
-                    <div class="menu-card" data-view="view-usuarios">
-                        <div class="menu-icon icon-usuarios"><i class="fas fa-user-cog"></i></div>
+
+                    <div class="menu-card" onclick="showView('view-usuarios')" style="--card-color: #495057;">
+                        <div class="menu-icon"><i class="fas fa-user-cog"></i></div>
                         <h3>Gestión de Usuarios</h3>
                         <p>Administra usuarios del sistema</p>
-                        <button class="btn btn-primary" data-view="view-usuarios"><i class="fas fa-arrow-right"></i> Acceder</button>
                     </div>
-                    <div class="menu-card" data-view="view-importar">
-                        <div class="menu-icon icon-importar"><i class="fas fa-file-import"></i></div>
+
+                    <div class="menu-card" onclick="showView('view-importar')" style="--card-color: #495057;">
+                        <div class="menu-icon"><i class="fas fa-file-import"></i></div>
                         <h3>Importar Datos</h3>
                         <p>Carga información desde CSV</p>
-                        <button class="btn btn-primary" data-view="view-importar"><i class="fas fa-arrow-right"></i> Acceder</button>
                     </div>
-                    <div class="menu-card" data-view="view-configuracion">
-                        <div class="menu-icon icon-configuracion"><i class="fas fa-cogs"></i></div>
+
+                    <div class="menu-card" onclick="showView('view-configuracion')" style="--card-color: #495057;">
+                        <div class="menu-icon"><i class="fas fa-cogs"></i></div>
                         <h3>Configuración</h3>
                         <p>Administra poblaciones y rutas</p>
-                        <button class="btn btn-primary" data-view="view-configuracion"><i class="fas fa-arrow-right"></i> Acceder</button>
                     </div>
-                    <div class="menu-card" data-view="view-registrar-gasto">
-                        <i class="fas fa-receipt menu-icon" style="color: #FF6347;"></i>
+
+                    <div class="menu-card" onclick="showView('view-registrar-gasto')" style="--card-color: #FF6347;">
+                        <div class="menu-icon"><i class="fas fa-receipt"></i></div>
                         <h3>Registrar Gasto</h3>
-                        <p>Registra gastos de operación (gasolina, viáticos, etc.)</p>
-                        <button class="btn btn-primary" data-view="view-registrar-gasto"><i class="fas fa-arrow-right"></i> Acceder</button>
+                        <p>Gastos operativos</p>
                     </div>
-                    <div class="menu-card" data-view="view-gestion-efectivo">
-                        <i class="fas fa-cash-register menu-icon" style="color: #3CB371;"></i>
+
+                    <div class="menu-card" onclick="showView('view-gestion-efectivo')" style="--card-color: #3CB371;">
+                        <div class="menu-icon"><i class="fas fa-cash-register"></i></div>
                         <h3>Gestión de Efectivo</h3>
-                        <p>Revisar balances y registrar entregas de efectivo a agentes.</p>
-                        <button class="btn btn-primary" data-view="view-gestion-efectivo"><i class="fas fa-arrow-right"></i> Acceder</button>
+                        <p>Balances y entregas</p>
                     </div>
-                    <div class="menu-card" data-view="view-reporte-contable">
-                        <i class="fas fa-print menu-icon" style="color: #6f42c1;"></i>
+                
+                    <div class="menu-card" onclick="showView('view-reporte-contable')" style="--card-color: #6f42c1;">
+                        <div class="menu-icon"><i class="fas fa-print"></i></div>
                         <h3>Reporte Contable</h3>
-                        <p>Genera y confirma reportes de flujos de efectivo por oficina.</p>
-                        <button class="btn btn-primary" data-view="view-reporte-contable"><i class="fas fa-arrow-right"></i> Acceder</button>
+                        <p>Flujos de efectivo por oficina</p>
                     </div>
-                    <div class="menu-card" style="background-color: #fff3cd;">
-                        <div class="menu-icon icon-importar"><i class="fas fa-key"></i></div>
-                        <h3>(SOLO PRUEBAS) Registrar YubiKey</h3>
-                        <p>Asocia tu llave de seguridad a esta cuenta.</p>
-                        <button id="btn-register-yubikey" class="btn btn-warning"><i class="fas fa-id-card"></i> Registrar mi Llave</button>
+                
+                    <div class="menu-card admin-only" onclick="showView('view-multicreditos')" style="--card-color: #6f42c1;">
+                        <div class="menu-icon"><i class="fas fa-network-wired"></i></div>
+                        <h3>Auditoría Histórica</h3>
+                        <p>Detectar multicréditos (>2)</p>
                     </div>
-                    <div class="menu-card" data-view="view-hoja-corte">
-                        <div class="menu-icon" style="color: #dc3545;"><i class="fas fa-cut"></i></div>
+                
+                    <div class="menu-card" onclick="showView('view-hoja-corte')" style="--card-color: #dc3545;">
+                        <div class="menu-icon"><i class="fas fa-cut"></i></div>
                         <h3>Hoja de Corte</h3>
                         <p>Corte de caja diario</p>
-                        <button class="btn btn-primary" data-view="view-hoja-corte"><i class="fas fa-arrow-right"></i> Acceder</button>
                     </div> 
                     <div class="menu-card admin-only" data-view="view-multicreditos" style="border-left: 5px solid #6f42c1;">
                         <div class="menu-icon" style="color: #6f42c1;"><i class="fas fa-network-wired"></i></div>
@@ -1218,6 +1217,7 @@
     <script src="js/app.js"></script>
 </body>
 </html>
+
 
 
 
