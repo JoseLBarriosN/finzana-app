@@ -1884,6 +1884,101 @@ const database = {
         }
     },
 
+    // ============================================================
+    // REPORTE DE MULTICRÉDITOS (AUDITORÍA)
+    // ============================================================
+    obtenerReporteMulticreditos: async (office) => {
+        try {
+            console.log(`🔎 Buscando multicréditos en ${office}...`);
+            
+            // 1. Obtener TODOS los créditos activos de la oficina
+            // Nota: Esto puede ser pesado, pero es un reporte administrativo
+            const snapshot = await db.collection('creditos')
+                .where('office', '==', office)
+                .where('estado', '!=', 'liquidado')
+                .get();
+
+            if (snapshot.empty) return {};
+
+            // 2. Agrupar créditos por CURP Cliente en memoria
+            const mapaClientes = new Map(); // CURP -> [credito1, credito2]
+
+            snapshot.docs.forEach(doc => {
+                const cred = { id: doc.id, ...doc.data() };
+                // Filtro de seguridad extra para saldo
+                if (cred.saldo !== undefined && cred.saldo <= 0.05) return;
+
+                if (!mapaClientes.has(cred.curpCliente)) {
+                    mapaClientes.set(cred.curpCliente, []);
+                }
+                mapaClientes.get(cred.curpCliente).push(cred);
+            });
+
+            // 3. Filtrar clientes con MÁS DE 2 créditos activos
+            const clientesProblema = [];
+            const idsCreditosProblema = [];
+
+            for (const [curp, listaCreditos] of mapaClientes.entries()) {
+                if (listaCreditos.length > 2) {
+                    clientesProblema.push({
+                        curp: curp,
+                        nombre: listaCreditos[0].nombreCliente,
+                        ruta: listaCreditos[0].ruta || 'SIN RUTA',
+                        poblacion: listaCreditos[0].poblacion_grupo || 'SIN POBLACION',
+                        creditos: listaCreditos
+                    });
+                    // Guardamos IDs para buscar pagos
+                    listaCreditos.forEach(c => idsCreditosProblema.push(c.historicalIdCredito));
+                }
+            }
+
+            if (clientesProblema.length === 0) return {};
+
+            // 4. Buscar Pagos (Solo de estos créditos)
+            // Hacemos lotes de 30 para usar 'in' query o traemos todos los pagos activos si son muchos
+            // Para optimizar en reporte pesado: Traemos pagos por fecha reciente o iteramos.
+            // Opción robusta: Iterar por crédito (lento pero seguro) o traer pagos activos.
+            
+            const mapaPagos = new Map(); // HistoricalID -> [pago1, pago2]
+
+            // Estrategia: Consultar pagos por crédito individualmente (Limitado a visualización)
+            // OJO: Si son 1000 créditos, esto es demasiado.
+            // MEJOR: Devolvemos los créditos y cargamos los pagos "On Demand" (al dar clic en la vista).
+            // PERO: Tú pediste que se muestren. Haremos una búsqueda optimizada.
+            
+            // Estructura Final Jerárquica:
+            // Arbol[Ruta][Poblacion][Cliente] = [Creditos...]
+            const arbol = {};
+
+            clientesProblema.forEach(cliente => {
+                const ruta = cliente.ruta;
+                const pob = cliente.poblacion;
+
+                if (!arbol[ruta]) arbol[ruta] = {};
+                if (!arbol[ruta][pob]) arbol[ruta][pob] = [];
+
+                arbol[ruta][pob].push(cliente);
+            });
+
+            return { arbol, totalCasos: clientesProblema.length };
+
+        } catch (error) {
+            console.error("Error reporte multicréditos:", error);
+            throw error;
+        }
+    },
+
+    // Helper para cargar pagos de un crédito específico (Lazy Loading)
+    obtenerPagosParaReporte: async (historicalId, office) => {
+        const snap = await db.collection('pagos')
+            .where('idCredito', '==', historicalId)
+            .where('office', '==', office)
+            .orderBy('fecha', 'desc')
+            .get();
+        return snap.docs.map(d => d.data());
+    },
+
 };
+
 
 
