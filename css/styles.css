@@ -299,42 +299,69 @@ input, select, textarea {
 
 .menu-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
     gap: 20px;
-    margin-top: 20px;
+    padding: 20px 0;
 }
 
 .menu-card {
     background: white;
-    border-radius: var(--border-radius);
-    padding: 25px;
+    border-radius: 12px;
+    padding: 25px 20px;
     text-align: center;
-    box-shadow: 0 3px 10px rgba(0,0,0,0.08);
-    transition: var(--transition);
-    border: 1px solid #f0f0f0;
-    cursor: pointer;
-    display: block;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+    cursor: pointer; /* Manita al pasar el mouse */
+    position: relative; /* Necesario para la línea inferior */
+    overflow: hidden;
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+    /* Borde por defecto transparente para evitar saltos */
+    border-bottom: 0px solid transparent; 
 }
 
-    .menu-card:hover {
-        transform: translateY(-5px);
-        box-shadow: 0 8px 20px rgba(0,0,0,0.12);
-    }
+/* Efecto Hover: Levantar tarjeta */
+.menu-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+}
 
-.menu-icon {
-    font-size: 40px;
+/* LA LÍNEA MÁGICA (Pseudoelemento) */
+.menu-card::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 5px; /* Grosor de la línea */
+    background-color: var(--card-color, #2E8B57); /* Usa el color variable o verde por defecto */
+    
+    /* Animación de expansión desde el centro */
+    transform: scaleX(0); 
+    transform-origin: center;
+    transition: transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+.menu-card:hover::after {
+    transform: scaleX(1); /* Expande la línea al 100% */
+}
+
+/* Icono: Usa el mismo color variable */
+.menu-card .menu-icon {
+    font-size: 2.5em;
     margin-bottom: 15px;
+    color: var(--card-color, #2E8B57);
+    transition: color 0.3s ease;
 }
 
 .menu-card h3 {
-    margin-bottom: 10px;
-    font-size: 18px;
+    margin: 10px 0;
+    font-size: 1.1em;
+    color: #333;
 }
 
 .menu-card p {
-    color: var(--gray);
-    font-size: 14px;
-    margin-bottom: 15px;
+    font-size: 0.9em;
+    color: #666;
+    margin-bottom: 0; /* Ya no hay botón, quitamos margen inferior */
 }
 
 .icon-clientes { color: #3498db; }
@@ -2287,5 +2314,6 @@ body.has-connection-status #progress-container-fixed {
 .header-check-wrapper {
     z-index: 2; /* Asegura que esté por encima */
 }
+
 
 
