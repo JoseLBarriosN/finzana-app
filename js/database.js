@@ -1019,85 +1019,109 @@ const database = {
     // --- FUNCIONES DE REPORTES Y MANTENIMIENTO ---
     generarReportes: async (userOffice = null) => {
         try {
+            // 1. Preparar consultas base
             let clientesQuery = db.collection('clientes');
             let creditosQuery = db.collection('creditos');
-            let pagosQuery = db.collection('pagos');
+            
+            // Consultas para flujos del mes (Pagos y Comisiones)
+            const hoy = new Date();
+            // Calcular primer día del mes actual (Local) y del siguiente
+            const primerDiaMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1).toISOString();
+            const primerDiaMesSiguiente = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 1).toISOString();
 
+            let pagosQuery = db.collection('pagos')
+                .where('fecha', '>=', primerDiaMes)
+                .where('fecha', '<', primerDiaMesSiguiente);
+            
+            let comisionesQuery = db.collection('movimientos_efectivo')
+                .where('categoria', '==', 'COMISION')
+                .where('fecha', '>=', primerDiaMes)
+                .where('fecha', '<', primerDiaMesSiguiente);
+
+            // Filtro de Oficina
             if (userOffice && userOffice !== 'AMBAS') {
                 clientesQuery = clientesQuery.where('office', '==', userOffice);
                 creditosQuery = creditosQuery.where('office', '==', userOffice);
                 pagosQuery = pagosQuery.where('office', '==', userOffice);
+                comisionesQuery = comisionesQuery.where('office', '==', userOffice);
             }
 
-            const [clientesSnap, creditosSnap, pagosSnap] = await Promise.all([
-                clientesQuery.get(), creditosQuery.get(), pagosQuery.get()
+            // 2. Ejecutar promesas en paralelo
+            const [clientesSnap, creditosSnap, pagosSnap, comisionesSnap] = await Promise.all([
+                clientesQuery.get(), 
+                creditosQuery.get(), 
+                pagosQuery.get(),
+                comisionesQuery.get()
             ]);
 
-            const clientes = clientesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            const creditos = creditosSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            const pagos = pagosSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            const creditos = creditosSnap.docs.map(doc => doc.data());
+            const pagos = pagosSnap.docs.map(doc => doc.data());
+            const comisiones = comisionesSnap.docs.map(doc => doc.data());
 
-            const creditosActivosPendientes = creditos.filter(c => c.estado !== 'liquidado' && (c.saldo === undefined || c.saldo > 0.01));
-            const totalCartera = creditosActivosPendientes.reduce((sum, c) => sum + (c.saldo || 0), 0);
+            // 3. Cálculos de Cartera
+            const creditosActivosPendientes = creditos.filter(c => 
+                c.estado !== 'liquidado' && (c.saldo === undefined || c.saldo > 0.05)
+            );
+            
+            const totalCartera = creditosActivosPendientes.reduce((sum, c) => sum + (c.saldo || c.montoTotal || 0), 0);
 
-            const hoy = new Date();
-            const primerDiaMes = new Date(Date.UTC(hoy.getUTCFullYear(), hoy.getUTCMonth(), 1));
-            const primerDiaMesSiguiente = new Date(Date.UTC(hoy.getUTCFullYear(), hoy.getUTCMonth() + 1, 1));
-            const pagosDelMes = pagos.filter(p => {
-                const fechaPago = parsearFecha(p.fecha);
-                return fechaPago && fechaPago >= primerDiaMes && fechaPago < primerDiaMesSiguiente;
-            });
-            const cobradoMes = pagosDelMes.reduce((sum, p) => sum + (p.monto || 0), 0);
-            const totalComisionesMes = 0;
-            const pagosMapSeguro = new Map();
-            pagos.forEach(p => {
-                const key = `${p.idCredito}_${p.office}`;
-                if (!pagosMapSeguro.has(key)) pagosMapSeguro.set(key, []);
-                pagosMapSeguro.get(key).push(p);
-            });
-            for (const [key, pagosCredito] of pagosMapSeguro.entries()) {
-                pagosCredito.sort((a, b) => (parsearFecha(b.fecha)?.getTime() || 0) - (parsearFecha(a.fecha)?.getTime() || 0));
-            }
+            // 4. Cálculos del Mes (Pagos)
+            const cobradoMes = pagos.reduce((sum, p) => sum + (p.monto || 0), 0);
+            
+            // 5. Cálculos del Mes (Comisiones)
+            // Sumamos todas las salidas de comisión (vienen en negativo, las pasamos a positivo para el reporte)
+            const totalComisionesMes = comisiones.reduce((sum, c) => sum + Math.abs(c.monto || 0), 0);
 
+            // 6. Análisis de Vencidos (Lógica simple: Ultimo pago hace > 7 días)
             let totalVencidos = 0;
+            const hace7dias = new Date();
+            hace7dias.setDate(hace7dias.getDate() - 7);
+
             creditosActivosPendientes.forEach(credito => {
-                const historicalId = credito.historicalIdCredito || credito.id;
-                const claveSegura = `${historicalId}_${credito.office}`;
-                const pagosCreditoSeguro = pagosMapSeguro.get(claveSegura) || [];
-                if (database.esCreditoVencido(credito, pagosCreditoSeguro).vencido) {
-                    totalVencidos++;
+                // Si nunca ha pagado, usamos fecha creación
+                let fechaRef = credito.fechaUltimoPago || credito.fechaCreacion;
+                // Parse seguro
+                if (fechaRef) {
+                    // Si es string ISO
+                    let fechaObj = new Date(fechaRef);
+                    if (!isNaN(fechaObj) && fechaObj < hace7dias) {
+                        totalVencidos++;
+                    }
                 }
             });
 
+            // 7. Tasa de Recuperación
+            // Fórmula simple: Cobrado / (Cartera Total / Plazo Promedio * 4 semanas)
+            // Aproximación: Esperamos cobrar aprox el 25% de la cartera total cada mes (si son 4 meses promedio)
+            // O mejor: Suma de las "letras" esperadas del mes.
+            // Para simplificar y no hacer querys pesados:
             let cobroEsperadoMes = 0;
             creditosActivosPendientes.forEach(c => {
                 if (c.montoTotal && c.plazo > 0) {
+                    // Pago semanal teórico * 4 semanas
                     cobroEsperadoMes += (c.montoTotal / c.plazo) * 4;
                 }
             });
             const tasaRecuperacion = cobroEsperadoMes > 0 ? Math.min(100, (cobradoMes / cobroEsperadoMes * 100)) : 0;
 
             return {
-                totalClientes: clientes.length, 
+                totalClientes: clientesSnap.size, 
                 totalCreditos: creditosActivosPendientes.length, 
                 totalCartera: totalCartera,
                 totalVencidos: totalVencidos, 
-                pagosRegistrados: pagosDelMes.length, 
+                pagosRegistrados: pagos.length, 
                 cobradoMes: cobradoMes,
-                totalComisiones: totalComisionesMes,
+                totalComisiones: totalComisionesMes, // <--- AHORA SÍ SE CALCULA
                 tasaRecuperacion: tasaRecuperacion
             };
+
         } catch (error) {
             console.error("Error generando reportes:", error);
+            // Retorno seguro en caso de error
             return { 
-                totalClientes: 'Error', 
-                totalCreditos: 'Error', 
-                totalCartera: 'Error', 
-                totalVencidos: 'Error', 
-                pagosRegistrados: 'Error', 
-                cobradoMes: 'Error', 
-                totalComisiones: 'Error', 
-                tasaRecuperacion: 0 
+                totalClientes: 0, totalCreditos: 0, totalCartera: 0, 
+                totalVencidos: 0, pagosRegistrados: 0, cobradoMes: 0, 
+                totalComisiones: 0, tasaRecuperacion: 0 
             };
         }
     },
@@ -1979,6 +2003,7 @@ const database = {
     },
 
 };
+
 
 
 
