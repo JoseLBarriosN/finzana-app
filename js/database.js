@@ -786,141 +786,193 @@ const database = {
 
     // --- IMPORTACIÓN MASIVA (CORREGIDO) ---
     importarDatosDesdeCSV: async (csvData, tipo, office) => {
-        const lineas = csvData.split('\n').filter(linea => linea.trim() && linea.includes(','));
+        // Limpiamos líneas vacías
+        const lineas = csvData.split('\n').filter(linea => linea.trim().length > 0);
         if (lineas.length === 0) return { success: true, total: 0, importados: 0, errores: [] };
 
         let errores = [];
+        let alertas = [];
         let importados = 0;
         let batch = db.batch();
         let batchCounter = 0;
-        const MAX_BATCH_SIZE = 450; 
+        const MAX_BATCH_SIZE = 450;
         
-        const fechaImportacion = database.obtenerFechaLocalISO();
-        let cacheClientes = new Map();
+        // Fecha local para registros nuevos
+        const fechaImportacion = database.obtenerFechaLocalISO(); 
 
-        // HELPER LOCAL MEJORADO: Evita confundir teléfonos con fechas
-        const limpiarFechaImportacion = (fechaStr) => {
-             if (!fechaStr) return database.obtenerFechaLocalISO();
-             const str = String(fechaStr).trim();
-             
-             // SEGURIDAD: Si son exactamente 10 dígitos numéricos puros (ej. 4771234567), 
-             // asumimos que es un teléfono mal mapeado y devolvemos fecha actual para no romper la DB.
-             if (/^\d{10}$/.test(str)) {
-                 console.warn(`Dato ignorado como fecha (parece teléfono): ${str}`);
-                 return database.obtenerFechaLocalISO(); 
-             }
-             
-             // Intentar parseo normal
-             const fechaObj = parsearFecha(str);
-             return fechaObj ? fechaObj.toISOString() : database.obtenerFechaLocalISO();
+        // Mapas para evitar duplicados en el mismo lote
+        let cacheClientes = new Map();
+        let cacheCreditos = new Map();
+
+        // --- HELPERS INTERNOS ---
+        
+        // Limpiar Dinero
+        const limpiarDinero = (str) => {
+            if (!str) return 0;
+            const limpio = str.toString().replace(/[$,]/g, '').trim();
+            const num = parseFloat(limpio);
+            return isNaN(num) ? 0 : num;
         };
 
+        // Limpiar Fecha (Blindada contra teléfonos)
+        const limpiarFecha = (fechaStr) => {
+            if (!fechaStr) return database.obtenerFechaLocalISO();
+            let str = fechaStr.trim();
+            
+            // Si es un teléfono, devolvemos fecha actual para no romper la DB
+            if (/^\d{8,15}$/.test(str)) return database.obtenerFechaLocalISO();
+
+            // Intento formato DD/MM/YYYY o DD-MM-YYYY
+            if (str.includes('/') || str.includes('-')) {
+                const p = str.split(/[-/]/);
+                if (p.length === 3) {
+                    const dia = parseInt(p[0]);
+                    const mes = parseInt(p[1]) - 1; 
+                    const anio = parseInt(p[2]);
+                    if (anio > 1900 && anio < 2100) {
+                        const fecha = new Date(anio, mes, dia);
+                        const offset = fecha.getTimezoneOffset() * 60000;
+                        return new Date(fecha.getTime() - offset).toISOString().slice(0, -1);
+                    }
+                }
+            }
+            // Intento directo ISO
+            const d = new Date(str);
+            if (!isNaN(d.getTime())) return d.toISOString();
+            
+            return database.obtenerFechaLocalISO();
+        };
+
+        // Helper para leer columna segura
+        const leerCol = (arr, index, def = '') => {
+            return (arr[index] !== undefined && arr[index] !== null) ? arr[index].trim() : def;
+        };
+
+        console.log(`Iniciando importación estandarizada: ${tipo} en ${office}`);
+
         try {
-            console.log(`Iniciando importación tipo ${tipo} para ${office}. Líneas: ${lineas.length}`);
-
-            for (const [i, linea] of lineas.entries()) {
+            for (const [i, lineaRaw] of lineas.entries()) {
                 const lineaNum = i + 1;
-                if (linea.toLowerCase().includes('curp,') && linea.toLowerCase().includes('nombre,')) continue;
+                // Ignorar encabezados
+                if (lineaRaw.toLowerCase().includes('curp,') && lineaRaw.toLowerCase().includes('nombre,')) continue;
 
-                // Limpieza básica de comillas
-                const campos = linea.split(',').map(c => c.trim().replace(/^"|"$/g, ''));
+                const campos = lineaRaw.split(',').map(c => c.trim().replace(/^"|"$/g, ''));
 
                 if (tipo === 'clientes') {
-                    if (campos.length < 5) { 
-                        errores.push(`L${lineaNum}: Faltan columnas.`); 
-                        continue; 
-                    }
-                    const curp = campos[0].toUpperCase();
-                    // Validación de CURP más estricta para evitar basura
-                    if (!curp || curp.length < 10) {
-                        errores.push(`L${lineaNum}: CURP inválido '${campos[0]}'`); 
-                        continue; 
-                    }
+                    // ESTÁNDAR: [0]CURP, [1]NOMBRE, [2]DOM, [3]CP, [4]TEL, [5]FECHA, [6]GRUPO, [7]RUTA(Op)
                     
-                    const cacheKey = `${curp}_${office}`;
-                    if (cacheClientes.has(cacheKey)) continue;
+                    if (campos.length < 5) {
+                        errores.push(`L${lineaNum}: Datos insuficientes.`);
+                        continue;
+                    }
 
-                    // --- ELIMINADO EL INTERCAMBIO AUTOMÁTICO DE COLUMNAS ---
-                    // Confiamos en que la Columna 4 es Teléfono y la 5 es Fecha (índices 4 y 5)
-                    const tel = campos[4];
-                    const fec = campos[5];
+                    const curp = leerCol(campos, 0).toUpperCase();
+                    if (curp.length < 10) { 
+                        errores.push(`L${lineaNum}: CURP inválida o vacía.`); 
+                        continue; 
+                    }
+
+                    const cacheKey = `${curp}_${office}`;
+                    if (cacheClientes.has(cacheKey)) continue; 
+
+                    // Auto-corrección de Teléfono vs Fecha
+                    let tel = leerCol(campos, 4);
+                    let fec = leerCol(campos, 5);
+                    if (/^\d{10}$/.test(fec) && (tel.includes('/') || tel.includes('-'))) {
+                        let tmp = tel; tel = fec; fec = tmp;
+                    }
 
                     const docRef = db.collection('clientes').doc();
                     batch.set(docRef, {
                         id: docRef.id,
-                        curp: curp, 
-                        nombre: campos[1] || 'SIN NOMBRE', 
-                        domicilio: campos[2] || '',
-                        cp: campos[3] || '', 
-                        telefono: tel || '', 
-                        fechaRegistro: limpiarFechaImportacion(fec), // Usamos el limpiador seguro
-                        fechaCreacion: limpiarFechaImportacion(fec),
-                        poblacion_grupo: campos[6] || 'SIN GRUPO', 
-                        office: office, 
-                        ruta: campos[7] || '',
+                        office: office, // <--- AQUÍ SE GARANTIZA LA SUCURSAL SELECCIONADA
+                        curp: curp,
+                        nombre: leerCol(campos, 1, 'SIN NOMBRE'),
+                        domicilio: leerCol(campos, 2, 'SIN DOMICILIO'),
+                        cp: leerCol(campos, 3, ''),
+                        telefono: tel,
+                        fechaRegistro: limpiarFecha(fec),
+                        fechaCreacion: limpiarFecha(fec),
+                        poblacion_grupo: leerCol(campos, 6, 'GENERAL'),
+                        ruta: leerCol(campos, 7, ''),
                         isComisionista: false,
-                        fechaImportacion: fechaImportacion, 
-                        creadoPor: 'importacion_csv'
+                        creadoPor: 'importacion_csv',
+                        fechaImportacion: fechaImportacion
                     });
+                    
                     cacheClientes.set(cacheKey, true);
                     importados++;
 
-                } 
-                // ... (El resto de 'colocacion' y 'cobranza' se mantiene igual, 
-                // solo asegúrate de usar limpiarFechaImportacion en sus campos de fecha)
-                else if (tipo === 'colocacion') {
-                    // ... (resto del código colocación) ...
-                    // Asegúrate de usar: fechaCreacion: limpiarFechaImportacion(campos[3]),
-                    const curpCliente = campos[0].toUpperCase(); 
-                    const idHistorico = campos[2] ? campos[2].toString().trim() : '';
-                    if (!idHistorico) continue;
+                } else if (tipo === 'colocacion') {
+                    // ESTÁNDAR: [0]CURP, [1]NOM, [2]ID, [3]FECHA, [4]TIPO, [5]MONTO, [6]PLAZO, [7]TOTAL, [8]AVAL_CURP, [9]AVAL_NOM, [10]GRUPO, [11]RUTA, [12]SALDO
+                    
+                    const idHistorico = leerCol(campos, 2);
+                    if (!idHistorico) {
+                        errores.push(`L${lineaNum}: Falta ID Histórico.`);
+                        continue;
+                    }
+
+                    const curpCliente = leerCol(campos, 0).toUpperCase();
+                    
+                    // Cálculo de montos
+                    const monto = limpiarDinero(leerCol(campos, 5));
+                    const montoTotal = limpiarDinero(leerCol(campos, 7));
+                    // Si no hay saldo explícito, asumimos deuda total
+                    let saldo = leerCol(campos, 12) ? limpiarDinero(leerCol(campos, 12)) : montoTotal;
 
                     const docRef = db.collection('creditos').doc();
                     batch.set(docRef, {
                         id: docRef.id,
                         historicalIdCredito: idHistorico,
                         curpCliente: curpCliente,
-                        nombreCliente: campos[1],
-                        fechaCreacion: limpiarFechaImportacion(campos[3]), // <--- AQUÍ
-                        tipo: campos[4] || 'nuevo',
-                        monto: parseFloat(campos[5] || 0),
-                        plazo: parseInt(campos[6] || 14),
-                        montoTotal: parseFloat(campos[7] || 0),
-                        curpAval: (campos[8] || '').toUpperCase(),
-                        nombreAval: campos[9] || '',
-                        poblacion_grupo: campos[10] || '',
-                        ruta: campos[11] || '',
-                        saldo: campos[12] ? parseFloat(campos[12]) : parseFloat(campos[7] || 0),
-                        office: office,
-                        estado: 'al corriente', 
+                        nombreCliente: leerCol(campos, 1, 'CLIENTE IMPORTADO'),
+                        fechaCreacion: limpiarFecha(leerCol(campos, 3)),
+                        tipo: leerCol(campos, 4, 'nuevo').toLowerCase(),
+                        monto: monto,
+                        plazo: parseInt(leerCol(campos, 6)) || 14,
+                        montoTotal: montoTotal,
+                        curpAval: leerCol(campos, 8, '').toUpperCase(),
+                        nombreAval: leerCol(campos, 9, ''),
+                        poblacion_grupo: leerCol(campos, 10, ''),
+                        ruta: leerCol(campos, 11, ''),
+                        saldo: saldo,
+                        office: office, // <--- AQUÍ SE GARANTIZA LA SUCURSAL SELECCIONADA
+                        // Estado calculado al importar
+                        estado: (saldo <= 0.05) ? 'liquidado' : 'al corriente',
                         busqueda: [curpCliente, idHistorico]
                     });
                     importados++;
-                } 
-                else if (tipo === 'cobranza') {
-                    // ... (resto del código cobranza) ...
-                     const idHistorico = campos[1];
-                    if(!idHistorico) continue;
+
+                } else if (tipo === 'cobranza') {
+                    // ESTÁNDAR: [0]NOM, [1]ID, [2]FECHA, [3]MONTO, [4]TIPO, [5]GRUPO, [6]RUTA, [7]OFICINA(Opcional)
+                    
+                    const idHistorico = leerCol(campos, 1);
+                    if (!idHistorico) continue;
+
+                    const monto = limpiarDinero(leerCol(campos, 3));
+                    if (monto <= 0) continue; 
 
                     const docRef = db.collection('pagos').doc();
                     batch.set(docRef, {
                         id: docRef.id,
                         idCredito: idHistorico,
-                        monto: parseFloat(campos[3] || 0),
-                        fecha: limpiarFechaImportacion(campos[2]), // <--- AQUÍ
-                        tipoPago: (campos[4] || 'normal').toLowerCase(),
-                        poblacion_grupo: campos[5] || '',
-                        ruta: campos[6] || '',
-                        office: office,
+                        monto: monto,
+                        fecha: limpiarFecha(leerCol(campos, 2)),
+                        tipoPago: leerCol(campos, 4, 'normal').toLowerCase(),
+                        poblacion_grupo: leerCol(campos, 5, ''),
+                        ruta: leerCol(campos, 6, ''),
+                        office: office, // <--- AQUÍ SE GARANTIZA LA SUCURSAL SELECCIONADA
                         registradoPor: 'importacion_csv',
                         origen: 'csv'
                     });
                     importados++;
                 }
 
+                // Batch commit
                 batchCounter++;
                 if (batchCounter >= MAX_BATCH_SIZE) {
                     await batch.commit();
+                    console.log(`Lote guardado. Progreso: ${lineaNum} líneas.`);
                     batch = db.batch();
                     batchCounter = 0;
                     await new Promise(r => setTimeout(r, 50));
@@ -930,11 +982,15 @@ const database = {
             if (batchCounter > 0) {
                 await batch.commit();
             }
+            
+            if (alertas.length > 0) {
+                errores.push(`NOTA: Se detectaron ${alertas.length} campos vacíos que se rellenaron.`);
+            }
 
             return { success: true, total: lineas.length, importados: importados, errores: errores };
 
         } catch (error) {
-            console.error("Error CRÍTICO importación:", error);
+            console.error("Error CRÍTICO en importación:", error);
             return { success: false, message: error.message, errores: errores };
         }
     },
@@ -1808,3 +1864,4 @@ const database = {
     },
 
 };
+
