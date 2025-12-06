@@ -4893,6 +4893,16 @@ async function showView(viewId) {
                 
             default:
                 break;
+
+            case 'view-multicreditos':
+                // PROTECCIÓN ROL (Doble check)
+                if (currentUserData.role === 'Área comercial') {
+                    alert("No tienes permiso para ver esta sección.");
+                    showView('view-main-menu');
+                    return;
+                }
+                inicializarVistaMulticreditos();
+                break;
         }
     } catch (error) {
         console.error(`❌ Error crítico al inicializar la vista ${viewId}:`, error);
@@ -6819,6 +6829,156 @@ function togglePoblacionGroup(grupoId) {
     }
 }
 
+
+// =============================================
+// REPORTE MULTICRÉDITOS (HISTÓRICO)
+// =============================================
+
+async function inicializarVistaMulticreditos() {
+    // 1. RESTRICCIÓN DE SEGURIDAD
+    if (currentUserData.role === 'Área comercial') {
+        alert("Acceso denegado. Vista restringida.");
+        showView('view-main-menu');
+        return;
+    }
+
+    const selectSucursal = document.getElementById('multicredito-sucursal');
+    const btnBuscar = document.getElementById('btn-generar-multicreditos');
+
+    // Preseleccionar oficina del usuario si aplica
+    if (currentUserData.office && currentUserData.office !== 'AMBAS') {
+        selectSucursal.value = currentUserData.office;
+        selectSucursal.disabled = true;
+    }
+
+    // Configurar listener (clonando para evitar duplicados)
+    const newBtn = btnBuscar.cloneNode(true);
+    btnBuscar.parentNode.replaceChild(newBtn, btnBuscar);
+    
+    newBtn.addEventListener('click', async () => {
+        const office = selectSucursal.value;
+        await generarReporteMulticreditos(office);
+    });
+}
+
+async function generarReporteMulticreditos(office) {
+    const container = document.getElementById('multicreditos-resultados');
+    container.innerHTML = '<div style="text-align:center; padding:20px;"><i class="fas fa-spinner fa-spin fa-2x"></i><p>Analizando historial completo...</p></div>';
+
+    try {
+        const { arbol, totalCasos } = await database.obtenerReporteMulticreditos(office);
+
+        if (!arbol || totalCasos === 0) {
+            container.innerHTML = `
+                <div class="alert alert-success" style="text-align:center; margin-top:20px;">
+                    <i class="fas fa-check-circle fa-2x"></i><br>
+                    <strong>¡Todo limpio!</strong><br>
+                    No se encontraron clientes con más de 2 créditos activos en ${office}.
+                </div>`;
+            return;
+        }
+
+        let html = `<div class="alert alert-warning">Se encontraron <strong>${totalCasos}</strong> clientes con exceso de créditos activos.</div>`;
+
+        // NIVEL 1: RUTA
+        const rutasOrdenadas = Object.keys(arbol).sort();
+        
+        for (const ruta of rutasOrdenadas) {
+            html += `
+            <details style="margin-bottom: 10px; border: 1px solid #ddd; border-radius: 5px; overflow: hidden;">
+                <summary style="background: #343a40; color: white; padding: 10px; cursor: pointer; font-weight: bold;">
+                    <i class="fas fa-route"></i> RUTA: ${ruta}
+                </summary>
+                <div style="padding: 10px; background: #f8f9fa;">
+            `;
+
+            // NIVEL 2: POBLACIÓN
+            const poblaciones = arbol[ruta];
+            const pobsOrdenadas = Object.keys(poblaciones).sort();
+
+            for (const pob of pobsOrdenadas) {
+                html += `
+                <div style="margin-left: 15px; margin-bottom: 10px; border-left: 3px solid #6f42c1; padding-left: 10px;">
+                    <h5 style="color: #6f42c1; border-bottom: 1px solid #ccc;">${pob}</h5>
+                `;
+
+                // NIVEL 3: CLIENTE
+                const clientes = poblaciones[pob];
+                for (const cliente of clientes) {
+                    html += `
+                    <div style="background: white; padding: 10px; margin-bottom: 10px; border-radius: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <strong><i class="fas fa-user"></i> ${cliente.nombre}</strong>
+                            <span class="badge badge-danger">${cliente.creditos.length} Créditos Activos</span>
+                        </div>
+                        <div style="font-size: 0.85em; color: #666;">CURP: ${cliente.curp}</div>
+                        
+                        <div style="margin-top: 10px;">
+                    `;
+
+                    for (const cred of cliente.creditos) {
+                        const saldo = cred.saldo !== undefined ? cred.saldo : cred.montoTotal;
+                        const pctPagado = cred.montoTotal > 0 ? (1 - (saldo/cred.montoTotal)) * 100 : 0;
+                        const fechaCred = parsearFecha(cred.fechaCreacion)?.toLocaleDateString('es-MX') || 'N/A';
+
+                        html += `
+                            <details id="details-${cred.id}" ontoggle="cargarPagosHist('details-${cred.id}', '${cred.historicalIdCredito}', '${office}')" 
+                                style="margin-bottom: 5px; border: 1px solid #e9ecef; border-radius: 4px;">
+                                <summary style="padding: 8px; cursor: pointer; background: #fff; font-size: 0.9em;">
+                                    <div style="display:flex; justify-content:space-between;">
+                                        <span><strong>ID: ${cred.historicalIdCredito}</strong> | ${fechaCred} | $${cred.monto} (14 sem)</span>
+                                        <span style="color: ${pctPagado >= 80 ? 'green' : 'red'};">Saldo: $${saldo.toFixed(2)} (${pctPagado.toFixed(0)}%)</span>
+                                    </div>
+                                </summary>
+                                <div class="pagos-container" style="padding: 10px; background: #fafafa; font-size: 0.85em;">
+                                    <i class="fas fa-spinner fa-spin"></i> Cargando pagos...
+                                </div>
+                            </details>
+                        `;
+                    }
+                    html += `</div></div>`; // Fin cliente
+                }
+                html += `</div>`; // Fin población
+            }
+            html += `</div></details>`; // Fin ruta
+        }
+
+        container.innerHTML = html;
+
+    } catch (error) {
+        container.innerHTML = `<div class="alert alert-danger">Error: ${error.message}</div>`;
+    }
+}
+
+// Función global para cargar pagos al abrir el acordeón (Lazy Load)
+window.cargarPagosHist = async function(detailsId, historicalId, office) {
+    const details = document.getElementById(detailsId);
+    if (!details.open) return; // Solo cargar si se abre
+    
+    const container = details.querySelector('.pagos-container');
+    if (container.getAttribute('data-loaded') === 'true') return; // Ya cargado
+
+    try {
+        const pagos = await database.obtenerPagosParaReporte(historicalId, office); // Reutilizamos o usamos el helper
+        // Nota: Si no existe, crear 'obtenerPagosParaReporte' en database o usar 'getPagosPorCredito'
+        
+        if (pagos.length === 0) {
+            container.innerHTML = '<em>Sin pagos registrados.</em>';
+        } else {
+            let tabla = '<table style="width:100%; text-align:left;"><thead><tr><th>Fecha</th><th>Monto</th><th>Tipo</th></tr></thead><tbody>';
+            pagos.forEach(p => {
+                const f = parsearFecha(p.fecha)?.toLocaleDateString('es-MX') || '-';
+                tabla += `<tr><td>${f}</td><td>$${p.monto}</td><td>${p.tipoPago}</td></tr>`;
+            });
+            tabla += '</tbody></table>';
+            container.innerHTML = tabla;
+        }
+        container.setAttribute('data-loaded', 'true');
+    } catch (e) {
+        container.innerHTML = 'Error cargando pagos.';
+    }
+};
+
 // =============================================
 // INICIALIZACIÓN Y EVENT LISTENERS PRINCIPALES
 // =============================================
@@ -7120,6 +7280,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
