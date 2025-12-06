@@ -786,7 +786,6 @@ const database = {
 
     // --- IMPORTACIÓN MASIVA (CORREGIDO) ---
     importarDatosDesdeCSV: async (csvData, tipo, office) => {
-        // Limpiamos líneas vacías
         const lineas = csvData.split('\n').filter(linea => linea.trim().length > 0);
         if (lineas.length === 0) return { success: true, total: 0, importados: 0, errores: [] };
 
@@ -797,32 +796,47 @@ const database = {
         let batchCounter = 0;
         const MAX_BATCH_SIZE = 450;
         
-        // Fecha local para registros nuevos
         const fechaImportacion = database.obtenerFechaLocalISO(); 
-
-        // Mapas para evitar duplicados en el mismo lote
         let cacheClientes = new Map();
-        let cacheCreditos = new Map();
 
-        // --- HELPERS INTERNOS ---
+        // ---------------------------------------------------------
+        // PASO PREVIO: CARGAR MAPA DE RUTAS (Para asignación auto)
+        // ---------------------------------------------------------
+        let mapaPoblacionRuta = new Map(); // Ej: "SAN JUAN" -> "R1"
         
-        // Limpiar Dinero
+        if (tipo === 'clientes') {
+            try {
+                console.log("🔄 Cargando catálogo de poblaciones para asignación automática de rutas...");
+                // Obtenemos todas las poblaciones de la oficina actual
+                const snapshotPoblaciones = await db.collection('poblaciones')
+                    .where('office', '==', office)
+                    .get();
+                
+                snapshotPoblaciones.docs.forEach(doc => {
+                    const data = doc.data();
+                    if (data.nombre && data.ruta) {
+                        // Guardamos en mayúsculas para comparar sin problemas
+                        mapaPoblacionRuta.set(data.nombre.toUpperCase().trim(), data.ruta);
+                    }
+                });
+                console.log(`✅ Mapa de rutas cargado. ${mapaPoblacionRuta.size} poblaciones mapeadas.`);
+            } catch (err) {
+                console.warn("⚠️ No se pudo cargar el mapa de rutas. Los clientes quedarán sin ruta asignada.", err);
+            }
+        }
+        // ---------------------------------------------------------
+
+        // --- HELPERS ---
         const limpiarDinero = (str) => {
             if (!str) return 0;
-            const limpio = str.toString().replace(/[$,]/g, '').trim();
-            const num = parseFloat(limpio);
-            return isNaN(num) ? 0 : num;
+            return parseFloat(str.toString().replace(/[$,]/g, '').trim()) || 0;
         };
 
-        // Limpiar Fecha (Blindada contra teléfonos)
         const limpiarFecha = (fechaStr) => {
             if (!fechaStr) return database.obtenerFechaLocalISO();
             let str = fechaStr.trim();
+            if (/^\d{8,15}$/.test(str)) return database.obtenerFechaLocalISO(); 
             
-            // Si es un teléfono, devolvemos fecha actual para no romper la DB
-            if (/^\d{8,15}$/.test(str)) return database.obtenerFechaLocalISO();
-
-            // Intento formato DD/MM/YYYY o DD-MM-YYYY
             if (str.includes('/') || str.includes('-')) {
                 const p = str.split(/[-/]/);
                 if (p.length === 3) {
@@ -836,30 +850,27 @@ const database = {
                     }
                 }
             }
-            // Intento directo ISO
             const d = new Date(str);
             if (!isNaN(d.getTime())) return d.toISOString();
-            
             return database.obtenerFechaLocalISO();
         };
 
-        // Helper para leer columna segura
         const leerCol = (arr, index, def = '') => {
             return (arr[index] !== undefined && arr[index] !== null) ? arr[index].trim() : def;
         };
 
-        console.log(`Iniciando importación estandarizada: ${tipo} en ${office}`);
+        console.log(`Iniciando importación: ${tipo} en ${office}`);
 
         try {
             for (const [i, lineaRaw] of lineas.entries()) {
                 const lineaNum = i + 1;
-                // Ignorar encabezados
                 if (lineaRaw.toLowerCase().includes('curp,') && lineaRaw.toLowerCase().includes('nombre,')) continue;
 
                 const campos = lineaRaw.split(',').map(c => c.trim().replace(/^"|"$/g, ''));
 
                 if (tipo === 'clientes') {
-                    // ESTÁNDAR: [0]CURP, [1]NOMBRE, [2]DOM, [3]CP, [4]TEL, [5]FECHA, [6]GRUPO, [7]RUTA(Op)
+                    // ESTRUCTURA (8 COLUMNAS):
+                    // [0]CURP, [1]NOMBRE, [2]DOM, [3]CP, [4]TEL, [5]FECHA, [6]POBLACION, [7]COMISIONISTA
                     
                     if (campos.length < 5) {
                         errores.push(`L${lineaNum}: Datos insuficientes.`);
@@ -868,24 +879,42 @@ const database = {
 
                     const curp = leerCol(campos, 0).toUpperCase();
                     if (curp.length < 10) { 
-                        errores.push(`L${lineaNum}: CURP inválida o vacía.`); 
+                        errores.push(`L${lineaNum}: CURP inválida.`); 
                         continue; 
                     }
 
                     const cacheKey = `${curp}_${office}`;
                     if (cacheClientes.has(cacheKey)) continue; 
 
-                    // Auto-corrección de Teléfono vs Fecha
+                    // Corrección Teléfono/Fecha
                     let tel = leerCol(campos, 4);
                     let fec = leerCol(campos, 5);
                     if (/^\d{10}$/.test(fec) && (tel.includes('/') || tel.includes('-'))) {
                         let tmp = tel; tel = fec; fec = tmp;
                     }
 
+                    // --- LÓGICA DE ASIGNACIÓN AUTOMÁTICA ---
+                    const poblacionNombre = leerCol(campos, 6, 'GENERAL').toUpperCase();
+                    let rutaAsignada = '';
+
+                    if (mapaPoblacionRuta.has(poblacionNombre)) {
+                        rutaAsignada = mapaPoblacionRuta.get(poblacionNombre);
+                    } else {
+                        // Si no encontramos la población exacta, intenta buscar coincidencia parcial o avisa
+                        // Aquí dejamos vacío y avisamos, o asignamos una por defecto si quisieras
+                        if (poblacionNombre !== 'GENERAL') {
+                            alertas.push(`L${lineaNum}: Población "${poblacionNombre}" no tiene ruta asignada en el sistema.`);
+                        }
+                    }
+
+                    // Comisionista
+                    const esComisionistaRaw = leerCol(campos, 7, 'NO').toUpperCase();
+                    const isComisionista = (esComisionistaRaw === 'SI' || esComisionistaRaw === 'SÍ');
+
                     const docRef = db.collection('clientes').doc();
                     batch.set(docRef, {
                         id: docRef.id,
-                        office: office, // <--- AQUÍ SE GARANTIZA LA SUCURSAL SELECCIONADA
+                        office: office,
                         curp: curp,
                         nombre: leerCol(campos, 1, 'SIN NOMBRE'),
                         domicilio: leerCol(campos, 2, 'SIN DOMICILIO'),
@@ -893,9 +922,11 @@ const database = {
                         telefono: tel,
                         fechaRegistro: limpiarFecha(fec),
                         fechaCreacion: limpiarFecha(fec),
-                        poblacion_grupo: leerCol(campos, 6, 'GENERAL'),
-                        ruta: leerCol(campos, 7, ''),
-                        isComisionista: false,
+                        poblacion_grupo: poblacionNombre,
+                        // AQUÍ SE GUARDA LA RUTA AUTOMÁTICA
+                        ruta: rutaAsignada, 
+                        
+                        isComisionista: isComisionista,
                         creadoPor: 'importacion_csv',
                         fechaImportacion: fechaImportacion
                     });
@@ -904,87 +935,77 @@ const database = {
                     importados++;
 
                 } else if (tipo === 'colocacion') {
-                    // ESTÁNDAR: [0]CURP, [1]NOM, [2]ID, [3]FECHA, [4]TIPO, [5]MONTO, [6]PLAZO, [7]TOTAL, [8]AVAL_CURP, [9]AVAL_NOM, [10]GRUPO, [11]RUTA, [12]SALDO
-                    
+                    // (Lógica colocación estándar)
                     const idHistorico = leerCol(campos, 2);
-                    if (!idHistorico) {
-                        errores.push(`L${lineaNum}: Falta ID Histórico.`);
-                        continue;
-                    }
-
-                    const curpCliente = leerCol(campos, 0).toUpperCase();
-                    
-                    // Cálculo de montos
+                    if (!idHistorico) { errores.push(`L${lineaNum}: Falta ID.`); continue; }
+                    const curp = leerCol(campos, 0).toUpperCase();
                     const monto = limpiarDinero(leerCol(campos, 5));
-                    const montoTotal = limpiarDinero(leerCol(campos, 7));
-                    // Si no hay saldo explícito, asumimos deuda total
-                    let saldo = leerCol(campos, 12) ? limpiarDinero(leerCol(campos, 12)) : montoTotal;
+                    const total = limpiarDinero(leerCol(campos, 7));
+                    let saldo = leerCol(campos, 12) ? limpiarDinero(leerCol(campos, 12)) : total;
 
                     const docRef = db.collection('creditos').doc();
                     batch.set(docRef, {
                         id: docRef.id,
                         historicalIdCredito: idHistorico,
-                        curpCliente: curpCliente,
-                        nombreCliente: leerCol(campos, 1, 'CLIENTE IMPORTADO'),
+                        curpCliente: curp,
+                        nombreCliente: leerCol(campos, 1, 'IMPORTADO'),
                         fechaCreacion: limpiarFecha(leerCol(campos, 3)),
                         tipo: leerCol(campos, 4, 'nuevo').toLowerCase(),
                         monto: monto,
                         plazo: parseInt(leerCol(campos, 6)) || 14,
-                        montoTotal: montoTotal,
+                        montoTotal: total,
                         curpAval: leerCol(campos, 8, '').toUpperCase(),
                         nombreAval: leerCol(campos, 9, ''),
                         poblacion_grupo: leerCol(campos, 10, ''),
-                        ruta: leerCol(campos, 11, ''),
+                        ruta: leerCol(campos, 11, ''), // Aquí sí leemos del CSV histórico si existe
                         saldo: saldo,
-                        office: office, // <--- AQUÍ SE GARANTIZA LA SUCURSAL SELECCIONADA
-                        // Estado calculado al importar
+                        office: office,
                         estado: (saldo <= 0.05) ? 'liquidado' : 'al corriente',
-                        busqueda: [curpCliente, idHistorico]
+                        busqueda: [curp, idHistorico]
                     });
                     importados++;
 
                 } else if (tipo === 'cobranza') {
-                    // ESTÁNDAR: [0]NOM, [1]ID, [2]FECHA, [3]MONTO, [4]TIPO, [5]GRUPO, [6]RUTA, [7]OFICINA(Opcional)
-                    
-                    const idHistorico = leerCol(campos, 1);
-                    if (!idHistorico) continue;
-
+                    // (Lógica cobranza estándar)
+                    const idHist = leerCol(campos, 1);
+                    if (!idHist) continue;
                     const monto = limpiarDinero(leerCol(campos, 3));
                     if (monto <= 0) continue; 
 
                     const docRef = db.collection('pagos').doc();
                     batch.set(docRef, {
                         id: docRef.id,
-                        idCredito: idHistorico,
+                        idCredito: idHist,
                         monto: monto,
                         fecha: limpiarFecha(leerCol(campos, 2)),
                         tipoPago: leerCol(campos, 4, 'normal').toLowerCase(),
                         poblacion_grupo: leerCol(campos, 5, ''),
                         ruta: leerCol(campos, 6, ''),
-                        office: office, // <--- AQUÍ SE GARANTIZA LA SUCURSAL SELECCIONADA
+                        office: office,
                         registradoPor: 'importacion_csv',
                         origen: 'csv'
                     });
                     importados++;
                 }
 
-                // Batch commit
                 batchCounter++;
                 if (batchCounter >= MAX_BATCH_SIZE) {
                     await batch.commit();
-                    console.log(`Lote guardado. Progreso: ${lineaNum} líneas.`);
+                    console.log(`Lote guardado: ${lineaNum} líneas.`);
                     batch = db.batch();
                     batchCounter = 0;
                     await new Promise(r => setTimeout(r, 50));
                 }
             }
 
-            if (batchCounter > 0) {
-                await batch.commit();
-            }
+            if (batchCounter > 0) await batch.commit();
             
+            // Añadir resumen de alertas al final
             if (alertas.length > 0) {
-                errores.push(`NOTA: Se detectaron ${alertas.length} campos vacíos que se rellenaron.`);
+                // Solo mostrar las primeras 5 alertas para no saturar si son muchas
+                const resumenAlertas = alertas.slice(0, 5).join('\n');
+                const masAlertas = alertas.length > 5 ? `\n...y ${alertas.length - 5} más.` : '';
+                errores.push(`INFO DE RUTAS: \n${resumenAlertas}${masAlertas}`);
             }
 
             return { success: true, total: lineas.length, importados: importados, errores: errores };
@@ -1864,4 +1885,5 @@ const database = {
     },
 
 };
+
 
