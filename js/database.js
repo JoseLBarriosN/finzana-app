@@ -1943,7 +1943,7 @@ const database = {
             const idsCreditosProblema = [];
 
             for (const [curp, listaCreditos] of mapaClientes.entries()) {
-                if (listaCreditos.length > 2) {
+                if (listaCreditos.length > 1) {
                     clientesProblema.push({
                         curp: curp,
                         nombre: listaCreditos[0].nombreCliente,
@@ -2003,6 +2003,7 @@ const database = {
     },
 
 };
+
 
 
 
