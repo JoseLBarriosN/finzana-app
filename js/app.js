@@ -6873,7 +6873,7 @@ async function generarReporteMulticreditos(office) {
                 <div class="alert alert-success" style="text-align:center; margin-top:20px;">
                     <i class="fas fa-check-circle fa-2x"></i><br>
                     <strong>¡Todo limpio!</strong><br>
-                    No se encontraron clientes con más de 2 créditos activos en ${office}.
+                    No se encontraron clientes con más de 1 créditos activos en ${office}.
                 </div>`;
             return;
         }
@@ -7280,18 +7280,3 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
