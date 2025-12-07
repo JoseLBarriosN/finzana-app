@@ -110,6 +110,18 @@
                         <p>Visualiza el comportamiento</p>
                     </div>
 
+                    <div class="menu-card" onclick="showView('view-reporte-contable')" style="--card-color: #6f42c1;">
+                        <div class="menu-icon"><i class="fas fa-print"></i></div>
+                        <h3>Reporte Contable</h3>
+                        <p>Flujos de efectivo por oficina</p>
+                    </div>
+
+                    <div class="menu-card admin-only" onclick="showView('view-multicreditos')" style="--card-color: #6f42c1;">
+                        <div class="menu-icon"><i class="fas fa-network-wired"></i></div>
+                        <h3>Auditoría Histórica</h3>
+                        <p>Detectar multicréditos (>1)</p>
+                    </div>
+
                     <div class="menu-card" onclick="showView('view-usuarios')" style="--card-color: #495057;">
                         <div class="menu-icon"><i class="fas fa-user-cog"></i></div>
                         <h3>Gestión de Usuarios</h3>
@@ -138,18 +150,6 @@
                         <div class="menu-icon"><i class="fas fa-cash-register"></i></div>
                         <h3>Gestión de Efectivo</h3>
                         <p>Balances y entregas</p>
-                    </div>
-                
-                    <div class="menu-card" onclick="showView('view-reporte-contable')" style="--card-color: #6f42c1;">
-                        <div class="menu-icon"><i class="fas fa-print"></i></div>
-                        <h3>Reporte Contable</h3>
-                        <p>Flujos de efectivo por oficina</p>
-                    </div>
-                
-                    <div class="menu-card admin-only" onclick="showView('view-multicreditos')" style="--card-color: #6f42c1;">
-                        <div class="menu-icon"><i class="fas fa-network-wired"></i></div>
-                        <h3>Auditoría Histórica</h3>
-                        <p>Detectar multicréditos (>1)</p>
                     </div>
                 
                     <div class="menu-card" onclick="showView('view-hoja-corte')" style="--card-color: #dc3545;">
@@ -1209,6 +1209,7 @@
     <script src="js/app.js"></script>
 </body>
 </html>
+
 
 
 
