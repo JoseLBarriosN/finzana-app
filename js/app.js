@@ -1868,9 +1868,12 @@ async function handleClientForm(e) {
             if (!isOnline) {
                 successMessage += ' (Datos guardados localmente, se sincronizarán al conectar).';
             }
-            showStatus('status_main_menu', successMessage, 'success');
+            
             resetClientForm();
-            showView('view-main-menu');
+            showView('view-gestion-clientes');
+            showStatus('status_gestion_clientes', successMessage, 'success');
+            await loadClientesTable(); 
+            
         } else {
             throw new Error(resultado.message || 'Ocurrió un error desconocido.');
         }
@@ -7280,3 +7283,4 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
