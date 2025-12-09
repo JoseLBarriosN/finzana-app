@@ -2986,28 +2986,33 @@ async function handleCalcularCobranzaRuta() {
 async function inicializarVistaPagoGrupal() {
     console.log("🚀 INICIANDO VISTA PAGO GRUPAL (Estilo Unificado)");
     
+    // --- Referencias estáticas que no cambian ---
     const containerChecks = document.getElementById('checkboxes-poblaciones-container');
     const cardSelector = document.getElementById('selector-poblaciones-card');
-    const btnCalcular = document.getElementById('btn-calcular-seleccion');
     const statusPago = document.getElementById('status_pago_grupo');
     const btnGuardar = document.getElementById('btn-guardar-cobranza-offline');
     const btnRegistrar = document.getElementById('btn-registrar-pagos-offline');
     const containerResultados = document.getElementById('cobranza-ruta-container');
     const placeholder = document.getElementById('cobranza-ruta-placeholder');
 
-    // Limpieza UI
+    // 1. Limpieza UI
     if (cardSelector) cardSelector.classList.remove('hidden'); 
     if (placeholder) placeholder.classList.remove('hidden');
     if (containerResultados) containerResultados.innerHTML = '';
     if (statusPago) { statusPago.innerHTML = ''; statusPago.classList.add('hidden'); }
-    if(btnGuardar) btnGuardar.classList.add('hidden');
-    if(btnRegistrar) btnRegistrar.classList.add('hidden');
+    if (btnGuardar) btnGuardar.classList.add('hidden');
+    if (btnRegistrar) btnRegistrar.classList.add('hidden');
+
+    // Deshabilitar botón calcular INMEDIATAMENTE si existe para evitar doble click
+    const btnCalcularInicial = document.getElementById('btn-calcular-seleccion');
+    if (btnCalcularInicial) btnCalcularInicial.disabled = true;
 
     if (!currentUserData) {
         showStatus('status_pago_grupo', 'Error: No se han cargado datos del usuario.', 'error');
         return;
     }
 
+    // 2. Lógica Offline
     const keyOffline = OFFLINE_STORAGE_KEY + (currentUserData.ruta || 'sin_ruta');
     const datosGuardadosStr = localStorage.getItem(keyOffline);
     let datosGuardados = null;
@@ -3030,6 +3035,7 @@ async function inicializarVistaPagoGrupal() {
         return;
     }
 
+    // 3. Validación de Ruta
     let rutaUsuario = currentUserData.ruta;
     let officeUsuario = currentUserData.office;
 
@@ -3039,17 +3045,20 @@ async function inicializarVistaPagoGrupal() {
     }
 
     if (containerChecks) containerChecks.innerHTML = '<div style="text-align:center;"><div class="spinner"></div> Cargando...</div>';
-    if (btnCalcular) btnCalcular.disabled = true;
 
     try {
+        // --- AWAIT (Aquí es donde ocurría el conflicto de tiempo) ---
         const poblaciones = await database.obtenerPoblacionesPorRuta(rutaUsuario, officeUsuario);
-        containerChecks.innerHTML = ''; 
+        
+        // --- CÓDIGO SEGURO DESPUÉS DEL AWAIT ---
+        if (containerChecks) containerChecks.innerHTML = ''; 
 
         if (poblaciones.length === 0) {
-            containerChecks.innerHTML = `<p>No hay poblaciones en ruta ${rutaUsuario}.</p>`;
+            if (containerChecks) containerChecks.innerHTML = `<p>No hay poblaciones en ruta ${rutaUsuario}.</p>`;
             return;
         }
 
+        // Generar Checkboxes
         const allDiv = document.createElement('div');
         allDiv.className = 'select-all-container';
         allDiv.innerHTML = `
@@ -3059,7 +3068,7 @@ async function inicializarVistaPagoGrupal() {
                 <i class="fas fa-check-circle custom-check-icon"></i>
             </label>
         `;
-        containerChecks.appendChild(allDiv);
+        if (containerChecks) containerChecks.appendChild(allDiv);
 
         const gridDiv = document.createElement('div');
         gridDiv.className = 'poblacion-selector-grid';
@@ -3080,26 +3089,35 @@ async function inicializarVistaPagoGrupal() {
                 
                 const allChecks = document.querySelectorAll('.poblacion-check');
                 const allChecked = Array.from(allChecks).every(c => c.checked);
-                document.getElementById('check-all-poblaciones').checked = allChecked;
+                const checkAll = document.getElementById('check-all-poblaciones');
+                if(checkAll) checkAll.checked = allChecked;
             });
             gridDiv.appendChild(label);
         });
-        containerChecks.appendChild(gridDiv);
+        if (containerChecks) containerChecks.appendChild(gridDiv);
 
-        document.getElementById('check-all-poblaciones').addEventListener('change', function(e) {
-            const isChecked = e.target.checked;
-            document.querySelectorAll('.poblacion-select-card').forEach(card => {
-                const input = card.querySelector('input');
-                input.checked = isChecked;
-                if(isChecked) card.classList.add('selected');
-                else card.classList.remove('selected');
+        const checkAllBtn = document.getElementById('check-all-poblaciones');
+        if (checkAllBtn) {
+            checkAllBtn.addEventListener('change', function(e) {
+                const isChecked = e.target.checked;
+                document.querySelectorAll('.poblacion-select-card').forEach(card => {
+                    const input = card.querySelector('input');
+                    input.checked = isChecked;
+                    if(isChecked) card.classList.add('selected');
+                    else card.classList.remove('selected');
+                });
             });
-        });
+        }
 
-        if(btnCalcular) {
-            btnCalcular.disabled = false;
-            const newBtn = btnCalcular.cloneNode(true);
-            btnCalcular.parentNode.replaceChild(newBtn, btnCalcular);
+        // --- SOLUCIÓN AL CRASH "replaceChild of null" ---
+        // Volvemos a buscar el botón aquí, porque la referencia vieja puede haber muerto
+        const btnCalcularActual = document.getElementById('btn-calcular-seleccion');
+        
+        if(btnCalcularActual && btnCalcularActual.parentNode) {
+            btnCalcularActual.disabled = false;
+            // Clonamos para limpiar listeners anteriores de forma segura
+            const newBtn = btnCalcularActual.cloneNode(true);
+            btnCalcularActual.parentNode.replaceChild(newBtn, btnCalcularActual);
             newBtn.addEventListener('click', handleCalcularCobranzaRuta);
         }
 
@@ -7318,3 +7336,4 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
