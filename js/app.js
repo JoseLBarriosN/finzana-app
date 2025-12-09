@@ -350,26 +350,22 @@ function setupSecurityListeners() {
  */
 function aplicarPermisosUI(role) {
     if (!currentUserData) {
-        console.warn("⚠️ aplicarPermisosUI: No hay datos de usuario.");
+        console.warn("aplicarPermisosUI llamada sin currentUserData");
+        document.querySelectorAll('.menu-card').forEach(card => card.style.display = 'none');
         return;
     }
-
-    // 1. Normalizar el rol para evitar problemas de acentos o mayúsculas
-    // "Área comercial" -> "area comercial"
-    const rolNormalizado = (role || '').toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
     
-    console.log(`🔐 Debug Permisos: Procesando rol original "${role}" como "${rolNormalizado}"`);
-
-    // 2. Listas de acceso
-    const accesos = {
-        admin: [
+    const permisosMenu = {
+        'Super Admin': ['all'],
+        'Gerencia': ['all'],
+        'Administrador': [
             'view-gestion-clientes', 'view-cliente', 'view-colocacion', 'view-cobranza',
             'view-pago-grupo', 'view-reportes', 'view-reportes-avanzados',
             'view-usuarios', 'view-importar', 'view-configuracion',
             'view-gestion-efectivo', 'view-reporte-contable',
-            'view-hoja-corte', 'view-multicreditos'
+            'view-hoja-corte'
         ],
-        comercial: [
+        'Área comercial': [
             'view-gestion-clientes',
             'view-cliente',
             'view-colocacion',
@@ -377,65 +373,33 @@ function aplicarPermisosUI(role) {
             'view-pago-grupo',
             'view-registrar-gasto',
             'view-hoja-corte'
-        ]
+            
+        ],
+        'default': []
     };
 
-    // 3. Determinar permisos según el rol normalizado
-    let permisosUsuario = [];
-
-    if (rolNormalizado.includes('super') || rolNormalizado.includes('gerencia')) {
-        permisosUsuario = ['all']; // Acceso total
-    } 
-    else if (rolNormalizado.includes('admin')) {
-        permisosUsuario = accesos.admin;
-    } 
-    else if (rolNormalizado.includes('comercial') || rolNormalizado.includes('ventas')) {
-        permisosUsuario = accesos.comercial;
-    } 
-    else {
-        console.warn("⚠️ Rol no reconocido para permisos:", rolNormalizado);
-    }
-
-    console.log("📋 Debug Permisos: Vistas permitidas ->", permisosUsuario.length === 1 ? 'TODO (SuperAdmin)' : permisosUsuario);
-
-    // 4. Aplicar visibilidad al DOM
-    const tarjetas = document.querySelectorAll('.menu-card');
-    let visibles = 0;
-
-    tarjetas.forEach(card => {
-        // Obtenemos el ID de la vista y quitamos espacios en blanco por si acaso
-        const rawView = card.getAttribute('data-view');
-        const view = rawView ? rawView.trim() : 'SIN_ID';
-
-        // Verificamos si tiene permiso
-        const tienePermiso = permisosUsuario.includes('all') || permisosUsuario.includes(view);
-
-        if (tienePermiso) {
-            card.style.display = ''; // Dejar que el CSS controle el display (block/flex/grid)
-            card.classList.remove('hidden'); 
-            visibles++;
+    const userRoleKey = role === 'admin' ? 'Administrador' : role;
+    const userPerms = permisosMenu[userRoleKey] || permisosMenu['default'];
+    document.querySelectorAll('.menu-card').forEach(card => {
+        const view = card.getAttribute('data-view');
+        if (userPerms.includes('all') || userPerms.includes(view)) {
+            card.style.display = 'block';
         } else {
             card.style.display = 'none';
-            card.classList.add('hidden');
-            // Debug: Descomenta si necesitas saber qué se oculta
-            // console.log(`⛔ Ocultando: ${view}`);
         }
     });
 
-    console.log(`✅ Debug Permisos: Se habilitaron ${visibles} tarjetas de menú.`);
-
-    // 5. Lógica adicional de filtros (Oficina/Sucursal)
     const userOffice = currentUserData.office;
     const filtrosOffice = [
         '#sucursal_filtro', '#sucursal_filtro_reporte', '#grafico_sucursal',
         '#office_cliente', '#nueva-poblacion-sucursal', '#nueva-ruta-sucursal',
-        '#filtro-sucursal-usuario', '#nuevo-sucursal', '#reporte-contable-sucursal'
+        '#filtro-sucursal-usuario',
+        '#nuevo-sucursal',
+        '#reporte-contable-sucursal'
     ];
 
-    const esAdminConAccesoTotal = (rolNormalizado.includes('super') || rolNormalizado.includes('gerencia'));
-
+    const esAdminConAccesoTotal = (userRoleKey === 'Super Admin' || userRoleKey === 'Gerencia');
     if (userOffice && userOffice !== 'AMBAS' && !esAdminConAccesoTotal) {
-        // Bloquear selects de sucursal
         filtrosOffice.forEach(selector => {
             const el = document.querySelector(selector);
             if (el) {
@@ -444,52 +408,51 @@ function aplicarPermisosUI(role) {
             }
         });
         
-        // Disparar eventos de actualización si las funciones existen
-        if (typeof _actualizarDropdownGrupo === 'function') {
-             _actualizarDropdownGrupo('grupo_filtro', userOffice, 'Todos');
-             _actualizarDropdownGrupo('grupo_filtro_reporte', userOffice, 'Todos');
-             _actualizarDropdownGrupo('grafico_grupo', userOffice, 'Todos');
-        }
-        
+        _actualizarDropdownGrupo('grupo_filtro', userOffice, 'Todos');
+        _actualizarDropdownGrupo('grupo_filtro_reporte', userOffice, 'Todos');
+        _actualizarDropdownGrupo('grafico_grupo', userOffice, 'Todos');
         const officeClienteSelect = document.getElementById('office_cliente');
-        if (officeClienteSelect && typeof handleOfficeChangeForClientForm === 'function') {
+        if (officeClienteSelect) {
              handleOfficeChangeForClientForm.call(officeClienteSelect);
         }
         
         const nuevoSucursalSelect = document.getElementById('nuevo-sucursal');
-        if (nuevoSucursalSelect && typeof _cargarRutasParaUsuario === 'function') {
+        if (nuevoSucursalSelect) {
             _cargarRutasParaUsuario(userOffice);
         }
         
-        // IMPORTANTE: Este ya tiene su propia protección interna ahora, pero lo llamamos igual
         const reporteSucursalSelect = document.getElementById('reporte-contable-sucursal');
-        if (reporteSucursalSelect && typeof handleSucursalReporteContableChange === 'function') {
+        if (reporteSucursalSelect) {
             handleSucursalReporteContableChange.call(reporteSucursalSelect);
         }
 
     } else {
-        // Desbloquear si es super admin o tiene acceso a AMBAS
         filtrosOffice.forEach(selector => {
             const el = document.querySelector(selector);
-            if (el) el.disabled = false;
+            if (el) {
+                el.disabled = false;
+            }
         });
-         if ((!userOffice || userOffice === 'AMBAS') && typeof _actualizarDropdownGrupo === 'function') {
+         if (!userOffice || userOffice === 'AMBAS') {
             _actualizarDropdownGrupo('grupo_filtro', '', 'Todos');
             _actualizarDropdownGrupo('grupo_filtro_reporte', '', 'Todos');
             _actualizarDropdownGrupo('grafico_grupo', '', 'Todos');
          }
     }
 
-    // Permisos de Edición de CURP y Exportar
     const curpInput = document.getElementById('curp_cliente');
     if (curpInput) {
-        const puedeEditarCURP = esAdminConAccesoTotal || rolNormalizado.includes('admin');
+        const puedeEditarCURP = ['Super Admin', 'Gerencia', 'Administrador'].includes(userRoleKey);
         curpInput.readOnly = !puedeEditarCURP && (editingClientId !== null);
+        const curpFieldNote = curpInput.closest('.form-group')?.querySelector('.field-note');
+        if (curpFieldNote) {
+            curpFieldNote.style.display = (editingClientId !== null) ? 'block' : 'none'; 
+        }
     }
 
     const btnExportarTelefonos = document.getElementById('btn-exportar-telefonos');
     if (btnExportarTelefonos) {
-        const puedeExportar = esAdminConAccesoTotal;
+        const puedeExportar = ['Super Admin', 'Gerencia'].includes(userRoleKey);
         btnExportarTelefonos.classList.toggle('hidden', !puedeExportar);
     }
 }
@@ -5772,26 +5735,10 @@ async function handleSucursalReporteContableChange() {
     const statusEl = 'status_reporte_contable';
     const selectSucursal = document.getElementById('reporte-contable-sucursal');
     const selectAgente = document.getElementById('reporte-contable-agente');
-
-    // Validación de seguridad: Si los elementos no están en el DOM, salir sin error
-    if (!selectSucursal || !selectAgente) return;
-
     const office = selectSucursal.value;
 
     selectAgente.innerHTML = '<option value="">Cargando...</option>';
     selectAgente.disabled = true;
-
-    // --- PARCHE DE SEGURIDAD CRÍTICO ---
-    // El Área Comercial NO tiene permiso para 'obtenerUsuarios()'.
-    // Si intentamos llamarlo, la aplicación se bloquea.
-    // Solución: Si es comercial, pre-llenamos con su propio usuario y salimos.
-    if (currentUserData && currentUserData.role === 'Área comercial') {
-        console.log("Rol comercial detectado: Omitiendo carga masiva de agentes.");
-        selectAgente.innerHTML = `<option value="${currentUserData.id}" selected>${currentUserData.name || 'Mi Usuario'}</option>`;
-        selectAgente.disabled = true; // Bloqueamos para que solo pueda ver sus datos
-        return; 
-    }
-    // ------------------------------------
 
     if (!office) {
         selectAgente.innerHTML = '<option value="">Selecciona una sucursal</option>';
@@ -5800,13 +5747,7 @@ async function handleSucursalReporteContableChange() {
 
     try {
         const resultado = await database.obtenerUsuarios();
-        
-        // Manejo silencioso si falla por permisos a pesar del chequeo anterior
-        if (!resultado.success) {
-            console.warn("No se pudieron cargar usuarios:", resultado.message);
-            selectAgente.innerHTML = '<option value="">(Sin permisos)</option>';
-            return;
-        }
+        if (!resultado.success) throw new Error(resultado.message);
 
         const agentes = resultado.data.filter(u =>
             u.role === 'Área comercial' && u.office === office
@@ -5817,10 +5758,9 @@ async function handleSucursalReporteContableChange() {
         selectAgente.disabled = false;
         
     } catch (error) {
-        console.error("Error no crítico cargando agentes:", error);
-        // No lanzamos el error (throw) para que no detenga la carga del resto de la pantalla
+        console.error("Error cargando agentes para reporte:", error);
+        showStatus(statusEl, `Error cargando agentes: ${error.message}`, 'error');
         selectAgente.innerHTML = '<option value="">Error al cargar</option>';
-        // showStatus(statusEl, `Error cargando agentes: ${error.message}`, 'error'); // Opcional ocultarlo
     }
 }
 
@@ -7378,8 +7318,3 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
-
-
-
-
-
