@@ -5735,10 +5735,26 @@ async function handleSucursalReporteContableChange() {
     const statusEl = 'status_reporte_contable';
     const selectSucursal = document.getElementById('reporte-contable-sucursal');
     const selectAgente = document.getElementById('reporte-contable-agente');
+
+    // Validación de seguridad: Si los elementos no están en el DOM, salir sin error
+    if (!selectSucursal || !selectAgente) return;
+
     const office = selectSucursal.value;
 
     selectAgente.innerHTML = '<option value="">Cargando...</option>';
     selectAgente.disabled = true;
+
+    // --- PARCHE DE SEGURIDAD CRÍTICO ---
+    // El Área Comercial NO tiene permiso para 'obtenerUsuarios()'.
+    // Si intentamos llamarlo, la aplicación se bloquea.
+    // Solución: Si es comercial, pre-llenamos con su propio usuario y salimos.
+    if (currentUserData && currentUserData.role === 'Área comercial') {
+        console.log("Rol comercial detectado: Omitiendo carga masiva de agentes.");
+        selectAgente.innerHTML = `<option value="${currentUserData.id}" selected>${currentUserData.name || 'Mi Usuario'}</option>`;
+        selectAgente.disabled = true; // Bloqueamos para que solo pueda ver sus datos
+        return; 
+    }
+    // ------------------------------------
 
     if (!office) {
         selectAgente.innerHTML = '<option value="">Selecciona una sucursal</option>';
@@ -5747,7 +5763,13 @@ async function handleSucursalReporteContableChange() {
 
     try {
         const resultado = await database.obtenerUsuarios();
-        if (!resultado.success) throw new Error(resultado.message);
+        
+        // Manejo silencioso si falla por permisos a pesar del chequeo anterior
+        if (!resultado.success) {
+            console.warn("No se pudieron cargar usuarios:", resultado.message);
+            selectAgente.innerHTML = '<option value="">(Sin permisos)</option>';
+            return;
+        }
 
         const agentes = resultado.data.filter(u =>
             u.role === 'Área comercial' && u.office === office
@@ -5758,9 +5780,10 @@ async function handleSucursalReporteContableChange() {
         selectAgente.disabled = false;
         
     } catch (error) {
-        console.error("Error cargando agentes para reporte:", error);
-        showStatus(statusEl, `Error cargando agentes: ${error.message}`, 'error');
+        console.error("Error no crítico cargando agentes:", error);
+        // No lanzamos el error (throw) para que no detenga la carga del resto de la pantalla
         selectAgente.innerHTML = '<option value="">Error al cargar</option>';
+        // showStatus(statusEl, `Error cargando agentes: ${error.message}`, 'error'); // Opcional ocultarlo
     }
 }
 
@@ -7318,5 +7341,6 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
