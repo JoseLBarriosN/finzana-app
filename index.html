@@ -63,97 +63,97 @@
                 <h2>Panel de Control</h2>
                 <div class="menu-grid">
 
-                    <div class="menu-card" onclick="showView('view-cliente')" style="--card-color: #2E8B57;">
+                    <div class="menu-card" data-view="view-cliente" onclick="showView('view-cliente')" style="--card-color: #2E8B57;">
                         <div class="menu-icon"><i class="fas fa-user-plus"></i></div>
                         <h3>Registrar Cliente</h3>
                         <p>Agrega nuevos clientes</p>
                     </div>
-
-                    <div class="menu-card" onclick="showView('view-colocacion')" style="--card-color: #f4b20b;">
+                
+                    <div class="menu-card" data-view="view-colocacion" onclick="showView('view-colocacion')" style="--card-color: #f4b20b;">
                         <div class="menu-icon"><i class="fas fa-hand-holding-usd"></i></div>
                         <h3>Generar Crédito</h3>
                         <p>Crea nuevos créditos</p>
                     </div>
-
-                    <div class="menu-card" onclick="showView('view-cobranza')" style="--card-color: #2E8B57;">
+                
+                    <div class="menu-card" data-view="view-cobranza" onclick="showView('view-cobranza')" style="--card-color: #2E8B57;">
                         <div class="menu-icon"><i class="fas fa-cash-register"></i></div>
                         <h3>Registrar Pago</h3>
                         <p>Registra pagos individuales</p>
                     </div>
-
-                    <div class="menu-card" onclick="showView('view-pago-grupo')" style="--card-color: #2E8B57;">
+                
+                    <div class="menu-card" data-view="view-pago-grupo" onclick="showView('view-pago-grupo')" style="--card-color: #2E8B57;">
                         <div class="menu-icon"><i class="fas fa-users-cog"></i></div>
                         <h3>Pago Grupal</h3>
                         <p>Registra el pago de un grupo</p>
                     </div>
-
-                    <div class="menu-card" onclick="showView('view-gestion-clientes')" style="--card-color: #2E8B57;">
+                
+                    <div class="menu-card" data-view="view-gestion-clientes" onclick="showView('view-gestion-clientes')" style="--card-color: #2E8B57;">
                         <div class="menu-icon"><i class="fas fa-users"></i></div>
                         <h3>Gestión de Clientes</h3>
                         <p>Consulta y administra clientes</p>
                     </div>
-
-                    <div class="menu-card" onclick="showView('view-reportes')" style="--card-color: #0d6efd;">
+                
+                    <div class="menu-card" data-view="view-reportes" onclick="showView('view-reportes')" style="--card-color: #0d6efd;">
                         <div class="menu-icon"><i class="fas fa-chart-bar"></i></div>
                         <h3>Reportes Básicos</h3>
                         <p>Estadísticas del mes actual</p>
                     </div>
-
-                    <div class="menu-card" onclick="showView('view-reportes-avanzados')" style="--card-color: #0d6efd;">
+                
+                    <div class="menu-card" data-view="view-reportes-avanzados" onclick="showView('view-reportes-avanzados')" style="--card-color: #0d6efd;">
                         <div class="menu-icon"><i class="fas fa-chart-line"></i></div>
                         <h3>Reportes Avanzados</h3>
                         <p>Reportes detallados con filtros</p>
                     </div>
-
-                    <div class="menu-card" onclick="showView('view-reportes-graficos')" style="--card-color: #0d6efd;">
+                
+                    <div class="menu-card" data-view="view-reportes-graficos" onclick="showView('view-reportes-graficos')" style="--card-color: #0d6efd;">
                         <div class="menu-icon"><i class="fas fa-chart-pie"></i></div>
                         <h3>Reportes con Gráficos</h3>
                         <p>Visualiza el comportamiento</p>
                     </div>
-
-                    <div class="menu-card" onclick="showView('view-reporte-contable')" style="--card-color: #0d6efd;">
+                
+                    <div class="menu-card" data-view="view-reporte-contable" onclick="showView('view-reporte-contable')" style="--card-color: #0d6efd;">
                         <div class="menu-icon"><i class="fas fa-print"></i></div>
                         <h3>Reporte Contable</h3>
                         <p>Flujos de efectivo por oficina</p>
                     </div>
-
-                    <div class="menu-card admin-only" onclick="showView('view-multicreditos')" style="--card-color: #6f42c1;">
+                
+                    <div class="menu-card admin-only" data-view="view-multicreditos" onclick="showView('view-multicreditos')" style="--card-color: #6f42c1;">
                         <div class="menu-icon"><i class="fas fa-network-wired"></i></div>
                         <h3>Auditoría Histórica</h3>
                         <p>Detectar multicréditos</p>
                     </div>
-
-                    <div class="menu-card" onclick="showView('view-usuarios')" style="--card-color: #6f42c1;">
+                
+                    <div class="menu-card" data-view="view-usuarios" onclick="showView('view-usuarios')" style="--card-color: #6f42c1;">
                         <div class="menu-icon"><i class="fas fa-user-cog"></i></div>
                         <h3>Gestión de Usuarios</h3>
                         <p>Administra usuarios del sistema</p>
                     </div>
-
-                    <div class="menu-card" onclick="showView('view-configuracion')" style="--card-color: #6f42c1;">
+                
+                    <div class="menu-card" data-view="view-configuracion" onclick="showView('view-configuracion')" style="--card-color: #6f42c1;">
                         <div class="menu-icon"><i class="fas fa-cogs"></i></div>
                         <h3>Configuración</h3>
                         <p>Administra poblaciones y rutas</p>
                     </div>
-
-                    <div class="menu-card" onclick="showView('view-registrar-gasto')" style="--card-color: #FF6347;">
+                
+                    <div class="menu-card" data-view="view-registrar-gasto" onclick="showView('view-registrar-gasto')" style="--card-color: #FF6347;">
                         <div class="menu-icon"><i class="fas fa-receipt"></i></div>
                         <h3>Registrar Gasto</h3>
                         <p>Gastos operativos</p>
                     </div>
-
-                    <div class="menu-card" onclick="showView('view-gestion-efectivo')" style="--card-color: #3CB371;">
+                
+                    <div class="menu-card" data-view="view-gestion-efectivo" onclick="showView('view-gestion-efectivo')" style="--card-color: #3CB371;">
                         <div class="menu-icon"><i class="fas fa-cash-register"></i></div>
                         <h3>Gestión de Efectivo</h3>
                         <p>Balances y entregas</p>
                     </div>
-                
-                    <div class="menu-card" onclick="showView('view-hoja-corte')" style="--card-color: #dc3545;">
+                    
+                    <div class="menu-card" data-view="view-hoja-corte" onclick="showView('view-hoja-corte')" style="--card-color: #dc3545;">
                         <div class="menu-icon"><i class="fas fa-cut"></i></div>
                         <h3>Hoja de Corte</h3>
                         <p>Corte de caja diario</p>
                     </div> 
-
-                    <div class="menu-card" onclick="showView('view-importar')" style="--card-color: #dc3545;">
+                
+                    <div class="menu-card" data-view="view-importar" onclick="showView('view-importar')" style="--card-color: #dc3545;">
                         <div class="menu-icon"><i class="fas fa-file-import"></i></div>
                         <h3>Importar Datos</h3>
                         <p>Carga información desde CSV</p>
@@ -1210,6 +1210,7 @@
     <script src="js/app.js"></script>
 </body>
 </html>
+
 
 
 
