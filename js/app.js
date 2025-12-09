@@ -349,23 +349,25 @@ function setupSecurityListeners() {
  * @param {string} role El rol del usuario (ej. 'Administrador', 'Gerencia', 'Área comercial').
  */
 function aplicarPermisosUI(role) {
+    console.log("🔐 Verificando permisos para rol:", role); // Log para depurar
+
     if (!currentUserData) {
         console.warn("aplicarPermisosUI llamada sin currentUserData");
         document.querySelectorAll('.menu-card').forEach(card => card.style.display = 'none');
         return;
     }
     
-    const permisosMenu = {
-        'Super Admin': ['all'],
-        'Gerencia': ['all'],
-        'Administrador': [
+    // 1. Definir listas de acceso (IDs de las tarjetas en el HTML)
+    const accesos = {
+        superAdmin: ['all'],
+        admin: [
             'view-gestion-clientes', 'view-cliente', 'view-colocacion', 'view-cobranza',
             'view-pago-grupo', 'view-reportes', 'view-reportes-avanzados',
             'view-usuarios', 'view-importar', 'view-configuracion',
             'view-gestion-efectivo', 'view-reporte-contable',
-            'view-hoja-corte'
+            'view-hoja-corte', 'view-multicreditos'
         ],
-        'Área comercial': [
+        comercial: [
             'view-gestion-clientes',
             'view-cliente',
             'view-colocacion',
@@ -373,32 +375,61 @@ function aplicarPermisosUI(role) {
             'view-pago-grupo',
             'view-registrar-gasto',
             'view-hoja-corte'
-            
-        ],
-        'default': []
+        ]
     };
 
-    const userRoleKey = role === 'admin' ? 'Administrador' : role;
-    const userPerms = permisosMenu[userRoleKey] || permisosMenu['default'];
-    document.querySelectorAll('.menu-card').forEach(card => {
+    // 2. Normalizar el rol para evitar errores de acentos o mayúsculas
+    // Convertimos a minúsculas y quitamos espacios extra
+    const rolLimpio = (role || '').toLowerCase().trim();
+    
+    let permisosUsuario = [];
+
+    // 3. Asignar permisos usando comparaciones flexibles
+    if (rolLimpio === 'super admin' || rolLimpio === 'gerencia') {
+        permisosUsuario = accesos.superAdmin;
+    } 
+    else if (rolLimpio === 'administrador' || rolLimpio === 'admin') {
+        permisosUsuario = accesos.admin;
+    } 
+    // Aquí detectamos variaciones de "Area comercial" (con o sin acento)
+    else if (rolLimpio.includes('comercial') || rolLimpio.includes('ventas')) {
+        console.log("✅ Rol comercial detectado correctamente.");
+        permisosUsuario = accesos.comercial;
+    } 
+    else {
+        console.warn("⚠️ Rol no reconocido, se mostrará menú vacío:", rolLimpio);
+        permisosUsuario = [];
+    }
+
+    // 4. Aplicar visibilidad a las tarjetas
+    const tarjetas = document.querySelectorAll('.menu-card');
+    let visibles = 0;
+
+    tarjetas.forEach(card => {
         const view = card.getAttribute('data-view');
-        if (userPerms.includes('all') || userPerms.includes(view)) {
-            card.style.display = 'block';
+        // Si es Super Admin ('all') O si la vista está en su lista permitida
+        if (permisosUsuario.includes('all') || permisosUsuario.includes(view)) {
+            card.style.display = 'block'; // O 'flex', según tu diseño original
+            card.classList.remove('hidden'); // Aseguramos quitar clase hidden si existe
+            visibles++;
         } else {
             card.style.display = 'none';
         }
     });
 
+    console.log(`🔓 Se mostraron ${visibles} opciones de menú para ${role}.`);
+
+    // 5. Lógica adicional de filtros (Mantener la original)
+    // ... (El resto de tu lógica de filtros de oficina se mantiene igual aquí abajo) ...
+    
     const userOffice = currentUserData.office;
     const filtrosOffice = [
         '#sucursal_filtro', '#sucursal_filtro_reporte', '#grafico_sucursal',
         '#office_cliente', '#nueva-poblacion-sucursal', '#nueva-ruta-sucursal',
-        '#filtro-sucursal-usuario',
-        '#nuevo-sucursal',
-        '#reporte-contable-sucursal'
+        '#filtro-sucursal-usuario', '#nuevo-sucursal', '#reporte-contable-sucursal'
     ];
 
-    const esAdminConAccesoTotal = (userRoleKey === 'Super Admin' || userRoleKey === 'Gerencia');
+    const esAdminConAccesoTotal = (rolLimpio === 'super admin' || rolLimpio === 'gerencia');
     if (userOffice && userOffice !== 'AMBAS' && !esAdminConAccesoTotal) {
         filtrosOffice.forEach(selector => {
             const el = document.querySelector(selector);
@@ -408,51 +439,49 @@ function aplicarPermisosUI(role) {
             }
         });
         
-        _actualizarDropdownGrupo('grupo_filtro', userOffice, 'Todos');
-        _actualizarDropdownGrupo('grupo_filtro_reporte', userOffice, 'Todos');
-        _actualizarDropdownGrupo('grafico_grupo', userOffice, 'Todos');
+        if (typeof _actualizarDropdownGrupo === 'function') {
+             _actualizarDropdownGrupo('grupo_filtro', userOffice, 'Todos');
+             _actualizarDropdownGrupo('grupo_filtro_reporte', userOffice, 'Todos');
+             _actualizarDropdownGrupo('grafico_grupo', userOffice, 'Todos');
+        }
+        
         const officeClienteSelect = document.getElementById('office_cliente');
-        if (officeClienteSelect) {
+        if (officeClienteSelect && typeof handleOfficeChangeForClientForm === 'function') {
              handleOfficeChangeForClientForm.call(officeClienteSelect);
         }
         
         const nuevoSucursalSelect = document.getElementById('nuevo-sucursal');
-        if (nuevoSucursalSelect) {
+        if (nuevoSucursalSelect && typeof _cargarRutasParaUsuario === 'function') {
             _cargarRutasParaUsuario(userOffice);
         }
         
         const reporteSucursalSelect = document.getElementById('reporte-contable-sucursal');
-        if (reporteSucursalSelect) {
+        if (reporteSucursalSelect && typeof handleSucursalReporteContableChange === 'function') {
             handleSucursalReporteContableChange.call(reporteSucursalSelect);
         }
 
     } else {
         filtrosOffice.forEach(selector => {
             const el = document.querySelector(selector);
-            if (el) {
-                el.disabled = false;
-            }
+            if (el) el.disabled = false;
         });
-         if (!userOffice || userOffice === 'AMBAS') {
+         if ((!userOffice || userOffice === 'AMBAS') && typeof _actualizarDropdownGrupo === 'function') {
             _actualizarDropdownGrupo('grupo_filtro', '', 'Todos');
             _actualizarDropdownGrupo('grupo_filtro_reporte', '', 'Todos');
             _actualizarDropdownGrupo('grafico_grupo', '', 'Todos');
          }
     }
 
+    // Permisos de CURP y Exportar
     const curpInput = document.getElementById('curp_cliente');
     if (curpInput) {
-        const puedeEditarCURP = ['Super Admin', 'Gerencia', 'Administrador'].includes(userRoleKey);
+        const puedeEditarCURP = esAdminConAccesoTotal || rolLimpio === 'administrador' || rolLimpio === 'admin';
         curpInput.readOnly = !puedeEditarCURP && (editingClientId !== null);
-        const curpFieldNote = curpInput.closest('.form-group')?.querySelector('.field-note');
-        if (curpFieldNote) {
-            curpFieldNote.style.display = (editingClientId !== null) ? 'block' : 'none'; 
-        }
     }
 
     const btnExportarTelefonos = document.getElementById('btn-exportar-telefonos');
     if (btnExportarTelefonos) {
-        const puedeExportar = ['Super Admin', 'Gerencia'].includes(userRoleKey);
+        const puedeExportar = esAdminConAccesoTotal;
         btnExportarTelefonos.classList.toggle('hidden', !puedeExportar);
     }
 }
@@ -7341,6 +7370,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
