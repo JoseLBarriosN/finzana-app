@@ -2838,109 +2838,124 @@ async function handleMontoPagoChange() {
 // SECCIÓN DE PAGO GRUPAL
 // =============================================
 async function handleCalcularCobranzaRuta() {
-    console.log('Iniciando cálculo de ruta seleccionada...');
-    clearTimeout(inactivityTimer);
-    
-    const statusPagoGrupo = document.getElementById('status_pago_grupo');
+    console.log('🚀 Iniciando cálculo de ruta (Optimizado)...');
+    const start = Date.now(); // Para medir tiempo
+
     const container = document.getElementById('cobranza-ruta-container');
-    const placeholder = document.getElementById('cobranza-ruta-placeholder');
-    
     const btnGuardar = document.getElementById('btn-guardar-cobranza-offline');
     const btnRegistrar = document.getElementById('btn-registrar-pagos-offline');
     const btnMapa = document.getElementById('btn-ver-ruta-maps');
+    const statusPago = document.getElementById('status_pago_grupo');
 
     // 1. Obtener Poblaciones Seleccionadas
     const checkboxes = document.querySelectorAll('.poblacion-check:checked');
     const poblacionesSeleccionadas = Array.from(checkboxes).map(cb => cb.value);
 
     if (poblacionesSeleccionadas.length === 0) {
-        showStatus('status_pago_grupo', 'Por favor selecciona al menos una población.', 'warning');
+        showStatus('status_pago_grupo', 'Selecciona al menos una población.', 'warning');
         return;
     }
 
-    cargaEnProgreso = true;
-    showProcessingOverlay(true, `Calculando cobranza para ${poblacionesSeleccionadas.length} poblaciones...`);
+    showProcessingOverlay(true, `Analizando ${poblacionesSeleccionadas.length} poblaciones...`);
     
-    // Reset visual
-    container.innerHTML = '';
-    placeholder.classList.add('hidden');
-    if(btnGuardar) btnGuardar.classList.add('hidden');
-    if(btnRegistrar) btnRegistrar.classList.add('hidden');
-    if(btnMapa) btnMapa.classList.add('hidden');
-
-    // LIMPIAR LISTA DE DIRECCIONES PARA EL MAPA
+    // Reset UI
+    if (container) container.innerHTML = '';
+    if (btnGuardar) btnGuardar.classList.add('hidden');
+    if (btnRegistrar) btnRegistrar.classList.add('hidden');
+    if (btnMapa) btnMapa.classList.add('hidden');
     waypointsComisionistas = []; 
 
     try {
         const userOffice = currentUserData.office;
-        let creditosPendientes = [];
+        const allCreditosPendientes = [];
+
+        // --- FASE 1: OBTENER CLIENTES (EN PARALELO) ---
+        // Dividimos poblaciones en lotes de 10 para no saturar Firestore 'in' query
+        const chunks = [];
+        for (let i = 0; i < poblacionesSeleccionadas.length; i += 10) {
+            chunks.push(poblacionesSeleccionadas.slice(i, i + 10));
+        }
+
+        // Disparamos todas las peticiones de clientes a la vez
+        const clientesPromises = chunks.map(chunk => 
+            db.collection('clientes')
+              .where('poblacion_grupo', 'in', chunk)
+              .where('office', '==', userOffice)
+              .get()
+        );
+
+        const clientesSnapshots = await Promise.all(clientesPromises);
+        const todosLosClientes = clientesSnapshots.flatMap(snap => snap.docs.map(d => ({id: d.id, ...d.data()})));
+
+        console.log(`📦 Clientes encontrados: ${todosLosClientes.length}`);
+
+        if (todosLosClientes.length === 0) throw new Error("No hay clientes en estas poblaciones.");
+
+        // --- FASE 2: PROCESAR CLIENTES Y CRÉDITOS (EN PARALELO) ---
+        // Aquí ocurre la magia: Procesamos cada cliente simultáneamente
         
-        // --- LÓGICA DE BÚSQUEDA ---
-        const MAX_IN = 10;
-        for (let i = 0; i < poblacionesSeleccionadas.length; i += MAX_IN) {
-            const chunk = poblacionesSeleccionadas.slice(i, i + MAX_IN);
-            
-            const clientesSnapshot = await db.collection('clientes')
-                .where('poblacion_grupo', 'in', chunk)
-                .where('office', '==', userOffice)
-                .get();
-
-            const clientesDelChunk = clientesSnapshot.docs.map(doc => ({id: doc.id, ...doc.data()}));
-
-            for (const cliente of clientesDelChunk) {
-                
-                if (cliente.isComisionista && cliente.domicilio && cliente.domicilio.length > 5) {
+        const procesarCliente = async (cliente) => {
+            // Mapa: Guardar waypoints si es comisionista
+            if (cliente.isComisionista && cliente.domicilio && cliente.domicilio.length > 5) {
+                const existe = waypointsComisionistas.some(w => w.poblacion === cliente.poblacion_grupo);
+                if (!existe) {
                     const estadoMx = userOffice === 'GDL' ? 'Jalisco' : 'Guanajuato';
-                    const direccionFull = `${cliente.domicilio}, ${cliente.poblacion_grupo}, ${estadoMx}, México`;
-                    const existe = waypointsComisionistas.some(w => w.poblacion === cliente.poblacion_grupo);
-                    
-                    if (!existe) {
-                        waypointsComisionistas.push({
-                            poblacion: cliente.poblacion_grupo,
-                            location: direccionFull,
-                            nombre: cliente.nombre
-                        });
-                        console.log(`📍 Punto añadido para mapa: ${direccionFull}`);
-                    }
+                    waypointsComisionistas.push({
+                        poblacion: cliente.poblacion_grupo,
+                        location: `${cliente.domicilio}, ${cliente.poblacion_grupo}, ${estadoMx}, México`,
+                        nombre: cliente.nombre
+                    });
                 }
-
-                 const creditos = await database.buscarCreditosPorCliente(cliente.curp, userOffice);
-                 for (const credito of creditos) {
-                     const histId = credito.historicalIdCredito || credito.id;
-                     const pagos = await database.getPagosPorCredito(histId, userOffice);
-                     const estadoCalc = _calcularEstadoCredito(credito, pagos);
-                     
-                     if (estadoCalc && estadoCalc.estado !== 'liquidado' && estadoCalc.pagoSemanal > 0.01) {
-                         
-                        const pagoSemanalRef = estadoCalc.pagoSemanal;
-                        const semanasAtraso = estadoCalc.semanasAtraso || 0;
-                        let montoAcumulado = (semanasAtraso > 0) ? semanasAtraso * pagoSemanalRef : pagoSemanalRef;
-                        let montoAPagarFinal = Math.min(montoAcumulado, estadoCalc.saldoRestante + 0.05);
-                        montoAPagarFinal = Math.max(0, parseFloat(montoAPagarFinal.toFixed(2)));
-
-                         creditosPendientes.push({
-                            firestoreId: credito.id,
-                            historicalIdCredito: histId,
-                            nombreCliente: cliente.nombre,
-                            curpCliente: cliente.curp,
-                            pagoSemanalAcumulado: montoAPagarFinal,
-                            saldoRestante: estadoCalc.saldoRestante,
-                            estadoCredito: estadoCalc.estado,
-                            poblacion_grupo: cliente.poblacion_grupo,
-                            office: credito.office,
-                            plazo: credito.plazo
-                        });
-                     }
-                 }
             }
+
+            // Buscar créditos del cliente
+            // OPTIMIZACIÓN: Usamos una función que intente caché primero en database.js si existe,
+            // si no, usamos la estándar.
+            const creditos = await database.buscarCreditosPorCliente(cliente.curp, userOffice);
+            
+            // Procesar cada crédito del cliente
+            for (const credito of creditos) {
+                const histId = credito.historicalIdCredito || credito.id;
+                
+                // Obtener pagos (Esto puede ser pesado, pero necesario para el saldo exacto)
+                const pagos = await database.getPagosPorCredito(histId, userOffice);
+                
+                // Cálculo matemático (es muy rápido, no requiere await)
+                const estadoCalc = _calcularEstadoCredito(credito, pagos);
+
+                if (estadoCalc && estadoCalc.estado !== 'liquidado' && estadoCalc.pagoSemanal > 0.01) {
+                    const semanasAtraso = estadoCalc.semanasAtraso || 0;
+                    let montoAcumulado = (semanasAtraso > 0) ? semanasAtraso * estadoCalc.pagoSemanal : estadoCalc.pagoSemanal;
+                    let montoAPagarFinal = Math.min(montoAcumulado, estadoCalc.saldoRestante + 0.05); // +0.05 tolerancia redondeo
+                    
+                    allCreditosPendientes.push({
+                        firestoreId: credito.id,
+                        historicalIdCredito: histId,
+                        nombreCliente: cliente.nombre,
+                        curpCliente: cliente.curp,
+                        pagoSemanalAcumulado: parseFloat(montoAPagarFinal.toFixed(2)),
+                        saldoRestante: estadoCalc.saldoRestante,
+                        estadoCredito: estadoCalc.estado,
+                        poblacion_grupo: cliente.poblacion_grupo,
+                        office: credito.office,
+                        plazo: credito.plazo
+                    });
+                }
+            }
+        };
+
+        // Ejecutamos todos los clientes en paralelo
+        // Promise.all podría ser demasiado agresivo si son 500 clientes. 
+        // Usamos un mapeo simple que es suficiente para <1000 clientes en navegadores modernos.
+        await Promise.all(todosLosClientes.map(cliente => procesarCliente(cliente)));
+
+        if (allCreditosPendientes.length === 0) {
+            throw new Error("No hay cobros pendientes en la selección.");
         }
 
-        if (creditosPendientes.length === 0) {
-            throw new Error("No hay cobros pendientes en las poblaciones seleccionadas.");
-        }
-
+        // Agrupar resultados
         cobranzaRutaData = {};
-        creditosPendientes.forEach(cred => {
+        allCreditosPendientes.forEach(cred => {
             const grupo = cred.poblacion_grupo || 'Sin Grupo';
             if (!cobranzaRutaData[grupo]) cobranzaRutaData[grupo] = [];
             cobranzaRutaData[grupo].push(cred);
@@ -2948,33 +2963,27 @@ async function handleCalcularCobranzaRuta() {
 
         renderizarCobranzaRuta(cobranzaRutaData, container);
 
+        // UI Final
         const selectorCard = document.getElementById('selector-poblaciones-card');
-        if (selectorCard && !selectorCard.classList.contains('closed')) {
-            selectorCard.classList.add('closed');
-        }
+        if (selectorCard) selectorCard.classList.add('closed');
         
         if(btnGuardar) btnGuardar.classList.remove('hidden');
         if(btnRegistrar) btnRegistrar.classList.remove('hidden');
-        if (btnMapa) {
-            if (waypointsComisionistas.length > 0) {
-                btnMapa.classList.remove('hidden');
-                const newBtnMapa = btnMapa.cloneNode(true);
-                btnMapa.parentNode.replaceChild(newBtnMapa, btnMapa);
-                newBtnMapa.addEventListener('click', generarRutaMaps);
-                
-                showStatus('status_pago_grupo', `Cálculo completado. ${waypointsComisionistas.length} puntos de ruta para mapa.`, 'success');
-            } else {
-                btnMapa.classList.add('hidden');
-                showStatus('status_pago_grupo', 'Cálculo listo (Sin direcciones para mapa).', 'warning');
-            }
+        if (btnMapa && waypointsComisionistas.length > 0) {
+            btnMapa.classList.remove('hidden');
+            // Re-asignar listener mapa
+            const newBtnMapa = btnMapa.cloneNode(true);
+            btnMapa.parentNode.replaceChild(newBtnMapa, btnMapa);
+            newBtnMapa.addEventListener('click', generarRutaMaps);
         }
 
+        const seconds = ((Date.now() - start) / 1000).toFixed(1);
+        showStatus('status_pago_grupo', `Cálculo completado en ${seconds}s.`, 'success');
+
     } catch (error) {
-        console.error("Error calculando ruta:", error);
+        console.error("Error ruta:", error);
         showStatus('status_pago_grupo', `Error: ${error.message}`, 'error');
-        container.innerHTML = `<div style="text-align:center; padding:20px;">${error.message}</div>`;
     } finally {
-        cargaEnProgreso = false;
         showProcessingOverlay(false);
     }
 }
@@ -7394,6 +7403,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
