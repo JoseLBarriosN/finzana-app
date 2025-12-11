@@ -2980,11 +2980,11 @@ async function handleCalcularCobranzaRuta() {
 }
 
 //=======================================
-// ** INICIALIZAR VISTA DE PAGO GRUPAL **
+// ** INICIALIZAR VISTA DE PAGO GRUPAL (VISIBILIDAD ASEGURADA) **
 //=======================================
 
 async function inicializarVistaPagoGrupal() {
-    console.log("🚀 INICIANDO VISTA PAGO GRUPAL (Híbrida)");
+    console.log("🚀 INICIANDO VISTA PAGO GRUPAL (Híbrida V2)");
     
     const containerChecks = document.getElementById('checkboxes-poblaciones-container');
     const cardSelector = document.getElementById('selector-poblaciones-card');
@@ -3001,38 +3001,31 @@ async function inicializarVistaPagoGrupal() {
     if(btnGuardar) btnGuardar.classList.add('hidden');
     if(btnRegistrar) btnRegistrar.classList.add('hidden');
     if(btnVerMapa) btnVerMapa.classList.add('hidden');
-    if(placeholder) placeholder.classList.remove('hidden'); // Mostrar placeholder por defecto
+    if(placeholder) placeholder.classList.remove('hidden');
 
     if (!currentUserData) {
-        showStatus('status_pago_grupo', 'Esperando datos de usuario...', 'warning');
+        showStatus('status_pago_grupo', 'Error: Datos de usuario no cargados.', 'error');
         return;
     }
 
-    // ----------------------------------------------------
-    // 1. BUSCAR DATOS GUARDADOS LOCALMENTE (SIEMPRE)
-    // ----------------------------------------------------
+    // --- 1. DATOS GUARDADOS (OFFLINE/LOCAL) ---
     const keyOffline = OFFLINE_STORAGE_KEY + (currentUserData.ruta || 'sin_ruta');
     let datosGuardados = null;
     try {
         const rawData = localStorage.getItem(keyOffline);
         if (rawData) datosGuardados = JSON.parse(rawData);
-    } catch(e) { console.error("Error leyendo localStorage", e); }
+    } catch(e) { console.error("Error localStorage", e); }
 
-    // Si hay datos guardados, mostramos una alerta visual para cargarlos
     if (datosGuardados && datosGuardados.data) {
         const fechaGuardado = new Date(datosGuardados.timestamp).toLocaleString();
-        const totalClientes = Object.values(datosGuardados.data).flat().length;
         
-        // Creamos un aviso bonito
-        const avisoRecuperacion = document.createElement('div');
-        avisoRecuperacion.className = 'alert alert-info';
-        avisoRecuperacion.style.margin = '15px 0';
-        avisoRecuperacion.innerHTML = `
+        // Crear aviso de recuperación
+        const aviso = document.createElement('div');
+        aviso.className = 'alert alert-info';
+        aviso.style.margin = '15px 0';
+        aviso.innerHTML = `
             <div style="display:flex; justify-content:space-between; align-items:center;">
-                <div>
-                    <strong><i class="fas fa-save"></i> Tienes una ruta guardada</strong><br>
-                    <small>Fecha: ${fechaGuardado} | Clientes: ${totalClientes}</small>
-                </div>
+                <span><strong><i class="fas fa-save"></i> Ruta guardada (${fechaGuardado})</strong></span>
                 <div>
                     <button id="btn-cargar-guardado" class="btn btn-sm btn-primary">Cargar</button>
                     <button id="btn-borrar-guardado" class="btn btn-sm btn-outline-danger"><i class="fas fa-trash"></i></button>
@@ -3040,83 +3033,60 @@ async function inicializarVistaPagoGrupal() {
             </div>
         `;
         
-        // Insertamos el aviso antes del placeholder
         if(placeholder && placeholder.parentNode) {
-            // Limpiar avisos previos si hubiera
-            const prevAlert = document.querySelector('.alert-info');
-            if(prevAlert) prevAlert.remove();
-            placeholder.parentNode.insertBefore(avisoRecuperacion, placeholder);
+            const prev = document.querySelector('.alert-info');
+            if(prev) prev.remove();
+            placeholder.parentNode.insertBefore(aviso, placeholder);
         }
 
-        // Listener para Cargar
+        // Listener Cargar
         document.getElementById('btn-cargar-guardado').onclick = () => {
-            console.log("📂 Cargando datos locales...");
             cobranzaRutaData = datosGuardados.data;
-            
-            // Ocultar selector y placeholder
-            if(cardSelector) cardSelector.classList.add('hidden'); // Opcional: Ocultar selector si cargas guardado
+            if(cardSelector) cardSelector.classList.add('hidden');
             if(placeholder) placeholder.classList.add('hidden');
-            avisoRecuperacion.remove(); // Quitar el aviso
-
+            aviso.remove();
             renderizarCobranzaRuta(cobranzaRutaData, containerResultados);
             if(btnRegistrar) btnRegistrar.classList.remove('hidden');
             if(btnVerMapa) btnVerMapa.classList.remove('hidden');
             
-            // Reconstruir waypoints para el mapa si existen
-            if (waypointsComisionistas.length === 0) {
-                 // Recorrer los datos para rellenar waypoints (Lógica simplificada)
-                 Object.values(cobranzaRutaData).flat().forEach(c => {
-                     // Aquí deberías tener la dirección guardada en el objeto, si no, no se podrá mapear offline
-                     // Si guardaste el objeto completo en localStorage, funcionará.
-                 });
-            }
-            showStatus('status_pago_grupo', `Ruta cargada (${fechaGuardado}).`, 'success');
+            // Reconstruir waypoints para mapa si es necesario (simple)
+            waypointsComisionistas = []; // Reset
+            Object.values(cobranzaRutaData).flat().forEach(c => {
+                 // Si tu objeto guardado tiene dirección, aquí se podría reconstruir
+            });
+            showStatus('status_pago_grupo', 'Ruta local cargada.', 'success');
         };
 
-        // Listener para Borrar (CORREGIDO)
+        // Listener Borrar (CORREGIDO para recargar vista)
         document.getElementById('btn-borrar-guardado').onclick = async () => {
-            if(confirm("¿Borrar la ruta guardada y generar una nueva?")) {
-                // 1. Borrar de memoria
+            if(confirm("¿Borrar ruta guardada?")) {
                 localStorage.removeItem(keyOffline);
-                
-                // 2. Limpiar UI actual
-                avisoRecuperacion.remove();
+                aviso.remove();
                 containerResultados.innerHTML = '';
-                
-                // 3. Restaurar visibilidad de elementos base
-                if(cardSelector) cardSelector.classList.remove('hidden');
-                if(placeholder) placeholder.classList.remove('hidden');
-                if(btnGuardar) btnGuardar.classList.add('hidden');
-                if(btnRegistrar) btnRegistrar.classList.add('hidden');
-                if(btnVerMapa) btnVerMapa.classList.add('hidden');
-
-                showStatus('status_pago_grupo', 'Datos locales eliminados. Puedes generar una nueva ruta.', 'info');
-
-                // 4. RE-INICIALIZAR LA VISTA PARA CARGAR POBLACIONES DE NUEVO
-                // Esto es vital para que vuelvan a salir los checkboxes
+                showStatus('status_pago_grupo', 'Datos eliminados.', 'info');
+                // Recargar vista para mostrar selectores de nuevo
                 await inicializarVistaPagoGrupal();
             }
         };
     }
 
-    // ----------------------------------------------------
-    // 2. SI NO HAY INTERNET, FORZAR CARGA (SI EXISTE)
-    // ----------------------------------------------------
+    // --- 2. SI NO HAY INTERNET ---
     if (!navigator.onLine) {
-        showStatus('status_pago_grupo', 'Modo Offline. Solo puedes ver datos guardados.', 'warning');
-        if(cardSelector) cardSelector.classList.add('hidden'); // No se puede calcular nuevo sin internet
-        
-        // Auto-click en cargar si está offline y hay datos
+        showStatus('status_pago_grupo', 'Modo Offline. Solo datos guardados.', 'warning');
+        if(cardSelector) cardSelector.classList.add('hidden');
+        // Auto-click si existe botón cargar
         const btnCargar = document.getElementById('btn-cargar-guardado');
-        if (btnCargar) {
-            btnCargar.click();
-        }
-        return; 
+        if(btnCargar) btnCargar.click();
+        return;
     }
 
-    // ----------------------------------------------------
-    // 3. LÓGICA ONLINE (CARGAR SELECTORES PARA NUEVA RUTA)
-    // ----------------------------------------------------
+    // --- 3. SI HAY INTERNET (MOSTRAR SELECTORES) ---
+    // ESTA PARTE ES CRÍTICA PARA QUE APAREZCA EL MENÚ
+    if (cardSelector) {
+        cardSelector.classList.remove('hidden');
+        cardSelector.style.display = 'block'; // Forzar display
+    }
+
     let rutaUsuario = currentUserData.ruta;
     let officeUsuario = currentUserData.office;
 
@@ -3127,7 +3097,7 @@ async function inicializarVistaPagoGrupal() {
 
     if (containerChecks) containerChecks.innerHTML = '<div class="spinner"></div> Cargando poblaciones...';
 
-    // Asegurar botón calcular limpio
+    // Preparar botón calcular
     const btnCalcular = document.getElementById('btn-calcular-seleccion');
     if(btnCalcular) {
         const newBtn = btnCalcular.cloneNode(true);
@@ -3141,26 +3111,32 @@ async function inicializarVistaPagoGrupal() {
         if (containerChecks) containerChecks.innerHTML = ''; 
 
         if (poblaciones.length === 0) {
-            containerChecks.innerHTML = '<p>No hay poblaciones disponibles.</p>';
+            containerChecks.innerHTML = '<p>No hay poblaciones en tu ruta.</p>';
             return;
         }
 
-        // Renderizar Checkboxes (Igual que antes)
+        // Renderizar Checkbox "Todas"
         const allDiv = document.createElement('div');
         allDiv.className = 'select-all-container';
         allDiv.innerHTML = `
             <label class="custom-check-wrapper" style="width:100%; justify-content: space-between; padding: 10px;">
                 <span style="font-weight:bold; color:var(--primary);">TODAS LAS POBLACIONES</span>
-                <input type="checkbox" id="check-all-poblaciones" checked> <i class="fas fa-check-circle custom-check-icon"></i>
+                <input type="checkbox" id="check-all-poblaciones" checked> 
+                <i class="fas fa-check-circle custom-check-icon"></i>
             </label>`;
         containerChecks.appendChild(allDiv);
 
+        // Renderizar Grid de Poblaciones
         const gridDiv = document.createElement('div');
         gridDiv.className = 'poblacion-selector-grid';
         poblaciones.forEach(pob => {
             const label = document.createElement('label');
             label.className = 'poblacion-select-card selected';
-            label.innerHTML = `<input type="checkbox" class="poblacion-check" value="${pob.nombre}" checked> <span class="poblacion-name">${pob.nombre}</span> <i class="fas fa-check-circle check-icon"></i>`;
+            label.innerHTML = `
+                <input type="checkbox" class="poblacion-check" value="${pob.nombre}" checked> 
+                <span class="poblacion-name">${pob.nombre}</span> 
+                <i class="fas fa-check-circle check-icon"></i>`;
+            
             label.querySelector('input').addEventListener('change', function() {
                 this.checked ? label.classList.add('selected') : label.classList.remove('selected');
             });
@@ -3168,7 +3144,7 @@ async function inicializarVistaPagoGrupal() {
         });
         containerChecks.appendChild(gridDiv);
 
-        // Listener check all
+        // Listener del "Select All"
         document.getElementById('check-all-poblaciones').addEventListener('change', function(e) {
             const isChecked = e.target.checked;
             document.querySelectorAll('.poblacion-select-card').forEach(card => {
@@ -5805,16 +5781,36 @@ async function inicializarVistaReporteContable() {
 }
 
 //=====================================================//
-    // ** CARGA DE AGENTES EN REPORTE CONTABLE ** //
+// ** CARGA DE AGENTES EN REPORTE CONTABLE (CORREGIDO) ** //
 //=====================================================//
 async function handleSucursalReporteContableChange() {
     const statusEl = 'status_reporte_contable';
     const selectSucursal = document.getElementById('reporte-contable-sucursal');
     const selectAgente = document.getElementById('reporte-contable-agente');
+
+    // Validación de seguridad: Si los elementos no están en el DOM, salir
+    if (!selectSucursal || !selectAgente) return;
+
     const office = selectSucursal.value;
 
+    // Limpiar dropdown
     selectAgente.innerHTML = '<option value="">Cargando...</option>';
     selectAgente.disabled = true;
+
+    // --- PARCHE DE SEGURIDAD ABSOLUTO ---
+    // Si el usuario es Comercial, NO tiene permiso para listar usuarios.
+    // Le asignamos su propio nombre y terminamos la función.
+    const rolActual = currentUserData ? currentUserData.role : '';
+    // Normalizamos para detectar variaciones (con acento, sin acento, mayúsculas)
+    const rolNormalizado = rolActual.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    
+    if (rolNormalizado.includes('comercial') || rolNormalizado.includes('ventas')) {
+        console.log("🛡️ Rol comercial detectado: Asignando usuario actual y saliendo.");
+        selectAgente.innerHTML = `<option value="${currentUserData.id}" selected>${currentUserData.name || 'Mi Usuario'}</option>`;
+        selectAgente.disabled = true; // Bloqueado, solo puede verse a sí mismo
+        return; // <--- IMPORTANTE: Detiene la ejecución aquí.
+    }
+    // ------------------------------------
 
     if (!office) {
         selectAgente.innerHTML = '<option value="">Selecciona una sucursal</option>';
@@ -5823,7 +5819,12 @@ async function handleSucursalReporteContableChange() {
 
     try {
         const resultado = await database.obtenerUsuarios();
-        if (!resultado.success) throw new Error(resultado.message);
+        
+        if (!resultado.success) {
+            console.warn("No se pudieron cargar usuarios:", resultado.message);
+            selectAgente.innerHTML = '<option value="">(Sin permisos)</option>';
+            return;
+        }
 
         const agentes = resultado.data.filter(u =>
             u.role === 'Área comercial' && u.office === office
@@ -5834,8 +5835,7 @@ async function handleSucursalReporteContableChange() {
         selectAgente.disabled = false;
         
     } catch (error) {
-        console.error("Error cargando agentes para reporte:", error);
-        showStatus(statusEl, `Error cargando agentes: ${error.message}`, 'error');
+        console.error("Error no crítico cargando agentes:", error);
         selectAgente.innerHTML = '<option value="">Error al cargar</option>';
     }
 }
@@ -7394,6 +7394,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
