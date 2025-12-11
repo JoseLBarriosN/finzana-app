@@ -1209,17 +1209,16 @@
     <script src="js/database.js"></script>
     <script src="js/app.js"></script>
     <script>
-    // Registro del Service Worker
+    // Registro del Service Worker con ruta relativa
     if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-            navigator.serviceWorker.register('/sw.js')
+            // CORRECCIÓN: 'sw.js' sin la barra inicial
+            navigator.serviceWorker.register('sw.js')
                 .then((registration) => {
                     console.log('✅ Service Worker registrado con éxito:', registration.scope);
                     
-                    // Opcional: Detectar si hay una actualización esperando
                     if (registration.waiting) {
-                        console.log('🔄 Nueva versión del SW disponible y esperando...');
-                        // Aquí podrías mostrar un botón al usuario para "Actualizar ahora"
+                        console.log('🔄 Nueva versión disponible...');
                     }
                 })
                 .catch((err) => {
@@ -1227,7 +1226,7 @@
                 });
         });
 
-        // Recargar la página si el SW controla la página (después de una actualización)
+        // Recargar la página automáticamente si el SW se actualiza
         let refreshing;
         navigator.serviceWorker.addEventListener('controllerchange', () => {
             if (refreshing) return;
@@ -1238,19 +1237,3 @@
 </script>
 </body>
 </html>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
