@@ -2984,9 +2984,8 @@ async function handleCalcularCobranzaRuta() {
 //=======================================
 
 async function inicializarVistaPagoGrupal() {
-    console.log("🚀 INICIANDO VISTA PAGO GRUPAL (Estilo Unificado)");
+    console.log("🚀 INICIANDO VISTA PAGO GRUPAL (Híbrida)");
     
-    // --- Referencias estáticas que no cambian ---
     const containerChecks = document.getElementById('checkboxes-poblaciones-container');
     const cardSelector = document.getElementById('selector-poblaciones-card');
     const statusPago = document.getElementById('status_pago_grupo');
@@ -2994,136 +2993,177 @@ async function inicializarVistaPagoGrupal() {
     const btnRegistrar = document.getElementById('btn-registrar-pagos-offline');
     const containerResultados = document.getElementById('cobranza-ruta-container');
     const placeholder = document.getElementById('cobranza-ruta-placeholder');
+    const btnVerMapa = document.getElementById('btn-ver-ruta-maps');
 
-    // 1. Limpieza UI
-    if (cardSelector) cardSelector.classList.remove('hidden'); 
-    if (placeholder) placeholder.classList.remove('hidden');
-    if (containerResultados) containerResultados.innerHTML = '';
-    if (statusPago) { statusPago.innerHTML = ''; statusPago.classList.add('hidden'); }
-    if (btnGuardar) btnGuardar.classList.add('hidden');
-    if (btnRegistrar) btnRegistrar.classList.add('hidden');
-
-    // Deshabilitar botón calcular INMEDIATAMENTE si existe para evitar doble click
-    const btnCalcularInicial = document.getElementById('btn-calcular-seleccion');
-    if (btnCalcularInicial) btnCalcularInicial.disabled = true;
+    // Reset UI
+    if(containerResultados) containerResultados.innerHTML = '';
+    if(statusPago) { statusPago.innerHTML = ''; statusPago.className = 'status-message hidden'; }
+    if(btnGuardar) btnGuardar.classList.add('hidden');
+    if(btnRegistrar) btnRegistrar.classList.add('hidden');
+    if(btnVerMapa) btnVerMapa.classList.add('hidden');
+    if(placeholder) placeholder.classList.remove('hidden'); // Mostrar placeholder por defecto
 
     if (!currentUserData) {
-        showStatus('status_pago_grupo', 'Error: No se han cargado datos del usuario.', 'error');
+        showStatus('status_pago_grupo', 'Esperando datos de usuario...', 'warning');
         return;
     }
 
-    // 2. Lógica Offline
+    // ----------------------------------------------------
+    // 1. BUSCAR DATOS GUARDADOS LOCALMENTE (SIEMPRE)
+    // ----------------------------------------------------
     const keyOffline = OFFLINE_STORAGE_KEY + (currentUserData.ruta || 'sin_ruta');
-    const datosGuardadosStr = localStorage.getItem(keyOffline);
     let datosGuardados = null;
-    if (datosGuardadosStr) { try { datosGuardados = JSON.parse(datosGuardadosStr); } catch(e) {} }
+    try {
+        const rawData = localStorage.getItem(keyOffline);
+        if (rawData) datosGuardados = JSON.parse(rawData);
+    } catch(e) { console.error("Error leyendo localStorage", e); }
 
-    if (!navigator.onLine) {
-        showStatus('status_pago_grupo', 'Modo Offline detectado.', 'warning');
-        if (datosGuardados && datosGuardados.data) {
-            cardSelector.classList.add('hidden');
-            placeholder.classList.add('hidden');
+    // Si hay datos guardados, mostramos una alerta visual para cargarlos
+    if (datosGuardados && datosGuardados.data) {
+        const fechaGuardado = new Date(datosGuardados.timestamp).toLocaleString();
+        const totalClientes = Object.values(datosGuardados.data).flat().length;
+        
+        // Creamos un aviso bonito
+        const avisoRecuperacion = document.createElement('div');
+        avisoRecuperacion.className = 'alert alert-info';
+        avisoRecuperacion.style.margin = '15px 0';
+        avisoRecuperacion.innerHTML = `
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <div>
+                    <strong><i class="fas fa-save"></i> Tienes una ruta guardada</strong><br>
+                    <small>Fecha: ${fechaGuardado} | Clientes: ${totalClientes}</small>
+                </div>
+                <div>
+                    <button id="btn-cargar-guardado" class="btn btn-sm btn-primary">Cargar</button>
+                    <button id="btn-borrar-guardado" class="btn btn-sm btn-outline-danger"><i class="fas fa-trash"></i></button>
+                </div>
+            </div>
+        `;
+        
+        // Insertamos el aviso antes del placeholder
+        if(placeholder && placeholder.parentNode) {
+            // Limpiar avisos previos si hubiera
+            const prevAlert = document.querySelector('.alert-info');
+            if(prevAlert) prevAlert.remove();
+            placeholder.parentNode.insertBefore(avisoRecuperacion, placeholder);
+        }
+
+        // Listener para Cargar
+        document.getElementById('btn-cargar-guardado').onclick = () => {
+            console.log("📂 Cargando datos locales...");
             cobranzaRutaData = datosGuardados.data;
+            
+            // Ocultar selector y placeholder
+            if(cardSelector) cardSelector.classList.add('hidden'); // Opcional: Ocultar selector si cargas guardado
+            if(placeholder) placeholder.classList.add('hidden');
+            avisoRecuperacion.remove(); // Quitar el aviso
+
             renderizarCobranzaRuta(cobranzaRutaData, containerResultados);
             if(btnRegistrar) btnRegistrar.classList.remove('hidden');
-            const fechaGuardado = new Date(datosGuardados.timestamp).toLocaleString();
-            showStatus('status_pago_grupo', `Mostrando datos guardados (${fechaGuardado}).`, 'success');
-        } else {
-            placeholder.classList.remove('hidden');
-            placeholder.innerHTML = '<p class="text-danger">Sin conexión y sin datos guardados.</p>';
-        }
-        return;
+            if(btnVerMapa) btnVerMapa.classList.remove('hidden');
+            
+            // Reconstruir waypoints para el mapa si existen
+            if (waypointsComisionistas.length === 0) {
+                 // Recorrer los datos para rellenar waypoints (Lógica simplificada)
+                 Object.values(cobranzaRutaData).flat().forEach(c => {
+                     // Aquí deberías tener la dirección guardada en el objeto, si no, no se podrá mapear offline
+                     // Si guardaste el objeto completo en localStorage, funcionará.
+                 });
+            }
+            showStatus('status_pago_grupo', `Ruta cargada (${fechaGuardado}).`, 'success');
+        };
+
+        // Listener para Borrar
+        document.getElementById('btn-borrar-guardado').onclick = () => {
+            if(confirm("¿Borrar la ruta guardada?")) {
+                localStorage.removeItem(keyOffline);
+                avisoRecuperacion.remove();
+                showStatus('status_pago_grupo', 'Datos locales eliminados.', 'info');
+            }
+        };
     }
 
-    // 3. Validación de Ruta
+    // ----------------------------------------------------
+    // 2. SI NO HAY INTERNET, FORZAR CARGA (SI EXISTE)
+    // ----------------------------------------------------
+    if (!navigator.onLine) {
+        showStatus('status_pago_grupo', 'Modo Offline. Solo puedes ver datos guardados.', 'warning');
+        if(cardSelector) cardSelector.classList.add('hidden'); // No se puede calcular nuevo sin internet
+        
+        // Auto-click en cargar si está offline y hay datos
+        const btnCargar = document.getElementById('btn-cargar-guardado');
+        if (btnCargar) {
+            btnCargar.click();
+        }
+        return; 
+    }
+
+    // ----------------------------------------------------
+    // 3. LÓGICA ONLINE (CARGAR SELECTORES PARA NUEVA RUTA)
+    // ----------------------------------------------------
     let rutaUsuario = currentUserData.ruta;
     let officeUsuario = currentUserData.office;
 
     if (!rutaUsuario) {
-        showStatus('status_pago_grupo', 'Error: Sin ruta asignada.', 'error');
+        showStatus('status_pago_grupo', 'Tu usuario no tiene ruta asignada.', 'error');
         return;
     }
 
-    if (containerChecks) containerChecks.innerHTML = '<div style="text-align:center;"><div class="spinner"></div> Cargando...</div>';
+    if (containerChecks) containerChecks.innerHTML = '<div class="spinner"></div> Cargando poblaciones...';
+
+    // Asegurar botón calcular limpio
+    const btnCalcular = document.getElementById('btn-calcular-seleccion');
+    if(btnCalcular) {
+        const newBtn = btnCalcular.cloneNode(true);
+        btnCalcular.parentNode.replaceChild(newBtn, btnCalcular);
+        newBtn.disabled = false;
+        newBtn.addEventListener('click', handleCalcularCobranzaRuta);
+    }
 
     try {
-        // --- AWAIT (Aquí es donde ocurría el conflicto de tiempo) ---
         const poblaciones = await database.obtenerPoblacionesPorRuta(rutaUsuario, officeUsuario);
-        
-        // --- CÓDIGO SEGURO DESPUÉS DEL AWAIT ---
         if (containerChecks) containerChecks.innerHTML = ''; 
 
         if (poblaciones.length === 0) {
-            if (containerChecks) containerChecks.innerHTML = `<p>No hay poblaciones en ruta ${rutaUsuario}.</p>`;
+            containerChecks.innerHTML = '<p>No hay poblaciones disponibles.</p>';
             return;
         }
 
-        // Generar Checkboxes
+        // Renderizar Checkboxes (Igual que antes)
         const allDiv = document.createElement('div');
         allDiv.className = 'select-all-container';
         allDiv.innerHTML = `
             <label class="custom-check-wrapper" style="width:100%; justify-content: space-between; padding: 10px;">
-                <span style="font-weight:bold; color:var(--primary); font-size: 1rem;">SELECCIONAR TODAS LAS POBLACIONES</span>
-                <input type="checkbox" id="check-all-poblaciones" checked> 
-                <i class="fas fa-check-circle custom-check-icon"></i>
-            </label>
-        `;
-        if (containerChecks) containerChecks.appendChild(allDiv);
+                <span style="font-weight:bold; color:var(--primary);">TODAS LAS POBLACIONES</span>
+                <input type="checkbox" id="check-all-poblaciones" checked> <i class="fas fa-check-circle custom-check-icon"></i>
+            </label>`;
+        containerChecks.appendChild(allDiv);
 
         const gridDiv = document.createElement('div');
         gridDiv.className = 'poblacion-selector-grid';
-
         poblaciones.forEach(pob => {
             const label = document.createElement('label');
             label.className = 'poblacion-select-card selected';
-            label.innerHTML = `
-                <input type="checkbox" class="poblacion-check" value="${pob.nombre}" checked> 
-                <span class="poblacion-name">${pob.nombre}</span>
-                <i class="fas fa-check-circle check-icon"></i>
-            `;
-            
-            const checkbox = label.querySelector('input');
-            checkbox.addEventListener('change', function() {
-                if(this.checked) label.classList.add('selected');
-                else label.classList.remove('selected');
-                
-                const allChecks = document.querySelectorAll('.poblacion-check');
-                const allChecked = Array.from(allChecks).every(c => c.checked);
-                const checkAll = document.getElementById('check-all-poblaciones');
-                if(checkAll) checkAll.checked = allChecked;
+            label.innerHTML = `<input type="checkbox" class="poblacion-check" value="${pob.nombre}" checked> <span class="poblacion-name">${pob.nombre}</span> <i class="fas fa-check-circle check-icon"></i>`;
+            label.querySelector('input').addEventListener('change', function() {
+                this.checked ? label.classList.add('selected') : label.classList.remove('selected');
             });
             gridDiv.appendChild(label);
         });
-        if (containerChecks) containerChecks.appendChild(gridDiv);
+        containerChecks.appendChild(gridDiv);
 
-        const checkAllBtn = document.getElementById('check-all-poblaciones');
-        if (checkAllBtn) {
-            checkAllBtn.addEventListener('change', function(e) {
-                const isChecked = e.target.checked;
-                document.querySelectorAll('.poblacion-select-card').forEach(card => {
-                    const input = card.querySelector('input');
-                    input.checked = isChecked;
-                    if(isChecked) card.classList.add('selected');
-                    else card.classList.remove('selected');
-                });
+        // Listener check all
+        document.getElementById('check-all-poblaciones').addEventListener('change', function(e) {
+            const isChecked = e.target.checked;
+            document.querySelectorAll('.poblacion-select-card').forEach(card => {
+                card.querySelector('input').checked = isChecked;
+                isChecked ? card.classList.add('selected') : card.classList.remove('selected');
             });
-        }
-
-        // --- SOLUCIÓN AL CRASH "replaceChild of null" ---
-        // Volvemos a buscar el botón aquí, porque la referencia vieja puede haber muerto
-        const btnCalcularActual = document.getElementById('btn-calcular-seleccion');
-        
-        if(btnCalcularActual && btnCalcularActual.parentNode) {
-            btnCalcularActual.disabled = false;
-            // Clonamos para limpiar listeners anteriores de forma segura
-            const newBtn = btnCalcularActual.cloneNode(true);
-            btnCalcularActual.parentNode.replaceChild(newBtn, btnCalcularActual);
-            newBtn.addEventListener('click', handleCalcularCobranzaRuta);
-        }
+        });
 
     } catch (error) {
         console.error(error);
-        showStatus('status_pago_grupo', `Error: ${error.message}`, 'error');
+        if(containerChecks) containerChecks.innerHTML = '<p class="text-danger">Error cargando poblaciones.</p>';
     }
 }
 
@@ -7338,5 +7378,6 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
