@@ -3073,12 +3073,28 @@ async function inicializarVistaPagoGrupal() {
             showStatus('status_pago_grupo', `Ruta cargada (${fechaGuardado}).`, 'success');
         };
 
-        // Listener para Borrar
-        document.getElementById('btn-borrar-guardado').onclick = () => {
-            if(confirm("¿Borrar la ruta guardada?")) {
+        // Listener para Borrar (CORREGIDO)
+        document.getElementById('btn-borrar-guardado').onclick = async () => {
+            if(confirm("¿Borrar la ruta guardada y generar una nueva?")) {
+                // 1. Borrar de memoria
                 localStorage.removeItem(keyOffline);
+                
+                // 2. Limpiar UI actual
                 avisoRecuperacion.remove();
-                showStatus('status_pago_grupo', 'Datos locales eliminados.', 'info');
+                containerResultados.innerHTML = '';
+                
+                // 3. Restaurar visibilidad de elementos base
+                if(cardSelector) cardSelector.classList.remove('hidden');
+                if(placeholder) placeholder.classList.remove('hidden');
+                if(btnGuardar) btnGuardar.classList.add('hidden');
+                if(btnRegistrar) btnRegistrar.classList.add('hidden');
+                if(btnVerMapa) btnVerMapa.classList.add('hidden');
+
+                showStatus('status_pago_grupo', 'Datos locales eliminados. Puedes generar una nueva ruta.', 'info');
+
+                // 4. RE-INICIALIZAR LA VISTA PARA CARGAR POBLACIONES DE NUEVO
+                // Esto es vital para que vuelvan a salir los checkboxes
+                await inicializarVistaPagoGrupal();
             }
         };
     }
@@ -7378,6 +7394,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
