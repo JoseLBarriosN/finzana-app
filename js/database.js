@@ -717,19 +717,25 @@ const database = {
         }
     },
 
-   // --- REGISTRAR PAGO ---
+   // --- REGISTRAR PAGO (SOPORTE OFFLINE) ---
     async agregarPago(pagoData, emailUsuario, firestoreIdCredito) {
         try {
             const creditoRef = db.collection('creditos').doc(firestoreIdCredito);
             const pagosRef = db.collection('pagos').doc();
             const batch = db.batch();
 
+            // 1. Lectura del crédito (Esta lectura funciona offline si ya se cargó antes)
             const doc = await creditoRef.get();
-            if (!doc.exists) throw new Error("No se encontró el crédito.");
+            
+            if (!doc.exists) {
+                // Si estamos offline y el crédito no está en caché, no podemos pagar
+                if (!navigator.onLine) throw new Error("Crédito no disponible offline (no se ha cargado previamente).");
+                throw new Error("No se encontró el crédito.");
+            }
+
             const credito = doc.data();
             const saldoActual = credito.saldo !== undefined ? credito.saldo : credito.montoTotal;
             const officeCredito = credito.office || 'GDL';
-
             const fechaISO = database.obtenerFechaLocalISO();
             
             const nuevoPago = {
@@ -746,6 +752,7 @@ const database = {
 
             const nuevoSaldo = parseFloat((saldoActual - nuevoPago.monto).toFixed(2));
 
+            // Preparar operaciones
             batch.set(pagosRef, nuevoPago);
             batch.update(creditoRef, {
                 saldo: nuevoSaldo,
@@ -762,7 +769,7 @@ const database = {
                     monto: -Math.abs(pagoData.comisionGenerada), 
                     descripcion: `Comisión cobro crédito ${pagoData.idCredito}`,
                     fecha: fechaISO,
-                    userId: (await auth.currentUser) ? (await auth.currentUser).uid : null,
+                    userId: (auth.currentUser) ? auth.currentUser.uid : 'offline_user',
                     registradoPor: emailUsuario,
                     office: officeCredito,
                     creditoIdAsociado: firestoreIdCredito
@@ -770,10 +777,28 @@ const database = {
                 batch.set(movimientoRef, nuevaComision);
             }
 
-            await batch.commit();
+            // 2. EJECUCIÓN (Manejo especial Offline)
+            const commitPromise = batch.commit();
+
+            // Si NO hay internet, no esperamos la confirmación del servidor.
+            // Asumimos éxito porque Firestore guardará en local y sincronizará luego.
+            if (!navigator.onLine) {
+                console.log("📡 Modo Offline: Pago guardado localmente (sincronización pendiente).");
+                return { 
+                    success: true, 
+                    message: "Pago guardado en dispositivo (se subirá al conectar)",
+                    nuevoSaldo: nuevoSaldo,
+                    historicalIdCredito: pagoData.idCredito,
+                    offline: true
+                };
+            }
+
+            // Si hay internet, esperamos la confirmación real
+            await commitPromise;
+
             return { 
                 success: true, 
-                message: "Pago registrado correctamente",
+                message: "Pago registrado y sincronizado",
                 nuevoSaldo: nuevoSaldo,
                 historicalIdCredito: pagoData.idCredito
             };
@@ -2003,6 +2028,7 @@ const database = {
     },
 
 };
+
 
 
 
