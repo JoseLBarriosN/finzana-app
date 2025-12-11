@@ -34,7 +34,7 @@ try {
 }
 
 // 4. Habilitar Persistencia Offline (Datos)
-/*db.enablePersistence({ synchronizeTabs: true })
+db.enablePersistence({ synchronizeTabs: true })
     .then(() => console.log("✅ [DB] Persistencia Offline ACTIVADA"))
     .catch((err) => {
         if (err.code == 'failed-precondition') {
@@ -42,11 +42,12 @@ try {
         } else if (err.code == 'unimplemented') {
             console.warn("⚠️ [DB] Navegador no compatible.");
         }
-    });*/
+    });
 
 // 5. Configurar Persistencia de Auth (Sesión)
 // Esto puede correr en paralelo sin afectar a Firestore
 auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL)
     .then(() => console.log("✅ [Auth] Persistencia LOCAL activada"))
     .catch((error) => console.error("❌ [Auth] Fallo persistencia:", error));
+
 
