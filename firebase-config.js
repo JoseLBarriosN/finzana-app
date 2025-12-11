@@ -13,8 +13,11 @@ const firebaseConfig = {
 
 // Inicializar Firebase
 try {
-    firebase.initializeApp(firebaseConfig);
-    console.log('✅ Firebase inicializado correctamente');
+    // Verificamos si ya existe una instancia para evitar errores de doble inicialización
+    if (!firebase.apps.length) {
+        firebase.initializeApp(firebaseConfig);
+        console.log('✅ Firebase inicializado correctamente');
+    }
 } catch (error) {
     console.error('❌ Error inicializando Firebase:', error);
 }
@@ -23,30 +26,30 @@ try {
 const auth = firebase.auth();
 const db = firebase.firestore();
 
-// ===== INICIO DE LA MODIFICACIÓN (Persistencia de SESIÓN) =====
-auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL) // <-- ¡CAMBIO IMPORTANTE!
+// ===== PERSISTENCIA DE SESIÓN Y DATOS (OFFLINE) =====
+
+// 1. Configurar persistencia de autenticación (Para no pedir login sin internet)
+auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL)
     .then(() => {
-        // Puedes cambiar el mensaje si quieres
-        console.log("✅ Persistencia LOCAL de sesión establecida. La sesión persistirá entre cierres.");
-        // Habilitar la persistencia de datos de Firestore DESPUÉS de configurar la de Auth.
-        return db.enablePersistence();
+        console.log("✅ Persistencia LOCAL de sesión establecida.");
+        
+        // 2. Habilitar persistencia de Firestore (Base de datos Offline)
+        // IMPORTANTE: synchronizeTabs: true evita el error de múltiples pestañas
+        return db.enablePersistence({ synchronizeTabs: true });
     })
     .then(() => {
-        console.log('✅ Persistencia offline de Firestore activada');
+        console.log('✅ Persistencia offline de Firestore activada correctamente');
     })
     .catch((err) => {
         let message = '';
         if (err.code === 'failed-precondition') {
-            message = 'Error Crítico de Persistencia: La aplicación solo puede estar abierta en una pestaña a la vez para que el modo offline funcione. Por favor, cierra las otras pestañas.';
-            console.error(message);
-            alert(message);
+            message = '⚠️ Error Persistencia: Múltiples pestañas abiertas. Cierra las otras para activar modo offline.';
+            console.warn(message);
         } else if (err.code === 'unimplemented') {
-            message = '⚠️ Persistencia offline no disponible en este navegador.';
+            message = '⚠️ El navegador no soporta persistencia offline.';
             console.warn(message);
         } else {
-            message = `❌ Error en persistencia: ${err.message}`;
+            message = `❌ Error desconocido en persistencia: ${err.message}`;
             console.error(message);
         }
     });
-// ===== FIN DE LA MODIFICACIÓN =====
-
