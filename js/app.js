@@ -3317,7 +3317,6 @@ function renderizarCobranzaRuta(data, container) {
         const creditos = data[grupo];
         const grupoId = grupo.replace(/\s+/g, '_'); // ID único seguro
         
-        // --- CAMBIOS EN EL HTML ---
         html += `
             <div class="poblacion-group card" id="group-card-${grupoId}" style="margin-bottom: 15px; border: 1px solid #dee2e6; border-radius: 12px; overflow:hidden;">
                 
@@ -3416,6 +3415,9 @@ function renderizarCobranzaRuta(data, container) {
                                 id="check-${linkId}"
                                 data-id-link="${linkId}" 
                                 data-grupo-id="${grupoId}"
+                                data-firestore-id="${cred.firestoreId}"
+                                data-hist-id="${cred.historicalIdCredito}"
+                                data-nombre="${cred.nombreCliente}"
                                 checked
                                 onchange="recalcularComision('${linkId}')">
                             <i class="fas fa-check-circle custom-check-icon"></i>
@@ -7336,4 +7338,5 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
