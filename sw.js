@@ -1,31 +1,26 @@
-// ===================================
-// --- Service Worker FINZANA (OPTIMIZADO) ---
-// ===================================
-
-const CACHE_NAME = 'finzana-cache-v10'; // Incrementamos versión para forzar actualización
+const CACHE_NAME = 'finzana-cache-v12'; // Versión incrementada
 const urlsToCache = [
-    '/',
-    '/index.html',
-    '/css/styles.css',
-    '/js/app.js',
-    '/js/database.js',
-    '/firebase-config.js',
-    '/offline.html',
-    '/assets/logo.png',
-    '/assets/logo_192.png',
-    '/assets/logo_512.png',
+    './',                
+    'index.html',      // Sin / inicial
+    'css/styles.css',  // Sin / inicial
+    'js/app.js',       // Sin / inicial
+    'js/database.js',  // Sin / inicial
+    'firebase-config.js',
+    'offline.html',    // Asegúrate de que este archivo exista, si no, bórralo de aquí
+    'assets/logo.png',
+    'assets/logo_192.png',
+    'assets/logo_512.png',
     'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css',
-    // Scripts de Firebase (Es correcto cachear los scripts, pero NO las peticiones de datos)
     'https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js',
     'https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js',
     'https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js'
 ];
 
 const CRITICAL_FILES = [
-    '/css/styles.css',
-    '/js/app.js',
-    '/js/database.js',
-    '/firebase-config.js'
+    'css/styles.css',
+    'js/app.js',
+    'js/database.js',
+    'firebase-config.js'
 ];
 
 // --- INSTALACIÓN ---
@@ -53,32 +48,31 @@ self.addEventListener('activate', event => {
                     }
                 })
             );
-        }).then(() => self.clients.claim()) // Toma control de los clientes inmediatamente
+        }).then(() => self.clients.claim())
     );
 });
 
 // ===================================
-// --- EVENTO FETCH (CRÍTICO) ---
+// --- EVENTO FETCH (CORREGIDO) ---
 // ===================================
 self.addEventListener('fetch', event => {
     const requestUrl = new URL(event.request.url);
 
     // 1. IGNORAR APIS DE DATOS (FIREBASE / GOOGLE MAPS)
-    // Es vital ignorar 'firestore.googleapis.com' y 'identitytoolkit' para que
-    // el SDK de Firebase maneje su propia persistencia (IndexedDB) sin interferencias.
+    // Esto es vital para que la persistencia offline de Firebase (IndexedDB) funcione
     if (requestUrl.hostname.includes('firestore.googleapis.com') || 
         requestUrl.hostname.includes('googleapis.com') || 
         requestUrl.hostname.includes('firebaseio.com')) {
         return; // El SW no toca esto, va directo a la red/SDK.
     }
 
-    // 2. ESTRATEGIA: NETWORK FIRST, FALLBACK TO CACHE (Para HTML y Archivos Críticos)
-    // Usamos esto para asegurar que el usuario siempre tenga la última versión de la app si tiene internet.
+    // 2. ESTRATEGIA: NETWORK FIRST (Para HTML y Archivos Críticos)
+    // CORRECCIÓN: Usamos .endsWith() para que coincida sin importar la carpeta raíz
     if (event.request.mode === 'navigate' || CRITICAL_FILES.some(file => requestUrl.pathname.endsWith(file))) {
         event.respondWith(
             fetch(event.request)
                 .then(networkResponse => {
-                    // Si la red responde bien, actualizamos la caché y entregamos el recurso
+                    // Si la red responde bien, actualizamos la caché
                     if (networkResponse && networkResponse.status === 200 && networkResponse.type === 'basic') {
                         const responseToCache = networkResponse.clone();
                         caches.open(CACHE_NAME).then(cache => {
@@ -93,11 +87,10 @@ self.addEventListener('fetch', event => {
                         if (cachedResponse) {
                             return cachedResponse;
                         }
-                        // SI ES UNA NAVEGACIÓN (HTML) Y NO ESTÁ EN CACHÉ:
-                        // Devolvemos index.html (para que cargue la app) o offline.html
+                        // Fallback para navegación: mostrar index o offline.html
                         if (event.request.mode === 'navigate') {
-                            return caches.match('/index.html')
-                                .then(index => index || caches.match('/offline.html'));
+                            return caches.match('index.html')
+                                .then(index => index || caches.match('offline.html'));
                         }
                     });
                 })
@@ -105,12 +98,10 @@ self.addEventListener('fetch', event => {
         return;
     }
 
-    // 3. ESTRATEGIA: STALE-WHILE-REVALIDATE (Para imágenes, fuentes, estilos secundarios)
-    // Muestra lo que hay en caché rápido, y actualiza en segundo plano.
+    // 3. ESTRATEGIA: STALE-WHILE-REVALIDATE (Para imágenes, estilos secundarios)
     event.respondWith(
         caches.match(event.request).then(cachedResponse => {
             const fetchPromise = fetch(event.request).then(networkResponse => {
-                // Solo actualizamos caché si la respuesta es válida
                 if (networkResponse && networkResponse.status === 200 && networkResponse.type === 'basic') {
                     const responseToCache = networkResponse.clone();
                     caches.open(CACHE_NAME).then(cache => {
@@ -118,12 +109,10 @@ self.addEventListener('fetch', event => {
                     });
                 }
                 return networkResponse;
-            }).catch(err => {
-                // Errores de red silenciosos en background update
-                // console.log('Error actualizando caché en background', err); 
+            }).catch(() => {
+                // Falla silenciosa si no hay red y ya tenemos caché
             });
 
-            // Devolver caché si existe, si no, esperar a la red
             return cachedResponse || fetchPromise;
         })
     );
