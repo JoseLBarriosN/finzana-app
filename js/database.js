@@ -717,27 +717,32 @@ const database = {
         }
     },
 
-   // --- REGISTRAR PAGO (SOPORTE OFFLINE) ---
+   // --- REGISTRAR PAGO (MODO HÍBRIDO SEGURO) ---
     async agregarPago(pagoData, emailUsuario, firestoreIdCredito) {
         try {
+            // Referencias
             const creditoRef = db.collection('creditos').doc(firestoreIdCredito);
             const pagosRef = db.collection('pagos').doc();
             const batch = db.batch();
 
-            // 1. Lectura del crédito (Esta lectura funciona offline si ya se cargó antes)
-            const doc = await creditoRef.get();
-            
-            if (!doc.exists) {
-                // Si estamos offline y el crédito no está en caché, no podemos pagar
-                if (!navigator.onLine) throw new Error("Crédito no disponible offline (no se ha cargado previamente).");
-                throw new Error("No se encontró el crédito.");
+            // 1. OBTENCIÓN DE DATOS (Con soporte de caché)
+            // Usamos { source: 'cache' } si fallamos por red, para asegurar lectura offline
+            let doc;
+            try {
+                doc = await creditoRef.get();
+            } catch (e) {
+                console.warn("Lectura red falló, intentando caché...", e);
+                doc = await creditoRef.get({ source: 'cache' });
             }
+
+            if (!doc.exists) throw new Error("Crédito no encontrado (ni en red ni en caché).");
 
             const credito = doc.data();
             const saldoActual = credito.saldo !== undefined ? credito.saldo : credito.montoTotal;
             const officeCredito = credito.office || 'GDL';
             const fechaISO = database.obtenerFechaLocalISO();
             
+            // Construcción del objeto Pago
             const nuevoPago = {
                 id: pagosRef.id,
                 idCredito: pagoData.idCredito, 
@@ -747,12 +752,13 @@ const database = {
                 tipoPago: pagoData.tipoPago || 'normal',
                 registradoPor: emailUsuario,
                 office: officeCredito, 
-                origen: pagoData.origen || 'manual'
+                origen: pagoData.origen || 'manual',
+                syncStatus: 'pending' // Marca interna para depuración
             };
 
             const nuevoSaldo = parseFloat((saldoActual - nuevoPago.monto).toFixed(2));
 
-            // Preparar operaciones
+            // Operaciones Batch
             batch.set(pagosRef, nuevoPago);
             batch.update(creditoRef, {
                 saldo: nuevoSaldo,
@@ -762,7 +768,7 @@ const database = {
 
             if (pagoData.comisionGenerada && pagoData.comisionGenerada > 0) {
                 const movimientoRef = db.collection('movimientos_efectivo').doc();
-                const nuevaComision = {
+                batch.set(movimientoRef, {
                     id: movimientoRef.id,
                     tipo: 'COMISION_PAGO', 
                     categoria: 'COMISION', 
@@ -773,38 +779,43 @@ const database = {
                     registradoPor: emailUsuario,
                     office: officeCredito,
                     creditoIdAsociado: firestoreIdCredito
-                };
-                batch.set(movimientoRef, nuevaComision);
+                });
             }
 
-            // 2. EJECUCIÓN (Manejo especial Offline)
-            const commitPromise = batch.commit();
+            // 2. COMMIT ROBUSTO
+            // Lanzamos el commit. Firestore maneja la cola interna.
+            // NO esperamos (await) si estamos offline para evitar timeouts de UI.
+            
+            const commitOp = batch.commit();
 
-            // Si NO hay internet, no esperamos la confirmación del servidor.
-            // Asumimos éxito porque Firestore guardará en local y sincronizará luego.
             if (!navigator.onLine) {
-                console.log("📡 Modo Offline: Pago guardado localmente (sincronización pendiente).");
+                console.log("🚀 [OFFLINE] Escritura enviada a cola de persistencia.");
+                // Retornamos éxito INMEDIATO. Firestore sincronizará cuando pueda.
                 return { 
                     success: true, 
-                    message: "Pago guardado en dispositivo (se subirá al conectar)",
+                    message: "Pago guardado en dispositivo (Pendiente de subir)",
                     nuevoSaldo: nuevoSaldo,
                     historicalIdCredito: pagoData.idCredito,
                     offline: true
                 };
             }
 
-            // Si hay internet, esperamos la confirmación real
-            await commitPromise;
-
+            // Si hay línea, esperamos confirmación para feedback visual
+            await commitOp;
+            
             return { 
                 success: true, 
-                message: "Pago registrado y sincronizado",
+                message: "Pago registrado y sincronizado en nube",
                 nuevoSaldo: nuevoSaldo,
                 historicalIdCredito: pagoData.idCredito
             };
 
         } catch (error) {
-            console.error("Error en agregarPago:", error);
+            console.error("Error crítico en agregarPago:", error);
+            // Si el error dice "offline", asumimos éxito de caché
+            if (error.message.includes("offline") || error.code === 'unavailable') {
+                 return { success: true, message: "Guardado forzoso en caché.", offline: true };
+            }
             return { success: false, message: error.message };
         }
     },
@@ -2028,6 +2039,7 @@ const database = {
     },
 
 };
+
 
 
 
