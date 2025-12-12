@@ -3031,7 +3031,7 @@ async function handleCalcularCobranzaRuta() {
 // ** INICIALIZAR VISTA DE PAGO GRUPAL (VISIBILIDAD ASEGURADA) **
 //=======================================
 async function inicializarVistaPagoGrupal() {
-    console.log("🚀 INICIANDO VISTA PAGO GRUPAL (V3 - Fix Checkbox)");
+    console.log("🚀 INICIANDO VISTA PAGO GRUPAL (V4 - Check Click Force)");
     
     const containerChecks = document.getElementById('checkboxes-poblaciones-container');
     const cardSelector = document.getElementById('selector-poblaciones-card');
@@ -3066,7 +3066,6 @@ async function inicializarVistaPagoGrupal() {
     if (datosGuardados && datosGuardados.data) {
         const fechaGuardado = new Date(datosGuardados.timestamp).toLocaleString();
         
-        // Crear aviso de recuperación
         const aviso = document.createElement('div');
         aviso.className = 'alert alert-info';
         aviso.style.margin = '15px 0';
@@ -3086,7 +3085,6 @@ async function inicializarVistaPagoGrupal() {
             placeholder.parentNode.insertBefore(aviso, placeholder);
         }
 
-        // Listener Cargar
         document.getElementById('btn-cargar-guardado').onclick = () => {
             cobranzaRutaData = datosGuardados.data;
             if(cardSelector) cardSelector.classList.add('hidden');
@@ -3095,21 +3093,23 @@ async function inicializarVistaPagoGrupal() {
             renderizarCobranzaRuta(cobranzaRutaData, containerResultados);
             if(btnRegistrar) btnRegistrar.classList.remove('hidden');
             if(btnVerMapa) btnVerMapa.classList.remove('hidden');
-            
             waypointsComisionistas = []; 
-            Object.values(cobranzaRutaData).flat().forEach(c => {
-                 // Lógica mapa offline si aplica
-            });
             showStatus('status_pago_grupo', 'Ruta local cargada.', 'success');
         };
 
-        // Listener Borrar
         document.getElementById('btn-borrar-guardado').onclick = async () => {
-            if(confirm("¿Borrar ruta guardada?")) {
+            if(confirm("¿Borrar la ruta guardada y generar una nueva?")) {
                 localStorage.removeItem(keyOffline);
                 aviso.remove();
                 containerResultados.innerHTML = '';
-                showStatus('status_pago_grupo', 'Datos eliminados.', 'info');
+                
+                if(cardSelector) cardSelector.classList.remove('hidden');
+                if(placeholder) placeholder.classList.remove('hidden');
+                if(btnGuardar) btnGuardar.classList.add('hidden');
+                if(btnRegistrar) btnRegistrar.classList.add('hidden');
+                if(btnVerMapa) btnVerMapa.classList.add('hidden');
+
+                showStatus('status_pago_grupo', 'Datos locales eliminados. Puedes generar una nueva ruta.', 'info');
                 await inicializarVistaPagoGrupal();
             }
         };
@@ -3124,7 +3124,7 @@ async function inicializarVistaPagoGrupal() {
         return;
     }
 
-    // --- 3. SI HAY INTERNET (CARGAR SELECTORES) ---
+    // --- 3. LÓGICA ONLINE (CARGAR SELECTORES) ---
     if (cardSelector) {
         cardSelector.classList.remove('hidden');
         cardSelector.style.display = 'block'; 
@@ -3140,7 +3140,6 @@ async function inicializarVistaPagoGrupal() {
 
     if (containerChecks) containerChecks.innerHTML = '<div class="spinner"></div> Cargando poblaciones...';
 
-    // Preparar botón calcular
     const btnCalcular = document.getElementById('btn-calcular-seleccion');
     if(btnCalcular) {
         const newBtn = btnCalcular.cloneNode(true);
@@ -3150,7 +3149,6 @@ async function inicializarVistaPagoGrupal() {
     }
 
     try {
-        // Optimización: Usar caché primero para poblaciones
         const poblaciones = await database.obtenerPoblacionesPorRuta(rutaUsuario, officeUsuario);
         
         if (containerChecks) containerChecks.innerHTML = ''; 
@@ -3160,16 +3158,23 @@ async function inicializarVistaPagoGrupal() {
             return;
         }
 
-        // --- CORRECCIÓN CHECK "TODAS" ---
+        // --- CORRECCIÓN: Evento directo en el ícono ---
         const allDiv = document.createElement('div');
         allDiv.className = 'select-all-container';
-        // Agregamos 'for' explícito y 'pointer-events: none' al icono
+        // Agregamos un ID único al icono para referenciarlo si es necesario, 
+        // pero la clave aquí es el onclick inline que fuerza el click en el input asociado.
         allDiv.innerHTML = `
-            <label class="custom-check-wrapper" for="check-all-poblaciones" style="width:100%; justify-content: space-between; padding: 10px; cursor: pointer;">
+            <div class="custom-check-wrapper" style="width:100%; justify-content: space-between; padding: 10px; cursor: pointer;" 
+                 onclick="document.getElementById('check-all-poblaciones').click()">
                 <span style="font-weight:bold; color:var(--primary);">TODAS LAS POBLACIONES</span>
-                <input type="checkbox" id="check-all-poblaciones" checked style="cursor: pointer;"> 
-                <i class="fas fa-check-circle custom-check-icon" style="pointer-events: none;"></i>
-            </label>`;
+                
+                <div style="position: relative; display: inline-block;">
+                    <input type="checkbox" id="check-all-poblaciones" checked 
+                           style="width: 20px; height: 20px; cursor: pointer;"
+                           onclick="event.stopPropagation()"> <i class="fas fa-check-circle custom-check-icon" 
+                       style="position: absolute; right: 25px; top: 0; pointer-events: none; font-size: 1.4rem;"></i>
+                </div>
+            </div>`;
         containerChecks.appendChild(allDiv);
 
         const gridDiv = document.createElement('div');
@@ -3177,6 +3182,7 @@ async function inicializarVistaPagoGrupal() {
         poblaciones.forEach(pob => {
             const label = document.createElement('label');
             label.className = 'poblacion-select-card selected';
+            // Usamos la misma técnica de estructura simple para los items individuales
             label.innerHTML = `
                 <input type="checkbox" class="poblacion-check" value="${pob.nombre}" checked> 
                 <span class="poblacion-name">${pob.nombre}</span> 
@@ -3185,7 +3191,6 @@ async function inicializarVistaPagoGrupal() {
             label.querySelector('input').addEventListener('change', function() {
                 this.checked ? label.classList.add('selected') : label.classList.remove('selected');
                 
-                // Actualizar estado del "Check All" si desmarcan uno individual
                 const allChecks = document.querySelectorAll('.poblacion-check');
                 const allChecked = Array.from(allChecks).every(c => c.checked);
                 const checkAll = document.getElementById('check-all-poblaciones');
@@ -3200,6 +3205,9 @@ async function inicializarVistaPagoGrupal() {
         if (checkAllEl) {
             checkAllEl.addEventListener('change', function(e) {
                 const isChecked = e.target.checked;
+                // Sincronizar visualmente si se hizo click directo
+                const wrapper = this.closest('.custom-check-wrapper');
+                
                 document.querySelectorAll('.poblacion-select-card').forEach(card => {
                     const input = card.querySelector('input');
                     if (input) {
@@ -7499,6 +7507,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
