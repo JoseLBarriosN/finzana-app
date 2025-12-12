@@ -1550,20 +1550,6 @@ async function loadGestionEfectivo() {
 //===============================================================//
     // ** MANEJO DE FORMULARIO DE ENTREGA DE EFECTIVO ** //
 //===============================================================//
-Claro, aquí tienes las 4 funciones completas para tu archivo app.js.
-
-Estas funciones implementan la lógica de permisos (para que el área comercial solo vea lo suyo), el filtro de agentes para administradores y la fecha personalizada en la entrega de efectivo.
-
-Copia y pega (o reemplaza) estas funciones en tu app.js.
-
-1. handleRegistrarEntregaInicial (Modificada)
-Ahora captura la fecha del nuevo input HTML.
-
-JavaScript
-
-// ===============================================================
-// MANEJO DE ENTREGA DE EFECTIVO (Con Fecha Personalizada)
-// ===============================================================
 async function handleRegistrarEntregaInicial(e) {
     e.preventDefault();
     const btn = e.target.querySelector('button[type="submit"]');
@@ -7470,6 +7456,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
