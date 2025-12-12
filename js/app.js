@@ -3030,9 +3030,8 @@ async function handleCalcularCobranzaRuta() {
 //=======================================
 // ** INICIALIZAR VISTA DE PAGO GRUPAL (VISIBILIDAD ASEGURADA) **
 //=======================================
-
 async function inicializarVistaPagoGrupal() {
-    console.log("🚀 INICIANDO VISTA PAGO GRUPAL (Híbrida V2)");
+    console.log("🚀 INICIANDO VISTA PAGO GRUPAL (V3 - Fix Checkbox)");
     
     const containerChecks = document.getElementById('checkboxes-poblaciones-container');
     const cardSelector = document.getElementById('selector-poblaciones-card');
@@ -3097,22 +3096,20 @@ async function inicializarVistaPagoGrupal() {
             if(btnRegistrar) btnRegistrar.classList.remove('hidden');
             if(btnVerMapa) btnVerMapa.classList.remove('hidden');
             
-            // Reconstruir waypoints para mapa si es necesario (simple)
-            waypointsComisionistas = []; // Reset
+            waypointsComisionistas = []; 
             Object.values(cobranzaRutaData).flat().forEach(c => {
-                 // Si tu objeto guardado tiene dirección, aquí se podría reconstruir
+                 // Lógica mapa offline si aplica
             });
             showStatus('status_pago_grupo', 'Ruta local cargada.', 'success');
         };
 
-        // Listener Borrar (CORREGIDO para recargar vista)
+        // Listener Borrar
         document.getElementById('btn-borrar-guardado').onclick = async () => {
             if(confirm("¿Borrar ruta guardada?")) {
                 localStorage.removeItem(keyOffline);
                 aviso.remove();
                 containerResultados.innerHTML = '';
                 showStatus('status_pago_grupo', 'Datos eliminados.', 'info');
-                // Recargar vista para mostrar selectores de nuevo
                 await inicializarVistaPagoGrupal();
             }
         };
@@ -3122,17 +3119,15 @@ async function inicializarVistaPagoGrupal() {
     if (!navigator.onLine) {
         showStatus('status_pago_grupo', 'Modo Offline. Solo datos guardados.', 'warning');
         if(cardSelector) cardSelector.classList.add('hidden');
-        // Auto-click si existe botón cargar
         const btnCargar = document.getElementById('btn-cargar-guardado');
         if(btnCargar) btnCargar.click();
         return;
     }
 
-    // --- 3. SI HAY INTERNET (MOSTRAR SELECTORES) ---
-    // ESTA PARTE ES CRÍTICA PARA QUE APAREZCA EL MENÚ
+    // --- 3. SI HAY INTERNET (CARGAR SELECTORES) ---
     if (cardSelector) {
         cardSelector.classList.remove('hidden');
-        cardSelector.style.display = 'block'; // Forzar display
+        cardSelector.style.display = 'block'; 
     }
 
     let rutaUsuario = currentUserData.ruta;
@@ -3155,7 +3150,9 @@ async function inicializarVistaPagoGrupal() {
     }
 
     try {
+        // Optimización: Usar caché primero para poblaciones
         const poblaciones = await database.obtenerPoblacionesPorRuta(rutaUsuario, officeUsuario);
+        
         if (containerChecks) containerChecks.innerHTML = ''; 
 
         if (poblaciones.length === 0) {
@@ -3163,18 +3160,18 @@ async function inicializarVistaPagoGrupal() {
             return;
         }
 
-        // Renderizar Checkbox "Todas"
+        // --- CORRECCIÓN CHECK "TODAS" ---
         const allDiv = document.createElement('div');
         allDiv.className = 'select-all-container';
+        // Agregamos 'for' explícito y 'pointer-events: none' al icono
         allDiv.innerHTML = `
-            <label class="custom-check-wrapper" style="width:100%; justify-content: space-between; padding: 10px;">
+            <label class="custom-check-wrapper" for="check-all-poblaciones" style="width:100%; justify-content: space-between; padding: 10px; cursor: pointer;">
                 <span style="font-weight:bold; color:var(--primary);">TODAS LAS POBLACIONES</span>
-                <input type="checkbox" id="check-all-poblaciones" checked> 
-                <i class="fas fa-check-circle custom-check-icon"></i>
+                <input type="checkbox" id="check-all-poblaciones" checked style="cursor: pointer;"> 
+                <i class="fas fa-check-circle custom-check-icon" style="pointer-events: none;"></i>
             </label>`;
         containerChecks.appendChild(allDiv);
 
-        // Renderizar Grid de Poblaciones
         const gridDiv = document.createElement('div');
         gridDiv.className = 'poblacion-selector-grid';
         poblaciones.forEach(pob => {
@@ -3187,19 +3184,31 @@ async function inicializarVistaPagoGrupal() {
             
             label.querySelector('input').addEventListener('change', function() {
                 this.checked ? label.classList.add('selected') : label.classList.remove('selected');
+                
+                // Actualizar estado del "Check All" si desmarcan uno individual
+                const allChecks = document.querySelectorAll('.poblacion-check');
+                const allChecked = Array.from(allChecks).every(c => c.checked);
+                const checkAll = document.getElementById('check-all-poblaciones');
+                if(checkAll) checkAll.checked = allChecked;
             });
             gridDiv.appendChild(label);
         });
         containerChecks.appendChild(gridDiv);
 
         // Listener del "Select All"
-        document.getElementById('check-all-poblaciones').addEventListener('change', function(e) {
-            const isChecked = e.target.checked;
-            document.querySelectorAll('.poblacion-select-card').forEach(card => {
-                card.querySelector('input').checked = isChecked;
-                isChecked ? card.classList.add('selected') : card.classList.remove('selected');
+        const checkAllEl = document.getElementById('check-all-poblaciones');
+        if (checkAllEl) {
+            checkAllEl.addEventListener('change', function(e) {
+                const isChecked = e.target.checked;
+                document.querySelectorAll('.poblacion-select-card').forEach(card => {
+                    const input = card.querySelector('input');
+                    if (input) {
+                        input.checked = isChecked;
+                        isChecked ? card.classList.add('selected') : card.classList.remove('selected');
+                    }
+                });
             });
-        });
+        }
 
     } catch (error) {
         console.error(error);
@@ -7490,6 +7499,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
