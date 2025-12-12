@@ -1951,65 +1951,67 @@ const database = {
         }
     },
 
-    // --- OBTENER DATOS DE HOJA DE CORTE (CORREGIDO) ---
+    // --- OBTENER DATOS HOJA DE CORTE (FILTRADO POR USUARIO) ---
     obtenerDatosHojaCorte: async (fecha, userOffice, userId = null) => {
-        // SOLUCIÓN: No convertir a UTC/ISO con 'Z'.
-        // Usamos la fecha tal cual como string para comparar con lo guardado en DB.
-        // Ejemplo: Si buscas "2023-12-03", buscamos entre "2023-12-03T00:00:00" y "2023-12-03T23:59:59"
-        
         const fechaInicio = `${fecha}T00:00:00`;
         const fechaFin = `${fecha}T23:59:59`;
         
-        console.log(`Buscando corte entre: ${fechaInicio} y ${fechaFin}`); // Para depuración
-
         try {
+            // Paso 1: Si hay filtro de Usuario, necesitamos su email para filtrar los PAGOS
+            let userEmail = null;
+            if (userId) {
+                const userDoc = await db.collection('users').doc(userId).get();
+                if (userDoc.exists) userEmail = userDoc.data().email;
+            }
+
             const promises = [];
             
-            // 1. Movimientos
+            // 1. Movimientos (Fondeo, Gasto, Comisión, Colocación)
+            // Estos SÍ tienen campo 'userId', filtramos directo.
             let qMovs = db.collection('movimientos_efectivo')
                 .where('fecha', '>=', fechaInicio)
                 .where('fecha', '<=', fechaFin);
             
             if (userOffice && userOffice !== 'AMBAS') qMovs = qMovs.where('office', '==', userOffice);
-            if (userId) qMovs = qMovs.where('userId', '==', userId);
+            if (userId) qMovs = qMovs.where('userId', '==', userId); // Filtro directo
+            
             promises.push(qMovs.get());
 
-            // 2. Pagos
+            // 2. Pagos (Cobranza)
+            // Estos NO tienen 'userId', tienen 'registradoPor' (email).
             let qPagos = db.collection('pagos')
                 .where('fecha', '>=', fechaInicio)
                 .where('fecha', '<=', fechaFin);
             
             if (userOffice && userOffice !== 'AMBAS') qPagos = qPagos.where('office', '==', userOffice);
+            if (userEmail) qPagos = qPagos.where('registradoPor', '==', userEmail); // Filtro por email
+            
             promises.push(qPagos.get());
 
-            // 3. Comisiones
+            // 3. Comisiones (Colección legacy 'comisiones', si aún la usas)
             let qComis = db.collection('comisiones')
                 .where('fecha', '>=', fechaInicio)
                 .where('fecha', '<=', fechaFin);
             
             if (userOffice && userOffice !== 'AMBAS') qComis = qComis.where('office', '==', userOffice);
             if (userId) qComis = qComis.where('userId', '==', userId);
+            
             promises.push(qComis.get());
 
             const [snapMovs, snapPagos, snapComis] = await Promise.all(promises);
 
-            const movimientos = snapMovs.docs.map(d => ({...d.data(), categoria: 'MOVIMIENTO', rawDate: d.data().fecha}));
+            const movimientos = snapMovs.docs.map(d => ({...d.data(), categoria: d.data().categoria || 'MOVIMIENTO', rawDate: d.data().fecha}));
             const pagos = snapPagos.docs.map(d => ({...d.data(), categoria: 'COBRANZA', tipo: 'PAGO', rawDate: d.data().fecha, descripcion: `Pago Crédito ${d.data().idCredito}`}));
             const comisiones = snapComis.docs.map(d => ({...d.data(), categoria: 'COMISION', tipo: 'COMISION', rawDate: d.data().fecha})); 
 
-            // Ordenar todos por fecha
             const reporte = [...movimientos, ...pagos, ...comisiones];
-            reporte.sort((a, b) => {
-                const fa = a.fecha || '';
-                const fb = b.fecha || '';
-                return fa.localeCompare(fb);
-            });
+            reporte.sort((a, b) => a.fecha.localeCompare(b.fecha));
 
             return reporte;
 
         } catch (error) {
             console.error("Error obteniendo datos hoja corte:", error);
-            return [];
+            throw error;
         }
     },
 
@@ -2108,6 +2110,7 @@ const database = {
     },
 
 };
+
 
 
 
