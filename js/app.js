@@ -6646,13 +6646,22 @@ async function verificarYubiKey() {
 async function inicializarVistaHojaCorte() {
     console.log("Inicializando Hoja de Corte...");
     
-    // 1. Configurar Fecha por defecto (Hoy)
+    // 1. CONFIGURAR FECHA ACTUAL (ZONA HORARIA LOCAL)
+    // Corrigiendo el problema de desfase horario.
     const fechaCorte = document.getElementById('corte-fecha');
-    if (fechaCorte && !fechaCorte.value) {
+    
+    // Función auxiliar interna para obtener fecha local YYYY-MM-DD
+    const getFechaLocalISO = () => {
         const ahora = new Date();
+        // Restamos el offset de la zona horaria en minutos convertidos a milisegundos
         const offset = ahora.getTimezoneOffset() * 60000;
         const local = new Date(ahora.getTime() - offset);
-        fechaCorte.value = local.toISOString().split('T')[0];
+        return local.toISOString().split('T')[0];
+    };
+
+    // Si el input está vacío o queremos asegurar el día de hoy al abrir
+    if (fechaCorte) {
+        fechaCorte.value = getFechaLocalISO();
     }
 
     // 2. Referencias UI
@@ -6665,7 +6674,7 @@ async function inicializarVistaHojaCorte() {
     if(containerResumen) containerResumen.innerHTML = '';
     if(tbody) tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">Selecciona fecha y genera corte.</td></tr>';
 
-    // 4. Lógica de Roles
+    // 4. Lógica de Roles y Filtros
     if (!currentUserData) return;
     
     // Normalizamos el rol para evitar errores de acentos/mayúsculas
@@ -6673,37 +6682,55 @@ async function inicializarVistaHojaCorte() {
     const esComercial = rolNormalizado.includes('comercial') || rolNormalizado.includes('ventas');
 
     if (esComercial) {
-        // A. SI ES COMERCIAL: Ocultamos el filtro de agentes (Solo verá lo suyo)
+        // A. SI ES COMERCIAL: Ocultamos el selector. Solo verá sus propios datos.
         if(containerFiltroAgente) containerFiltroAgente.classList.add('hidden');
     } else {
-        // B. SI ES ADMIN/SUPER: Mostramos el filtro y cargamos la lista
+        // B. SI ES ADMIN/SUPER/GERENCIA: Mostramos el filtro
         if(containerFiltroAgente) containerFiltroAgente.classList.remove('hidden');
         
-        // Cargar agentes solo si el dropdown está vacío (tiene 1 opción: "-- Todos --")
-        if (selectAgente && selectAgente.options.length <= 1) {
-            try {
-                const res = await database.obtenerUsuarios();
-                if (res.success) {
-                    const oficinaAdmin = currentUserData.office;
-                    const esSuperAdmin = rolNormalizado.includes('super') || rolNormalizado.includes('gerencia');
+        // Limpiamos el select para recargar con la lógica correcta
+        // Mantenemos la opción por defecto
+        selectAgente.innerHTML = '<option value="">-- Todos los Movimientos --</option>';
 
-                    // Filtramos: Solo agentes comerciales Y (de mi oficina O soy super admin)
-                    const agentes = res.data.filter(u => {
-                        const uRol = (u.role || '').toLowerCase();
-                        return (uRol.includes('comercial') || uRol.includes('ventas')) &&
-                               (esSuperAdmin || oficinaAdmin === 'AMBAS' || !oficinaAdmin || u.office === oficinaAdmin);
-                    }).sort((a,b) => (a.name || '').localeCompare(b.name || ''));
+        try {
+            const res = await database.obtenerUsuarios();
+            if (res.success) {
+                const oficinaUsuario = currentUserData.office; // La oficina del que consulta
+                
+                // Definir quién es "Dios" (Ve todo)
+                const esSuperUser = rolNormalizado.includes('super') || rolNormalizado.includes('gerencia');
+                
+                // Filtramos la lista de agentes
+                const agentes = res.data.filter(u => {
+                    const uRol = (u.role || '').toLowerCase();
+                    const esAgenteTarget = uRol.includes('comercial') || uRol.includes('ventas');
 
-                    agentes.forEach(agente => {
-                        const opt = document.createElement('option');
-                        opt.value = agente.id;
-                        opt.textContent = agente.name;
-                        selectAgente.appendChild(opt);
-                    });
-                }
-            } catch (e) { 
-                console.error("Error cargando agentes para corte", e); 
+                    // Solo nos interesan los usuarios que son agentes
+                    if (!esAgenteTarget) return false;
+
+                    // REGLAS DE VISIBILIDAD:
+                    // 1. Si soy Super Admin o Gerencia -> Veo a TODOS.
+                    if (esSuperUser) return true;
+
+                    // 2. Si tengo permiso especial de oficina "AMBAS" -> Veo a TODOS.
+                    if (oficinaUsuario === 'AMBAS') return true;
+
+                    // 3. Si soy Admin normal -> Solo veo agentes de MI oficina exacta.
+                    return u.office === oficinaUsuario;
+
+                }).sort((a,b) => (a.name || '').localeCompare(b.name || ''));
+
+                // Llenar el dropdown
+                agentes.forEach(agente => {
+                    const opt = document.createElement('option');
+                    opt.value = agente.id;
+                    // Mostramos nombre y oficina para mayor claridad si es Super Admin
+                    opt.textContent = esSuperUser ? `${agente.name} (${agente.office})` : agente.name;
+                    selectAgente.appendChild(opt);
+                });
             }
+        } catch (e) { 
+            console.error("Error cargando agentes para corte", e); 
         }
     }
 }
@@ -7456,6 +7483,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
