@@ -3031,7 +3031,7 @@ async function handleCalcularCobranzaRuta() {
 // ** INICIALIZAR VISTA DE PAGO GRUPAL (VISIBILIDAD ASEGURADA) **
 //=======================================
 async function inicializarVistaPagoGrupal() {
-    console.log("🚀 INICIANDO VISTA PAGO GRUPAL (V5 - Full Button)");
+    console.log("🚀 INICIANDO VISTA PAGO GRUPAL (V6 - Native Labels)");
     
     const containerChecks = document.getElementById('checkboxes-poblaciones-container');
     const cardSelector = document.getElementById('selector-poblaciones-card');
@@ -3055,7 +3055,7 @@ async function inicializarVistaPagoGrupal() {
         return;
     }
 
-    // 1. DATOS GUARDADOS (OFFLINE/LOCAL)
+    // 1. DATOS GUARDADOS (OFFLINE)
     const keyOffline = OFFLINE_STORAGE_KEY + (currentUserData.ruta || 'sin_ruta');
     let datosGuardados = null;
     try {
@@ -3124,7 +3124,7 @@ async function inicializarVistaPagoGrupal() {
         return;
     }
 
-    // 3. LÓGICA ONLINE (CARGAR SELECTORES)
+    // 3. LÓGICA ONLINE
     if (cardSelector) {
         cardSelector.classList.remove('hidden');
         cardSelector.style.display = 'block'; 
@@ -3158,91 +3158,98 @@ async function inicializarVistaPagoGrupal() {
             return;
         }
 
-        // --- CORRECCIÓN: BOTÓN "TODAS" ALINEADO Y FUNCIONAL ---
+        // --- BOTÓN "TODAS" (Corregido) ---
         const allDiv = document.createElement('div');
         allDiv.className = 'select-all-container';
         
-        // Usamos la misma clase 'poblacion-select-card' para mantener el estilo consistente
-        // y Flexbox para alinear texto e ícono perfectamente
+        // Estilo Flex para alinear el check y el texto
         allDiv.innerHTML = `
             <div id="btn-toggle-all" class="poblacion-select-card selected" 
-                 style="cursor: pointer; display: flex; justify-content: space-between; align-items: center; width: 100%; padding: 15px; margin-bottom: 10px;">
+                 style="cursor: pointer; display: flex; align-items: center; width: 100%; padding: 15px; margin-bottom: 10px;">
                 
-                <span style="font-weight:bold; font-size: 1rem; color:var(--primary);">TODAS LAS POBLACIONES</span>
+                <input type="checkbox" id="check-all-poblaciones" checked 
+                       style="width: 20px; height: 20px; margin-right: 15px; cursor: pointer;"> 
                 
-                <input type="checkbox" id="check-all-poblaciones" checked style="display:none;"> 
+                <span style="font-weight:bold; font-size: 1rem; color:var(--primary); flex-grow: 1;">
+                    TODAS LAS POBLACIONES
+                </span>
                 
-                <i id="icon-check-all" class="fas fa-check-circle" style="font-size: 1.4rem; color: #fff;"></i>
+                <i class="fas fa-check-circle custom-check-icon" style="font-size: 1.4rem;"></i>
             </div>
         `;
         containerChecks.appendChild(allDiv);
 
-        // Grid de poblaciones individuales
+        // --- GRID DE POBLACIONES (Corregido con Label) ---
         const gridDiv = document.createElement('div');
         gridDiv.className = 'poblacion-selector-grid';
         
         poblaciones.forEach(pob => {
+            // Usamos <label> para que el clic en todo el cuadro active el check nativamente
             const label = document.createElement('label');
             label.className = 'poblacion-select-card selected';
             label.style.display = 'flex';
-            label.style.justifyContent = 'space-between';
             label.style.alignItems = 'center';
+            label.style.cursor = 'pointer';
             
             label.innerHTML = `
-                <input type="checkbox" class="poblacion-check" value="${pob.nombre}" checked style="display:none;"> 
-                <span class="poblacion-name">${pob.nombre}</span> 
+                <input type="checkbox" class="poblacion-check" value="${pob.nombre}" checked 
+                       style="width: 18px; height: 18px; margin-right: 10px;"> 
+                <span class="poblacion-name" style="flex-grow: 1;">${pob.nombre}</span> 
                 <i class="fas fa-check-circle check-icon"></i>`;
             
-            // Listener individual
+            // Listener simple: Cuando el check cambie (por clic directo o en el label), actualizamos estilo
             const checkbox = label.querySelector('input');
-            label.addEventListener('click', function(e) {
-                // Evitamos doble trigger si se hace click directo al input (aunque está oculto)
-                if (e.target !== checkbox) {
-                    checkbox.checked = !checkbox.checked;
-                }
-                if(checkbox.checked) label.classList.add('selected');
+            checkbox.addEventListener('change', function() {
+                if(this.checked) label.classList.add('selected');
                 else label.classList.remove('selected');
                 
-                // Actualizar estado del botón "Todas"
+                // Verificar si todos están marcados para actualizar el botón "Todas"
                 const allChecks = document.querySelectorAll('.poblacion-check');
                 const allChecked = Array.from(allChecks).every(c => c.checked);
+                const masterCheck = document.getElementById('check-all-poblaciones');
+                const masterBtn = document.getElementById('btn-toggle-all');
                 
-                const checkAllInput = document.getElementById('check-all-poblaciones');
-                const btnAll = document.getElementById('btn-toggle-all');
-                
-                if(checkAllInput && btnAll) {
-                    checkAllInput.checked = allChecked;
-                    if(allChecked) btnAll.classList.add('selected');
-                    else btnAll.classList.remove('selected');
+                if(masterCheck) masterCheck.checked = allChecked;
+                if(masterBtn) {
+                    if(allChecked) masterBtn.classList.add('selected');
+                    else masterBtn.classList.remove('selected');
                 }
             });
+            
             gridDiv.appendChild(label);
         });
         containerChecks.appendChild(gridDiv);
 
         // --- LÓGICA DEL BOTÓN "TODAS" ---
+        // Manejamos el clic en el contenedor para que sea más fácil atinarle
         const btnToggleAll = document.getElementById('btn-toggle-all');
         const checkAllInput = document.getElementById('check-all-poblaciones');
 
         if (btnToggleAll && checkAllInput) {
-            btnToggleAll.addEventListener('click', function() {
-                // 1. Cambiar estado del input oculto
-                checkAllInput.checked = !checkAllInput.checked;
+            btnToggleAll.addEventListener('click', function(e) {
+                // Si el clic fue DIRECTAMENTE en el checkbox, dejamos que el navegador actúe
+                if (e.target === checkAllInput) {
+                    // Solo actualizamos estilos
+                } else {
+                    // Si fue en el texto o caja, invertimos el check manualmente
+                    checkAllInput.checked = !checkAllInput.checked;
+                }
+
                 const isChecked = checkAllInput.checked;
 
-                // 2. Cambiar estilo visual del botón principal
+                // Estilo visual del botón maestro
                 if (isChecked) btnToggleAll.classList.add('selected');
                 else btnToggleAll.classList.remove('selected');
 
-                // 3. Propagar a todos los hijos
+                // Propagar a hijos
                 document.querySelectorAll('.poblacion-select-card').forEach(card => {
-                    // Ignoramos el botón "Todas" para no hacer bucle, buscamos los hijos del grid
+                    // Ignoramos el propio botón maestro
                     if (card.id !== 'btn-toggle-all') {
                         const input = card.querySelector('input');
                         if (input) {
                             input.checked = isChecked;
-                            if (isChecked) card.classList.add('selected');
-                            else card.classList.remove('selected');
+                            // Disparamos evento 'change' manualmente para que se actualice el estilo visual del hijo
+                            input.dispatchEvent(new Event('change'));
                         }
                     }
                 });
@@ -7538,6 +7545,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
