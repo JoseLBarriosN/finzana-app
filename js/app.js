@@ -3568,7 +3568,7 @@ function renderizarCobranzaRuta(data, container) {
                         <td style="vertical-align: middle;">
                             <div style="display: flex; justify-content: space-between; font-size: 0.95rem;">
                                 <span style="color: var(--primary);">Pagos: <span id="total-pagos-${grupoId}">$0.00</span></span>
-                                <span style="color: #28a745;">Comis: <span id="total-comis-${grupoId}">$0.00</span></span>
+                                <span style="color: #28a745;">Comisión: <span id="total-comis-${grupoId}">$0.00</span></span>
                             </div>
                         </td>
                         <td></td>
@@ -7544,6 +7544,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
