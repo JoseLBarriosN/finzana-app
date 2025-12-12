@@ -3031,7 +3031,7 @@ async function handleCalcularCobranzaRuta() {
 // ** INICIALIZAR VISTA DE PAGO GRUPAL (VISIBILIDAD ASEGURADA) **
 //=======================================
 async function inicializarVistaPagoGrupal() {
-    console.log("🚀 INICIANDO VISTA PAGO GRUPAL (V7 - Full Native)");
+    console.log("🚀 INICIANDO VISTA PAGO GRUPAL (V8 - Native Label Fix)");
     
     // Referencias UI
     const containerChecks = document.getElementById('checkboxes-poblaciones-container');
@@ -3134,7 +3134,6 @@ async function inicializarVistaPagoGrupal() {
 
     if (containerChecks) containerChecks.innerHTML = '<div class="spinner"></div> Cargando poblaciones...';
 
-    // Preparar botón calcular
     const btnCalcular = document.getElementById('btn-calcular-seleccion');
     if(btnCalcular) {
         const newBtn = btnCalcular.cloneNode(true);
@@ -3153,13 +3152,15 @@ async function inicializarVistaPagoGrupal() {
             return;
         }
 
-        // --- CORRECCIÓN: BOTÓN "TODAS" AHORA ES UN <LABEL> ---
+        // --- BOTÓN "TODAS" (ESTRUCTURA IDÉNTICA A "MARCAR TODOS" DE LA TABLA) ---
         const allDiv = document.createElement('div');
         allDiv.className = 'select-all-container';
         
-        // Al ser <label>, el clic en cualquier parte (texto, fondo, icono) activa el input nativamente
+        // Usamos <label> como contenedor principal para aprovechar el comportamiento nativo
+        // Al hacer click en el label, el navegador busca el input dentro y lo cambia.
+        // NO agregamos onclick manual al label.
         allDiv.innerHTML = `
-            <label id="btn-toggle-all" class="poblacion-select-card selected" 
+            <label id="label-toggle-all" class="poblacion-select-card selected" 
                  style="cursor: pointer; display: flex; align-items: center; width: 100%; padding: 15px; margin-bottom: 10px;">
                 
                 <input type="checkbox" id="check-all-poblaciones" checked 
@@ -3191,23 +3192,25 @@ async function inicializarVistaPagoGrupal() {
                 <span class="poblacion-name" style="flex-grow: 1;">${pob.nombre}</span> 
                 <i class="fas fa-check-circle check-icon"></i>`;
             
-            // Listener individual para actualizar estilos y verificar el maestro
+            // Listener individual para actualizar su propio estilo
             const checkbox = label.querySelector('input');
             checkbox.addEventListener('change', function() {
-                // Actualizar estilo propio
+                // Actualizar estilo visual del hijo
                 if(this.checked) label.classList.add('selected');
                 else label.classList.remove('selected');
                 
-                // Verificar si todos están marcados para actualizar el botón "Todas"
+                // Verificar si debemos desmarcar el "Maestro"
                 const allChecks = document.querySelectorAll('.poblacion-check');
                 const allChecked = Array.from(allChecks).every(c => c.checked);
+                
                 const masterCheck = document.getElementById('check-all-poblaciones');
-                const masterBtn = document.getElementById('btn-toggle-all');
+                const masterLabel = document.getElementById('label-toggle-all');
                 
                 if(masterCheck) {
                     masterCheck.checked = allChecked;
-                    if(allChecked) masterBtn.classList.add('selected');
-                    else masterBtn.classList.remove('selected');
+                    // Actualizar visualmente el maestro
+                    if(allChecked) masterLabel.classList.add('selected');
+                    else masterLabel.classList.remove('selected');
                 }
             });
             
@@ -3215,27 +3218,30 @@ async function inicializarVistaPagoGrupal() {
         });
         containerChecks.appendChild(gridDiv);
 
-        // --- LISTENER DEL BOTÓN MAESTRO ---
-        // Ahora solo escuchamos el 'change' del input, HTML hace el resto del trabajo de clic
+        // --- LISTENER DEL BOTÓN MAESTRO (SOLO AL CHANGE) ---
         const masterCheck = document.getElementById('check-all-poblaciones');
-        const masterBtn = document.getElementById('btn-toggle-all');
+        const masterLabel = document.getElementById('label-toggle-all');
 
-        if (masterCheck && masterBtn) {
+        if (masterCheck) {
             masterCheck.addEventListener('change', function() {
                 const isChecked = this.checked;
 
-                // 1. Estilo visual del maestro
-                if (isChecked) masterBtn.classList.add('selected');
-                else masterBtn.classList.remove('selected');
+                // 1. Actualizar estilo visual del maestro
+                if (isChecked) masterLabel.classList.add('selected');
+                else masterLabel.classList.remove('selected');
 
                 // 2. Propagar a todos los hijos
                 document.querySelectorAll('.poblacion-select-card').forEach(card => {
-                    if (card.id !== 'btn-toggle-all') {
+                    // Evitar el propio maestro
+                    if (card.id !== 'label-toggle-all') {
                         const input = card.querySelector('input');
                         if (input) {
+                            // Cambiar valor
                             input.checked = isChecked;
-                            // Disparar evento para actualizar estilos visuales
-                            input.dispatchEvent(new Event('change'));
+                            
+                            // Cambiar estilo de la tarjeta hija
+                            if (isChecked) card.classList.add('selected');
+                            else card.classList.remove('selected');
                         }
                     }
                 });
@@ -3245,8 +3251,6 @@ async function inicializarVistaPagoGrupal() {
     } catch (error) {
         console.error(error);
         if(containerChecks) containerChecks.innerHTML = '<p class="text-danger">Error cargando poblaciones.</p>';
-    }
-}
 
 /**
  * Registra los pagos seleccionados en la lista de ruta.
@@ -7531,6 +7535,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
