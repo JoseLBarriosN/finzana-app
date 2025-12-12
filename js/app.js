@@ -3251,7 +3251,9 @@ async function inicializarVistaPagoGrupal() {
     } catch (error) {
         console.error(error);
         if(containerChecks) containerChecks.innerHTML = '<p class="text-danger">Error cargando poblaciones.</p>';
-
+    }
+}
+    
 /**
  * Registra los pagos seleccionados en la lista de ruta.
  * Captura el monto, el tipo de pago y la comisión calculada visualmente.
@@ -7535,6 +7537,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
