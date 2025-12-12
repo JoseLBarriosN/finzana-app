@@ -969,12 +969,17 @@
                                     <label for="entrega-monto">Monto Entregado</label>
                                     <input type="number" id="entrega-monto" step="0.01" placeholder="Ej: 5000" required>
                                 </div>
+                                <div class="form-group" style="flex: 1;">
+                                    <label for="entrega-fecha">Fecha Entrega</label>
+                                    <input type="date" id="entrega-fecha" required>
+                                </div>
                                 <div class="form-group" style="flex: 2;">
                                     <label for="entrega-descripcion">Descripción</label>
                                     <input type="text" id="entrega-descripcion" placeholder="Ej: Efectivo semana 42">
                                 </div>
                                 <button type="submit" class="btn btn-success"><i class="fas fa-plus-circle"></i> Registrar Entrega</button>
                             </form>
+                            
                             <div id="status_registrar_entrega" class="status-message hidden"></div>
                         </div>
                         <div class="card" style="margin-bottom: 20px;">
@@ -1084,6 +1089,12 @@
                         <div class="form-group" style="flex: 1;">
                             <label>Fecha de Corte:</label>
                             <input type="date" id="corte-fecha" class="form-control">
+                        </div>
+                        <div class="form-group" id="container-corte-agente" style="flex: 1; min-width: 200px;">
+                            <label>Filtrar por Agente:</label>
+                            <select id="corte-filtro-agente" class="form-control">
+                                <option value="">-- Todos los Movimientos --</option>
+                            </select>
                         </div>
                         <div class="form-group">
                             <button id="btn-generar-corte" class="btn btn-primary" style="min-width: 150px;">
@@ -1237,3 +1248,4 @@
 </script>
 </body>
 </html>
+
