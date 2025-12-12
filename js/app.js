@@ -6646,10 +6646,8 @@ async function verificarYubiKey() {
 async function inicializarVistaHojaCorte() {
     console.log("Inicializando Hoja de Corte...");
     
-    // 1. CONFIGURAR FECHA ACTUAL (ZONA HORARIA LOCAL)
+    // 1. CONFIGURAR FECHA (Zona Horaria Local)
     const fechaCorte = document.getElementById('corte-fecha');
-    
-    // Helper para obtener fecha local YYYY-MM-DD
     const getFechaLocalISO = () => {
         const ahora = new Date();
         const offset = ahora.getTimezoneOffset() * 60000;
@@ -6657,67 +6655,75 @@ async function inicializarVistaHojaCorte() {
         return local.toISOString().split('T')[0];
     };
 
-    // Aseguramos que siempre tenga fecha al abrir
-    if (fechaCorte) {
-        if (!fechaCorte.value) {
-            fechaCorte.value = getFechaLocalISO();
-        }
+    if (fechaCorte && !fechaCorte.value) {
+        fechaCorte.value = getFechaLocalISO();
     }
 
-    // 2. Referencias UI
+    // 2. REFERENCIAS UI
     const containerFiltroAgente = document.getElementById('container-corte-agente');
     const selectAgente = document.getElementById('corte-filtro-agente');
     const containerResumen = document.getElementById('corte-resumen-cards');
     const tbody = document.querySelector('#tabla-corte-detalle tbody');
 
-    // 3. Limpieza Visual de Tabla
+    // 3. LIMPIEZA VISUAL (Tabla y Resumen)
     if(containerResumen) containerResumen.innerHTML = '';
     if(tbody) tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">Selecciona fecha y genera corte.</td></tr>';
 
-    // 4. Lógica de Roles y Filtros
     if (!currentUserData) return;
-    
+
+    // 4. LÓGICA DE ROLES Y DROPDOWN
     const rolNormalizado = (currentUserData.role || '').toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
     const esComercial = rolNormalizado.includes('comercial') || rolNormalizado.includes('ventas');
 
     if (esComercial) {
-        // A. SI ES COMERCIAL: Ocultamos el selector
+        // A. SI ES COMERCIAL: Ocultar filtro
         if(containerFiltroAgente) containerFiltroAgente.classList.add('hidden');
     } else {
-        // B. SI ES ADMIN/SUPER: Mostramos el filtro
+        // B. SI ES ADMIN/SUPER: Mostrar filtro
         if(containerFiltroAgente) containerFiltroAgente.classList.remove('hidden');
         
-        // --- CORRECCIÓN DE DUPLICADOS ---
-        // 1. Limpiamos SIEMPRE el select antes de cargar nada
-        selectAgente.innerHTML = '<option value="">-- Todos los Movimientos --</option>';
+        // --- LIMPIEZA AGRESIVA DEL DROPDOWN ---
+        // Borramos todo el contenido HTML del select antes de hacer nada más
+        if (selectAgente) {
+            selectAgente.innerHTML = ''; 
+            
+            // Agregamos la opción por defecto inmediatamente
+            const defaultOption = document.createElement('option');
+            defaultOption.value = "";
+            defaultOption.textContent = "-- Todos los Movimientos --";
+            selectAgente.appendChild(defaultOption);
+        }
 
         try {
             const res = await database.obtenerUsuarios();
-            if (res.success) {
+            if (res.success && selectAgente) {
                 const oficinaUsuario = currentUserData.office; 
                 const esSuperUser = rolNormalizado.includes('super') || rolNormalizado.includes('gerencia');
                 
-                // Filtramos la lista de agentes
+                // Conjunto para evitar duplicados lógicos (por ID)
+                const idsProcesados = new Set();
+
                 const agentes = res.data.filter(u => {
                     const uRol = (u.role || '').toLowerCase();
                     const esAgenteTarget = uRol.includes('comercial') || uRol.includes('ventas');
 
                     if (!esAgenteTarget) return false;
-
-                    // Si es Super Admin o tiene permiso AMBAS -> Ve todos
                     if (esSuperUser || oficinaUsuario === 'AMBAS') return true;
-
-                    // Si es Admin normal -> Solo ve su oficina exacta
                     return u.office === oficinaUsuario;
 
                 }).sort((a,b) => (a.name || '').localeCompare(b.name || ''));
 
-                // Llenar el dropdown (Ahora está limpio, así que no se duplican)
                 agentes.forEach(agente => {
-                    const opt = document.createElement('option');
-                    opt.value = agente.id;
-                    opt.textContent = esSuperUser ? `${agente.name} (${agente.office})` : agente.name;
-                    selectAgente.appendChild(opt);
+                    // VERIFICACIÓN FINAL: ¿Ya agregamos este ID en este ciclo?
+                    if (!idsProcesados.has(agente.id)) {
+                        const opt = document.createElement('option');
+                        opt.value = agente.id;
+                        opt.textContent = esSuperUser ? `${agente.name} (${agente.office})` : agente.name;
+                        selectAgente.appendChild(opt);
+                        
+                        // Marcar ID como procesado
+                        idsProcesados.add(agente.id);
+                    }
                 });
             }
         } catch (e) { 
@@ -7474,6 +7480,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
