@@ -6647,21 +6647,21 @@ async function inicializarVistaHojaCorte() {
     console.log("Inicializando Hoja de Corte...");
     
     // 1. CONFIGURAR FECHA ACTUAL (ZONA HORARIA LOCAL)
-    // Corrigiendo el problema de desfase horario.
     const fechaCorte = document.getElementById('corte-fecha');
     
-    // Función auxiliar interna para obtener fecha local YYYY-MM-DD
+    // Helper para obtener fecha local YYYY-MM-DD
     const getFechaLocalISO = () => {
         const ahora = new Date();
-        // Restamos el offset de la zona horaria en minutos convertidos a milisegundos
         const offset = ahora.getTimezoneOffset() * 60000;
         const local = new Date(ahora.getTime() - offset);
         return local.toISOString().split('T')[0];
     };
 
-    // Si el input está vacío o queremos asegurar el día de hoy al abrir
+    // Aseguramos que siempre tenga fecha al abrir
     if (fechaCorte) {
-        fechaCorte.value = getFechaLocalISO();
+        if (!fechaCorte.value) {
+            fechaCorte.value = getFechaLocalISO();
+        }
     }
 
     // 2. Referencias UI
@@ -6670,34 +6670,31 @@ async function inicializarVistaHojaCorte() {
     const containerResumen = document.getElementById('corte-resumen-cards');
     const tbody = document.querySelector('#tabla-corte-detalle tbody');
 
-    // 3. Limpieza Visual
+    // 3. Limpieza Visual de Tabla
     if(containerResumen) containerResumen.innerHTML = '';
     if(tbody) tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">Selecciona fecha y genera corte.</td></tr>';
 
     // 4. Lógica de Roles y Filtros
     if (!currentUserData) return;
     
-    // Normalizamos el rol para evitar errores de acentos/mayúsculas
     const rolNormalizado = (currentUserData.role || '').toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
     const esComercial = rolNormalizado.includes('comercial') || rolNormalizado.includes('ventas');
 
     if (esComercial) {
-        // A. SI ES COMERCIAL: Ocultamos el selector. Solo verá sus propios datos.
+        // A. SI ES COMERCIAL: Ocultamos el selector
         if(containerFiltroAgente) containerFiltroAgente.classList.add('hidden');
     } else {
-        // B. SI ES ADMIN/SUPER/GERENCIA: Mostramos el filtro
+        // B. SI ES ADMIN/SUPER: Mostramos el filtro
         if(containerFiltroAgente) containerFiltroAgente.classList.remove('hidden');
         
-        // Limpiamos el select para recargar con la lógica correcta
-        // Mantenemos la opción por defecto
+        // --- CORRECCIÓN DE DUPLICADOS ---
+        // 1. Limpiamos SIEMPRE el select antes de cargar nada
         selectAgente.innerHTML = '<option value="">-- Todos los Movimientos --</option>';
 
         try {
             const res = await database.obtenerUsuarios();
             if (res.success) {
-                const oficinaUsuario = currentUserData.office; // La oficina del que consulta
-                
-                // Definir quién es "Dios" (Ve todo)
+                const oficinaUsuario = currentUserData.office; 
                 const esSuperUser = rolNormalizado.includes('super') || rolNormalizado.includes('gerencia');
                 
                 // Filtramos la lista de agentes
@@ -6705,26 +6702,20 @@ async function inicializarVistaHojaCorte() {
                     const uRol = (u.role || '').toLowerCase();
                     const esAgenteTarget = uRol.includes('comercial') || uRol.includes('ventas');
 
-                    // Solo nos interesan los usuarios que son agentes
                     if (!esAgenteTarget) return false;
 
-                    // REGLAS DE VISIBILIDAD:
-                    // 1. Si soy Super Admin o Gerencia -> Veo a TODOS.
-                    if (esSuperUser) return true;
+                    // Si es Super Admin o tiene permiso AMBAS -> Ve todos
+                    if (esSuperUser || oficinaUsuario === 'AMBAS') return true;
 
-                    // 2. Si tengo permiso especial de oficina "AMBAS" -> Veo a TODOS.
-                    if (oficinaUsuario === 'AMBAS') return true;
-
-                    // 3. Si soy Admin normal -> Solo veo agentes de MI oficina exacta.
+                    // Si es Admin normal -> Solo ve su oficina exacta
                     return u.office === oficinaUsuario;
 
                 }).sort((a,b) => (a.name || '').localeCompare(b.name || ''));
 
-                // Llenar el dropdown
+                // Llenar el dropdown (Ahora está limpio, así que no se duplican)
                 agentes.forEach(agente => {
                     const opt = document.createElement('option');
                     opt.value = agente.id;
-                    // Mostramos nombre y oficina para mayor claridad si es Super Admin
                     opt.textContent = esSuperUser ? `${agente.name} (${agente.office})` : agente.name;
                     selectAgente.appendChild(opt);
                 });
@@ -7483,6 +7474,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
