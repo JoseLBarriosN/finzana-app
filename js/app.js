@@ -1856,12 +1856,15 @@ function resetClientForm() {
 //============================================//
 async function handleClientForm(e) {
     e.preventDefault();
+    
+    // Referencias a inputs
     const curpInput = document.getElementById('curp_cliente');
     const curp = curpInput.value.trim().toUpperCase();
     const telefonoInput = document.getElementById('telefono_cliente');
     const telefono = telefonoInput.value.trim();
     const submitButton = e.target.querySelector('button[type="submit"]');
 
+    // Validaciones
     if (!validarFormatoCURP(curp)) {
         showStatus('status_cliente', 'El formato del CURP es incorrecto (debe tener 18 caracteres).', 'error');
         curpInput.classList.add('input-error');
@@ -1896,12 +1899,17 @@ async function handleClientForm(e) {
         return;
     }
 
-    showButtonLoading(submitButton, true, editingClientId ? 'Actualizando...' : 'Guardando...');
-    showStatus('status_cliente', editingClientId ? 'Actualizando datos del cliente...' : 'Registrando nuevo cliente...', 'info');
+    // Guardamos si era edición antes de guardar, para decidir a dónde ir después
+    const eraEdicion = (editingClientId !== null);
+
+    showButtonLoading(submitButton, true, eraEdicion ? 'Actualizando...' : 'Guardando...');
+    showStatus('status_cliente', eraEdicion ? 'Actualizando datos...' : 'Registrando nuevo cliente...', 'info');
 
     try {
         let resultado;
-        if (editingClientId) {
+        
+        if (eraEdicion) {
+            // Lógica de Edición (Validar cambio de CURP)
             if (!curpInput.readOnly) {
                 const clienteOriginal = await database.obtenerClientePorId(editingClientId);
                 if (clienteOriginal && clienteOriginal.curp !== curp) {
@@ -1913,19 +1921,32 @@ async function handleClientForm(e) {
             }
             resultado = await database.actualizarCliente(editingClientId, clienteData, currentUser.email);
         } else {
+            // Lógica de Creación
             resultado = await database.agregarCliente(clienteData, currentUser.email);
         }
 
         if (resultado.success) {
-            let successMessage = editingClientId ? 'Cliente actualizado exitosamente.' : 'Cliente registrado exitosamente.';
+            let successMessage = eraEdicion ? 'Cliente actualizado exitosamente.' : 'Cliente registrado exitosamente.';
             if (!isOnline) {
-                successMessage += ' (Datos guardados localmente, se sincronizarán al conectar).';
+                successMessage += ' (Datos guardados localmente).';
             }
             
-            resetClientForm();
-            showView('view-gestion-clientes');
-            showStatus('status_gestion_clientes', successMessage, 'success');
-            await loadClientesTable(); 
+            // --- AQUÍ ESTÁ EL CAMBIO CLAVE ---
+            if (eraEdicion) {
+                // CASO 1: Si editamos, volvemos a la lista (Comportamiento anterior)
+                resetClientForm();
+                showView('view-gestion-clientes');
+                showStatus('status_gestion_clientes', successMessage, 'success');
+                await loadClientesTable(); 
+            } else {
+                // CASO 2: Si es NUEVO, nos quedamos aquí para seguir capturando
+                resetClientForm(); // Limpia los inputs
+                // Mostramos el mensaje en el mismo formulario
+                showStatus('status_cliente', successMessage + ' Puedes registrar otro.', 'success');
+                
+                // Opcional: Hacer scroll arriba o foco en el primer campo
+                document.getElementById('curp_cliente').focus();
+            }
             
         } else {
             throw new Error(resultado.message || 'Ocurrió un error desconocido.');
@@ -7469,6 +7490,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
