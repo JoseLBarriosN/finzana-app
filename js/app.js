@@ -1550,21 +1550,47 @@ async function loadGestionEfectivo() {
 //===============================================================//
     // ** MANEJO DE FORMULARIO DE ENTREGA DE EFECTIVO ** //
 //===============================================================//
+Claro, aquí tienes las 4 funciones completas para tu archivo app.js.
+
+Estas funciones implementan la lógica de permisos (para que el área comercial solo vea lo suyo), el filtro de agentes para administradores y la fecha personalizada en la entrega de efectivo.
+
+Copia y pega (o reemplaza) estas funciones en tu app.js.
+
+1. handleRegistrarEntregaInicial (Modificada)
+Ahora captura la fecha del nuevo input HTML.
+
+JavaScript
+
+// ===============================================================
+// MANEJO DE ENTREGA DE EFECTIVO (Con Fecha Personalizada)
+// ===============================================================
 async function handleRegistrarEntregaInicial(e) {
     e.preventDefault();
     const btn = e.target.querySelector('button[type="submit"]');
     const statusEl = document.getElementById('status_registrar_entrega');
+    
+    // Referencias al DOM
     const agenteId = document.getElementById('entrega-agente').value;
     const monto = parseFloat(document.getElementById('entrega-monto').value);
     const descripcion = document.getElementById('entrega-descripcion').value || 'Entrega inicial de efectivo';
+    const fechaInput = document.getElementById('entrega-fecha').value; // <--- NUEVO CAMPO
+    
+    // Obtener oficina del texto del dropdown (GDL/LEON)
     const agenteSelect = document.getElementById('entrega-agente');
     const agenteTexto = agenteSelect.options[agenteSelect.selectedIndex].text;
     const officeAgente = agenteTexto.includes('(GDL)') ? 'GDL' : (agenteTexto.includes('(LEON)') ? 'LEON' : null);
 
-    if (!agenteId || isNaN(monto) || monto <= 0 || !officeAgente) {
-        showStatus(statusEl.id, 'Selecciona un agente válido, un monto positivo y asegúrate que el agente tenga oficina.', 'error');
+    // Validaciones
+    if (!agenteId || isNaN(monto) || monto <= 0 || !officeAgente || !fechaInput) {
+        showStatus(statusEl.id, 'Todos los campos son obligatorios.', 'error');
         return;
     }
+
+    // Construir Fecha ISO: Usamos la fecha elegida + la hora actual para mantener orden cronológico
+    const ahora = new Date();
+    // Formato YYYY-MM-DD + T + HH:MM:SS
+    const fechaSeleccionada = new Date(fechaInput + 'T' + ahora.toTimeString().split(' ')[0]);
+    const fechaISO = fechaSeleccionada.toISOString();
 
     showButtonLoading(btn, true, 'Registrando...');
     showStatus(statusEl.id, 'Registrando entrega...', 'info');
@@ -1572,7 +1598,7 @@ async function handleRegistrarEntregaInicial(e) {
     try {
         const movimientoData = {
             userId: agenteId,
-            fecha: new Date().toISOString(),
+            fecha: fechaISO, // Usamos la fecha manual
             tipo: 'ENTREGA_INICIAL',
             monto: monto,
             descripcion: descripcion,
@@ -1586,6 +1612,12 @@ async function handleRegistrarEntregaInicial(e) {
         showStatus(statusEl.id, 'Entrega registrada exitosamente.', 'success');
         e.target.reset();
         
+        // Restaurar fecha a hoy por defecto para el siguiente registro
+        const offset = new Date().getTimezoneOffset() * 60000;
+        const localDate = new Date(Date.now() - offset).toISOString().split('T')[0];
+        document.getElementById('entrega-fecha').value = localDate;
+        
+        // Si estamos viendo la tabla del mismo agente, actualizar
         if (document.getElementById('filtro-agente').value === agenteId) {
             handleBuscarMovimientos();
         }
@@ -4920,15 +4952,8 @@ async function showView(viewId) {
                 break;
 
             case 'view-hoja-corte':
-                const fechaCorte = document.getElementById('corte-fecha');
-                // --- CORRECCIÓN AQUÍ: USAR FECHA LOCAL ---
-                if(fechaCorte) fechaCorte.value = obtenerFechaLocalYMD();
-                
-                const containerResumen = document.getElementById('corte-resumen-cards');
-                if(containerResumen) containerResumen.innerHTML = '';
-                
-                const tbodyCorte = document.querySelector('#tabla-corte-detalle tbody');
-                if(tbodyCorte) tbodyCorte.innerHTML = '<tr><td colspan="6" style="text-align:center;">Selecciona fecha y genera corte.</td></tr>';
+                // Delegamos la configuración de fecha, limpieza y carga de agentes (si es admin) a la nueva función
+                await inicializarVistaHojaCorte();
                 break;
 
             case 'view-reportes-graficos':
@@ -6629,168 +6654,210 @@ async function verificarYubiKey() {
     }
 }
 
+//============================================//
+    // ** INICIAR VISTAHOJA DE CORTE ** //
+//============================================//
+async function inicializarVistaHojaCorte() {
+    console.log("Inicializando Hoja de Corte...");
+    
+    // 1. Configurar Fecha por defecto (Hoy)
+    const fechaCorte = document.getElementById('corte-fecha');
+    if (fechaCorte && !fechaCorte.value) {
+        const ahora = new Date();
+        const offset = ahora.getTimezoneOffset() * 60000;
+        const local = new Date(ahora.getTime() - offset);
+        fechaCorte.value = local.toISOString().split('T')[0];
+    }
+
+    // 2. Referencias UI
+    const containerFiltroAgente = document.getElementById('container-corte-agente');
+    const selectAgente = document.getElementById('corte-filtro-agente');
+    const containerResumen = document.getElementById('corte-resumen-cards');
+    const tbody = document.querySelector('#tabla-corte-detalle tbody');
+
+    // 3. Limpieza Visual
+    if(containerResumen) containerResumen.innerHTML = '';
+    if(tbody) tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">Selecciona fecha y genera corte.</td></tr>';
+
+    // 4. Lógica de Roles
+    if (!currentUserData) return;
+    
+    // Normalizamos el rol para evitar errores de acentos/mayúsculas
+    const rolNormalizado = (currentUserData.role || '').toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const esComercial = rolNormalizado.includes('comercial') || rolNormalizado.includes('ventas');
+
+    if (esComercial) {
+        // A. SI ES COMERCIAL: Ocultamos el filtro de agentes (Solo verá lo suyo)
+        if(containerFiltroAgente) containerFiltroAgente.classList.add('hidden');
+    } else {
+        // B. SI ES ADMIN/SUPER: Mostramos el filtro y cargamos la lista
+        if(containerFiltroAgente) containerFiltroAgente.classList.remove('hidden');
+        
+        // Cargar agentes solo si el dropdown está vacío (tiene 1 opción: "-- Todos --")
+        if (selectAgente && selectAgente.options.length <= 1) {
+            try {
+                const res = await database.obtenerUsuarios();
+                if (res.success) {
+                    const oficinaAdmin = currentUserData.office;
+                    const esSuperAdmin = rolNormalizado.includes('super') || rolNormalizado.includes('gerencia');
+
+                    // Filtramos: Solo agentes comerciales Y (de mi oficina O soy super admin)
+                    const agentes = res.data.filter(u => {
+                        const uRol = (u.role || '').toLowerCase();
+                        return (uRol.includes('comercial') || uRol.includes('ventas')) &&
+                               (esSuperAdmin || oficinaAdmin === 'AMBAS' || !oficinaAdmin || u.office === oficinaAdmin);
+                    }).sort((a,b) => (a.name || '').localeCompare(b.name || ''));
+
+                    agentes.forEach(agente => {
+                        const opt = document.createElement('option');
+                        opt.value = agente.id;
+                        opt.textContent = agente.name;
+                        selectAgente.appendChild(opt);
+                    });
+                }
+            } catch (e) { 
+                console.error("Error cargando agentes para corte", e); 
+            }
+        }
+    }
+}
+
 //===============================//
     // ** HOJA DE CORTE ** //
 //===============================//
 async function loadHojaCorte() {
     const fechaInput = document.getElementById('corte-fecha');
     const fecha = fechaInput.value;
-    const containerResumen = document.getElementById('corte-resumen-cards');
-    const tbody = document.querySelector('#tabla-corte-detalle tbody');
-
-    if (!fecha) {
-        alert('Por favor selecciona una fecha.');
-        return;
-    }
+    const selectAgente = document.getElementById('corte-filtro-agente');
+    
+    if (!fecha) { alert('Selecciona una fecha.'); return; }
 
     showProcessingOverlay(true, 'Generando corte de caja...');
-    if (containerResumen) containerResumen.innerHTML = '';
-    if (tbody) tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">Cargando...</td></tr>';
 
     try {
-        const esAgente = currentUserData.role === 'Área comercial';
-        const userIdFiltro = esAgente ? currentUserData.id : null;
+        // Lógica de Filtro por Usuario
+        const rolNormalizado = (currentUserData.role || '').toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        let userIdFiltro = null;
+
+        if (rolNormalizado.includes('comercial') || rolNormalizado.includes('ventas')) {
+            // Caso 1: Soy Comercial -> FORZAR mi ID
+            userIdFiltro = currentUserData.id;
+        } else {
+            // Caso 2: Soy Admin -> Usar lo que seleccioné en el dropdown (o null para 'Todos')
+            userIdFiltro = selectAgente.value || null;
+        }
         
+        console.log(`Generando corte para: Oficina=${currentUserData.office}, Usuario=${userIdFiltro || 'TODOS'}`);
+
+        // Llamada a la base de datos
         const datos = await database.obtenerDatosHojaCorte(fecha, currentUserData.office, userIdFiltro);
 
-        let totalEntradas = 0;
-        let totalSalidas = 0;
-        
-        let subCobranza = 0;
-        let subPolizas = 0;
-        let subColocacion = 0;
-        let subGastos = 0;
-        let subComisiones = 0;
-        let subFondeo = 0;
-
-        const filasRenderizadas = datos.map(item => {
-            let monto = 0;
-            let esEntrada = false; 
-            let concepto = '';
-
-            // 1. ENTRADAS
-            if (item.categoria === 'COBRANZA') {
-                monto = Math.abs(item.monto || 0);
-                esEntrada = true;
-                concepto = 'COBRANZA';
-                subCobranza += monto;
-            } else if (item.tipo === 'INGRESO_POLIZA') {
-                monto = Math.abs(item.monto || 0);
-                esEntrada = true;
-                concepto = 'PÓLIZA';
-                subPolizas += monto;
-            } else if (item.tipo === 'ENTREGA_INICIAL') {
-                monto = Math.abs(item.monto || 0);
-                esEntrada = true;
-                concepto = 'FONDEO';
-                subFondeo += monto;
-            }
-            // 2. SALIDAS
-            else if (item.tipo === 'COLOCACION') {
-                monto = Math.abs(item.monto || 0);
-                esEntrada = false;
-                concepto = 'COLOCACIÓN';
-                subColocacion += monto;
-            } else if (item.tipo === 'GASTO') {
-                monto = Math.abs(item.monto || 0);
-                esEntrada = false;
-                concepto = 'GASTO';
-                subGastos += monto;
-            } 
-            // AQUÍ ESTÁ EL CAMBIO CLAVE PARA LAS COMISIONES
-            else if (item.tipo === 'COMISION_COLOCACION' || item.tipo === 'COMISION_PAGO' || item.categoria === 'COMISION') {
-                monto = Math.abs(item.monto || 0);
-                esEntrada = false;
-                // Diferenciar visualmente el tipo de comisión
-                concepto = (item.tipo === 'COMISION_COLOCACION') ? 'COMISIÓN (Colocación)' : 'COMISIÓN (Cobranza)';
-                subComisiones += monto;
-            } 
-            else {
-                const rawMonto = item.monto || 0;
-                monto = Math.abs(rawMonto);
-                esEntrada = rawMonto >= 0;
-                concepto = 'OTRO';
-            }
-
-            if (esEntrada) totalEntradas += monto;
-            else totalSalidas += monto;
-
-            return {
-                hora: new Date(item.rawDate),
-                concepto: concepto,
-                descripcion: item.descripcion || '-',
-                monto: monto,
-                esEntrada: esEntrada,
-                ref: item.registradoPor || 'Sistema'
-            };
-        });
-
-        filasRenderizadas.sort((a, b) => a.hora - b.hora);
-        const efectivoEnMano = totalEntradas - totalSalidas;
-
-        if (containerResumen) {
-            containerResumen.innerHTML = `
-                <div class="card" style="border-left: 5px solid var(--info); flex: 1;">
-                    <h5 style="color:#666; margin-bottom:5px;">EFECTIVO EN MANO</h5>
-                    <h2 style="color:var(--dark); font-weight:bold; margin:0;">$${efectivoEnMano.toLocaleString('es-MX', {minimumFractionDigits: 2})}</h2>
-                </div>
-                
-                <div class="card" style="border-left: 5px solid var(--success); flex: 1;">
-                    <h5 style="color:#666; margin-bottom:5px;">ENTRADAS (+)</h5>
-                    <h3 style="color:var(--success); margin:0;">$${totalEntradas.toLocaleString('es-MX', {minimumFractionDigits: 2})}</h3>
-                    <div style="margin-top:10px; font-size:0.8em;">
-                        <div style="display:flex; justify-content:space-between;"><span>Cobranza:</span> <strong>$${subCobranza.toLocaleString()}</strong></div>
-                        <div style="display:flex; justify-content:space-between; color:#2e8b57;"><span>Pólizas:</span> <strong>$${subPolizas.toLocaleString()}</strong></div>
-                        <div style="display:flex; justify-content:space-between;"><span>Fondeo:</span> <strong>$${subFondeo.toLocaleString()}</strong></div>
-                    </div>
-                </div>
-                
-                <div class="card" style="border-left: 5px solid var(--danger); flex: 1;">
-                    <h5 style="color:#666; margin-bottom:5px;">SALIDAS (-)</h5>
-                    <h3 style="color:var(--danger); margin:0;">$${totalSalidas.toLocaleString('es-MX', {minimumFractionDigits: 2})}</h3>
-                    <div style="margin-top:10px; font-size:0.8em;">
-                        <div style="display:flex; justify-content:space-between;"><span>Colocación:</span> <strong>$${subColocacion.toLocaleString()}</strong></div>
-                        <div style="display:flex; justify-content:space-between; color:#d63384;"><span>Comisiones:</span> <strong>$${subComisiones.toLocaleString()}</strong></div>
-                        <div style="display:flex; justify-content:space-between;"><span>Gastos:</span> <strong>$${subGastos.toLocaleString()}</strong></div>
-                    </div>
-                </div>
-            `;
-        }
-
-        if (tbody) {
-            if (filasRenderizadas.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:20px;">No hay movimientos.</td></tr>';
-            } else {
-                let htmlRows = '';
-                filasRenderizadas.forEach(row => {
-                    const horaStr = row.hora.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-                    const entradaStr = row.esEntrada ? `$${row.monto.toFixed(2)}` : '';
-                    const salidaStr = !row.esEntrada ? `$${row.monto.toFixed(2)}` : '';
-                    
-                    let rowStyle = '';
-                    if (row.concepto.includes('PÓLIZA')) rowStyle = 'background-color: #e8f5e9;'; 
-                    if (row.concepto.includes('COMISIÓN')) rowStyle = 'background-color: #fff3cd;'; 
-
-                    htmlRows += `
-                        <tr style="${rowStyle}">
-                            <td style="text-align:center; color:#666;">${horaStr}</td>
-                            <td><strong>${row.concepto}</strong></td>
-                            <td>${row.descripcion}</td>
-                            <td style="color:var(--success); font-weight:bold; text-align:right;">${entradaStr}</td>
-                            <td style="color:var(--danger); font-weight:bold; text-align:right;">${salidaStr}</td>
-                            <td style="font-size:0.8em; color:#888;">${row.ref}</td>
-                        </tr>
-                    `;
-                });
-                tbody.innerHTML = htmlRows;
-            }
-        }
+        // Renderizar en pantalla
+        renderizarResultadosCorte(datos);
 
     } catch (error) {
         console.error("Error Hoja Corte:", error);
         alert("Error al generar el corte: " + error.message);
     } finally {
         showProcessingOverlay(false);
+    }
+}
+
+//==========================================//
+    // ** RENDERIZAR HOJA DE CORTE ** //
+//==========================================//
+
+function renderizarResultadosCorte(datos) {
+    const containerResumen = document.getElementById('corte-resumen-cards');
+    const tbody = document.querySelector('#tabla-corte-detalle tbody');
+    
+    // Variables para totales
+    let totalEntradas = 0;
+    let totalSalidas = 0;
+    let subCobranza = 0; 
+    let subPolizas = 0; 
+    let subColocacion = 0; 
+    let subGastos = 0; 
+    let subComisiones = 0; 
+    let subFondeo = 0;
+
+    // Procesar datos para la tabla
+    const filasRenderizadas = datos.map(item => {
+        let monto = 0; 
+        let esEntrada = false; 
+        let concepto = '';
+        
+        if (item.categoria === 'COBRANZA') {
+            monto = Math.abs(item.monto || 0); esEntrada = true; concepto = 'COBRANZA'; subCobranza += monto;
+        } else if (item.tipo === 'INGRESO_POLIZA') {
+            monto = Math.abs(item.monto || 0); esEntrada = true; concepto = 'PÓLIZA'; subPolizas += monto;
+        } else if (item.tipo === 'ENTREGA_INICIAL') {
+            monto = Math.abs(item.monto || 0); esEntrada = true; concepto = 'FONDEO'; subFondeo += monto;
+        } 
+        else if (item.tipo === 'COLOCACION') {
+            monto = Math.abs(item.monto || 0); esEntrada = false; concepto = 'COLOCACIÓN'; subColocacion += monto;
+        } else if (item.tipo === 'GASTO') {
+            monto = Math.abs(item.monto || 0); esEntrada = false; concepto = 'GASTO'; subGastos += monto;
+        } else if (item.tipo && item.tipo.includes('COMISION')) {
+            monto = Math.abs(item.monto || 0); esEntrada = false; concepto = 'COMISIÓN'; subComisiones += monto;
+        } else {
+            monto = Math.abs(item.monto || 0); esEntrada = (item.monto >= 0); concepto = 'OTRO';
+        }
+
+        if (esEntrada) totalEntradas += monto; else totalSalidas += monto;
+
+        return { 
+            hora: new Date(item.rawDate), 
+            concepto, 
+            descripcion: item.descripcion || '-', 
+            monto, 
+            esEntrada, 
+            ref: item.registradoPor || '-' 
+        };
+    });
+
+    filasRenderizadas.sort((a, b) => a.hora - b.hora);
+    const efectivoEnMano = totalEntradas - totalSalidas;
+
+    // 1. Renderizar Tarjetas de Resumen
+    containerResumen.innerHTML = `
+        <div class="card" style="border-left: 5px solid var(--info); flex: 1;">
+            <h5 style="color:#666; margin:0;">EFECTIVO EN MANO</h5>
+            <h2 style="color:var(--dark); font-weight:bold; margin:5px 0;">$${efectivoEnMano.toLocaleString('es-MX', {minimumFractionDigits: 2})}</h2>
+        </div>
+        <div class="card" style="border-left: 5px solid var(--success); flex: 1;">
+            <h5 style="color:#666; margin:0;">ENTRADAS (+)</h5>
+            <h3 style="color:var(--success); margin:5px 0;">$${totalEntradas.toLocaleString('es-MX', {minimumFractionDigits: 2})}</h3>
+            <div style="font-size:0.8em;">Cobranza: $${subCobranza.toLocaleString()} | Pólizas: $${subPolizas.toLocaleString()} | Fondeo: $${subFondeo.toLocaleString()}</div>
+        </div>
+        <div class="card" style="border-left: 5px solid var(--danger); flex: 1;">
+            <h5 style="color:#666; margin:0;">SALIDAS (-)</h5>
+            <h3 style="color:var(--danger); margin:5px 0;">$${totalSalidas.toLocaleString('es-MX', {minimumFractionDigits: 2})}</h3>
+            <div style="font-size:0.8em;">Colocación: $${subColocacion.toLocaleString()} | Comis: $${subComisiones.toLocaleString()} | Gastos: $${subGastos.toLocaleString()}</div>
+        </div>
+    `;
+
+    // 2. Renderizar Tabla Detallada
+    if (filasRenderizadas.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:20px;">No hay movimientos para este criterio.</td></tr>';
+    } else {
+        let htmlRows = '';
+        filasRenderizadas.forEach(row => {
+            const horaStr = row.hora.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+            const entradaStr = row.esEntrada ? `$${row.monto.toFixed(2)}` : '';
+            const salidaStr = !row.esEntrada ? `$${row.monto.toFixed(2)}` : '';
+            
+            htmlRows += `
+                <tr>
+                    <td style="text-align:center; color:#666;">${horaStr}</td>
+                    <td><strong>${row.concepto}</strong></td>
+                    <td>${row.descripcion}</td>
+                    <td style="color:var(--success); text-align:right;">${entradaStr}</td>
+                    <td style="color:var(--danger); text-align:right;">${salidaStr}</td>
+                    <td style="font-size:0.8em; color:#888;">${row.ref}</td>
+                </tr>`;
+        });
+        tbody.innerHTML = htmlRows;
     }
 }
 
@@ -7403,6 +7470,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
