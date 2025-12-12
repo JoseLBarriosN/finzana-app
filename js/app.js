@@ -3031,8 +3031,9 @@ async function handleCalcularCobranzaRuta() {
 // ** INICIALIZAR VISTA DE PAGO GRUPAL (VISIBILIDAD ASEGURADA) **
 //=======================================
 async function inicializarVistaPagoGrupal() {
-    console.log("🚀 INICIANDO VISTA PAGO GRUPAL (V6 - Native Labels)");
+    console.log("🚀 INICIANDO VISTA PAGO GRUPAL (V7 - Full Native)");
     
+    // Referencias UI
     const containerChecks = document.getElementById('checkboxes-poblaciones-container');
     const cardSelector = document.getElementById('selector-poblaciones-card');
     const statusPago = document.getElementById('status_pago_grupo');
@@ -3055,7 +3056,7 @@ async function inicializarVistaPagoGrupal() {
         return;
     }
 
-    // 1. DATOS GUARDADOS (OFFLINE)
+    // --- 1. LÓGICA DE DATOS GUARDADOS (OFFLINE) ---
     const keyOffline = OFFLINE_STORAGE_KEY + (currentUserData.ruta || 'sin_ruta');
     let datosGuardados = null;
     try {
@@ -3098,24 +3099,17 @@ async function inicializarVistaPagoGrupal() {
         };
 
         document.getElementById('btn-borrar-guardado').onclick = async () => {
-            if(confirm("¿Borrar la ruta guardada y generar una nueva?")) {
+            if(confirm("¿Borrar ruta guardada?")) {
                 localStorage.removeItem(keyOffline);
                 aviso.remove();
                 containerResultados.innerHTML = '';
-                
-                if(cardSelector) cardSelector.classList.remove('hidden');
-                if(placeholder) placeholder.classList.remove('hidden');
-                if(btnGuardar) btnGuardar.classList.add('hidden');
-                if(btnRegistrar) btnRegistrar.classList.add('hidden');
-                if(btnVerMapa) btnVerMapa.classList.add('hidden');
-
-                showStatus('status_pago_grupo', 'Datos locales eliminados.', 'info');
+                showStatus('status_pago_grupo', 'Datos eliminados.', 'info');
                 await inicializarVistaPagoGrupal();
             }
         };
     }
 
-    // 2. SI NO HAY INTERNET
+    // --- 2. SI NO HAY INTERNET ---
     if (!navigator.onLine) {
         showStatus('status_pago_grupo', 'Modo Offline. Solo datos guardados.', 'warning');
         if(cardSelector) cardSelector.classList.add('hidden');
@@ -3124,7 +3118,7 @@ async function inicializarVistaPagoGrupal() {
         return;
     }
 
-    // 3. LÓGICA ONLINE
+    // --- 3. LÓGICA ONLINE (CARGAR SELECTORES) ---
     if (cardSelector) {
         cardSelector.classList.remove('hidden');
         cardSelector.style.display = 'block'; 
@@ -3140,6 +3134,7 @@ async function inicializarVistaPagoGrupal() {
 
     if (containerChecks) containerChecks.innerHTML = '<div class="spinner"></div> Cargando poblaciones...';
 
+    // Preparar botón calcular
     const btnCalcular = document.getElementById('btn-calcular-seleccion');
     if(btnCalcular) {
         const newBtn = btnCalcular.cloneNode(true);
@@ -3158,13 +3153,13 @@ async function inicializarVistaPagoGrupal() {
             return;
         }
 
-        // --- BOTÓN "TODAS" (Corregido) ---
+        // --- CORRECCIÓN: BOTÓN "TODAS" AHORA ES UN <LABEL> ---
         const allDiv = document.createElement('div');
         allDiv.className = 'select-all-container';
         
-        // Estilo Flex para alinear el check y el texto
+        // Al ser <label>, el clic en cualquier parte (texto, fondo, icono) activa el input nativamente
         allDiv.innerHTML = `
-            <div id="btn-toggle-all" class="poblacion-select-card selected" 
+            <label id="btn-toggle-all" class="poblacion-select-card selected" 
                  style="cursor: pointer; display: flex; align-items: center; width: 100%; padding: 15px; margin-bottom: 10px;">
                 
                 <input type="checkbox" id="check-all-poblaciones" checked 
@@ -3175,16 +3170,15 @@ async function inicializarVistaPagoGrupal() {
                 </span>
                 
                 <i class="fas fa-check-circle custom-check-icon" style="font-size: 1.4rem;"></i>
-            </div>
+            </label>
         `;
         containerChecks.appendChild(allDiv);
 
-        // --- GRID DE POBLACIONES (Corregido con Label) ---
+        // --- GRID DE POBLACIONES INDIVIDUALES ---
         const gridDiv = document.createElement('div');
         gridDiv.className = 'poblacion-selector-grid';
         
         poblaciones.forEach(pob => {
-            // Usamos <label> para que el clic en todo el cuadro active el check nativamente
             const label = document.createElement('label');
             label.className = 'poblacion-select-card selected';
             label.style.display = 'flex';
@@ -3197,9 +3191,10 @@ async function inicializarVistaPagoGrupal() {
                 <span class="poblacion-name" style="flex-grow: 1;">${pob.nombre}</span> 
                 <i class="fas fa-check-circle check-icon"></i>`;
             
-            // Listener simple: Cuando el check cambie (por clic directo o en el label), actualizamos estilo
+            // Listener individual para actualizar estilos y verificar el maestro
             const checkbox = label.querySelector('input');
             checkbox.addEventListener('change', function() {
+                // Actualizar estilo propio
                 if(this.checked) label.classList.add('selected');
                 else label.classList.remove('selected');
                 
@@ -3209,8 +3204,8 @@ async function inicializarVistaPagoGrupal() {
                 const masterCheck = document.getElementById('check-all-poblaciones');
                 const masterBtn = document.getElementById('btn-toggle-all');
                 
-                if(masterCheck) masterCheck.checked = allChecked;
-                if(masterBtn) {
+                if(masterCheck) {
+                    masterCheck.checked = allChecked;
                     if(allChecked) masterBtn.classList.add('selected');
                     else masterBtn.classList.remove('selected');
                 }
@@ -3220,35 +3215,26 @@ async function inicializarVistaPagoGrupal() {
         });
         containerChecks.appendChild(gridDiv);
 
-        // --- LÓGICA DEL BOTÓN "TODAS" ---
-        // Manejamos el clic en el contenedor para que sea más fácil atinarle
-        const btnToggleAll = document.getElementById('btn-toggle-all');
-        const checkAllInput = document.getElementById('check-all-poblaciones');
+        // --- LISTENER DEL BOTÓN MAESTRO ---
+        // Ahora solo escuchamos el 'change' del input, HTML hace el resto del trabajo de clic
+        const masterCheck = document.getElementById('check-all-poblaciones');
+        const masterBtn = document.getElementById('btn-toggle-all');
 
-        if (btnToggleAll && checkAllInput) {
-            btnToggleAll.addEventListener('click', function(e) {
-                // Si el clic fue DIRECTAMENTE en el checkbox, dejamos que el navegador actúe
-                if (e.target === checkAllInput) {
-                    // Solo actualizamos estilos
-                } else {
-                    // Si fue en el texto o caja, invertimos el check manualmente
-                    checkAllInput.checked = !checkAllInput.checked;
-                }
+        if (masterCheck && masterBtn) {
+            masterCheck.addEventListener('change', function() {
+                const isChecked = this.checked;
 
-                const isChecked = checkAllInput.checked;
+                // 1. Estilo visual del maestro
+                if (isChecked) masterBtn.classList.add('selected');
+                else masterBtn.classList.remove('selected');
 
-                // Estilo visual del botón maestro
-                if (isChecked) btnToggleAll.classList.add('selected');
-                else btnToggleAll.classList.remove('selected');
-
-                // Propagar a hijos
+                // 2. Propagar a todos los hijos
                 document.querySelectorAll('.poblacion-select-card').forEach(card => {
-                    // Ignoramos el propio botón maestro
                     if (card.id !== 'btn-toggle-all') {
                         const input = card.querySelector('input');
                         if (input) {
                             input.checked = isChecked;
-                            // Disparamos evento 'change' manualmente para que se actualice el estilo visual del hijo
+                            // Disparar evento para actualizar estilos visuales
                             input.dispatchEvent(new Event('change'));
                         }
                     }
@@ -7545,6 +7531,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
