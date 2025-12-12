@@ -717,16 +717,14 @@ const database = {
         }
     },
 
-   // --- REGISTRAR PAGO (MODO HÍBRIDO SEGURO) ---
+   // --- REGISTRAR PAGO (CON VÍNCULO A COMISIÓN) ---
     async agregarPago(pagoData, emailUsuario, firestoreIdCredito) {
         try {
-            // Referencias
             const creditoRef = db.collection('creditos').doc(firestoreIdCredito);
             const pagosRef = db.collection('pagos').doc();
             const batch = db.batch();
 
-            // 1. OBTENCIÓN DE DATOS (Con soporte de caché)
-            // Usamos { source: 'cache' } si fallamos por red, para asegurar lectura offline
+            // Lectura del crédito (Con soporte caché)
             let doc;
             try {
                 doc = await creditoRef.get();
@@ -735,14 +733,13 @@ const database = {
                 doc = await creditoRef.get({ source: 'cache' });
             }
 
-            if (!doc.exists) throw new Error("Crédito no encontrado (ni en red ni en caché).");
+            if (!doc.exists) throw new Error("No se encontró el crédito.");
 
             const credito = doc.data();
             const saldoActual = credito.saldo !== undefined ? credito.saldo : credito.montoTotal;
             const officeCredito = credito.office || 'GDL';
             const fechaISO = database.obtenerFechaLocalISO();
             
-            // Construcción del objeto Pago
             const nuevoPago = {
                 id: pagosRef.id,
                 idCredito: pagoData.idCredito, 
@@ -753,7 +750,7 @@ const database = {
                 registradoPor: emailUsuario,
                 office: officeCredito, 
                 origen: pagoData.origen || 'manual',
-                syncStatus: 'pending' // Marca interna para depuración
+                syncStatus: 'pending'
             };
 
             const nuevoSaldo = parseFloat((saldoActual - nuevoPago.monto).toFixed(2));
@@ -766,6 +763,7 @@ const database = {
                 ...(nuevoSaldo < 0.05 ? { estado: 'liquidado' } : {})
             });
 
+            // --- REGISTRO DE COMISIÓN VINCULADA ---
             if (pagoData.comisionGenerada && pagoData.comisionGenerada > 0) {
                 const movimientoRef = db.collection('movimientos_efectivo').doc();
                 batch.set(movimientoRef, {
@@ -778,19 +776,14 @@ const database = {
                     userId: (auth.currentUser) ? auth.currentUser.uid : 'offline_user',
                     registradoPor: emailUsuario,
                     office: officeCredito,
-                    creditoIdAsociado: firestoreIdCredito
+                    creditoIdAsociado: firestoreIdCredito, // Para borrar si se borra el crédito
+                    pagoIdAsociado: pagosRef.id           // <--- CLAVE: Para borrar si se borra el pago
                 });
             }
 
-            // 2. COMMIT ROBUSTO
-            // Lanzamos el commit. Firestore maneja la cola interna.
-            // NO esperamos (await) si estamos offline para evitar timeouts de UI.
-            
             const commitOp = batch.commit();
 
             if (!navigator.onLine) {
-                console.log("🚀 [OFFLINE] Escritura enviada a cola de persistencia.");
-                // Retornamos éxito INMEDIATO. Firestore sincronizará cuando pueda.
                 return { 
                     success: true, 
                     message: "Pago guardado en dispositivo (Pendiente de subir)",
@@ -800,19 +793,16 @@ const database = {
                 };
             }
 
-            // Si hay línea, esperamos confirmación para feedback visual
             await commitOp;
-            
             return { 
                 success: true, 
-                message: "Pago registrado y sincronizado en nube",
+                message: "Pago registrado y sincronizado",
                 nuevoSaldo: nuevoSaldo,
                 historicalIdCredito: pagoData.idCredito
             };
 
         } catch (error) {
-            console.error("Error crítico en agregarPago:", error);
-            // Si el error dice "offline", asumimos éxito de caché
+            console.error("Error en agregarPago:", error);
             if (error.message.includes("offline") || error.code === 'unavailable') {
                  return { success: true, message: "Guardado forzoso en caché.", offline: true };
             }
@@ -1746,32 +1736,37 @@ const database = {
         }
     },
 
-    // --- ELIMINAR CREDITO ---
+    // --- ELIMINAR CRÉDITO COMPLETO Y ASOCIADOS ---
     eliminarCredito: async (creditoId, historicalId, office) => {
         try {
             if (!creditoId || !historicalId || !office) {
-                throw new Error("Datos insuficientes (creditoId, historicalId, office) para eliminar.");
+                throw new Error("Datos insuficientes para eliminar.");
             }
             
             const batch = db.batch();
             const creditoRef = db.collection('creditos').doc(creditoId);
             batch.delete(creditoRef);
             
+            // 1. Borrar Pagos
             const pagosSnap = await db.collection('pagos')
                 .where('idCredito', '==', historicalId)
                 .where('office', '==', office)
                 .get();
             pagosSnap.docs.forEach(doc => batch.delete(doc.ref));
 
-            const comisionesSnap = await db.collection('comisiones')
+            // 2. Borrar Movimientos de Efectivo (Comisiones, Entradas, etc.)
+            // Buscamos por ambos campos posibles para asegurar limpieza total
+            // A. Por creditoId (versión vieja)
+            const movsOldSnap = await db.collection('movimientos_efectivo')
                 .where('creditoId', '==', creditoId)
                 .get();
-            comisionesSnap.docs.forEach(doc => batch.delete(doc.ref));
-                
-            const movimientosSnap = await db.collection('movimientos_efectivo')
-                .where('creditoId', '==', creditoId)
+            movsOldSnap.docs.forEach(doc => batch.delete(doc.ref));
+
+            // B. Por creditoIdAsociado (versión nueva)
+            const movsNewSnap = await db.collection('movimientos_efectivo')
+                .where('creditoIdAsociado', '==', creditoId)
                 .get();
-            movimientosSnap.docs.forEach(doc => batch.delete(doc.ref));
+            movsNewSnap.docs.forEach(doc => batch.delete(doc.ref));
 
             await batch.commit();
             
@@ -1787,17 +1782,29 @@ const database = {
         }
     },
 
-    // --- ACTUALIZAR PAGOS ---
+    // --- ACTUALIZAR PAGO Y GESTIONAR COMISIÓN ---
     actualizarPago: async (pagoId, creditoId, dataToUpdate, diferenciaMonto) => {
         try {
             const creditoRef = db.collection('creditos').doc(creditoId);
             const pagoRef = db.collection('pagos').doc(pagoId);
             
+            // Determinar si el nuevo tipo genera comisión ($10) o no ($0)
+            // Regla: Normal/Adelanto/Actualizado/Grupal = $10. Extraordinario/Bancario = $0.
+            const tiposConComision = ['normal', 'adelanto', 'actualizado', 'grupal'];
+            const generaComision = tiposConComision.includes(dataToUpdate.tipoPago);
+            const montoComisionEsperado = generaComision ? 10 : 0;
+
             await db.runTransaction(async (transaction) => {
                 const creditoDoc = await transaction.get(creditoRef);
-                if (!creditoDoc.exists) throw new Error("Crédito no encontrado.");
+                const pagoDoc = await transaction.get(pagoRef);
                 
+                if (!creditoDoc.exists) throw new Error("Crédito no encontrado.");
+                if (!pagoDoc.exists) throw new Error("Pago no encontrado.");
+
                 const credito = creditoDoc.data();
+                const pagoAntiguo = pagoDoc.data();
+
+                // 1. Actualizar Saldo Crédito
                 let nuevoSaldo = (credito.saldo || 0) - diferenciaMonto;
                 if (nuevoSaldo < 0.01) nuevoSaldo = 0;
                 const nuevoEstado = (nuevoSaldo === 0) ? 'liquidado' : 'activo';
@@ -1807,18 +1814,59 @@ const database = {
                     estado: nuevoEstado
                 });
                 
+                // 2. Actualizar datos del Pago
                 dataToUpdate.saldoDespues = nuevoSaldo;
                 transaction.update(pagoRef, dataToUpdate);
             });
+
+            // 3. GESTIÓN DE COMISIONES (Post-Transacción)
+            const comisionesSnap = await db.collection('movimientos_efectivo')
+                .where('pagoIdAsociado', '==', pagoId)
+                .get();
+
+            const batchComis = db.batch();
+            let comisionExiste = !comisionesSnap.empty;
+
+            if (montoComisionEsperado === 0 && comisionExiste) {
+                // Caso A: Ya no debe haber comisión -> BORRAR
+                comisionesSnap.forEach(doc => batchComis.delete(doc.ref));
+                console.log("🔄 Actualización: Comisión eliminada (cambio de tipo).");
+            } 
+            else if (montoComisionEsperado > 0 && !comisionExiste) {
+                // Caso B: Debe haber comisión y no hay -> CREAR
+                // Necesitamos datos adicionales, los sacamos de una lectura rápida
+                const pSnap = await pagoRef.get();
+                const pData = pSnap.data();
+                const movimientoRef = db.collection('movimientos_efectivo').doc();
+                
+                batchComis.set(movimientoRef, {
+                    id: movimientoRef.id,
+                    tipo: 'COMISION_PAGO',
+                    categoria: 'COMISION',
+                    monto: -10, // Monto fijo negativo
+                    descripcion: `Comisión cobro crédito (Actualizado) ${pData.idCredito}`,
+                    fecha: new Date().toISOString(), // Fecha del ajuste
+                    userId: (auth.currentUser) ? auth.currentUser.uid : 'system',
+                    registradoPor: 'sistema_actualizacion',
+                    office: pData.office || 'GDL',
+                    creditoIdAsociado: creditoId,
+                    pagoIdAsociado: pagoId
+                });
+                console.log("🔄 Actualización: Comisión creada.");
+            }
             
-            return { success: true, message: 'Pago actualizado.' };
+            if (montoComisionEsperado === 0 && comisionExiste || montoComisionEsperado > 0 && !comisionExiste) {
+                await batchComis.commit();
+            }
+            
+            return { success: true, message: 'Pago actualizado y comisiones ajustadas.' };
         } catch (error) {
             console.error("Error actualizando pago:", error);
             return { success: false, message: `Error: ${error.message}` };
         }
     },
 
-    // -- ELIMINAR PAGOS ---
+    // --- ELIMINAR PAGO Y SU COMISIÓN ---
     eliminarPago: async (pagoId, creditoId, montoAReembolsar, office) => {
         try {
             const creditoRef = db.collection('creditos').doc(creditoId);
@@ -1832,19 +1880,40 @@ const database = {
                 const credito = creditoDoc.data();
                 historicalIdCredito = credito.historicalIdCredito || '';
                 
+                // 1. Reembolsar saldo
                 let nuevoSaldo = (credito.saldo || 0) + montoAReembolsar;
-                
                 transaction.update(creditoRef, {
                     saldo: nuevoSaldo,
-                    estado: 'activo'
+                    estado: 'activo' // Reactivar si estaba liquidado
                 });
                 
+                // 2. Eliminar el Pago
                 transaction.delete(pagoRef);
+
+                // 3. BUSCAR Y ELIMINAR COMISIÓN ASOCIADA (Query dentro de transacción)
+                // Nota: Las queries en transacciones deben hacerse antes de escrituras si es posible, 
+                // pero Firestore permite lecturas no transaccionales fuera si es necesario.
+                // Para simplificar y evitar bloqueos de índice, lo haremos en un paso separado post-transacción 
+                // o usamos un batch separado si la transacción es estricta.
+                // MEJOR ESTRATEGIA: Usar transaction.get() para buscar la comisión.
             });
+
+            // LIMPIEZA DE COMISIONES (Fuera de la transacción principal para evitar complejidad de queries)
+            // Esto es seguro hacerlo justo después.
+            const comisionesSnap = await db.collection('movimientos_efectivo')
+                .where('pagoIdAsociado', '==', pagoId)
+                .get();
+
+            if (!comisionesSnap.empty) {
+                const batchComisiones = db.batch();
+                comisionesSnap.forEach(doc => batchComisiones.delete(doc.ref));
+                await batchComisiones.commit();
+                console.log(`🗑️ Eliminadas ${comisionesSnap.size} comisiones asociadas.`);
+            }
             
             return { 
                 success: true, 
-                message: 'Pago eliminado y saldo recalculado.',
+                message: 'Pago eliminado, saldo recalculado y comisiones borradas.',
                 historicalIdCredito: historicalIdCredito
             };
         } catch (error) {
@@ -2039,6 +2108,7 @@ const database = {
     },
 
 };
+
 
 
 
