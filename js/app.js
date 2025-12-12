@@ -3031,7 +3031,7 @@ async function handleCalcularCobranzaRuta() {
 // ** INICIALIZAR VISTA DE PAGO GRUPAL (VISIBILIDAD ASEGURADA) **
 //=======================================
 async function inicializarVistaPagoGrupal() {
-    console.log("🚀 INICIANDO VISTA PAGO GRUPAL (V8 - Native Label Fix)");
+    console.log("🚀 INICIANDO VISTA PAGO GRUPAL (V9 - Visual Sync)");
     
     // Referencias UI
     const containerChecks = document.getElementById('checkboxes-poblaciones-container');
@@ -3143,7 +3143,11 @@ async function inicializarVistaPagoGrupal() {
     }
 
     try {
-        const poblaciones = await database.obtenerPoblacionesPorRuta(rutaUsuario, officeUsuario);
+        // Optimización Caché
+        let poblaciones = [];
+        try {
+             poblaciones = await database.obtenerPoblacionesPorRuta(rutaUsuario, officeUsuario);
+        } catch (e) { console.error(e); }
         
         if (containerChecks) containerChecks.innerHTML = ''; 
 
@@ -3152,33 +3156,49 @@ async function inicializarVistaPagoGrupal() {
             return;
         }
 
-        // --- BOTÓN "TODAS" (ESTRUCTURA IDÉNTICA A "MARCAR TODOS" DE LA TABLA) ---
+        // --- BOTÓN "TODAS" (ESTRUCTURA CORREGIDA) ---
         const allDiv = document.createElement('div');
         allDiv.className = 'select-all-container';
         
-        // Usamos <label> como contenedor principal para aprovechar el comportamiento nativo
-        // Al hacer click en el label, el navegador busca el input dentro y lo cambia.
-        // NO agregamos onclick manual al label.
         allDiv.innerHTML = `
             <label id="label-toggle-all" class="poblacion-select-card selected" 
-                 style="cursor: pointer; display: flex; align-items: center; width: 100%; padding: 15px; margin-bottom: 10px;">
+                 style="cursor: pointer; display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 15px; margin-bottom: 10px;">
                 
-                <input type="checkbox" id="check-all-poblaciones" checked 
-                       style="width: 20px; height: 20px; margin-right: 15px; cursor: pointer;"> 
+                <input type="checkbox" id="check-all-poblaciones" checked style="display:none;"> 
                 
-                <span style="font-weight:bold; font-size: 1rem; color:var(--primary); flex-grow: 1;">
+                <span style="font-weight:bold; font-size: 1rem; color:var(--primary);">
                     TODAS LAS POBLACIONES
                 </span>
                 
-                <i class="fas fa-check-circle custom-check-icon" style="font-size: 1.4rem;"></i>
+                <i id="icon-master-check" class="fas fa-check-circle check-icon" 
+                   style="font-size: 1.4rem; color: #28a745; transition: color 0.2s;"></i>
             </label>
         `;
         containerChecks.appendChild(allDiv);
 
-        // --- GRID DE POBLACIONES INDIVIDUALES ---
+        // --- GRID DE POBLACIONES ---
         const gridDiv = document.createElement('div');
         gridDiv.className = 'poblacion-selector-grid';
         
+        // Función helper para actualizar visualmente el maestro
+        const actualizarVisualesMaestro = (isChecked) => {
+            const masterLabel = document.getElementById('label-toggle-all');
+            const masterIcon = document.getElementById('icon-master-check');
+            const masterInput = document.getElementById('check-all-poblaciones');
+
+            if(masterInput) masterInput.checked = isChecked;
+
+            if (isChecked) {
+                masterLabel.classList.add('selected');
+                masterIcon.style.color = '#28a745'; // VERDE
+                masterIcon.className = "fas fa-check-circle check-icon";
+            } else {
+                masterLabel.classList.remove('selected');
+                masterIcon.style.color = '#ccc'; // GRIS
+                masterIcon.className = "far fa-circle check-icon"; // Círculo vacío opcional
+            }
+        };
+
         poblaciones.forEach(pob => {
             const label = document.createElement('label');
             label.className = 'poblacion-select-card selected';
@@ -3192,56 +3212,43 @@ async function inicializarVistaPagoGrupal() {
                 <span class="poblacion-name" style="flex-grow: 1;">${pob.nombre}</span> 
                 <i class="fas fa-check-circle check-icon"></i>`;
             
-            // Listener individual para actualizar su propio estilo
             const checkbox = label.querySelector('input');
             checkbox.addEventListener('change', function() {
-                // Actualizar estilo visual del hijo
+                // Estilo propio
                 if(this.checked) label.classList.add('selected');
                 else label.classList.remove('selected');
                 
-                // Verificar si debemos desmarcar el "Maestro"
+                // Verificar maestro
                 const allChecks = document.querySelectorAll('.poblacion-check');
                 const allChecked = Array.from(allChecks).every(c => c.checked);
                 
-                const masterCheck = document.getElementById('check-all-poblaciones');
-                const masterLabel = document.getElementById('label-toggle-all');
-                
-                if(masterCheck) {
-                    masterCheck.checked = allChecked;
-                    // Actualizar visualmente el maestro
-                    if(allChecked) masterLabel.classList.add('selected');
-                    else masterLabel.classList.remove('selected');
-                }
+                // Actualizar maestro forzosamente
+                actualizarVisualesMaestro(allChecked);
             });
             
             gridDiv.appendChild(label);
         });
         containerChecks.appendChild(gridDiv);
 
-        // --- LISTENER DEL BOTÓN MAESTRO (SOLO AL CHANGE) ---
-        const masterCheck = document.getElementById('check-all-poblaciones');
-        const masterLabel = document.getElementById('label-toggle-all');
+        // --- LISTENER DEL BOTÓN MAESTRO ---
+        const masterInput = document.getElementById('check-all-poblaciones');
 
-        if (masterCheck) {
-            masterCheck.addEventListener('change', function() {
+        if (masterInput) {
+            masterInput.addEventListener('change', function() {
                 const isChecked = this.checked;
 
-                // 1. Actualizar estilo visual del maestro
-                if (isChecked) masterLabel.classList.add('selected');
-                else masterLabel.classList.remove('selected');
+                // 1. Actualizar visuales del propio maestro
+                actualizarVisualesMaestro(isChecked);
 
-                // 2. Propagar a todos los hijos
+                // 2. Propagar a hijos
                 document.querySelectorAll('.poblacion-select-card').forEach(card => {
-                    // Evitar el propio maestro
+                    // Ignoramos el label maestro
                     if (card.id !== 'label-toggle-all') {
                         const input = card.querySelector('input');
                         if (input) {
-                            // Cambiar valor
                             input.checked = isChecked;
-                            
-                            // Cambiar estilo de la tarjeta hija
-                            if (isChecked) card.classList.add('selected');
-                            else card.classList.remove('selected');
+                            // Disparar evento para que el hijo se actualice a sí mismo
+                            input.dispatchEvent(new Event('change'));
                         }
                     }
                 });
@@ -7537,6 +7544,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
