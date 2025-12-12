@@ -6646,7 +6646,7 @@ async function verificarYubiKey() {
 async function inicializarVistaHojaCorte() {
     console.log("Inicializando Hoja de Corte...");
     
-    // 1. CONFIGURAR FECHA (Zona Horaria Local)
+    // A. FECHA (Zona Horaria Local)
     const fechaCorte = document.getElementById('corte-fecha');
     const getFechaLocalISO = () => {
         const ahora = new Date();
@@ -6654,80 +6654,69 @@ async function inicializarVistaHojaCorte() {
         const local = new Date(ahora.getTime() - offset);
         return local.toISOString().split('T')[0];
     };
+    if (fechaCorte && !fechaCorte.value) fechaCorte.value = getFechaLocalISO();
 
-    if (fechaCorte && !fechaCorte.value) {
-        fechaCorte.value = getFechaLocalISO();
-    }
-
-    // 2. REFERENCIAS UI
-    const containerFiltroAgente = document.getElementById('container-corte-agente');
+    // B. ELEMENTOS UI
+    const containerFiltro = document.getElementById('container-corte-agente');
     const selectAgente = document.getElementById('corte-filtro-agente');
     const containerResumen = document.getElementById('corte-resumen-cards');
     const tbody = document.querySelector('#tabla-corte-detalle tbody');
 
-    // 3. LIMPIEZA VISUAL (Tabla y Resumen)
+    // C. LIMPIEZA VISUAL
     if(containerResumen) containerResumen.innerHTML = '';
     if(tbody) tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">Selecciona fecha y genera corte.</td></tr>';
 
     if (!currentUserData) return;
 
-    // 4. LÓGICA DE ROLES Y DROPDOWN
-    const rolNormalizado = (currentUserData.role || '').toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-    const esComercial = rolNormalizado.includes('comercial') || rolNormalizado.includes('ventas');
+    // D. LÓGICA DE ROLES
+    const rolRaw = (currentUserData.role || '').toLowerCase();
+    const esComercial = rolRaw.includes('comercial') || rolRaw.includes('ventas');
+    const esAdminTotal = rolRaw.includes('super') || rolRaw.includes('gerencia');
+    const miOficina = currentUserData.office;
 
     if (esComercial) {
-        // A. SI ES COMERCIAL: Ocultar filtro
-        if(containerFiltroAgente) containerFiltroAgente.classList.add('hidden');
+        // Comercial: Ocultar filtro
+        if(containerFiltro) containerFiltro.classList.add('hidden');
     } else {
-        // B. SI ES ADMIN/SUPER: Mostrar filtro
-        if(containerFiltroAgente) containerFiltroAgente.classList.remove('hidden');
+        // Admin: Mostrar filtro y cargar
+        if(containerFiltro) containerFiltro.classList.remove('hidden');
         
-        // --- LIMPIEZA AGRESIVA DEL DROPDOWN ---
-        // Borramos todo el contenido HTML del select antes de hacer nada más
         if (selectAgente) {
-            selectAgente.innerHTML = ''; 
+            // 1. Construimos el HTML base (Esto BORRA cualquier duplicado previo)
+            let opcionesHTML = '<option value="">-- Todos los Movimientos --</option>';
             
-            // Agregamos la opción por defecto inmediatamente
-            const defaultOption = document.createElement('option');
-            defaultOption.value = "";
-            defaultOption.textContent = "-- Todos los Movimientos --";
-            selectAgente.appendChild(defaultOption);
-        }
-
-        try {
-            const res = await database.obtenerUsuarios();
-            if (res.success && selectAgente) {
-                const oficinaUsuario = currentUserData.office; 
-                const esSuperUser = rolNormalizado.includes('super') || rolNormalizado.includes('gerencia');
-                
-                // Conjunto para evitar duplicados lógicos (por ID)
-                const idsProcesados = new Set();
-
-                const agentes = res.data.filter(u => {
-                    const uRol = (u.role || '').toLowerCase();
-                    const esAgenteTarget = uRol.includes('comercial') || uRol.includes('ventas');
-
-                    if (!esAgenteTarget) return false;
-                    if (esSuperUser || oficinaUsuario === 'AMBAS') return true;
-                    return u.office === oficinaUsuario;
-
-                }).sort((a,b) => (a.name || '').localeCompare(b.name || ''));
-
-                agentes.forEach(agente => {
-                    // VERIFICACIÓN FINAL: ¿Ya agregamos este ID en este ciclo?
-                    if (!idsProcesados.has(agente.id)) {
-                        const opt = document.createElement('option');
-                        opt.value = agente.id;
-                        opt.textContent = esSuperUser ? `${agente.name} (${agente.office})` : agente.name;
-                        selectAgente.appendChild(opt);
+            try {
+                const res = await database.obtenerUsuarios();
+                if (res.success) {
+                    // 2. Filtramos y Ordenamos
+                    const agentes = res.data.filter(u => {
+                        const r = (u.role || '').toLowerCase();
+                        const esVendedor = r.includes('comercial') || r.includes('ventas');
+                        if (!esVendedor) return false;
                         
-                        // Marcar ID como procesado
-                        idsProcesados.add(agente.id);
-                    }
-                });
-            }
-        } catch (e) { 
-            console.error("Error cargando agentes para corte", e); 
+                        // Si soy SuperAdmin o tengo permiso AMBAS, veo todo
+                        if (esAdminTotal || miOficina === 'AMBAS') return true;
+                        
+                        // Si soy Admin normal, solo mi oficina
+                        return u.office === miOficina;
+                    }).sort((a,b) => a.name.localeCompare(b.name));
+
+                    // 3. Generamos el HTML de las opciones (Usando Set para evitar IDs repetidos si la BD está sucia)
+                    const idsUsados = new Set();
+                    
+                    agentes.forEach(agente => {
+                        if (!idsUsados.has(agente.id)) {
+                            idsUsados.add(agente.id);
+                            // Agregamos texto a la cadena
+                            const texto = esAdminTotal ? `${agente.name} (${agente.office})` : agente.name;
+                            opcionesHTML += `<option value="${agente.id}">${texto}</option>`;
+                        }
+                    });
+                }
+            } catch (e) { console.error("Error usuarios", e); }
+
+            // 4. ASIGNACIÓN FINAL (Esto sobreescribe el select completo)
+            selectAgente.innerHTML = opcionesHTML;
         }
     }
 }
@@ -7480,6 +7469,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
