@@ -3031,7 +3031,7 @@ async function handleCalcularCobranzaRuta() {
 // ** INICIALIZAR VISTA DE PAGO GRUPAL (VISIBILIDAD ASEGURADA) **
 //=======================================
 async function inicializarVistaPagoGrupal() {
-    console.log("🚀 INICIANDO VISTA PAGO GRUPAL (V4 - Check Click Force)");
+    console.log("🚀 INICIANDO VISTA PAGO GRUPAL (V5 - Full Button)");
     
     const containerChecks = document.getElementById('checkboxes-poblaciones-container');
     const cardSelector = document.getElementById('selector-poblaciones-card');
@@ -3055,7 +3055,7 @@ async function inicializarVistaPagoGrupal() {
         return;
     }
 
-    // --- 1. DATOS GUARDADOS (OFFLINE/LOCAL) ---
+    // 1. DATOS GUARDADOS (OFFLINE/LOCAL)
     const keyOffline = OFFLINE_STORAGE_KEY + (currentUserData.ruta || 'sin_ruta');
     let datosGuardados = null;
     try {
@@ -3109,13 +3109,13 @@ async function inicializarVistaPagoGrupal() {
                 if(btnRegistrar) btnRegistrar.classList.add('hidden');
                 if(btnVerMapa) btnVerMapa.classList.add('hidden');
 
-                showStatus('status_pago_grupo', 'Datos locales eliminados. Puedes generar una nueva ruta.', 'info');
+                showStatus('status_pago_grupo', 'Datos locales eliminados.', 'info');
                 await inicializarVistaPagoGrupal();
             }
         };
     }
 
-    // --- 2. SI NO HAY INTERNET ---
+    // 2. SI NO HAY INTERNET
     if (!navigator.onLine) {
         showStatus('status_pago_grupo', 'Modo Offline. Solo datos guardados.', 'warning');
         if(cardSelector) cardSelector.classList.add('hidden');
@@ -3124,7 +3124,7 @@ async function inicializarVistaPagoGrupal() {
         return;
     }
 
-    // --- 3. LÓGICA ONLINE (CARGAR SELECTORES) ---
+    // 3. LÓGICA ONLINE (CARGAR SELECTORES)
     if (cardSelector) {
         cardSelector.classList.remove('hidden');
         cardSelector.style.display = 'block'; 
@@ -3158,61 +3158,92 @@ async function inicializarVistaPagoGrupal() {
             return;
         }
 
-        // --- CORRECCIÓN: Evento directo en el ícono ---
+        // --- CORRECCIÓN: BOTÓN "TODAS" ALINEADO Y FUNCIONAL ---
         const allDiv = document.createElement('div');
         allDiv.className = 'select-all-container';
-        // Agregamos un ID único al icono para referenciarlo si es necesario, 
-        // pero la clave aquí es el onclick inline que fuerza el click en el input asociado.
+        
+        // Usamos la misma clase 'poblacion-select-card' para mantener el estilo consistente
+        // y Flexbox para alinear texto e ícono perfectamente
         allDiv.innerHTML = `
-            <div class="custom-check-wrapper" style="width:100%; justify-content: space-between; padding: 10px; cursor: pointer;" 
-                 onclick="document.getElementById('check-all-poblaciones').click()">
-                <span style="font-weight:bold; color:var(--primary);">TODAS LAS POBLACIONES</span>
+            <div id="btn-toggle-all" class="poblacion-select-card selected" 
+                 style="cursor: pointer; display: flex; justify-content: space-between; align-items: center; width: 100%; padding: 15px; margin-bottom: 10px;">
                 
-                <div style="position: relative; display: inline-block;">
-                    <input type="checkbox" id="check-all-poblaciones" checked 
-                           style="width: 20px; height: 20px; cursor: pointer;"
-                           onclick="event.stopPropagation()"> <i class="fas fa-check-circle custom-check-icon" 
-                       style="position: absolute; right: 25px; top: 0; pointer-events: none; font-size: 1.4rem;"></i>
-                </div>
-            </div>`;
+                <span style="font-weight:bold; font-size: 1rem; color:var(--primary);">TODAS LAS POBLACIONES</span>
+                
+                <input type="checkbox" id="check-all-poblaciones" checked style="display:none;"> 
+                
+                <i id="icon-check-all" class="fas fa-check-circle" style="font-size: 1.4rem; color: #fff;"></i>
+            </div>
+        `;
         containerChecks.appendChild(allDiv);
 
+        // Grid de poblaciones individuales
         const gridDiv = document.createElement('div');
         gridDiv.className = 'poblacion-selector-grid';
+        
         poblaciones.forEach(pob => {
             const label = document.createElement('label');
             label.className = 'poblacion-select-card selected';
-            // Usamos la misma técnica de estructura simple para los items individuales
+            label.style.display = 'flex';
+            label.style.justifyContent = 'space-between';
+            label.style.alignItems = 'center';
+            
             label.innerHTML = `
-                <input type="checkbox" class="poblacion-check" value="${pob.nombre}" checked> 
+                <input type="checkbox" class="poblacion-check" value="${pob.nombre}" checked style="display:none;"> 
                 <span class="poblacion-name">${pob.nombre}</span> 
                 <i class="fas fa-check-circle check-icon"></i>`;
             
-            label.querySelector('input').addEventListener('change', function() {
-                this.checked ? label.classList.add('selected') : label.classList.remove('selected');
+            // Listener individual
+            const checkbox = label.querySelector('input');
+            label.addEventListener('click', function(e) {
+                // Evitamos doble trigger si se hace click directo al input (aunque está oculto)
+                if (e.target !== checkbox) {
+                    checkbox.checked = !checkbox.checked;
+                }
+                if(checkbox.checked) label.classList.add('selected');
+                else label.classList.remove('selected');
                 
+                // Actualizar estado del botón "Todas"
                 const allChecks = document.querySelectorAll('.poblacion-check');
                 const allChecked = Array.from(allChecks).every(c => c.checked);
-                const checkAll = document.getElementById('check-all-poblaciones');
-                if(checkAll) checkAll.checked = allChecked;
+                
+                const checkAllInput = document.getElementById('check-all-poblaciones');
+                const btnAll = document.getElementById('btn-toggle-all');
+                
+                if(checkAllInput && btnAll) {
+                    checkAllInput.checked = allChecked;
+                    if(allChecked) btnAll.classList.add('selected');
+                    else btnAll.classList.remove('selected');
+                }
             });
             gridDiv.appendChild(label);
         });
         containerChecks.appendChild(gridDiv);
 
-        // Listener del "Select All"
-        const checkAllEl = document.getElementById('check-all-poblaciones');
-        if (checkAllEl) {
-            checkAllEl.addEventListener('change', function(e) {
-                const isChecked = e.target.checked;
-                // Sincronizar visualmente si se hizo click directo
-                const wrapper = this.closest('.custom-check-wrapper');
-                
+        // --- LÓGICA DEL BOTÓN "TODAS" ---
+        const btnToggleAll = document.getElementById('btn-toggle-all');
+        const checkAllInput = document.getElementById('check-all-poblaciones');
+
+        if (btnToggleAll && checkAllInput) {
+            btnToggleAll.addEventListener('click', function() {
+                // 1. Cambiar estado del input oculto
+                checkAllInput.checked = !checkAllInput.checked;
+                const isChecked = checkAllInput.checked;
+
+                // 2. Cambiar estilo visual del botón principal
+                if (isChecked) btnToggleAll.classList.add('selected');
+                else btnToggleAll.classList.remove('selected');
+
+                // 3. Propagar a todos los hijos
                 document.querySelectorAll('.poblacion-select-card').forEach(card => {
-                    const input = card.querySelector('input');
-                    if (input) {
-                        input.checked = isChecked;
-                        isChecked ? card.classList.add('selected') : card.classList.remove('selected');
+                    // Ignoramos el botón "Todas" para no hacer bucle, buscamos los hijos del grid
+                    if (card.id !== 'btn-toggle-all') {
+                        const input = card.querySelector('input');
+                        if (input) {
+                            input.checked = isChecked;
+                            if (isChecked) card.classList.add('selected');
+                            else card.classList.remove('selected');
+                        }
                     }
                 });
             });
@@ -7507,6 +7538,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
