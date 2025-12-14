@@ -2614,7 +2614,7 @@ async function handleCreditForm(e) {
     // 2. Preparar datos
     const creditoData = {
         curpCliente: clienteParaCredito.curp,
-        office: clienteParaCredito.office, // <--- DATO CRÍTICO: Oficina del cliente
+        office: clienteParaCredito.office, // <--- DATO CRÍTICO
         tipo: document.getElementById('tipo_colocacion').value,
         monto: parseFloat(document.getElementById('monto_colocacion').value),
         plazo: parseInt(document.getElementById('plazo_colocacion').value),
@@ -2625,7 +2625,7 @@ async function handleCreditForm(e) {
     // Cálculos financieros
     let interesRate = 0;
     if (creditoData.plazo === 14) interesRate = 0.40;
-    else if (creditoData.plazo === 13) interesRate = 0.30; // Regla 13 semanas (30%)
+    else if (creditoData.plazo === 13) interesRate = 0.30; 
     else if (creditoData.plazo === 10) interesRate = 0.00;
 
     creditoData.montoTotal = parseFloat((creditoData.monto * (1 + interesRate)).toFixed(2));
@@ -2648,39 +2648,66 @@ async function handleCreditForm(e) {
         curpAvalInput.classList.remove('input-error');
     }
 
-    showButtonLoading(submitButton, true, 'Generando...');
-    showFixedProgress(50, 'Validando aval...');
-    statusColocacion.innerHTML = 'Validando aval y generando crédito...';
+    // Feedback Visual Inicial
+    showButtonLoading(submitButton, true, 'Procesando...');
+    showFixedProgress(30, 'Verificando aval...');
+    statusColocacion.innerHTML = 'Validando datos...';
     statusColocacion.className = 'status-message status-info';
 
     try {
-        // 4. VERIFICACIÓN DE AVAL (CORREGIDA)
-        // Ahora pasamos explícitamente 'creditoData.office'
+        // 4. VERIFICACIÓN DE AVAL
+        // Nota: database.verificarElegibilidadAval ya debe ser híbrida (caché + red)
         const checkAval = await database.verificarElegibilidadAval(creditoData.curpAval, creditoData.office);
         
         if (!checkAval.elegible) {
             throw new Error(`Problema con el Aval: ${checkAval.message}`);
         }
 
-        // 5. Crear Crédito
-        showFixedProgress(70, 'Guardando crédito...');
-        const resultado = await database.agregarCredito(creditoData, currentUser.email);
+        // 5. GENERAR CRÉDITO
+        showFixedProgress(60, 'Generando folio...');
+        
+        // ¡CAMBIO CRÍTICO AQUÍ! 
+        // Pasamos currentUserData como 3er argumento para obtener el "agentCode"
+        const resultado = await database.agregarCredito(
+            creditoData, 
+            currentUserData.email, 
+            currentUserData
+        );
 
         if (resultado.success) {
-            showFixedProgress(100, 'Crédito generado');
-            let successMessage = `¡Crédito generado exitosamente! ID: ${resultado.data.historicalIdCredito || resultado.data.id}`;
+            showFixedProgress(100, '¡Completado!');
             
-            if (!isOnline) {
-                successMessage += ' (Guardado localmente).';
-            }
-            showStatus('status_colocacion', successMessage, 'success');
+            const folio = resultado.data.historicalIdCredito;
+            let mensajeFinal = '';
 
-            // Limpieza
+            // Mensaje diferenciado (Offline vs Online)
+            if (resultado.offline) {
+                mensajeFinal = `✅ CRÉDITO GUARDADO (OFFLINE)\n\n🆔 FOLIO ASIGNADO: ${folio}\n\nEntrégalo al cliente. Los datos se subirán automáticamente al recuperar conexión.`;
+            } else {
+                mensajeFinal = `✅ CRÉDITO GENERADO EXITOSAMENTE\n\n🆔 FOLIO: ${folio}`;
+            }
+
+            // Usamos ALERT para obligar al usuario a leer el folio antes de limpiar
+            alert(mensajeFinal);
+            
+            showStatus('status_colocacion', `Éxito. Folio: ${folio}`, 'success');
+
+            // Limpieza y Cierre
             e.target.reset();
+            
+            // Ocultar formulario o regresar al menú
             document.getElementById('form-colocacion').classList.add('hidden');
+            
+            // Limpiar variables temporales
             document.getElementById('curp_colocacion').value = '';
             document.getElementById('nombre_colocacion').value = '';
             clienteParaCredito = null;
+
+            // Recargar vista de gestión para ver el nuevo crédito en la lista
+            // (Si tienes una vista de lista de clientes/créditos, la llamamos aquí)
+            if (typeof showView === 'function') {
+                showView('view-gestion-clientes'); 
+            }
 
         } else {
             throw new Error(resultado.message);
@@ -2690,9 +2717,10 @@ async function handleCreditForm(e) {
         console.error("Error en handleCreditForm:", error);
         showFixedProgress(100, 'Error');
         showStatus('status_colocacion', `Error: ${error.message}`, 'error');
+        alert(`❌ No se pudo generar el crédito:\n${error.message}`);
     } finally {
         showButtonLoading(submitButton, false);
-        setTimeout(hideFixedProgress, 2000);
+        setTimeout(hideFixedProgress, 1000);
     }
 }
 
@@ -7657,6 +7685,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
