@@ -7540,10 +7540,54 @@ function setupEventListeners() {
     btnGenerarCorte.addEventListener('click', loadHojaCorte);
 
     }
+
+    // LISTENER botón buscar Cliente Offline
+    const btnSyncOffline = document.getElementById('btn-sync-offline');
+
+    if (btnSyncOffline) {
+        btnSyncOffline.addEventListener('click', async () => {
+        // 1. Validar conexión
+        if (!navigator.onLine) {
+            alert("⚠️ Necesitas internet para descargar los datos por primera vez.");
+            return;
+        }
+
+        if (!currentUserData) {
+            alert("⚠️ Espera a que cargue tu sesión.");
+            return;
+        }
+
+        // 2. Feedback Visual (Bloquear pantalla)
+        showProcessingOverlay(true, "📥 Descargando cartera de clientes y créditos...\nEsto puede tardar unos segundos.");
+
+        try {
+            // 3. Ejecutar Sincronización
+            const resultado = await database.sincronizarDatosComercial(
+                currentUserData.office, 
+                currentUserData.ruta
+            );
+
+            if (resultado.success) {
+                // Éxito
+                alert(`✅ ¡Listo! Datos sincronizados.\n\n${resultado.total} registros guardados en tu dispositivo.\n\nYa puedes apagar tus datos y trabajar: Registrar Clientes, Cobrar y Ver Gestión.`);
+            } else {
+                // Error controlado
+                alert(`❌ Error al sincronizar: ${resultado.message}`);
+            }
+
+        } catch (error) {
+            console.error(error);
+            alert("❌ Ocurrió un error de conexión inesperado.");
+        } finally {
+            showProcessingOverlay(false);
+        }
+    });
+}
     
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
