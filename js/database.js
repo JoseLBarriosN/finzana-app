@@ -232,10 +232,27 @@ const database = {
                 query = query.where('office', '==', userOffice);
             }
 
-            const snapshot = await query.limit(1).get();
-            if (snapshot.empty) return null;
-            const doc = snapshot.docs[0];
-            return { id: doc.id, ...doc.data() };
+            // 1. INTENTAR CACHÉ PRIMERO (Velocidad + Offline)
+            // Esto permite encontrar al cliente que acabas de registrar hace 10 segundos
+            try {
+                const docCache = await query.get({ source: 'cache' });
+                if (!docCache.empty) {
+                    console.log("📍 Cliente encontrado en memoria local.");
+                    const doc = docCache.docs[0];
+                    return { id: doc.id, ...doc.data() };
+                }
+            } catch (e) { /* Si falla caché, ignoramos */ }
+
+            // 2. INTENTAR SERVIDOR (Solo si hay internet y no estaba en caché)
+            if (navigator.onLine) {
+                const snapshot = await query.get({ source: 'server' });
+                if (!snapshot.empty) {
+                    const doc = snapshot.docs[0];
+                    return { id: doc.id, ...doc.data() };
+                }
+            }
+
+            return null; // No encontrado
         } catch (error) {
             console.error("Error buscando cliente por CURP:", error);
             return null;
@@ -2099,6 +2116,81 @@ const database = {
         }
     },
 
+    // ============================================================
+    // ★ SINCRONIZACIÓN MASIVA PARA MODO OFFLINE
+    // ============================================================
+    sincronizarDatosComercial: async (userOffice, userRuta) => {
+        // Validación de seguridad
+        if (!userOffice || !userRuta) {
+            return { success: false, message: "Usuario sin oficina o ruta asignada." };
+        }
+
+        try {
+            console.log(`📥 [SYNC] Iniciando descarga para: ${userOffice} - Ruta ${userRuta}`);
+            
+            const promesas = [];
+
+            // 1. CONFIGURACIÓN (Rutas y Poblaciones)
+            // Necesario para los dropdowns de registro de clientes
+            promesas.push(
+                db.collection('poblaciones')
+                  .where('office', '==', userOffice)
+                  .where('ruta', '==', userRuta)
+                  .get() // .get() fuerza la descarga y guardado en caché
+            );
+
+            // 2. MIS CLIENTES (Para Gestión y Búsqueda)
+            // Descargamos TODOS los clientes de esa ruta
+            promesas.push(
+                db.collection('clientes')
+                  .where('office', '==', userOffice)
+                  .where('ruta', '==', userRuta)
+                  .get()
+            );
+
+            // 3. CRÉDITOS ACTIVOS (Para Cobranza y Renovación)
+            // Solo descargamos los que NO están liquidados
+            promesas.push(
+                db.collection('creditos')
+                  .where('office', '==', userOffice)
+                  .where('estado', '!=', 'liquidado')
+                  // Idealmente filtrar también por ruta si tienes el campo en créditos
+                  // .where('ruta', '==', userRuta) 
+                  .get()
+            );
+
+            // 4. HISTORIAL RECIENTE (Opcional, últimos 7 días de pagos para referencia)
+            // Esto ayuda a que no se sienta vacía la gestión de clientes
+            /*
+            const fechaLimite = new Date();
+            fechaLimite.setDate(fechaLimite.getDate() - 7);
+            const fechaISO = fechaLimite.toISOString();
+            
+            promesas.push(
+                db.collection('pagos')
+                  .where('office', '==', userOffice)
+                  .where('fecha', '>=', fechaISO)
+                  .get()
+            );
+            */
+
+            // EJECUTAR TODO EN PARALELO
+            const snapshots = await Promise.all(promesas);
+            
+            // Calcular estadísticas
+            let totalDocs = 0;
+            snapshots.forEach(snap => totalDocs += snap.size);
+
+            console.log(`✅ [SYNC] Completo. ${totalDocs} documentos listos para offline.`);
+            
+            return { success: true, total: totalDocs };
+
+        } catch (error) {
+            console.error("❌ Error en sincronización:", error);
+            return { success: false, message: error.message };
+        }
+    },
+
     // Helper para cargar pagos de un crédito específico (Lazy Loading)
     obtenerPagosParaReporte: async (historicalId, office) => {
         const snap = await db.collection('pagos')
@@ -2110,6 +2202,7 @@ const database = {
     },
 
 };
+
 
 
 
