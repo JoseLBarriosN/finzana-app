@@ -355,6 +355,7 @@ function aplicarPermisosUI(role) {
         return;
     }
     
+    // 1. CONFIGURACIÓN DE VISTAS ESTÁNDAR
     const permisosMenu = {
         'Super Admin': ['all'],
         'Gerencia': ['all'],
@@ -373,22 +374,49 @@ function aplicarPermisosUI(role) {
             'view-pago-grupo',
             'view-registrar-gasto',
             'view-hoja-corte'
-            
         ],
         'default': []
     };
 
     const userRoleKey = role === 'admin' ? 'Administrador' : role;
     const userPerms = permisosMenu[userRoleKey] || permisosMenu['default'];
+
+    // 2. APLICACIÓN DE VISIBILIDAD (Con soporte para Botones Especiales)
     document.querySelectorAll('.menu-card').forEach(card => {
         const view = card.getAttribute('data-view');
-        if (userPerms.includes('all') || userPerms.includes(view)) {
-            card.style.display = 'block';
-        } else {
-            card.style.display = 'none';
+        const cardId = card.id; // <--- NUEVO: Capturamos el ID del botón
+
+        // A. Lógica Original (Basada en data-view)
+        let visible = false;
+        if (userPerms.includes('all') || (view && userPerms.includes(view))) {
+            visible = true;
         }
+
+        // B. Lógica para Botones Especiales (Por ID)
+        
+        // --- Botón MODO OFFLINE ---
+        // Debe ser visible para Comercial y también para Admins/Super (para pruebas)
+        if (cardId === 'btn-sync-offline-menu') {
+            if (['Área comercial', 'Administrador', 'Super Admin', 'Gerencia'].includes(userRoleKey)) {
+                visible = true;
+            }
+        }
+
+        // --- Botón YUBIKEY TEST ---
+        // Debe ser visible SOLO para Super Admin y Gerencia
+        if (cardId === 'btn-yubikey-test') {
+            if (['Super Admin', 'Gerencia'].includes(userRoleKey)) {
+                visible = true;
+            } else {
+                visible = false; // Ocultar forzosamente a otros (ej. Administrador)
+            }
+        }
+
+        // Aplicar estilo final
+        card.style.display = visible ? 'block' : 'none';
     });
 
+    // 3. LÓGICA DE FILTROS DE OFICINA (SE MANTIENE IGUAL)
     const userOffice = currentUserData.office;
     const filtrosOffice = [
         '#sucursal_filtro', '#sucursal_filtro_reporte', '#grafico_sucursal',
@@ -440,6 +468,7 @@ function aplicarPermisosUI(role) {
          }
     }
 
+    // 4. LÓGICA DE CAMPOS ESPECÍFICOS (CURP, Exportar)
     const curpInput = document.getElementById('curp_cliente');
     if (curpInput) {
         const puedeEditarCURP = ['Super Admin', 'Gerencia', 'Administrador'].includes(userRoleKey);
@@ -7628,6 +7657,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
