@@ -7093,11 +7093,52 @@ function togglePoblacionGroup(grupoId) {
     }
 }
 
+// ==================================================================== //
+        //** MANEJO DEL BOTÓN "MODO OFFLINE" (SINCRONIZACIÓN) **//
+// ==================================================================== //
+async function handleSincronizacionOffline() {
+    // 1. Validaciones básicas
+    if (!navigator.onLine) {
+        alert("⚠️ Necesitas conexión a internet para descargar los datos.");
+        return;
+    }
 
-// =============================================
-// REPORTE MULTICRÉDITOS (HISTÓRICO)
-// =============================================
+    if (!currentUserData) {
+        alert("⚠️ Espera a que cargue tu sesión de usuario.");
+        return;
+    }
 
+    // 2. Confirmación visual
+    if(!confirm("¿Deseas descargar los datos para trabajar sin internet?\n\nEsto descargará clientes, créditos y configuraciones de tu ruta.")) {
+        return;
+    }
+
+    showProcessingOverlay(true, "📥 Descargando cartera de clientes...\nPor favor espera.");
+
+    try {
+        // 3. Llamada a la base de datos
+        const resultado = await database.sincronizarDatosComercial(
+            currentUserData.office, 
+            currentUserData.ruta
+        );
+
+        if (resultado.success) {
+            alert(`✅ ¡Sincronización Exitosa!\n\nSe descargaron ${resultado.total} registros.\n\nYa puedes desconectarte y:\n- Registrar nuevos clientes\n- Generar créditos\n- Gestionar cobranza`);
+        } else {
+            alert(`❌ Error al sincronizar: ${resultado.message}`);
+        }
+
+    } catch (error) {
+        console.error(error);
+        alert("❌ Ocurrió un error inesperado de conexión.");
+    } finally {
+        showProcessingOverlay(false);
+    }
+}
+
+// ================================================ //
+    //** REPORTE MULTICRÉDITOS (HISTÓRICO) **//
+// ================================================ //
 async function inicializarVistaMulticreditos() {
     // 1. RESTRICCIÓN DE SEGURIDAD
     if (currentUserData.role === 'Área comercial') {
@@ -7587,6 +7628,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
