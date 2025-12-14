@@ -227,32 +227,45 @@ const database = {
     // CUSCAR CLIENTE POR CURP
     buscarClientePorCURP: async (curp, userOffice = null) => {
         try {
+            console.log(`🔎 Buscando CURP: ${curp} (Oficina: ${userOffice || 'Cualquiera'})`);
+            
+            // Construimos la consulta base
             let query = db.collection('clientes').where('curp', '==', curp.toUpperCase());
+
             if (userOffice && userOffice !== 'AMBAS') {
                 query = query.where('office', '==', userOffice);
             }
 
-            // A. INTENTAR CACHÉ PRIMERO (Vital para encontrar al que acabas de registrar)
+            // 1. INTENTO 1: CACHÉ LOCAL (Súper Rápido y Offline)
+            // Esto encuentra los clientes descargados por el botón "Modo Offline"
+            // Y TAMBIÉN los que acabas de registrar hace un segundo.
             try {
                 const docCache = await query.get({ source: 'cache' });
                 if (!docCache.empty) {
-                    console.log("📍 Cliente encontrado en local.");
+                    console.log("📍 Cliente encontrado en CACHÉ LOCAL.");
                     const doc = docCache.docs[0];
                     return { id: doc.id, ...doc.data() };
                 }
-            } catch (e) {}
+            } catch (e) {
+                // Si falla la caché o está vacía, no hacemos nada, pasamos al siguiente paso
+                console.log("... No estaba en caché.");
+            }
 
-            // B. INTENTAR SERVIDOR (Si hay internet)
+            // 2. INTENTO 2: SERVIDOR (Solo si hay internet)
             if (navigator.onLine) {
-                const snapshot = await query.get({ source: 'server' });
-                if (!snapshot.empty) {
-                    const doc = snapshot.docs[0];
+                console.log("🌐 Buscando en SERVIDOR...");
+                const docServer = await query.get({ source: 'server' });
+                if (!docServer.empty) {
+                    const doc = docServer.docs[0];
                     return { id: doc.id, ...doc.data() };
                 }
+            } else {
+                console.warn("⚠️ Sin internet y no encontrado en caché.");
             }
-            return null;
+
+            return null; // No encontrado en ningún lado
         } catch (error) {
-            console.error("Error buscarClientePorCURP:", error);
+            console.error("❌ Error buscando cliente:", error);
             return null;
         }
     },
@@ -289,23 +302,56 @@ const database = {
 
     async agregarCliente(clienteData, userEmail) {
         try {
-            const existingCliente = await database.buscarClientePorCURP(clienteData.curp);
-            if (existingCliente) {
-                return { success: false, message: 'El cliente con esta CURP ya existe.' };
+            // 1. Validar duplicados (Usando búsqueda híbrida)
+            // Esto busca en local primero para ver si ya lo registraste hace 5 min
+            const existe = await this.buscarClientePorCURP(clienteData.curp, clienteData.office);
+            if (existe) {
+                return { success: false, message: 'El cliente ya existe (CURP duplicada).' };
             }
 
             const fechaLocal = database.obtenerFechaLocalISO();
             
+            // 2. Preparar el objeto
             const nuevoCliente = {
                 ...clienteData,
                 fechaRegistro: fechaLocal,
                 fechaCreacion: fechaLocal,
                 registradoPor: userEmail,
-                fechaUltimaModificacion: fechaLocal
+                fechaUltimaModificacion: fechaLocal,
+                // Marca para saber que se creó sin internet (opcional)
+                origen: navigator.onLine ? 'online' : 'offline_pending' 
             };
 
-            const docRef = await db.collection('clientes').add(nuevoCliente);
-            return { success: true, id: docRef.id };
+            // 3. Generar ID y Referencia
+            // IMPORTANTE: Usamos .doc() vacío para obtener un ID válido inmediatamente
+            // sin tener que ir al servidor.
+            const docRef = db.collection('clientes').doc();
+            
+            // 4. Guardar
+            if (!navigator.onLine) {
+                // --- MODO OFFLINE ---
+                console.log("📡 Guardando cliente en modo OFFLINE...");
+                
+                // Escribimos en la caché local sin esperar confirmación del servidor (para que no se trabe)
+                docRef.set(nuevoCliente); 
+                
+                return { 
+                    success: true, 
+                    id: docRef.id, 
+                    message: "Guardado localmente (se sincronizará al conectar)." 
+                };
+            } else {
+                // --- MODO ONLINE ---
+                // Aquí sí esperamos confirmación para asegurar integridad
+                await docRef.set(nuevoCliente);
+                
+                return { 
+                    success: true, 
+                    id: docRef.id, 
+                    message: "Cliente registrado correctamente." 
+                };
+            }
+
         } catch (error) {
             console.error("Error agregando cliente:", error);
             return { success: false, message: error.message };
@@ -2296,6 +2342,7 @@ const database = {
     },
 
 };
+
 
 
 
