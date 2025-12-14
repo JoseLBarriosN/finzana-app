@@ -2283,17 +2283,15 @@ const database = {
             promesas.push(db.collection('poblaciones').where('office', '==', userOffice).get());
             promesas.push(db.collection('rutas').where('office', '==', userOffice).get());
             
-            // B. Mis Clientes (SOLO DE MI RUTA - Para ahorrar memoria)
+            // B. Mis Clientes (Solo mi ruta para ahorrar memoria)
             promesas.push(
                 db.collection('clientes')
                   .where('office', '==', userOffice)
-                  .where('ruta', '==', userRuta) // <--- Filtro mantenido
+                  .where('ruta', '==', userRuta)
                   .get()
             );
 
-            // C. Créditos Activos (De mi oficina, para evitar duplicados globales)
-            // Aquí sí conviene traer los de la oficina para validar 'tieneCreditoActivo', 
-            // pero si son demasiados, podrías filtrar también por ruta.
+            // C. Créditos Activos (De mi oficina)
             promesas.push(
                 db.collection('creditos')
                   .where('office', '==', userOffice)
@@ -2301,27 +2299,34 @@ const database = {
                   .get()
             );
 
-            // --- D. CALIBRAR CONTADOR LOCAL DEL AGENTE ---
-            // Buscamos el último crédito que YO generé para saber en qué número voy
+            // --- D. CALIBRAR CONTADOR LOCAL DEL AGENTE (CORREGIDO) ---
+            // El error estaba aquí: faltaba filtrar por 'office'
             if (auth.currentUser) {
                 const userId = auth.currentUser.uid;
-                const ultimoCreditoQuery = await db.collection('creditos')
-                    .where('creadoPorId', '==', userId)
-                    .orderBy('fechaCreacion', 'desc')
-                    .limit(1)
-                    .get();
+                
+                // Envolvemos en try-catch específico por si falta el índice compuesto
+                try {
+                    const ultimoCreditoQuery = await db.collection('creditos')
+                        .where('office', '==', userOffice) // <--- ¡FILTRO AGREGADO! VITAL PARA PERMISOS
+                        .where('creadoPorId', '==', userId)
+                        .orderBy('fechaCreacion', 'desc')
+                        .limit(1)
+                        .get();
 
-                if (!ultimoCreditoQuery.empty) {
-                    const datosUltimo = ultimoCreditoQuery.docs[0].data();
-                    // Si encontramos un consecutivo previo, actualizamos la memoria local
-                    if (datosUltimo.consecutivoAgente) {
-                        localStorage.setItem('local_credit_counter', datosUltimo.consecutivoAgente);
-                        console.log(`🔢 Contador local calibrado en: ${datosUltimo.consecutivoAgente}`);
+                    if (!ultimoCreditoQuery.empty) {
+                        const datosUltimo = ultimoCreditoQuery.docs[0].data();
+                        if (datosUltimo.consecutivoAgente) {
+                            localStorage.setItem('local_credit_counter', datosUltimo.consecutivoAgente);
+                            console.log(`🔢 Contador local calibrado en: ${datosUltimo.consecutivoAgente}`);
+                        }
                     }
+                } catch (e) {
+                    console.warn("⚠️ No se pudo calibrar contador (posible falta de índice compuesto):", e);
+                    // No lanzamos error para no detener la descarga de clientes/rutas
                 }
             }
 
-            // Ejecutar descarga
+            // Ejecutar descarga masiva
             const snapshots = await Promise.all(promesas);
             
             let totalDocs = 0;
@@ -2373,6 +2378,7 @@ const database = {
     },
 
 };
+
 
 
 
