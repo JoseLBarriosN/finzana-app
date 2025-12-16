@@ -5000,19 +5000,33 @@ async function eliminarRuta(id, nombre, office) {
 async function showView(viewId) {
     console.log(`🚀 Navegando a: ${viewId}`);
     
-    document.querySelectorAll('.view').forEach(view => view.classList.add('hidden'));
+    // 1. Ocultar todas las vistas
+    document.querySelectorAll('.view').forEach(view => {
+        view.classList.add('hidden');
+        view.style.display = 'none'; // Forzar ocultamiento visual
+    });
     
+    // 2. Mostrar la vista objetivo
     const targetView = document.getElementById(viewId);
     if (!targetView) {
         console.error(`❌ Error: No existe la vista con ID "${viewId}"`);
         const menu = document.getElementById('view-main-menu');
-        if (menu) menu.classList.remove('hidden');
+        if (menu) {
+            menu.classList.remove('hidden');
+            menu.style.display = 'block';
+        }
         return;
     }
+    
     targetView.classList.remove('hidden');
+    targetView.style.display = 'block';
+    
+    // Scroll al inicio para mejorar UX
+    window.scrollTo(0, 0);
+
     console.log(`✅ Vista ${viewId} mostrada.`);
     
-    // --- HELPER LOCAL PARA OBTENER FECHA "HOY" EN ZONA HORARIA LOCAL ---
+    // --- HELPER LOCAL PARA OBTENER FECHA "HOY" ---
     const obtenerFechaLocalYMD = () => {
         const ahora = new Date();
         const offset = ahora.getTimezoneOffset() * 60000;
@@ -5022,6 +5036,27 @@ async function showView(viewId) {
 
     try {
         switch(viewId) {
+            
+            // --- NUEVO: GESTIÓN DE CLIENTES (CARGA EN MEMORIA) ---
+            case 'view-gestion-clientes':
+                // 1. Inicialización estándar
+                inicializarVistaGestionClientes();
+                
+                // 2. Filtros de Oficina (si aplica)
+                const officeCli = (currentUserData?.office && currentUserData?.office !== 'AMBAS') ? currentUserData.office : '';
+                if(typeof _actualizarDropdownGrupo === 'function') {
+                    _actualizarDropdownGrupo('grupo_filtro', officeCli, 'Todos');
+                }
+
+                // 3. CARGA DE DATOS PARA BÚSQUEDA OFFLINE (VITAL)
+                if (typeof cargarDatosGestionClientes === 'function') {
+                    // Esto lee el disco y llena la variable global 'carteraGlobalCache'
+                    await cargarDatosGestionClientes(); 
+                } else {
+                    console.warn("⚠️ Falta la función cargarDatosGestionClientes en app.js");
+                }
+                break;
+
             case 'view-configuracion':
                 await loadConfiguracion();
                 break;
@@ -5039,14 +5074,6 @@ async function showView(viewId) {
                 if(typeof popularDropdown === 'function') {
                     const rutasRep = (await database.obtenerRutas(officeAdv)).map(r => r.nombre).sort();
                     popularDropdown('ruta_filtro_reporte', rutasRep, 'Todas');
-                }
-                break;
-                
-            case 'view-gestion-clientes':
-                inicializarVistaGestionClientes();
-                const officeCli = (currentUserData?.office && currentUserData?.office !== 'AMBAS') ? currentUserData.office : '';
-                if(typeof _actualizarDropdownGrupo === 'function') {
-                    _actualizarDropdownGrupo('grupo_filtro', officeCli, 'Todos');
                 }
                 break;
                 
@@ -5071,14 +5098,12 @@ async function showView(viewId) {
                 break;
 
             case 'view-hoja-corte':
-                // Delegamos la configuración de fecha, limpieza y carga de agentes (si es admin) a la nueva función
                 await inicializarVistaHojaCorte();
                 break;
 
             case 'view-reportes-graficos':
                 if(document.getElementById('grafico_fecha_inicio')) {
-                    // --- CORRECCIÓN AQUÍ TAMBIÉN ---
-                    // Calcular "Hoy" y "Hace un mes" usando zona horaria local
+                    // Calcular fechas locales
                     const hoyDate = new Date();
                     const offset = hoyDate.getTimezoneOffset() * 60000;
                     const hoyLocal = new Date(hoyDate.getTime() - offset);
@@ -5133,18 +5158,18 @@ async function showView(viewId) {
             case 'view-usuarios':
                 inicializarVistaUsuarios();
                 break;
-                
-            default:
-                break;
 
             case 'view-multicreditos':
-                // PROTECCIÓN ROL (Doble check)
+                // PROTECCIÓN ROL
                 if (currentUserData.role === 'Área comercial') {
                     alert("No tienes permiso para ver esta sección.");
                     showView('view-main-menu');
                     return;
                 }
                 inicializarVistaMulticreditos();
+                break;
+                
+            default:
                 break;
         }
     } catch (error) {
@@ -7831,3 +7856,4 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
