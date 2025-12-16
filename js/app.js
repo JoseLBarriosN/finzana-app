@@ -24,6 +24,7 @@ let directionsService = null;
 let directionsRenderer = null;
 let configSistema = { oferta13Semanas: false };
 let waypointsComisionistas = [];
+let carteraGlobalCache = [];
 
 // Función Callback que Google Maps llama cuando carga
 window.initMap = function() {
@@ -7223,6 +7224,9 @@ async function inicializarVistaMulticreditos() {
     });
 }
 
+// ============================================ //
+    // ** GENERAR REPORTE MULTICREDITO** //
+// ============================================ //
 async function generarReporteMulticreditos(office) {
     const container = document.getElementById('multicreditos-resultados');
     container.innerHTML = '<div style="text-align:center; padding:20px;"><i class="fas fa-spinner fa-spin fa-2x"></i><p>Analizando historial completo...</p></div>';
@@ -7312,7 +7316,149 @@ async function generarReporteMulticreditos(office) {
     }
 }
 
-// Función global para cargar pagos al abrir el acordeón (Lazy Load)
+// =============================================================== //
+    // ** CARGA INICIAL AL ENTRAR A LA VISTA DE GESTIÓN ** //
+// =============================================================== //
+async function cargarDatosGestionClientes() {
+    if (!currentUserData) return;
+
+    // Mostrar spinner rápido
+    const tableBody = document.getElementById('tabla-clientes-body');
+    if(tableBody) tableBody.innerHTML = '<tr><td colspan="6" class="text-center"><i class="fas fa-sync fa-spin"></i> Cargando datos...</td></tr>';
+
+    // Llamamos a la función de database.js
+    // Esto lee el disco y llena la variable global
+    carteraGlobalCache = await database.obtenerCarteraLocalParaBusqueda(currentUserData.office);
+    
+    // Una vez cargados, aplicamos los filtros iniciales (muestra todo por defecto)
+    aplicarFiltrosMemoria(); 
+}
+
+// ================================= //
+    // ** MOTOR DE FILTRADO ** //
+// ================================= //
+function aplicarFiltrosMemoria() {
+    // A. Leer Inputs del HTML
+    const textoGeneral = document.getElementById('busqueda_general')?.value.toLowerCase().trim() || '';
+    const filtroGrupo = document.getElementById('filtro_grupo')?.value || 'todos';
+    const filtroEstado = document.getElementById('filtro_estado_credito')?.value || 'todos';
+    // Si tienes filtros de fecha:
+    // const fechaIni = document.getElementById('filtro_fecha_inicio')?.value;
+    // const fechaFin = document.getElementById('filtro_fecha_fin')?.value;
+
+    console.log(`🔍 Filtrando ${carteraGlobalCache.length} registros...`);
+
+    // B. Filtrar el Array Global
+    const resultados = carteraGlobalCache.filter(item => {
+        
+        // 1. Filtro de Texto (Busca en Nombre, CURP, Folio)
+        if (textoGeneral) {
+            const matchNombre = item.nombreBusqueda.includes(textoGeneral);
+            const matchCurp = item.curpBusqueda.includes(textoGeneral.toUpperCase());
+            const matchFolio = item.folioCredito.includes(textoGeneral); // Busca por ID de crédito
+            
+            if (!matchNombre && !matchCurp && !matchFolio) return false;
+        }
+
+        // 2. Filtro de Grupo / Población
+        if (filtroGrupo !== 'todos' && filtroGrupo !== '') {
+            // Comparación flexible (ignorando mayúsculas)
+            if (item.poblacionBusqueda !== filtroGrupo.toLowerCase()) return false;
+        }
+
+        // 3. Filtro de Estado de Crédito
+        if (filtroEstado !== 'todos') {
+            if (filtroEstado === 'sin_credito') {
+                if (item.tieneCredito) return false;
+            } else {
+                // Debe tener crédito Y coincidir el estado (ej: 'al corriente', 'atrasado')
+                if (!item.tieneCredito || item.estadoCredito !== filtroEstado) return false;
+            }
+        }
+
+        return true; // Pasó todos los filtros
+    });
+
+    // C. Ordenar resultados (Opcional: Alfabético)
+    resultados.sort((a, b) => a.nombreBusqueda.localeCompare(b.nombreBusqueda));
+
+    // D. Mandar a pintar la tabla
+    renderTablaClientes(resultados);
+}
+
+// ===================================== //
+    // ** RENDERIZADO DE TABLA ** //
+// ===================================== //
+function renderTablaClientes(listaDatos) {
+    const tbody = document.getElementById('tabla-clientes-body');
+    const contadorEl = document.getElementById('total-registros-clientes'); // Si tienes un contador
+    
+    if (!tbody) return;
+    tbody.innerHTML = ''; // Limpiar tabla
+
+    if (contadorEl) contadorEl.innerText = listaDatos.length;
+
+    if (listaDatos.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="6" class="text-center py-4 text-muted">
+                    <i class="fas fa-search me-2"></i> No se encontraron resultados
+                </td>
+            </tr>`;
+        return;
+    }
+
+    // Limitamos a mostrar 50 o 100 para no trabar el renderizado si hay miles
+    const limiteVisual = 100;
+    const datosVisibles = listaDatos.slice(0, limiteVisual);
+
+    datosVisibles.forEach(item => {
+        const c = item.cliente;
+        const cr = item.credito;
+        
+        // Determinar Badge de Estado
+        let estadoBadge = '<span class="badge bg-secondary">Sin Crédito</span>';
+        if (item.tieneCredito) {
+            let color = 'primary';
+            if (cr.estado === 'atrasado') color = 'danger';
+            if (cr.estado === 'liquidado') color = 'success';
+            estadoBadge = `<span class="badge bg-${color}">${cr.estado.toUpperCase()}</span>`;
+        }
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td>
+                <div class="fw-bold text-primary" style="cursor:pointer;" onclick="verDetalleCliente('${c.id}')">
+                    ${c.nombre}
+                </div>
+                <small class="text-muted d-block">${c.curp}</small>
+                ${item.folioCredito ? `<small class="text-info fw-bold"><i class="fas fa-receipt"></i> ${item.folioCredito}</small>` : ''}
+            </td>
+            <td>${c.poblacion_grupo || '-'}</td>
+            <td>${c.ruta || '-'}</td>
+            <td>${estadoBadge}</td>
+            <td class="text-end fw-bold">${item.saldo > 0 ? `$${item.saldo.toFixed(2)}` : '-'}</td>
+            <td class="text-center">
+                <button class="btn btn-sm btn-outline-primary" onclick="verDetalleCliente('${c.id}')">
+                    <i class="fas fa-eye"></i>
+                </button>
+            </td>
+        `;
+        tbody.appendChild(tr);
+    });
+
+    if (listaDatos.length > limiteVisual) {
+        const trInfo = document.createElement('tr');
+        trInfo.innerHTML = `<td colspan="6" class="text-center text-muted small">
+            Mostrando primeros ${limiteVisual} de ${listaDatos.length}. Refina tu búsqueda.
+        </td>`;
+        tbody.appendChild(trInfo);
+    }
+}
+
+// ================================================ //
+    // ** Función global para cargar pagos ** //
+// ================================================ //
 window.cargarPagosHist = async function(detailsId, historicalId, office) {
     const details = document.getElementById(detailsId);
     if (!details.open) return; // Solo cargar si se abre
@@ -7685,29 +7831,3 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
