@@ -2367,6 +2367,84 @@ const database = {
         }
     },
 
+    // ============================================================
+    // OBTENER CARTERA COMPLETA (PARA BÚSQUEDA AVANZADA OFFLINE)
+    // ============================================================
+    async obtenerCarteraLocalParaBusqueda(office) {
+        try {
+            console.log("📂 Cargando cartera local en memoria para búsqueda...");
+            
+            // 1. Obtener Clientes (Forzando lectura de CACHÉ)
+            // Traemos todos los de la oficina. Si quieres filtrar por ruta aquí también puedes, 
+            // pero traer toda la oficina permite buscar clientes de otros compañeros si es necesario.
+            const clientesSnap = await db.collection('clientes')
+                .where('office', '==', office)
+                .get({ source: 'cache' }); // <--- CLAVE: No usa internet
+
+            if (clientesSnap.empty) {
+                console.log("⚠️ No hay clientes en caché (¿Ya sincronizaste?).");
+                return [];
+            }
+
+            // 2. Obtener Créditos Activos (Forzando lectura de CACHÉ)
+            const creditosSnap = await db.collection('creditos')
+                .where('office', '==', office)
+                .where('estado', '!=', 'liquidado')
+                .get({ source: 'cache' });
+
+            // 3. Crear Mapa de Créditos para acceso rápido
+            // Diccionario: { "CURP_CLIENTE": {datos del crédito} }
+            const mapaCreditos = {};
+            creditosSnap.forEach(doc => {
+                const data = doc.data();
+                // Usamos la CURP como llave de enlace (o idCliente si lo tienes así)
+                if (data.curpCliente) {
+                    mapaCreditos[data.curpCliente] = { id: doc.id, ...data };
+                }
+            });
+
+            // 4. Combinar Datos (Flattening)
+            // Creamos una lista plana fácil de filtrar para Javascript
+            const carteraCompleta = [];
+            
+            clientesSnap.forEach(doc => {
+                const cliente = { id: doc.id, ...doc.data() };
+                const creditoActivo = mapaCreditos[cliente.curp] || null;
+
+                carteraCompleta.push({
+                    // Guardamos los objetos originales por si los necesitamos
+                    cliente: cliente,
+                    credito: creditoActivo, 
+                    
+                    // CAMPOS DE BÚSQUEDA (Pre-procesados para velocidad)
+                    // Convertimos todo a minúsculas/mayúsculas estándar
+                    nombreBusqueda: (cliente.nombre || '').toLowerCase(),
+                    curpBusqueda: (cliente.curp || '').toUpperCase(),
+                    poblacionBusqueda: (cliente.poblacion_grupo || '').toLowerCase(),
+                    rutaBusqueda: (cliente.ruta || '').toUpperCase(),
+                    
+                    // Datos del Crédito (si tiene)
+                    tieneCredito: !!creditoActivo,
+                    folioCredito: (creditoActivo ? (creditoActivo.historicalIdCredito || '') : ''),
+                    estadoCredito: (creditoActivo ? creditoActivo.estado : 'sin_credito'),
+                    fechaCredito: (creditoActivo ? creditoActivo.fechaCreacion : ''),
+                    
+                    // Datos Financieros
+                    saldo: (creditoActivo ? creditoActivo.saldo : 0),
+                    esComisionista: !!cliente.isComisionista
+                });
+            });
+
+            console.log(`✅ ${carteraCompleta.length} expedientes cargados en memoria RAM.`);
+            return carteraCompleta;
+
+        } catch (error) {
+            console.error("Error cargando cartera local:", error);
+            // Si falla (ej. caché corrupto), devolvemos array vacío para no romper la app
+            return [];
+        }
+    },
+
     // Helper para cargar pagos de un crédito específico (Lazy Loading)
     obtenerPagosParaReporte: async (historicalId, office) => {
         const snap = await db.collection('pagos')
@@ -2378,6 +2456,7 @@ const database = {
     },
 
 };
+
 
 
 
