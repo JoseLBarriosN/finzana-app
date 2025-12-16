@@ -3507,6 +3507,17 @@ function renderizarCobranzaRuta(data, container) {
 
     grupos.forEach(grupo => {
         const creditos = data[grupo];
+
+        // --- 🔽 NUEVO: ORDENAMIENTO POR ID (DESCENDENTE) 🔽 ---
+        // Esto asegura que el crédito más reciente aparezca arriba en cada población
+        creditos.sort((a, b) => {
+            const idA = (a.historicalIdCredito || '').toString();
+            const idB = (b.historicalIdCredito || '').toString();
+            // Comparación numérica para que "10" sea mayor que "2"
+            return idB.localeCompare(idA, undefined, { numeric: true });
+        });
+        // ------------------------------------------------------
+
         const grupoId = grupo.replace(/\s+/g, '_'); // ID único seguro
         
         html += `
@@ -7856,4 +7867,5 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
