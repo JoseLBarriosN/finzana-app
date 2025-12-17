@@ -2615,7 +2615,7 @@ async function handleCreditForm(e) {
     // 2. Preparar datos
     const creditoData = {
         curpCliente: clienteParaCredito.curp,
-        office: clienteParaCredito.office, // <--- DATO CRÍTICO
+        office: clienteParaCredito.office,
         tipo: document.getElementById('tipo_colocacion').value,
         monto: parseFloat(document.getElementById('monto_colocacion').value),
         plazo: parseInt(document.getElementById('plazo_colocacion').value),
@@ -2657,7 +2657,6 @@ async function handleCreditForm(e) {
 
     try {
         // 4. VERIFICACIÓN DE AVAL
-        // Nota: database.verificarElegibilidadAval ya debe ser híbrida (caché + red)
         const checkAval = await database.verificarElegibilidadAval(creditoData.curpAval, creditoData.office);
         
         if (!checkAval.elegible) {
@@ -2667,8 +2666,6 @@ async function handleCreditForm(e) {
         // 5. GENERAR CRÉDITO
         showFixedProgress(60, 'Generando folio...');
         
-        // ¡CAMBIO CRÍTICO AQUÍ! 
-        // Pasamos currentUserData como 3er argumento para obtener el "agentCode"
         const resultado = await database.agregarCredito(
             creditoData, 
             currentUserData.email, 
@@ -2681,34 +2678,37 @@ async function handleCreditForm(e) {
             const folio = resultado.data.historicalIdCredito;
             let mensajeFinal = '';
 
-            // Mensaje diferenciado (Offline vs Online)
             if (resultado.offline) {
-                mensajeFinal = `✅ CRÉDITO GUARDADO (OFFLINE)\n\n🆔 FOLIO ASIGNADO: ${folio}\n\nEntrégalo al cliente. Los datos se subirán automáticamente al recuperar conexión.`;
+                mensajeFinal = `✅ CRÉDITO GUARDADO (OFFLINE)\n\n🆔 FOLIO: ${folio}\n\nListo para registrar otro crédito.`;
             } else {
-                mensajeFinal = `✅ CRÉDITO GENERADO EXITOSAMENTE\n\n🆔 FOLIO: ${folio}`;
+                mensajeFinal = `✅ CRÉDITO GENERADO EXITOSAMENTE\n\n🆔 FOLIO: ${folio}\n\nListo para registrar otro crédito.`;
             }
 
-            // Usamos ALERT para obligar al usuario a leer el folio antes de limpiar
+            // Usamos ALERT para obligar al usuario a leer el folio
             alert(mensajeFinal);
             
-            showStatus('status_colocacion', `Éxito. Folio: ${folio}`, 'success');
+            showStatus('status_colocacion', `Éxito. Último folio generado: ${folio}`, 'success');
 
-            // Limpieza y Cierre
-            e.target.reset();
+            // --- CAMBIO: NO OCULTAR FORMULARIO, SOLO LIMPIAR PARA EL SIGUIENTE ---
+            // 1. Limpiar campos del crédito específico
+            document.getElementById('monto_colocacion').value = '';
+            document.getElementById('montoTotal_colocacion').value = '';
+            document.getElementById('curpAval_colocacion').value = '';
+            document.getElementById('nombreAval_colocacion').value = '';
             
-            // Ocultar formulario o regresar al menú
-            document.getElementById('form-colocacion').classList.add('hidden');
-            
-            // Limpiar variables temporales
+            // 2. Limpiar búsqueda de cliente (para obligar a buscar al siguiente)
             document.getElementById('curp_colocacion').value = '';
             document.getElementById('nombre_colocacion').value = '';
+            document.getElementById('idCredito_colocacion').value = '';
             clienteParaCredito = null;
+            
+            // 3. Ocultar el formulario interno pero mantener la vista
+            document.getElementById('form-colocacion').classList.add('hidden');
+            
+            // 4. Poner foco en el buscador de cliente
+            document.getElementById('curp_colocacion').focus();
 
-            // Recargar vista de gestión para ver el nuevo crédito en la lista
-            // (Si tienes una vista de lista de clientes/créditos, la llamamos aquí)
-            if (typeof showView === 'function') {
-                showView('view-gestion-clientes'); 
-            }
+            // Nota: No llamamos a showView('view-gestion-clientes') para permanecer aquí.
 
         } else {
             throw new Error(resultado.message);
@@ -2936,14 +2936,13 @@ async function handleMontoPagoChange() {
 // =============================================
 async function handleCalcularCobranzaRuta() {
     console.log('🚀 Iniciando cálculo de ruta (Optimizado)...');
-    const start = Date.now(); // Para medir tiempo
+    const start = Date.now(); 
 
     const container = document.getElementById('cobranza-ruta-container');
     const btnGuardar = document.getElementById('btn-guardar-cobranza-offline');
     const btnRegistrar = document.getElementById('btn-registrar-pagos-offline');
     const btnMapa = document.getElementById('btn-ver-ruta-maps');
-    const statusPago = document.getElementById('status_pago_grupo');
-
+    
     // 1. Obtener Poblaciones Seleccionadas
     const checkboxes = document.querySelectorAll('.poblacion-check:checked');
     const poblacionesSeleccionadas = Array.from(checkboxes).map(cb => cb.value);
@@ -2973,7 +2972,6 @@ async function handleCalcularCobranzaRuta() {
             chunks.push(poblacionesSeleccionadas.slice(i, i + 10));
         }
 
-        // Disparamos todas las peticiones de clientes a la vez
         const clientesPromises = chunks.map(chunk => 
             db.collection('clientes')
               .where('poblacion_grupo', 'in', chunk)
@@ -2988,8 +2986,7 @@ async function handleCalcularCobranzaRuta() {
 
         if (todosLosClientes.length === 0) throw new Error("No hay clientes en estas poblaciones.");
 
-        // --- FASE 2: PROCESAR CLIENTES Y CRÉDITOS (EN PARALELO) ---
-        // Aquí ocurre la magia: Procesamos cada cliente simultáneamente
+        // --- FASE 2: PROCESAR CLIENTES Y CRÉDITOS ---
         
         const procesarCliente = async (cliente) => {
             // Mapa: Guardar waypoints si es comisionista
@@ -3006,25 +3003,24 @@ async function handleCalcularCobranzaRuta() {
             }
 
             // Buscar créditos del cliente
-            // OPTIMIZACIÓN: Usamos una función que intente caché primero en database.js si existe,
-            // si no, usamos la estándar.
             const creditos = await database.buscarCreditosPorCliente(cliente.curp, userOffice);
             
             // Procesar cada crédito del cliente
             for (const credito of creditos) {
                 const histId = credito.historicalIdCredito || credito.id;
                 
-                // Obtener pagos (Esto puede ser pesado, pero necesario para el saldo exacto)
+                // Obtener pagos
                 const pagos = await database.getPagosPorCredito(histId, userOffice);
                 
-                // Cálculo matemático (es muy rápido, no requiere await)
+                // Cálculo matemático
                 const estadoCalc = _calcularEstadoCredito(credito, pagos);
 
                 if (estadoCalc && estadoCalc.estado !== 'liquidado' && estadoCalc.pagoSemanal > 0.01) {
                     const semanasAtraso = estadoCalc.semanasAtraso || 0;
                     let montoAcumulado = (semanasAtraso > 0) ? semanasAtraso * estadoCalc.pagoSemanal : estadoCalc.pagoSemanal;
-                    let montoAPagarFinal = Math.min(montoAcumulado, estadoCalc.saldoRestante + 0.05); // +0.05 tolerancia redondeo
+                    let montoAPagarFinal = Math.min(montoAcumulado, estadoCalc.saldoRestante + 0.05); 
                     
+                    // AQUÍ ES DONDE SE AGREGA EL OBJETO A LA LISTA
                     allCreditosPendientes.push({
                         firestoreId: credito.id,
                         historicalIdCredito: histId,
@@ -3035,22 +3031,24 @@ async function handleCalcularCobranzaRuta() {
                         estadoCredito: estadoCalc.estado,
                         poblacion_grupo: cliente.poblacion_grupo,
                         office: credito.office,
-                        plazo: credito.plazo
+                        plazo: credito.plazo,
+                        
+                        // ✅ ESTA ES LA LÍNEA QUE FALTABA ✅
+                        // Guardamos cuánto debe pagar por semana para calcular adelantos correctamente
+                        pagoSemanalUnitario: estadoCalc.pagoSemanal 
                     });
                 }
             }
         };
 
-        // Ejecutamos todos los clientes en paralelo
-        // Promise.all podría ser demasiado agresivo si son 500 clientes. 
-        // Usamos un mapeo simple que es suficiente para <1000 clientes en navegadores modernos.
+        // Ejecutamos todos los clientes
         await Promise.all(todosLosClientes.map(cliente => procesarCliente(cliente)));
 
         if (allCreditosPendientes.length === 0) {
             throw new Error("No hay cobros pendientes en la selección.");
         }
 
-        // Agrupar resultados
+        // Agrupar resultados por población
         cobranzaRutaData = {};
         allCreditosPendientes.forEach(cred => {
             const grupo = cred.poblacion_grupo || 'Sin Grupo';
@@ -3058,6 +3056,7 @@ async function handleCalcularCobranzaRuta() {
             cobranzaRutaData[grupo].push(cred);
         });
 
+        // Llamar a la función de pintado (que ya tiene el ordenamiento alfabético y por ID)
         renderizarCobranzaRuta(cobranzaRutaData, container);
 
         // UI Final
@@ -3068,7 +3067,6 @@ async function handleCalcularCobranzaRuta() {
         if(btnRegistrar) btnRegistrar.classList.remove('hidden');
         if (btnMapa && waypointsComisionistas.length > 0) {
             btnMapa.classList.remove('hidden');
-            // Re-asignar listener mapa
             const newBtnMapa = btnMapa.cloneNode(true);
             btnMapa.parentNode.replaceChild(newBtnMapa, btnMapa);
             newBtnMapa.addEventListener('click', generarRutaMaps);
@@ -3089,7 +3087,7 @@ async function handleCalcularCobranzaRuta() {
 // ** INICIALIZAR VISTA DE PAGO GRUPAL (VISIBILIDAD ASEGURADA) **
 //=======================================
 async function inicializarVistaPagoGrupal() {
-    console.log("🚀 INICIANDO VISTA PAGO GRUPAL (V9 - Visual Sync)");
+    console.log("🚀 INICIANDO VISTA PAGO GRUPAL (Ordenada Alfabéticamente)");
     
     // Referencias UI
     const containerChecks = document.getElementById('checkboxes-poblaciones-container');
@@ -3123,6 +3121,10 @@ async function inicializarVistaPagoGrupal() {
     } catch(e) { console.error("Error localStorage", e); }
 
     if (datosGuardados && datosGuardados.data) {
+        // ... (Lógica de datos guardados se mantiene igual) ...
+        // [CÓDIGO DE DATOS GUARDADOS OMITIDO PARA BREVEDAD, DEJAR IGUAL AL ORIGINAL]
+        // Solo asegúrate de que al cargar datos guardados llames a renderizarCobranzaRuta
+        // que ya incluirá el ordenamiento en el siguiente paso.
         const fechaGuardado = new Date(datosGuardados.timestamp).toLocaleString();
         
         const aviso = document.createElement('div');
@@ -3201,10 +3203,9 @@ async function inicializarVistaPagoGrupal() {
     }
 
     try {
-        // Optimización Caché
         let poblaciones = [];
         try {
-             poblaciones = await database.obtenerPoblacionesPorRuta(rutaUsuario, officeUsuario);
+            poblaciones = await database.obtenerPoblacionesPorRuta(rutaUsuario, officeUsuario);
         } catch (e) { console.error(e); }
         
         if (containerChecks) containerChecks.innerHTML = ''; 
@@ -3214,20 +3215,19 @@ async function inicializarVistaPagoGrupal() {
             return;
         }
 
-        // --- BOTÓN "TODAS" (ESTRUCTURA CORREGIDA) ---
+        // --- CAMBIO 1: ORDENAR ALFABÉTICAMENTE ---
+        poblaciones.sort((a, b) => a.nombre.localeCompare(b.nombre));
+
+        // --- BOTÓN "TODAS" ---
         const allDiv = document.createElement('div');
         allDiv.className = 'select-all-container';
-        
         allDiv.innerHTML = `
             <label id="label-toggle-all" class="poblacion-select-card selected" 
                  style="cursor: pointer; display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 15px; margin-bottom: 10px;">
-                
                 <input type="checkbox" id="check-all-poblaciones" checked style="display:none;"> 
-                
                 <span style="font-weight:bold; font-size: 1rem; color:var(--primary);">
                     TODAS LAS POBLACIONES
                 </span>
-                
                 <i id="icon-master-check" class="fas fa-check-circle check-icon" 
                    style="font-size: 1.4rem; color: #28a745; transition: color 0.2s;"></i>
             </label>
@@ -3238,7 +3238,6 @@ async function inicializarVistaPagoGrupal() {
         const gridDiv = document.createElement('div');
         gridDiv.className = 'poblacion-selector-grid';
         
-        // Función helper para actualizar visualmente el maestro
         const actualizarVisualesMaestro = (isChecked) => {
             const masterLabel = document.getElementById('label-toggle-all');
             const masterIcon = document.getElementById('icon-master-check');
@@ -3248,12 +3247,12 @@ async function inicializarVistaPagoGrupal() {
 
             if (isChecked) {
                 masterLabel.classList.add('selected');
-                masterIcon.style.color = '#28a745'; // VERDE
+                masterIcon.style.color = '#28a745';
                 masterIcon.className = "fas fa-check-circle check-icon";
             } else {
                 masterLabel.classList.remove('selected');
-                masterIcon.style.color = '#ccc'; // GRIS
-                masterIcon.className = "far fa-circle check-icon"; // Círculo vacío opcional
+                masterIcon.style.color = '#ccc';
+                masterIcon.className = "far fa-circle check-icon";
             }
         };
 
@@ -3272,15 +3271,11 @@ async function inicializarVistaPagoGrupal() {
             
             const checkbox = label.querySelector('input');
             checkbox.addEventListener('change', function() {
-                // Estilo propio
                 if(this.checked) label.classList.add('selected');
                 else label.classList.remove('selected');
                 
-                // Verificar maestro
                 const allChecks = document.querySelectorAll('.poblacion-check');
                 const allChecked = Array.from(allChecks).every(c => c.checked);
-                
-                // Actualizar maestro forzosamente
                 actualizarVisualesMaestro(allChecked);
             });
             
@@ -3288,24 +3283,16 @@ async function inicializarVistaPagoGrupal() {
         });
         containerChecks.appendChild(gridDiv);
 
-        // --- LISTENER DEL BOTÓN MAESTRO ---
         const masterInput = document.getElementById('check-all-poblaciones');
-
         if (masterInput) {
             masterInput.addEventListener('change', function() {
                 const isChecked = this.checked;
-
-                // 1. Actualizar visuales del propio maestro
                 actualizarVisualesMaestro(isChecked);
-
-                // 2. Propagar a hijos
                 document.querySelectorAll('.poblacion-select-card').forEach(card => {
-                    // Ignoramos el label maestro
                     if (card.id !== 'label-toggle-all') {
                         const input = card.querySelector('input');
                         if (input) {
                             input.checked = isChecked;
-                            // Disparar evento para que el hijo se actualice a sí mismo
                             input.dispatchEvent(new Event('change'));
                         }
                     }
@@ -3503,38 +3490,32 @@ function renderizarCobranzaRuta(data, container) {
     }
 
     let html = '';
-    const grupos = Object.keys(data).sort();
+    // CAMBIO 2: Ordenar grupos (poblaciones) alfabéticamente
+    const grupos = Object.keys(data).sort((a, b) => a.localeCompare(b));
 
     grupos.forEach(grupo => {
         const creditos = data[grupo];
 
-        // --- 🔽 NUEVO: ORDENAMIENTO POR ID (DESCENDENTE) 🔽 ---
-        // Esto asegura que el crédito más reciente aparezca arriba en cada población
+        // CAMBIO 3: Ordenar créditos por ID descendente
         creditos.sort((a, b) => {
             const idA = (a.historicalIdCredito || '').toString();
             const idB = (b.historicalIdCredito || '').toString();
-            // Comparación numérica para que "10" sea mayor que "2"
             return idB.localeCompare(idA, undefined, { numeric: true });
         });
-        // ------------------------------------------------------
 
-        const grupoId = grupo.replace(/\s+/g, '_'); // ID único seguro
+        const grupoId = grupo.replace(/\s+/g, '_'); 
         
         html += `
             <div class="poblacion-group card" id="group-card-${grupoId}" style="margin-bottom: 15px; border: 1px solid #dee2e6; border-radius: 12px; overflow:hidden;">
-                
                 <div class="group-header-clickable" onclick="togglePoblacionGroup('${grupoId}')" 
                      style="background-color: #f8f9fa; padding: 12px 15px; border-bottom: 1px solid #ddd; display:flex; justify-content:space-between; align-items:center;">
-                    
                     <div style="display:flex; align-items:center;">
                         <i class="fas fa-chevron-down toggle-icon" id="icon-${grupoId}"></i>
-                        
                         <h4 style="margin:0; color:var(--primary); font-size: 1.1rem;">
                             ${grupo} 
                             <span style="font-weight:normal; font-size:0.8em; color:#666; margin-left: 5px;">(${creditos.length})</span>
                         </h4>
                     </div>
-                    
                     <label class="custom-check-wrapper header-check-wrapper" title="Marcar/Desmarcar Todos" onclick="event.stopPropagation()">
                         <span style="font-weight:bold; font-size: 0.9rem; color: #555; margin-right: 8px;">Marcar Todos</span>
                         <input type="checkbox" class="check-group-all" data-grupo="${grupo}" checked>
@@ -3549,8 +3530,8 @@ function renderizarCobranzaRuta(data, container) {
                                 <tr>
                                     <th style="width:25%;">Cliente</th>
                                     <th style="width:15%;">Estado</th>
-                                    <th style="width:15%;">Saldo</th>
-                                    <th style="width:35%;">Pago y Comisión</th>
+                                    <th style="width:15%;">Saldo Total</th>
+                                    <th style="width:35%;">Tipo de Pago y Comisión</th>
                                     <th style="width:10%; text-align:center;">Registrar</th>
                                 </tr>
                             </thead>
@@ -3558,13 +3539,32 @@ function renderizarCobranzaRuta(data, container) {
 
         creditos.forEach(cred => {
             const linkId = cred.firestoreId;
-            const montoSugerido = cred.pagoSemanalAcumulado;
+            const montoPagarSugerido = cred.pagoSemanalAcumulado; // Lo que debe pagar hoy
             const estadoClase = `status-${cred.estadoCredito.replace(/\s/g, '-')}`;
             const plazo = cred.plazo || 14;
-            let comisionInicial = 0;
             
-            // Lógica inicial de comisión visual (si no es comisionista)
-            if (plazo !== 10 && montoSugerido > 0) comisionInicial = 10;
+            // Calculamos el pago semanal unitario aproximado
+            // Si el monto total y plazo vienen en 'cred', es exacto. Si no, lo inferimos.
+            // Nota: En handleCalcularCobranzaRuta ya deberías estar pasando 'pagoSemanal' en el objeto cred.
+            // Si no está, lo calculamos aquí o usamos una aproximación.
+            let pagoSemanalUnitario = 0;
+            if (cred.montoTotal && cred.plazo) {
+                pagoSemanalUnitario = cred.montoTotal / cred.plazo;
+            } else if (montoPagarSugerido > 0) {
+                // Fallback si no tenemos el total: asumimos que el sugerido es 1 o más pagos
+                // Esto es arriesgado, idealmente 'cred' debe traer 'pagoSemanal' desde la DB.
+                // Asumiremos que el objeto 'cred' tiene la propiedad pagoSemanalUnitario que calculamos en la función de carga.
+                // Si no la tienes, agrégala en handleCalcularCobranzaRuta -> allCreditosPendientes.push({ ..., pagoSemanalUnitario: estadoCalc.pagoSemanal })
+                pagoSemanalUnitario = cred.pagoSemanalUnitario || (cred.montoTotal / cred.plazo) || 0;
+            }
+
+            // Calculo inicial de comisión para mostrar
+            let comisionInicial = 0;
+            if (plazo !== 10 && montoPagarSugerido >= (pagoSemanalUnitario - 1)) {
+                 // Si paga al menos 1 semana completa
+                 const numPagos = Math.floor((montoPagarSugerido + 0.1) / pagoSemanalUnitario);
+                 comisionInicial = numPagos * 10;
+            }
 
             html += `
                 <tr class="fila-cobro" data-plazo="${plazo}" data-grupo-id="${grupoId}" id="row-${linkId}">
@@ -3598,9 +3598,10 @@ function renderizarCobranzaRuta(data, container) {
                             <div style="position:relative; width: 40%;">
                                 <span style="position:absolute; left:8px; top:5px; color:#666; font-size: 0.9em;">$</span>
                                 <input type="number" class="pago-grupal-input form-control-sm" 
-                                    value="${montoSugerido.toFixed(2)}" 
+                                    value="${montoPagarSugerido.toFixed(2)}" 
                                     data-id-link="${linkId}"
                                     data-saldo-max="${cred.saldoRestante}"
+                                    data-pago-semanal="${pagoSemanalUnitario.toFixed(2)}"
                                     style="padding-left: 18px; width: 100%; border-radius: 6px; font-weight: bold;"
                                     oninput="recalcularComision('${linkId}')">
                             </div>
@@ -3648,6 +3649,7 @@ function renderizarCobranzaRuta(data, container) {
 
     container.innerHTML = html;
 
+    // Listeners para selectores de grupo
     container.querySelectorAll('.check-group-all').forEach(chk => {
         chk.addEventListener('change', (e) => {
             const grp = e.target.getAttribute('data-grupo');
@@ -3689,9 +3691,13 @@ function recalcularComision(idLink) {
     const monto = parseFloat(inputMonto.value) || 0;
     const plazo = parseInt(row.getAttribute('data-plazo'));
     const isChecked = checkbox.checked;
+    
+    // Obtener pago semanal unitario del data attribute (colocado en renderizarCobranzaRuta)
+    const pagoSemanalUnitario = parseFloat(inputMonto.getAttribute('data-pago-semanal')) || 0;
 
     let comision = 0;
 
+    // Estilos visuales si está deshabilitado
     if (!isChecked) {
         row.style.opacity = '0.5';
         row.style.backgroundColor = '#f9f9f9';
@@ -3705,21 +3711,44 @@ function recalcularComision(idLink) {
     }
 
     if (!isChecked || monto <= 0 || plazo === 10) {
+        // Regla base: Desmarcado, monto 0 o Plazo 10 semanas -> Comisión 0
         comision = 0;
-    } 
-    else {
+    } else {
         switch (tipo) {
-            case 'normal':          // Pago Regular -> SI ($10)
-            case 'adelanto':        // Pago Adelantado -> SI ($10)
-            case 'actualizado':     // Renovación -> SI ($10) - Corregido
+            case 'normal':
+                // Regla Normal: $10, PERO solo si cubre el pago semanal completo (con tolerancia de $1)
+                // "Pago registrado menor a la cantidad... no genera comisión"
+                if (monto >= (pagoSemanalUnitario - 1)) {
+                    comision = 10;
+                } else {
+                    comision = 0;
+                }
+                break;
+
+            case 'adelanto':
+                // Regla Adelanto:
+                // "Si cubre más de un pago, se genera la comisión correspondiente"
+                // Calculamos cuántos pagos completos caben en el monto
+                if (pagoSemanalUnitario > 0) {
+                    const pagosCubiertos = Math.floor((monto + 1) / pagoSemanalUnitario); // +1 tolerancia
+                    comision = pagosCubiertos * 10;
+                } else {
+                    comision = 10; // Fallback
+                }
+                break;
+
+            case 'actualizado':
+                // Regla Actualizado: "Comisión de un sólo pago"
+                // Asumimos que debe cubrir al menos un pago, o es tarifa fija $10 por el trámite
                 comision = 10;
                 break;
-            
-            case 'extraordinario':  // Pago Extra -> NO ($0) - Corregido
-            case 'bancario':        // Transferencia -> NO ($0) - Nuevo
+
+            case 'extraordinario':
+            case 'bancario':
+                // Regla: 0 comisión
                 comision = 0;
                 break;
-                
+
             default:
                 comision = 0;
         }
@@ -3731,7 +3760,7 @@ function recalcularComision(idLink) {
         boxComision.style.color = '#28a745';
         labelComision.style.fontWeight = 'bold';
     } else {
-        boxComision.style.color = '#6c757d';
+        boxComision.style.color = '#6c757d'; // Gris
         labelComision.style.fontWeight = 'normal';
     }
 
@@ -7867,5 +7896,6 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
