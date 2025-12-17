@@ -2935,7 +2935,7 @@ async function handleMontoPagoChange() {
 // SECCIÓN DE PAGO GRUPAL
 // =============================================
 async function handleCalcularCobranzaRuta() {
-    console.log('🚀 Iniciando cálculo de ruta (Optimizado)...');
+    console.log('🚀 Iniciando cálculo de ruta (Lógica Semanal Estricta)...');
     const start = Date.now(); 
 
     const container = document.getElementById('cobranza-ruta-container');
@@ -2943,7 +2943,7 @@ async function handleCalcularCobranzaRuta() {
     const btnRegistrar = document.getElementById('btn-registrar-pagos-offline');
     const btnMapa = document.getElementById('btn-ver-ruta-maps');
     
-    // 1. Obtener Poblaciones Seleccionadas
+    // 1. Obtener Poblaciones
     const checkboxes = document.querySelectorAll('.poblacion-check:checked');
     const poblacionesSeleccionadas = Array.from(checkboxes).map(cb => cb.value);
 
@@ -2965,8 +2965,7 @@ async function handleCalcularCobranzaRuta() {
         const userOffice = currentUserData.office;
         const allCreditosPendientes = [];
 
-        // --- FASE 1: OBTENER CLIENTES (EN PARALELO) ---
-        // Dividimos poblaciones en lotes de 10 para no saturar Firestore 'in' query
+        // FASE 1: OBTENER CLIENTES (Lotes de 10)
         const chunks = [];
         for (let i = 0; i < poblacionesSeleccionadas.length; i += 10) {
             chunks.push(poblacionesSeleccionadas.slice(i, i + 10));
@@ -2982,14 +2981,11 @@ async function handleCalcularCobranzaRuta() {
         const clientesSnapshots = await Promise.all(clientesPromises);
         const todosLosClientes = clientesSnapshots.flatMap(snap => snap.docs.map(d => ({id: d.id, ...d.data()})));
 
-        console.log(`📦 Clientes encontrados: ${todosLosClientes.length}`);
-
         if (todosLosClientes.length === 0) throw new Error("No hay clientes en estas poblaciones.");
 
-        // --- FASE 2: PROCESAR CLIENTES Y CRÉDITOS ---
-        
+        // FASE 2: PROCESAR CLIENTES Y CRÉDITOS
         const procesarCliente = async (cliente) => {
-            // Mapa: Guardar waypoints si es comisionista
+            // Mapa: Waypoints
             if (cliente.isComisionista && cliente.domicilio && cliente.domicilio.length > 5) {
                 const existe = waypointsComisionistas.some(w => w.poblacion === cliente.poblacion_grupo);
                 if (!existe) {
@@ -3002,53 +2998,64 @@ async function handleCalcularCobranzaRuta() {
                 }
             }
 
-            // Buscar créditos del cliente
             const creditos = await database.buscarCreditosPorCliente(cliente.curp, userOffice);
             
-            // Procesar cada crédito del cliente
             for (const credito of creditos) {
                 const histId = credito.historicalIdCredito || credito.id;
-                
-                // Obtener pagos
                 const pagos = await database.getPagosPorCredito(histId, userOffice);
-                
-                // Cálculo matemático
                 const estadoCalc = _calcularEstadoCredito(credito, pagos);
 
                 if (estadoCalc && estadoCalc.estado !== 'liquidado' && estadoCalc.pagoSemanal > 0.01) {
-                    const semanasAtraso = estadoCalc.semanasAtraso || 0;
-                    let montoAcumulado = (semanasAtraso > 0) ? semanasAtraso * estadoCalc.pagoSemanal : estadoCalc.pagoSemanal;
-                    let montoAPagarFinal = Math.min(montoAcumulado, estadoCalc.saldoRestante + 0.05); 
                     
-                    // AQUÍ ES DONDE SE AGREGA EL OBJETO A LA LISTA
+                    // --- CORRECCIÓN LÓGICA DE SUGERENCIA DE PAGO ---
+                    
+                    const semanasAtraso = estadoCalc.semanasAtraso || 0;
+                    const pagoSemanal = estadoCalc.pagoSemanal;
+                    const saldoRestante = estadoCalc.saldoRestante;
+                    
+                    let montoSugerido = 0;
+
+                    if (semanasAtraso > 0) {
+                        // Si tiene atraso, sugerimos cubrir todo el atraso
+                        montoSugerido = semanasAtraso * pagoSemanal;
+                    } else {
+                        // Si está AL CORRIENTE, sugerimos SOLO 1 semana (la que viene)
+                        montoSugerido = pagoSemanal;
+                    }
+
+                    // REGLA FINAL: Nunca sugerir más que el saldo restante
+                    // (Ej: Si debe 700 pero el saldo es 200, sugerimos 200)
+                    let montoAPagarFinal = Math.min(montoSugerido, saldoRestante);
+                    
+                    // Tolerancia de redondeo
+                    if (Math.abs(montoAPagarFinal - saldoRestante) < 0.5) {
+                        montoAPagarFinal = saldoRestante;
+                    }
+
                     allCreditosPendientes.push({
                         firestoreId: credito.id,
                         historicalIdCredito: histId,
                         nombreCliente: cliente.nombre,
                         curpCliente: cliente.curp,
-                        pagoSemanalAcumulado: parseFloat(montoAPagarFinal.toFixed(2)),
-                        saldoRestante: estadoCalc.saldoRestante,
+                        pagoSemanalAcumulado: parseFloat(montoAPagarFinal.toFixed(2)), // Lo que sugerimos
+                        saldoRestante: saldoRestante, // El saldo total real
                         estadoCredito: estadoCalc.estado,
                         poblacion_grupo: cliente.poblacion_grupo,
                         office: credito.office,
                         plazo: credito.plazo,
-                        
-                        // ✅ ESTA ES LA LÍNEA QUE FALTABA ✅
-                        // Guardamos cuánto debe pagar por semana para calcular adelantos correctamente
-                        pagoSemanalUnitario: estadoCalc.pagoSemanal 
+                        // DATO CRÍTICO PARA COMISIONES
+                        pagoSemanalUnitario: pagoSemanal 
                     });
                 }
             }
         };
 
-        // Ejecutamos todos los clientes
         await Promise.all(todosLosClientes.map(cliente => procesarCliente(cliente)));
 
         if (allCreditosPendientes.length === 0) {
             throw new Error("No hay cobros pendientes en la selección.");
         }
 
-        // Agrupar resultados por población
         cobranzaRutaData = {};
         allCreditosPendientes.forEach(cred => {
             const grupo = cred.poblacion_grupo || 'Sin Grupo';
@@ -3056,7 +3063,6 @@ async function handleCalcularCobranzaRuta() {
             cobranzaRutaData[grupo].push(cred);
         });
 
-        // Llamar a la función de pintado (que ya tiene el ordenamiento alfabético y por ID)
         renderizarCobranzaRuta(cobranzaRutaData, container);
 
         // UI Final
@@ -3692,12 +3698,12 @@ function recalcularComision(idLink) {
     const plazo = parseInt(row.getAttribute('data-plazo'));
     const isChecked = checkbox.checked;
     
-    // Obtener pago semanal unitario del data attribute (colocado en renderizarCobranzaRuta)
+    // Obtenemos el pago semanal unitario del data-attribute
     const pagoSemanalUnitario = parseFloat(inputMonto.getAttribute('data-pago-semanal')) || 0;
 
     let comision = 0;
 
-    // Estilos visuales si está deshabilitado
+    // Control visual de habilitado/deshabilitado
     if (!isChecked) {
         row.style.opacity = '0.5';
         row.style.backgroundColor = '#f9f9f9';
@@ -3710,42 +3716,48 @@ function recalcularComision(idLink) {
         inputMonto.disabled = false;
     }
 
+    // --- REGLAS DE NEGOCIO ---
+
     if (!isChecked || monto <= 0 || plazo === 10) {
-        // Regla base: Desmarcado, monto 0 o Plazo 10 semanas -> Comisión 0
+        // Desmarcado, sin monto o es crédito de 10 semanas (comisionista) -> $0
         comision = 0;
     } else {
         switch (tipo) {
             case 'normal':
-                // Regla Normal: $10, PERO solo si cubre el pago semanal completo (con tolerancia de $1)
-                // "Pago registrado menor a la cantidad... no genera comisión"
-                if (monto >= (pagoSemanalUnitario - 1)) {
+                // REGLA: Si el pago es menor al pago semanal (aunque sea $1 peso), comisión = 0
+                // Usamos una tolerancia de 0.9 para evitar problemas de decimales (ej 349.99 vs 350)
+                if (monto >= (pagoSemanalUnitario - 0.9)) {
+                    comision = 10;
+                } else {
+                    comision = 0; // Pago parcial no genera comisión
+                }
+                break;
+
+            case 'adelanto':
+                // REGLA: $10 por cada pago COMPLETO cubierto.
+                // Si paga 1.5 pagos (ej. 525 de 350), floor(1.5) = 1 -> $10 comisión.
+                // Si paga 2.0 pagos (ej. 700 de 350), floor(2.0) = 2 -> $20 comisión.
+                if (pagoSemanalUnitario > 0) {
+                    // Agregamos pequeña tolerancia para redondeos
+                    const pagosCompletos = Math.floor((monto + 0.1) / pagoSemanalUnitario);
+                    comision = pagosCompletos * 10;
+                } else {
+                    comision = 0;
+                }
+                break;
+
+            case 'actualizado':
+                // REGLA: Comisión fija de un solo pago ($10), siempre que cubra al menos una semana.
+                if (monto >= (pagoSemanalUnitario - 0.9)) {
                     comision = 10;
                 } else {
                     comision = 0;
                 }
                 break;
 
-            case 'adelanto':
-                // Regla Adelanto:
-                // "Si cubre más de un pago, se genera la comisión correspondiente"
-                // Calculamos cuántos pagos completos caben en el monto
-                if (pagoSemanalUnitario > 0) {
-                    const pagosCubiertos = Math.floor((monto + 1) / pagoSemanalUnitario); // +1 tolerancia
-                    comision = pagosCubiertos * 10;
-                } else {
-                    comision = 10; // Fallback
-                }
-                break;
-
-            case 'actualizado':
-                // Regla Actualizado: "Comisión de un sólo pago"
-                // Asumimos que debe cubrir al menos un pago, o es tarifa fija $10 por el trámite
-                comision = 10;
-                break;
-
             case 'extraordinario':
             case 'bancario':
-                // Regla: 0 comisión
+                // REGLA: Sin comisión
                 comision = 0;
                 break;
 
@@ -3754,14 +3766,21 @@ function recalcularComision(idLink) {
         }
     }
 
+    // Renderizar
     labelComision.textContent = formatMoney(comision);
     
     if (comision > 0) {
         boxComision.style.color = '#28a745';
         labelComision.style.fontWeight = 'bold';
+        // Quitar tachado
+        labelComision.style.textDecoration = 'none';
     } else {
         boxComision.style.color = '#6c757d'; // Gris
         labelComision.style.fontWeight = 'normal';
+        // Opcional: Tachar visualmente para indicar que está anulada
+        if (isChecked && monto > 0 && plazo !== 10) {
+             // Si está activo pero dio 0, puede ser alerta visual
+        }
     }
 
     if (grupoId) {
@@ -7896,6 +7915,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
