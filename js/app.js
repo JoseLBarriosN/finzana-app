@@ -3019,12 +3019,12 @@ async function handleCalcularCobranzaRuta() {
                         // Si tiene atraso, sugerimos cubrir todo el atraso
                         montoSugerido = semanasAtraso * pagoSemanal;
                     } else {
-                        // Si está AL CORRIENTE, sugerimos SOLO 1 semana (la que viene)
+                        // AQUÍ ESTÁ EL CAMBIO: Si está al corriente, SOLO sugerimos 1 semana
                         montoSugerido = pagoSemanal;
                     }
 
                     // REGLA FINAL: Nunca sugerir más que el saldo restante
-                    // (Ej: Si debe 700 pero el saldo es 200, sugerimos 200)
+                    // (Ej: Si debe 350 semanal, pero el saldo total es 200, sugerimos 200)
                     let montoAPagarFinal = Math.min(montoSugerido, saldoRestante);
                     
                     // Tolerancia de redondeo
@@ -3043,7 +3043,7 @@ async function handleCalcularCobranzaRuta() {
                         poblacion_grupo: cliente.poblacion_grupo,
                         office: credito.office,
                         plazo: credito.plazo,
-                        // DATO CRÍTICO PARA COMISIONES
+                        // DATO CRÍTICO PARA COMISIONES: Enviamos cuánto vale 1 semana
                         pagoSemanalUnitario: pagoSemanal 
                     });
                 }
@@ -3496,13 +3496,13 @@ function renderizarCobranzaRuta(data, container) {
     }
 
     let html = '';
-    // CAMBIO 2: Ordenar grupos (poblaciones) alfabéticamente
+    // Ordenar grupos (poblaciones) alfabéticamente
     const grupos = Object.keys(data).sort((a, b) => a.localeCompare(b));
 
     grupos.forEach(grupo => {
         const creditos = data[grupo];
 
-        // CAMBIO 3: Ordenar créditos por ID descendente
+        // Ordenar créditos por ID descendente
         creditos.sort((a, b) => {
             const idA = (a.historicalIdCredito || '').toString();
             const idB = (b.historicalIdCredito || '').toString();
@@ -3549,27 +3549,29 @@ function renderizarCobranzaRuta(data, container) {
             const estadoClase = `status-${cred.estadoCredito.replace(/\s/g, '-')}`;
             const plazo = cred.plazo || 14;
             
-            // Calculamos el pago semanal unitario aproximado
-            // Si el monto total y plazo vienen en 'cred', es exacto. Si no, lo inferimos.
-            // Nota: En handleCalcularCobranzaRuta ya deberías estar pasando 'pagoSemanal' en el objeto cred.
-            // Si no está, lo calculamos aquí o usamos una aproximación.
-            let pagoSemanalUnitario = 0;
-            if (cred.montoTotal && cred.plazo) {
-                pagoSemanalUnitario = cred.montoTotal / cred.plazo;
-            } else if (montoPagarSugerido > 0) {
-                // Fallback si no tenemos el total: asumimos que el sugerido es 1 o más pagos
-                // Esto es arriesgado, idealmente 'cred' debe traer 'pagoSemanal' desde la DB.
-                // Asumiremos que el objeto 'cred' tiene la propiedad pagoSemanalUnitario que calculamos en la función de carga.
-                // Si no la tienes, agrégala en handleCalcularCobranzaRuta -> allCreditosPendientes.push({ ..., pagoSemanalUnitario: estadoCalc.pagoSemanal })
-                pagoSemanalUnitario = cred.pagoSemanalUnitario || (cred.montoTotal / cred.plazo) || 0;
+            // Recuperamos el valor exacto de la semana
+            let pagoSemanalUnitario = cred.pagoSemanalUnitario;
+            
+            // Fallback por seguridad
+            if (!pagoSemanalUnitario || pagoSemanalUnitario <= 0) {
+                if (cred.montoTotal && cred.plazo) {
+                    pagoSemanalUnitario = cred.montoTotal / cred.plazo;
+                } else {
+                    pagoSemanalUnitario = 0;
+                }
             }
 
-            // Calculo inicial de comisión para mostrar
+            // Calculo inicial de comisión para mostrar (Lógica estricta de visualización inicial)
             let comisionInicial = 0;
-            if (plazo !== 10 && montoPagarSugerido >= (pagoSemanalUnitario - 1)) {
-                 // Si paga al menos 1 semana completa
-                 const numPagos = Math.floor((montoPagarSugerido + 0.1) / pagoSemanalUnitario);
-                 comisionInicial = numPagos * 10;
+            if (plazo !== 10 && pagoSemanalUnitario > 0) {
+                 // Si paga menos de 1 semana (con tolerancia pequeña), comision 0
+                 if (montoPagarSugerido < (pagoSemanalUnitario - 0.1)) {
+                     comisionInicial = 0;
+                 } else {
+                     // Si paga 1 o más, calculamos múltiplos
+                     const pagosCompletos = Math.floor((montoPagarSugerido + 0.1) / pagoSemanalUnitario);
+                     comisionInicial = pagosCompletos * 10;
+                 }
             }
 
             html += `
@@ -3716,48 +3718,30 @@ function recalcularComision(idLink) {
         inputMonto.disabled = false;
     }
 
-    // --- REGLAS DE NEGOCIO ---
+    // --- REGLAS DE COMISIÓN CORREGIDAS ---
 
-    if (!isChecked || monto <= 0 || plazo === 10) {
-        // Desmarcado, sin monto o es crédito de 10 semanas (comisionista) -> $0
+    // 1. Si no está marcado, monto es 0, o es comisionista (10 sem) -> $0
+    if (!isChecked || monto <= 0 || plazo === 10 || pagoSemanalUnitario <= 0) {
         comision = 0;
     } else {
+        // Regla General: Calcular cuántos pagos completos cubre el monto.
+        // Usamos una tolerancia pequeña (0.1) para evitar problemas de punto flotante (ej 349.9999)
+        // Pero si paga $1 menos (ej 349 vs 350), el floor bajará a 0.
+        const pagosCompletos = Math.floor((monto + 0.1) / pagoSemanalUnitario);
+
         switch (tipo) {
             case 'normal':
-                // REGLA: Si el pago es menor al pago semanal (aunque sea $1 peso), comisión = 0
-                // Usamos una tolerancia de 0.9 para evitar problemas de decimales (ej 349.99 vs 350)
-                if (monto >= (pagoSemanalUnitario - 0.9)) {
-                    comision = 10;
-                } else {
-                    comision = 0; // Pago parcial no genera comisión
-                }
-                break;
-
             case 'adelanto':
-                // REGLA: $10 por cada pago COMPLETO cubierto.
-                // Si paga 1.5 pagos (ej. 525 de 350), floor(1.5) = 1 -> $10 comisión.
-                // Si paga 2.0 pagos (ej. 700 de 350), floor(2.0) = 2 -> $20 comisión.
-                if (pagoSemanalUnitario > 0) {
-                    // Agregamos pequeña tolerancia para redondeos
-                    const pagosCompletos = Math.floor((monto + 0.1) / pagoSemanalUnitario);
-                    comision = pagosCompletos * 10;
-                } else {
-                    comision = 0;
-                }
-                break;
-
             case 'actualizado':
-                // REGLA: Comisión fija de un solo pago ($10), siempre que cubra al menos una semana.
-                if (monto >= (pagoSemanalUnitario - 0.9)) {
-                    comision = 10;
-                } else {
-                    comision = 0;
-                }
+                // Si pagosCompletos es 0 (porque pagó menos del semanal), comisión es 0.
+                // Si pagosCompletos es 1 (porque pagó el semanal exacto o hasta 1.9 veces), comisión es 10.
+                // Si pagosCompletos es 2 (porque pagó el doble), comisión es 20.
+                comision = pagosCompletos * 10;
                 break;
 
             case 'extraordinario':
             case 'bancario':
-                // REGLA: Sin comisión
+                // Estos tipos nunca generan comisión
                 comision = 0;
                 break;
 
@@ -3772,14 +3756,18 @@ function recalcularComision(idLink) {
     if (comision > 0) {
         boxComision.style.color = '#28a745';
         labelComision.style.fontWeight = 'bold';
-        // Quitar tachado
         labelComision.style.textDecoration = 'none';
     } else {
-        boxComision.style.color = '#6c757d'; // Gris
+        boxComision.style.color = '#dc3545'; // Rojo para indicar que no hay comisión
         labelComision.style.fontWeight = 'normal';
-        // Opcional: Tachar visualmente para indicar que está anulada
-        if (isChecked && monto > 0 && plazo !== 10) {
-             // Si está activo pero dio 0, puede ser alerta visual
+        
+        // Si pagó algo pero no alcanzó para comisión, tachamos visualmente para alertar
+        if (isChecked && monto > 0 && plazo !== 10 && tipo !== 'bancario' && tipo !== 'extraordinario') {
+             labelComision.style.textDecoration = 'line-through';
+             boxComision.title = "Monto insuficiente para generar comisión";
+        } else {
+             labelComision.style.textDecoration = 'none';
+             boxComision.title = "";
         }
     }
 
@@ -7915,6 +7903,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
