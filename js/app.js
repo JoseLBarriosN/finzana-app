@@ -194,111 +194,112 @@ function updateConnectionStatus() {
  * @returns {object|null} Un objeto con { estado, semanasAtraso, pagoSemanal, saldoRestante, proximaFechaPago } o null si hay error.
  */
 function _calcularEstadoCredito(credito, pagos) {
+    // 1. Validaciones de seguridad
     if (!credito || !credito.montoTotal || !credito.plazo || credito.plazo <= 0 || !credito.fechaCreacion) {
-        console.warn("Datos de crédito insuficientes para calcular estado:", credito?.id || credito?.historicalIdCredito);
+        console.warn("Datos insuficientes para calcular estado:", credito?.id);
         return null;
     }
 
-    const pagoSemanal = credito.montoTotal / credito.plazo;
-    const montoTotal = credito.montoTotal;
-
+    // 2. DATOS FINANCIEROS (La verdad absoluta del dinero)
+    const montoTotal = parseFloat(credito.montoTotal);
+    const pagoSemanal = montoTotal / credito.plazo;
+    
+    // Sumamos todo lo que ha entrado, sin importar si fueron 10 pagos de $10 o 1 de $100
     let totalPagado = 0;
     if (pagos && pagos.length > 0) {
         totalPagado = pagos.reduce((sum, p) => sum + (p.monto || 0), 0);
     }
 
+    // Calculamos saldo con tolerancia de $1 para redondeos
     let saldoCalculado = montoTotal - totalPagado;
-
-    const toleranciaLiquidado = 0.015;
-    if (saldoCalculado < toleranciaLiquidado) {
-        saldoCalculado = 0;
-    }
-    
+    if (saldoCalculado < 1) saldoCalculado = 0; 
     const saldoRestante = parseFloat(saldoCalculado.toFixed(2));
-    
-    if (saldoRestante === 0) {
-        
-        let semanasPagadasCalc = 0;
-        if (pagoSemanal > 0.01) {
-            const montoPagadoTotal = totalPagado;
-            const epsilon = 0.001;
-            semanasPagadasCalc = Math.floor((montoPagadoTotal / pagoSemanal) + epsilon);
-            semanasPagadasCalc = Math.min(Math.max(0, semanasPagadasCalc), credito.plazo);
-        }
-        
-        if (semanasPagadasCalc < credito.plazo) {
-            console.warn(`Crédito ${credito.historicalIdCredito || credito.id} liquidado por cálculo de pagos (Saldo: ${saldoRestante}), pero cálculo de semanas (${semanasPagadasCalc}) no coincide con plazo (${credito.plazo}). Forzando a plazo completo.`);
-            semanasPagadasCalc = credito.plazo;
-        }
 
+    // 3. SEMANAS PAGADAS (Financieras)
+    // Respondemos: ¿Para cuántas semanas alcanza el dinero que ha dado?
+    let semanasPagadasFinancieras = 0;
+    if (pagoSemanal > 0) {
+        // Floor asegura que solo contamos semanas COMPLETAMENTE pagadas
+        semanasPagadasFinancieras = Math.floor((totalPagado + 0.1) / pagoSemanal);
+    }
+
+    // Tope visual: No decir "15 de 14" si no ha liquidado (aunque tenga saldo a favor)
+    const semanasPagadasVisual = Math.min(semanasPagadasFinancieras, credito.plazo);
+
+    // --- REGLA DE LIQUIDACIÓN ---
+    // Solo si el saldo es 0 está liquidado.
+    if (saldoRestante === 0) {
         return {
             estado: 'liquidado',
             semanasAtraso: 0,
             pagoSemanal: pagoSemanal,
             saldoRestante: 0,
             proximaFechaPago: 'N/A',
-            semanasPagadas: semanasPagadasCalc
+            semanasPagadas: credito.plazo 
         };
     }
 
+    // 4. DATOS TEMPORALES (El tiempo transcurrido)
     const fechaCreacion = parsearFecha(credito.fechaCreacion);
-    if (!fechaCreacion) {
-        console.warn("Fecha de creación de crédito inválida:", credito.fechaCreacion, "ID:", credito.id || credito.historicalIdCredito);
-        return null;
-    }
-    let fechaReferencia;
-    if (pagos && pagos.length > 0) {
-        fechaReferencia = parsearFecha(pagos[0].fecha);
-    } else {
-        fechaReferencia = fechaCreacion;
-    }
-
-    if (!fechaReferencia) {
-        console.warn("Fecha de referencia inválida para crédito:", credito.id || credito.historicalIdCredito);
-        return null;
-    }
-
     const hoy = new Date();
+    // Normalizamos a UTC para evitar errores de horario de verano/invierno
     const hoyUTC = new Date(Date.UTC(hoy.getUTCFullYear(), hoy.getUTCMonth(), hoy.getUTCDate()));
-    const refUTC = new Date(Date.UTC(fechaReferencia.getUTCFullYear(), fechaReferencia.getUTCMonth(), fechaReferencia.getUTCDate()));
+    const creacionUTC = new Date(Date.UTC(fechaCreacion.getUTCFullYear(), fechaCreacion.getUTCMonth(), fechaCreacion.getUTCDate()));
 
-    const msDesdeReferencia = hoyUTC.getTime() - refUTC.getTime();
-    const diasDesdeReferencia = Math.floor(msDesdeReferencia / (1000 * 60 * 60 * 24));
+    const msTranscurridos = hoyUTC.getTime() - creacionUTC.getTime();
+    // Semanas calendario que han pasado desde el inicio
+    const semanasTranscurridas = Math.floor(msTranscurridos / (1000 * 60 * 60 * 24 * 7));
 
-    let estadoDisplay;
-    if (diasDesdeReferencia <= 7) {
+    // 5. CÁLCULO DE EXIGIBILIDAD
+    // Regla: El cliente debe pagar según el tiempo, pero nunca más del plazo total.
+    // Si pasaron 20 semanas en un crédito de 14, solo le exigimos las 14.
+    
+    let semanasExigiblesPorTiempo = semanasTranscurridas;
+    
+    // Ajuste de gracia: Si es la semana 0 (recién creado), exigimos 0 para que nazca "al corriente"
+    if (semanasExigiblesPorTiempo < 1) semanasExigiblesPorTiempo = 0;
+
+    // El tope es el plazo del crédito
+    let semanasExigiblesReales = Math.min(semanasExigiblesPorTiempo, credito.plazo);
+
+    // 6. CÁLCULO DE ATRASO REAL
+    // Atraso = Lo que debió pagar (Tiempo) - Lo que su dinero cubre (Financiero)
+    let semanasAtraso = semanasExigiblesReales - semanasPagadasFinancieras;
+
+    // Si pagó adelantado, el atraso es 0 (no negativo)
+    if (semanasAtraso < 0) semanasAtraso = 0;
+
+    // 7. DETERMINAR ESTATUS POR NIVEL DE DEUDA (NO POR FECHA DE PAGO)
+    let estadoDisplay = 'al corriente';
+
+    if (semanasAtraso === 0) {
+        // Si no debe semanas completas, está al corriente
         estadoDisplay = 'al corriente';
-    } else if (diasDesdeReferencia > 7 && diasDesdeReferencia <= 30) {
+        
+        // REGLA ESPECIAL "VENCIDO PERO NO LIQUIDADO":
+        // Si ya pasaron las 14 semanas (tiempo agotado) y aún hay saldo > 0...
+        // Aunque semanasAtraso sea 0 (ej. pagó 13.9 semanas, floor es 13, exigible 14, atraso 1),
+        // Si el tiempo ya venció y hay saldo, debe marcarse alerta.
+        if (semanasTranscurridas >= credito.plazo && saldoRestante > 0) {
+             // Si el atraso es pequeño (menos de 1 semana financiera), lo dejamos en atrasado leve
+             // Si debe mucho dinero, caerá en los if de abajo.
+             if (semanasAtraso < 1) estadoDisplay = 'atrasado'; 
+        }
+
+    } else if (semanasAtraso >= 1 && semanasAtraso <= 4) {
         estadoDisplay = 'atrasado';
-    } else if (diasDesdeReferencia > 30 && diasDesdeReferencia <= 180) {
+    } else if (semanasAtraso > 4 && semanasAtraso <= 12) {
         estadoDisplay = 'cobranza';
     } else {
         estadoDisplay = 'juridico';
     }
 
-    const msTranscurridos = hoyUTC.getTime() - fechaCreacion.getTime();
-    const semanasTranscurridas = Math.floor(msTranscurridos / (1000 * 60 * 60 * 24 * 7));
-
-    const montoPagadoTotal = totalPagado;
-
-    let semanasPagadas = 0;
-    if (pagoSemanal > 0.01) {
-        const epsilon = 0.001;
-        semanasPagadas = Math.floor((montoPagadoTotal / pagoSemanal) + epsilon);
-    }
-    semanasPagadas = Math.min(Math.max(0, semanasPagadas), credito.plazo);
-
-    let semanasQueDebieronPagarse = Math.min(semanasTranscurridas + 1, credito.plazo);
-    let semanasAtraso = Math.max(0, semanasQueDebieronPagarse - semanasPagadas);
-
-    if (semanasTranscurridas >= credito.plazo) {
-        semanasAtraso = Math.max(0, credito.plazo - semanasPagadas);
-    }
-
+    // 8. PRÓXIMA FECHA
     let proximaFechaPago = 'N/A';
-    if (semanasPagadas < credito.plazo) {
+    if (saldoRestante > 0) {
         const proximaFecha = new Date(fechaCreacion);
-        proximaFecha.setUTCDate(proximaFecha.getUTCDate() + (semanasPagadas + 1) * 7);
+        // Proyectamos: Si pagó 5 semanas, la siguiente fecha es la semana 6
+        proximaFecha.setUTCDate(proximaFecha.getUTCDate() + ((semanasPagadasFinancieras + 1) * 7));
         proximaFechaPago = formatDateForDisplay(proximaFecha);
     }
 
@@ -308,7 +309,7 @@ function _calcularEstadoCredito(credito, pagos) {
         pagoSemanal: pagoSemanal,
         saldoRestante: saldoRestante,
         proximaFechaPago: proximaFechaPago,
-        semanasPagadas: semanasPagadas
+        semanasPagadas: semanasPagadasVisual
     };
 }
 
@@ -7911,6 +7912,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
