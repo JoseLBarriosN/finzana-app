@@ -2931,7 +2931,7 @@ async function handleMontoPagoChange() {
 // SECCIÓN DE PAGO GRUPAL
 // =============================================
 async function handleCalcularCobranzaRuta() {
-    console.log('🚀 Iniciando cálculo de ruta (Lógica Semanal con Adelantos)...');
+    console.log('🚀 Iniciando cálculo de ruta (Matemática Estricta)...');
     const start = Date.now(); 
 
     const container = document.getElementById('cobranza-ruta-container');
@@ -2959,6 +2959,7 @@ async function handleCalcularCobranzaRuta() {
         const userOffice = currentUserData.office;
         const allCreditosPendientes = [];
 
+        // Carga de clientes por bloques
         const chunks = [];
         for (let i = 0; i < poblacionesSeleccionadas.length; i += 10) {
             chunks.push(poblacionesSeleccionadas.slice(i, i + 10));
@@ -2977,6 +2978,7 @@ async function handleCalcularCobranzaRuta() {
         if (todosLosClientes.length === 0) throw new Error("No hay clientes en estas poblaciones.");
 
         const procesarCliente = async (cliente) => {
+            // Mapa
             if (cliente.isComisionista && cliente.domicilio && cliente.domicilio.length > 5) {
                 const existe = waypointsComisionistas.some(w => w.poblacion === cliente.poblacion_grupo);
                 if (!existe) {
@@ -2994,40 +2996,69 @@ async function handleCalcularCobranzaRuta() {
             for (const credito of creditos) {
                 const histId = credito.historicalIdCredito || credito.id;
                 const pagos = await database.getPagosPorCredito(histId, userOffice);
+                // Ordenamos pagos por fecha para cálculos internos si fuera necesario
+                pagos.sort((a, b) => (parsearFecha(b.fecha)?.getTime() || 0) - (parsearFecha(a.fecha)?.getTime() || 0));
+                
                 const estadoCalc = _calcularEstadoCredito(credito, pagos);
 
-                if (estadoCalc && estadoCalc.estado !== 'liquidado' && estadoCalc.pagoSemanal > 0.01) {
+                if (estadoCalc && estadoCalc.estado !== 'liquidado') {
                     
-                    // --- LÓGICA DE SALDO Y ADELANTOS ---
-                    const pagoSemanal = estadoCalc.pagoSemanal;
+                    // --- MATEMÁTICA ESTRICTA ---
+                    
+                    // 1. Definir Pago Semanal FIJO (Contrato)
+                    // Evitamos usar cálculos dinámicos. Si el plazo es 0 (error), evitamos división por cero.
+                    const montoTotal = parseFloat(credito.montoTotal) || 0;
+                    const plazo = parseInt(credito.plazo) || 14;
+                    const pagoSemanalFijo = montoTotal / plazo; 
+
                     const saldoRestante = estadoCalc.saldoRestante;
+                    
+                    // Si el saldo es menor a 1 peso, ignoramos
+                    if (saldoRestante < 1) continue;
 
-                    // 1. Calcular cuánto se ha pagado en total históricamente
+                    // 2. Calcular Adelantos / Residuos
+                    // Sumamos todo lo pagado históricamente
                     const totalPagadoHist = pagos.reduce((sum, p) => sum + (p.monto || 0), 0);
-
-                    // 2. Calcular si hay un "pico" adelantado (residuo)
-                    // Ej: Pagó 500, semanal 350. Residuo = 150.
-                    // Usamos una pequeña tolerancia para errores decimales
+                    
+                    // Calculamos el residuo: ¿Hay "picos" sueltos que no completan una semana?
+                    // Ej: Semanal 300. Pagó 450 total. 450 % 300 = 150 de adelanto.
                     let adelantoAcumulado = 0;
-                    if (pagoSemanal > 0) {
-                        adelantoAcumulado = totalPagadoHist % pagoSemanal;
-                        // Si el residuo es casi el pago semanal (ej 349.99), es error de redondeo, es 0
-                        if (Math.abs(adelantoAcumulado - pagoSemanal) < 0.1) adelantoAcumulado = 0;
-                        // Si el residuo es minúsculo, es 0
-                        if (adelantoAcumulado < 0.1) adelantoAcumulado = 0;
+                    if (pagoSemanalFijo > 0) {
+                        adelantoAcumulado = totalPagadoHist % pagoSemanalFijo;
+                        // Corrección de redondeo (ej: 299.99 vs 300)
+                        if (Math.abs(pagoSemanalFijo - adelantoAcumulado) < 1) adelantoAcumulado = 0;
+                        if (adelantoAcumulado < 1) adelantoAcumulado = 0;
                     }
 
-                    // 3. El monto sugerido SIEMPRE es completar 1 semana
-                    // Si el semanal es 350 y tengo 150 adelantados, sugiero 200.
-                    let montoSugerido = pagoSemanal - adelantoAcumulado;
+                    // 3. Determinar Monto Sugerido
+                    const semanasAtraso = estadoCalc.semanasAtraso || 0;
+                    let montoSugerido = 0;
 
-                    // 4. Tope final: Nunca cobrar más que el saldo total restante
-                    // Ej: Debe 4900, pagó 4550. Restan 350. Sugerido 350.
+                    if (semanasAtraso > 0) {
+                        // Si debe semanas, cobramos TODAS las semanas pendientes
+                        // MENOS lo que ya tenga adelantado parcialmente
+                        montoSugerido = (semanasAtraso * pagoSemanalFijo) - adelantoAcumulado;
+                    } else {
+                        // Si está AL CORRIENTE, cobramos SOLO la siguiente semana (1)
+                        // MENOS lo que ya tenga adelantado (para completar esa semana)
+                        montoSugerido = pagoSemanalFijo - adelantoAcumulado;
+                    }
+
+                    // 4. Reglas de Tope y Mínimos
+                    // Nunca sugerir negativo (si el adelanto cubre la semana, sugerir 0 o la siguiente)
+                    // Nota: Si adelantoAcumulado es casi igual al pago semanal, montoSugerido será cercano a 0.
+                    // En ese caso, significa que esa semana YA está cubierta, sugerimos la siguiente.
+                    if (montoSugerido < 5) { 
+                         // Si lo que falta es nada, sugerimos la siguiente semana completa
+                         montoSugerido += pagoSemanalFijo;
+                    }
+
+                    // Nunca sugerir más que el saldo total
                     if (montoSugerido > saldoRestante) {
                         montoSugerido = saldoRestante;
                     }
-                    
-                    // Ajuste visual de decimales
+
+                    // Redondeo final visual
                     montoSugerido = parseFloat(montoSugerido.toFixed(2));
 
                     allCreditosPendientes.push({
@@ -3035,14 +3066,14 @@ async function handleCalcularCobranzaRuta() {
                         historicalIdCredito: histId,
                         nombreCliente: cliente.nombre,
                         curpCliente: cliente.curp,
-                        pagoSemanalAcumulado: montoSugerido, // Aquí va el monto ya descontado el adelanto
+                        pagoSemanalAcumulado: montoSugerido,
                         saldoRestante: saldoRestante,
                         estadoCredito: estadoCalc.estado,
                         poblacion_grupo: cliente.poblacion_grupo,
                         office: credito.office,
-                        plazo: credito.plazo,
-                        pagoSemanalUnitario: pagoSemanal,
-                        adelantoAcumulado: adelantoAcumulado // Guardamos esto para sumar en la validación de comisión
+                        plazo: plazo,
+                        pagoSemanalUnitario: parseFloat(pagoSemanalFijo.toFixed(2)),
+                        adelantoAcumulado: parseFloat(adelantoAcumulado.toFixed(2)) 
                     });
                 }
             }
@@ -3497,7 +3528,6 @@ function renderizarCobranzaRuta(data, container) {
 
     grupos.forEach(grupo => {
         const creditos = data[grupo];
-        // Orden descendente por ID
         creditos.sort((a, b) => {
             const idA = (a.historicalIdCredito || '').toString();
             const idB = (b.historicalIdCredito || '').toString();
@@ -3544,19 +3574,15 @@ function renderizarCobranzaRuta(data, container) {
             const adelantoPrevio = cred.adelantoAcumulado || 0;
             const estadoClase = `status-${cred.estadoCredito.replace(/\s/g, '-')}`;
             const plazo = cred.plazo || 14;
-            
-            let pagoSemanalUnitario = cred.pagoSemanalUnitario;
-            if (!pagoSemanalUnitario || pagoSemanalUnitario <= 0) {
-                pagoSemanalUnitario = (cred.montoTotal && cred.plazo) ? (cred.montoTotal / cred.plazo) : 0;
-            }
+            const pagoSemanalUnitario = cred.pagoSemanalUnitario; // Ahora viene fijo y correcto desde la función anterior
 
-            // Calculo inicial de comisión para mostrar (Simulamos la lógica de recalcularComision)
+            // Cálculo visual inicial de la comisión
             let comisionInicial = 0;
             if (plazo !== 10 && pagoSemanalUnitario > 0) {
-                 // Sumamos el sugerido + el adelanto que ya traía
-                 const totalConsiderado = montoPagarSugerido + adelantoPrevio;
-                 // Calculamos pagos completos sobre esa suma
-                 const pagosCompletos = Math.floor((totalConsiderado + 0.1) / pagoSemanalUnitario);
+                 // Lógica: (Lo que sugiero pagar + lo que ya pagó adelantado) / Precio semanal
+                 // Usamos el sugerido como base
+                 const totalParaCalculo = montoPagarSugerido + adelantoPrevio;
+                 const pagosCompletos = Math.floor((totalParaCalculo + 0.1) / pagoSemanalUnitario);
                  comisionInicial = pagosCompletos * 10;
             }
 
@@ -3568,7 +3594,7 @@ function renderizarCobranzaRuta(data, container) {
                             <small class="text-muted" style="font-size: 0.75em;">${cred.curpCliente}</small><br>
                             <small style="color:#aaa; font-size: 0.75em;">ID: ${cred.historicalIdCredito}</small>
                             ${plazo === 10 ? '<span class="badge badge-warning" style="font-size:0.6em; margin-left:3px;">10 SEM</span>' : ''}
-                            ${adelantoPrevio > 0 ? `<br><span class="badge badge-info" style="font-size:0.65em;">Adelanto previo: $${adelantoPrevio.toFixed(2)}</span>` : ''}
+                            ${adelantoPrevio > 1 ? `<br><span class="badge badge-info" style="font-size:0.65em;">Adelanto previo: $${adelantoPrevio.toFixed(2)}</span>` : ''}
                         </div>
                     </td>
                     <td style="vertical-align: middle;">
@@ -3686,7 +3712,7 @@ function recalcularComision(idLink) {
     const plazo = parseInt(row.getAttribute('data-plazo'));
     const isChecked = checkbox.checked;
     
-    // Obtenemos pago semanal y adelanto previo
+    // Obtenemos pago semanal fijo y adelanto previo oculto
     const pagoSemanalUnitario = parseFloat(inputMonto.getAttribute('data-pago-semanal')) || 0;
     const adelantoPrevio = parseFloat(inputMonto.getAttribute('data-adelanto-previo')) || 0;
 
@@ -3704,26 +3730,22 @@ function recalcularComision(idLink) {
         inputMonto.disabled = false;
     }
 
-    // --- REGLAS CORREGIDAS ---
+    // --- REGLAS CORREGIDAS (COMPLEMENTO) ---
+    // Si la suma del dinero que entra HOY + lo que sobraba de AYER >= 1 semana, se paga.
+    
     if (!isChecked || monto <= 0 || plazo === 10 || pagoSemanalUnitario <= 0) {
         comision = 0;
     } else {
-        // Sumamos lo que paga hoy + lo que traía adelantado
+        // AQUÍ ESTÁ LA CONFIRMACIÓN QUE PEDISTE:
         const totalConsiderado = monto + adelantoPrevio;
         
-        // Calculamos cuántos pagos completos cubre este total
-        // Usamos 0.1 de tolerancia
+        // Calculamos cuántos pagos COMPLETOS se cubren con este total acumulado
         const pagosCompletos = Math.floor((totalConsiderado + 0.1) / pagoSemanalUnitario);
 
         switch (tipo) {
             case 'normal':
             case 'adelanto':
             case 'actualizado':
-                // $10 por cada pago completo que se logra completar HOY
-                // OJO: Si el adelanto previo ya era un pago completo (ej. pagó 2 semanas juntas antes),
-                // la lógica de base de datos ya marcó ese pago.
-                // AQUÍ asumimos que el adelanto es siempre el residuo (menor a una semana).
-                // Por tanto, si adelantoPrevio < pagoSemanal, cualquier pagoCompleto >= 1 cuenta para comisión hoy.
                 comision = pagosCompletos * 10;
                 break;
 
@@ -3744,15 +3766,16 @@ function recalcularComision(idLink) {
         boxComision.style.color = '#28a745';
         labelComision.style.fontWeight = 'bold';
         labelComision.style.textDecoration = 'none';
-        boxComision.title = "";
+        boxComision.title = "Comisión generada";
     } else {
         boxComision.style.color = '#dc3545'; 
         labelComision.style.fontWeight = 'normal';
         
-        // Si hay monto pero no alcanza para comisión, mostrar tachado
+        // Si hay pago (monto > 0) pero no alcanzó la comisión, mostramos tachado
         if (isChecked && monto > 0 && plazo !== 10 && tipo !== 'bancario' && tipo !== 'extraordinario') {
              labelComision.style.textDecoration = 'line-through';
-             boxComision.title = `Monto total (${(monto+adelantoPrevio).toFixed(2)}) insuficiente para cubrir pago semanal (${pagoSemanalUnitario})`;
+             const totalSuma = (monto + adelantoPrevio).toFixed(2);
+             boxComision.title = `Total (${totalSuma}) no alcanza para pago semanal (${pagoSemanalUnitario})`;
         } else {
              labelComision.style.textDecoration = 'none';
              boxComision.title = "";
@@ -7891,6 +7914,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
