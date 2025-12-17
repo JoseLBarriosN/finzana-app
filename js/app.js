@@ -1,5 +1,5 @@
 // =============================================
-// INICIALIZACIÓN DE LA APLICACIÓN CON FIREBASE - CORREGIDO COMPLETO
+// INICIALIZACIÓN DE LA APLICACIÓN CON FIREBASE
 // =============================================
 
 let currentUser = null;
@@ -39,7 +39,6 @@ window.initMap = function() {
 async function cargarConfiguracionSistema() {
     console.log("⚙️ Iniciando carga de configuración del sistema...");
     try {
-        // Referencia directa al documento único de configuración
         const docRef = db.collection('configuracion').doc('parametros_generales');
         const doc = await docRef.get();
         
@@ -48,14 +47,11 @@ async function cargarConfiguracionSistema() {
             console.log("✅ Configuración cargada desde DB:", configSistema);
         } else {
             console.warn("⚠️ No existe configuración en DB. Creando valores por defecto...");
-            // Si no existe, lo creamos automáticamente para evitar errores futuros
             await docRef.set({ oferta13Semanas: false });
             configSistema = { oferta13Semanas: false };
         }
     } catch (error) {
         console.error("❌ Error CRÍTICO cargando configuración:", error);
-        // Importante: Si falla por permisos (Área comercial), intentamos dejarlo en false
-        // pero mostramos el error para depurar.
         configSistema = { oferta13Semanas: false };
     }
 }
@@ -2935,7 +2931,7 @@ async function handleMontoPagoChange() {
 // SECCIÓN DE PAGO GRUPAL
 // =============================================
 async function handleCalcularCobranzaRuta() {
-    console.log('🚀 Iniciando cálculo de ruta (Lógica Semanal Estricta)...');
+    console.log('🚀 Iniciando cálculo de ruta (Lógica Semanal con Adelantos)...');
     const start = Date.now(); 
 
     const container = document.getElementById('cobranza-ruta-container');
@@ -2943,7 +2939,6 @@ async function handleCalcularCobranzaRuta() {
     const btnRegistrar = document.getElementById('btn-registrar-pagos-offline');
     const btnMapa = document.getElementById('btn-ver-ruta-maps');
     
-    // 1. Obtener Poblaciones
     const checkboxes = document.querySelectorAll('.poblacion-check:checked');
     const poblacionesSeleccionadas = Array.from(checkboxes).map(cb => cb.value);
 
@@ -2954,7 +2949,6 @@ async function handleCalcularCobranzaRuta() {
 
     showProcessingOverlay(true, `Analizando ${poblacionesSeleccionadas.length} poblaciones...`);
     
-    // Reset UI
     if (container) container.innerHTML = '';
     if (btnGuardar) btnGuardar.classList.add('hidden');
     if (btnRegistrar) btnRegistrar.classList.add('hidden');
@@ -2965,7 +2959,6 @@ async function handleCalcularCobranzaRuta() {
         const userOffice = currentUserData.office;
         const allCreditosPendientes = [];
 
-        // FASE 1: OBTENER CLIENTES (Lotes de 10)
         const chunks = [];
         for (let i = 0; i < poblacionesSeleccionadas.length; i += 10) {
             chunks.push(poblacionesSeleccionadas.slice(i, i + 10));
@@ -2983,9 +2976,7 @@ async function handleCalcularCobranzaRuta() {
 
         if (todosLosClientes.length === 0) throw new Error("No hay clientes en estas poblaciones.");
 
-        // FASE 2: PROCESAR CLIENTES Y CRÉDITOS
         const procesarCliente = async (cliente) => {
-            // Mapa: Waypoints
             if (cliente.isComisionista && cliente.domicilio && cliente.domicilio.length > 5) {
                 const existe = waypointsComisionistas.some(w => w.poblacion === cliente.poblacion_grupo);
                 if (!existe) {
@@ -3007,44 +2998,51 @@ async function handleCalcularCobranzaRuta() {
 
                 if (estadoCalc && estadoCalc.estado !== 'liquidado' && estadoCalc.pagoSemanal > 0.01) {
                     
-                    // --- CORRECCIÓN LÓGICA DE SUGERENCIA DE PAGO ---
-                    
-                    const semanasAtraso = estadoCalc.semanasAtraso || 0;
+                    // --- LÓGICA DE SALDO Y ADELANTOS ---
                     const pagoSemanal = estadoCalc.pagoSemanal;
                     const saldoRestante = estadoCalc.saldoRestante;
-                    
-                    let montoSugerido = 0;
 
-                    if (semanasAtraso > 0) {
-                        // Si tiene atraso, sugerimos cubrir todo el atraso
-                        montoSugerido = semanasAtraso * pagoSemanal;
-                    } else {
-                        // AQUÍ ESTÁ EL CAMBIO: Si está al corriente, SOLO sugerimos 1 semana
-                        montoSugerido = pagoSemanal;
+                    // 1. Calcular cuánto se ha pagado en total históricamente
+                    const totalPagadoHist = pagos.reduce((sum, p) => sum + (p.monto || 0), 0);
+
+                    // 2. Calcular si hay un "pico" adelantado (residuo)
+                    // Ej: Pagó 500, semanal 350. Residuo = 150.
+                    // Usamos una pequeña tolerancia para errores decimales
+                    let adelantoAcumulado = 0;
+                    if (pagoSemanal > 0) {
+                        adelantoAcumulado = totalPagadoHist % pagoSemanal;
+                        // Si el residuo es casi el pago semanal (ej 349.99), es error de redondeo, es 0
+                        if (Math.abs(adelantoAcumulado - pagoSemanal) < 0.1) adelantoAcumulado = 0;
+                        // Si el residuo es minúsculo, es 0
+                        if (adelantoAcumulado < 0.1) adelantoAcumulado = 0;
                     }
 
-                    // REGLA FINAL: Nunca sugerir más que el saldo restante
-                    // (Ej: Si debe 350 semanal, pero el saldo total es 200, sugerimos 200)
-                    let montoAPagarFinal = Math.min(montoSugerido, saldoRestante);
-                    
-                    // Tolerancia de redondeo
-                    if (Math.abs(montoAPagarFinal - saldoRestante) < 0.5) {
-                        montoAPagarFinal = saldoRestante;
+                    // 3. El monto sugerido SIEMPRE es completar 1 semana
+                    // Si el semanal es 350 y tengo 150 adelantados, sugiero 200.
+                    let montoSugerido = pagoSemanal - adelantoAcumulado;
+
+                    // 4. Tope final: Nunca cobrar más que el saldo total restante
+                    // Ej: Debe 4900, pagó 4550. Restan 350. Sugerido 350.
+                    if (montoSugerido > saldoRestante) {
+                        montoSugerido = saldoRestante;
                     }
+                    
+                    // Ajuste visual de decimales
+                    montoSugerido = parseFloat(montoSugerido.toFixed(2));
 
                     allCreditosPendientes.push({
                         firestoreId: credito.id,
                         historicalIdCredito: histId,
                         nombreCliente: cliente.nombre,
                         curpCliente: cliente.curp,
-                        pagoSemanalAcumulado: parseFloat(montoAPagarFinal.toFixed(2)), // Lo que sugerimos
-                        saldoRestante: saldoRestante, // El saldo total real
+                        pagoSemanalAcumulado: montoSugerido, // Aquí va el monto ya descontado el adelanto
+                        saldoRestante: saldoRestante,
                         estadoCredito: estadoCalc.estado,
                         poblacion_grupo: cliente.poblacion_grupo,
                         office: credito.office,
                         plazo: credito.plazo,
-                        // DATO CRÍTICO PARA COMISIONES: Enviamos cuánto vale 1 semana
-                        pagoSemanalUnitario: pagoSemanal 
+                        pagoSemanalUnitario: pagoSemanal,
+                        adelantoAcumulado: adelantoAcumulado // Guardamos esto para sumar en la validación de comisión
                     });
                 }
             }
@@ -3065,7 +3063,6 @@ async function handleCalcularCobranzaRuta() {
 
         renderizarCobranzaRuta(cobranzaRutaData, container);
 
-        // UI Final
         const selectorCard = document.getElementById('selector-poblaciones-card');
         if (selectorCard) selectorCard.classList.add('closed');
         
@@ -3496,13 +3493,11 @@ function renderizarCobranzaRuta(data, container) {
     }
 
     let html = '';
-    // Ordenar grupos (poblaciones) alfabéticamente
     const grupos = Object.keys(data).sort((a, b) => a.localeCompare(b));
 
     grupos.forEach(grupo => {
         const creditos = data[grupo];
-
-        // Ordenar créditos por ID descendente
+        // Orden descendente por ID
         creditos.sort((a, b) => {
             const idA = (a.historicalIdCredito || '').toString();
             const idB = (b.historicalIdCredito || '').toString();
@@ -3545,33 +3540,24 @@ function renderizarCobranzaRuta(data, container) {
 
         creditos.forEach(cred => {
             const linkId = cred.firestoreId;
-            const montoPagarSugerido = cred.pagoSemanalAcumulado; // Lo que debe pagar hoy
+            const montoPagarSugerido = cred.pagoSemanalAcumulado; 
+            const adelantoPrevio = cred.adelantoAcumulado || 0;
             const estadoClase = `status-${cred.estadoCredito.replace(/\s/g, '-')}`;
             const plazo = cred.plazo || 14;
             
-            // Recuperamos el valor exacto de la semana
             let pagoSemanalUnitario = cred.pagoSemanalUnitario;
-            
-            // Fallback por seguridad
             if (!pagoSemanalUnitario || pagoSemanalUnitario <= 0) {
-                if (cred.montoTotal && cred.plazo) {
-                    pagoSemanalUnitario = cred.montoTotal / cred.plazo;
-                } else {
-                    pagoSemanalUnitario = 0;
-                }
+                pagoSemanalUnitario = (cred.montoTotal && cred.plazo) ? (cred.montoTotal / cred.plazo) : 0;
             }
 
-            // Calculo inicial de comisión para mostrar (Lógica estricta de visualización inicial)
+            // Calculo inicial de comisión para mostrar (Simulamos la lógica de recalcularComision)
             let comisionInicial = 0;
             if (plazo !== 10 && pagoSemanalUnitario > 0) {
-                 // Si paga menos de 1 semana (con tolerancia pequeña), comision 0
-                 if (montoPagarSugerido < (pagoSemanalUnitario - 0.1)) {
-                     comisionInicial = 0;
-                 } else {
-                     // Si paga 1 o más, calculamos múltiplos
-                     const pagosCompletos = Math.floor((montoPagarSugerido + 0.1) / pagoSemanalUnitario);
-                     comisionInicial = pagosCompletos * 10;
-                 }
+                 // Sumamos el sugerido + el adelanto que ya traía
+                 const totalConsiderado = montoPagarSugerido + adelantoPrevio;
+                 // Calculamos pagos completos sobre esa suma
+                 const pagosCompletos = Math.floor((totalConsiderado + 0.1) / pagoSemanalUnitario);
+                 comisionInicial = pagosCompletos * 10;
             }
 
             html += `
@@ -3582,6 +3568,7 @@ function renderizarCobranzaRuta(data, container) {
                             <small class="text-muted" style="font-size: 0.75em;">${cred.curpCliente}</small><br>
                             <small style="color:#aaa; font-size: 0.75em;">ID: ${cred.historicalIdCredito}</small>
                             ${plazo === 10 ? '<span class="badge badge-warning" style="font-size:0.6em; margin-left:3px;">10 SEM</span>' : ''}
+                            ${adelantoPrevio > 0 ? `<br><span class="badge badge-info" style="font-size:0.65em;">Adelanto previo: $${adelantoPrevio.toFixed(2)}</span>` : ''}
                         </div>
                     </td>
                     <td style="vertical-align: middle;">
@@ -3610,6 +3597,7 @@ function renderizarCobranzaRuta(data, container) {
                                     data-id-link="${linkId}"
                                     data-saldo-max="${cred.saldoRestante}"
                                     data-pago-semanal="${pagoSemanalUnitario.toFixed(2)}"
+                                    data-adelanto-previo="${adelantoPrevio.toFixed(2)}"
                                     style="padding-left: 18px; width: 100%; border-radius: 6px; font-weight: bold;"
                                     oninput="recalcularComision('${linkId}')">
                             </div>
@@ -3657,7 +3645,6 @@ function renderizarCobranzaRuta(data, container) {
 
     container.innerHTML = html;
 
-    // Listeners para selectores de grupo
     container.querySelectorAll('.check-group-all').forEach(chk => {
         chk.addEventListener('change', (e) => {
             const grp = e.target.getAttribute('data-grupo');
@@ -3674,7 +3661,6 @@ function renderizarCobranzaRuta(data, container) {
         });
     });
 
-    // Calcular totales iniciales
     grupos.forEach(grupo => {
         const grupoId = grupo.replace(/\s+/g, '_');
         recalcularTotalesGrupo(grupoId);
@@ -3700,12 +3686,12 @@ function recalcularComision(idLink) {
     const plazo = parseInt(row.getAttribute('data-plazo'));
     const isChecked = checkbox.checked;
     
-    // Obtenemos el pago semanal unitario del data-attribute
+    // Obtenemos pago semanal y adelanto previo
     const pagoSemanalUnitario = parseFloat(inputMonto.getAttribute('data-pago-semanal')) || 0;
+    const adelantoPrevio = parseFloat(inputMonto.getAttribute('data-adelanto-previo')) || 0;
 
     let comision = 0;
 
-    // Control visual de habilitado/deshabilitado
     if (!isChecked) {
         row.style.opacity = '0.5';
         row.style.backgroundColor = '#f9f9f9';
@@ -3718,30 +3704,31 @@ function recalcularComision(idLink) {
         inputMonto.disabled = false;
     }
 
-    // --- REGLAS DE COMISIÓN CORREGIDAS ---
-
-    // 1. Si no está marcado, monto es 0, o es comisionista (10 sem) -> $0
+    // --- REGLAS CORREGIDAS ---
     if (!isChecked || monto <= 0 || plazo === 10 || pagoSemanalUnitario <= 0) {
         comision = 0;
     } else {
-        // Regla General: Calcular cuántos pagos completos cubre el monto.
-        // Usamos una tolerancia pequeña (0.1) para evitar problemas de punto flotante (ej 349.9999)
-        // Pero si paga $1 menos (ej 349 vs 350), el floor bajará a 0.
-        const pagosCompletos = Math.floor((monto + 0.1) / pagoSemanalUnitario);
+        // Sumamos lo que paga hoy + lo que traía adelantado
+        const totalConsiderado = monto + adelantoPrevio;
+        
+        // Calculamos cuántos pagos completos cubre este total
+        // Usamos 0.1 de tolerancia
+        const pagosCompletos = Math.floor((totalConsiderado + 0.1) / pagoSemanalUnitario);
 
         switch (tipo) {
             case 'normal':
             case 'adelanto':
             case 'actualizado':
-                // Si pagosCompletos es 0 (porque pagó menos del semanal), comisión es 0.
-                // Si pagosCompletos es 1 (porque pagó el semanal exacto o hasta 1.9 veces), comisión es 10.
-                // Si pagosCompletos es 2 (porque pagó el doble), comisión es 20.
+                // $10 por cada pago completo que se logra completar HOY
+                // OJO: Si el adelanto previo ya era un pago completo (ej. pagó 2 semanas juntas antes),
+                // la lógica de base de datos ya marcó ese pago.
+                // AQUÍ asumimos que el adelanto es siempre el residuo (menor a una semana).
+                // Por tanto, si adelantoPrevio < pagoSemanal, cualquier pagoCompleto >= 1 cuenta para comisión hoy.
                 comision = pagosCompletos * 10;
                 break;
 
             case 'extraordinario':
             case 'bancario':
-                // Estos tipos nunca generan comisión
                 comision = 0;
                 break;
 
@@ -3757,14 +3744,15 @@ function recalcularComision(idLink) {
         boxComision.style.color = '#28a745';
         labelComision.style.fontWeight = 'bold';
         labelComision.style.textDecoration = 'none';
+        boxComision.title = "";
     } else {
-        boxComision.style.color = '#dc3545'; // Rojo para indicar que no hay comisión
+        boxComision.style.color = '#dc3545'; 
         labelComision.style.fontWeight = 'normal';
         
-        // Si pagó algo pero no alcanzó para comisión, tachamos visualmente para alertar
+        // Si hay monto pero no alcanza para comisión, mostrar tachado
         if (isChecked && monto > 0 && plazo !== 10 && tipo !== 'bancario' && tipo !== 'extraordinario') {
              labelComision.style.textDecoration = 'line-through';
-             boxComision.title = "Monto insuficiente para generar comisión";
+             boxComision.title = `Monto total (${(monto+adelantoPrevio).toFixed(2)}) insuficiente para cubrir pago semanal (${pagoSemanalUnitario})`;
         } else {
              labelComision.style.textDecoration = 'none';
              boxComision.title = "";
@@ -7903,6 +7891,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
