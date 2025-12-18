@@ -867,7 +867,7 @@ const database = {
         console.error("Error agregando crédito:", error);
         return { success: false, message: `Error al generar crédito: ${error.message}` };
     }
-}
+},
 
     // --- METODO DE PAGOS ---
     getPagosPorCredito: async (historicalIdCredito, office) => {
@@ -2468,6 +2468,7 @@ const database = {
     },
 
 };
+
 
 
 
