@@ -2081,50 +2081,55 @@ async function disableUsuario(userId, userName) {
 async function handleUserForm(e) {
     e.preventDefault();
     const submitButton = e.target.querySelector('button[type="submit"]');
-    const statusUsuarios = document.getElementById('status_usuarios');
     
+    // DEBUG: Confirmar que tenemos el ID
+    console.log("💾 Intentando guardar usuario. ID en edición:", editingUserId); 
+
     showButtonLoading(submitButton, true, editingUserId ? 'Actualizando...' : 'Creando...');
-    statusUsuarios.className = 'status-message status-info';
 
     try {
         const nombre = document.getElementById('nuevo-nombre').value.trim();
         const rol = document.getElementById('nuevo-rol').value;
         const office = document.getElementById('nuevo-sucursal').value;
         const ruta = document.getElementById('nuevo-ruta').value || null;
+        const password = document.getElementById('nuevo-password').value;
 
         if (!nombre || !rol || !office) throw new Error('Nombre, Rol y Oficina son obligatorios.');
 
         if (editingUserId) {
+            // --- ACTUALIZACIÓN ---
             const userData = { name: nombre, role: rol, office: office, ruta: ruta };
-            const password = document.getElementById('nuevo-password').value;
-            if (password && password.trim() !== "") userData.password = password; 
-
+            // Solo mandamos contraseña si se escribió algo
+            // (Nota: actualizar contraseña requiere Cloud Functions o re-autenticación, aquí solo actualizamos datos)
+            
             const res = await database.actualizarUsuario(editingUserId, userData);
             if (!res.success) throw new Error(res.message);
-            showStatus('status_usuarios', res.message, 'success');
+            
+            showStatus('status_usuarios', 'Usuario actualizado correctamente.', 'success');
+
         } else {
+            // --- CREACIÓN ---
             const email = document.getElementById('nuevo-email').value.trim();
-            const password = document.getElementById('nuevo-password').value;
-            if (!email || !password) throw new Error('Email y contraseña requeridos.');
-            if (password.length < 6) throw new Error('Contraseña muy corta.');
-
-            let user;
-            try {
-                const cred = await auth.createUserWithEmailAndPassword(email, password);
-                user = cred.user;
-            } catch (err) { throw new Error(`Error Auth: ${err.message}`); }
-
-            await db.collection('users').doc(user.uid).set({
-                id: user.uid, email, name: nombre, role: rol, office, ruta,
+            if (!email || !password) throw new Error('Email y contraseña requeridos para crear nuevo.');
+            
+            const cred = await auth.createUserWithEmailAndPassword(email, password);
+            await db.collection('users').doc(cred.user.uid).set({
+                id: cred.user.uid, email, name: nombre, role: rol, office: office, ruta: ruta,
                 createdAt: new Date().toISOString(), status: 'active'
             });
             showStatus('status_usuarios', 'Usuario creado exitosamente.', 'success');
         }
+
         ocultarFormularioUsuario();
         await loadUsersTable();
+
     } catch (error) {
-        console.error("Error:", error);
-        showStatus('status_usuarios', error.message, 'error');
+        console.error("Error formulario usuario:", error);
+        let msg = error.message;
+        if (error.code === 'auth/email-already-in-use') {
+            msg = 'Error: El sistema intentó crear (no editar) y el correo ya existe. Recarga la página.';
+        }
+        showStatus('status_usuarios', msg, 'error');
     } finally {
         showButtonLoading(submitButton, false);
     }
@@ -2134,10 +2139,9 @@ async function handleUserForm(e) {
 // ** CARGAR TABLA DE USUARIOS (CORREGIDA) ** //
 // ========================================= //
 async function loadUsersTable() {
-    // Si ya hay carga en progreso, no hacemos nada para evitar duplicados
-    if (cargaEnProgreso) { return; }
-    
+    if (cargaEnProgreso) return;
     cargaEnProgreso = true;
+    
     const tbody = document.getElementById('tabla-usuarios');
     const btnBuscar = document.querySelector('#btn-aplicar-filtros-usuarios');
     
@@ -2148,65 +2152,48 @@ async function loadUsersTable() {
     try {
         const resultado = await database.obtenerUsuarios();
         
-        if (!resultado.success) {
-            throw new Error(resultado.message);
-        }
+        if (!resultado.success) throw new Error(resultado.message);
         
         let usuarios = resultado.data || [];
 
-        // --- FILTROS DE BÚSQUEDA ---
+        // --- GUARDAMOS EN CACHÉ GLOBAL (ESTO ES LA CLAVE) ---
+        window.usuariosCache = usuarios; 
+
+        // Filtros
         const filtroEmail = (document.getElementById('filtro-email-usuario')?.value || '').trim().toLowerCase();
         const filtroNombre = (document.getElementById('filtro-nombre-usuario')?.value || '').trim().toLowerCase();
         const filtroRol = document.getElementById('filtro-rol-usuario')?.value || '';
         const filtroOfficeUsuario = document.getElementById('filtro-sucursal-usuario')?.value || '';
-
-        // Obtenemos los permisos del usuario actual para saber qué puede ver
         const adminOffice = currentUserData?.office;
         
         const usuariosFiltrados = usuarios.filter(usuario => {
             const emailMatch = !filtroEmail || (usuario.email && usuario.email.toLowerCase().includes(filtroEmail));
             const nombreMatch = !filtroNombre || (usuario.name && usuario.name.toLowerCase().includes(filtroNombre));
             const rolMatch = !filtroRol || usuario.role === filtroRol;
-            
-            // Filtro visual de la tabla
             const officeUiMatch = !filtroOfficeUsuario || usuario.office === filtroOfficeUsuario || (filtroOfficeUsuario === 'AMBAS' && usuario.office === 'AMBAS');
-            
-            // Filtro de seguridad (Segregación de datos)
             const adminOfficeMatch = !adminOffice || adminOffice === 'AMBAS' || usuario.office === adminOffice || !usuario.office;
-            
             return emailMatch && nombreMatch && rolMatch && officeUiMatch && adminOfficeMatch;
         });
 
         tbody.innerHTML = '';
 
         if (usuariosFiltrados.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">No se encontraron usuarios con esos criterios.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">No se encontraron usuarios.</td></tr>';
             showStatus('status_usuarios', 'No se encontraron usuarios.', 'info');
         } else {
-            // Ordenar alfabéticamente
             usuariosFiltrados.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 
             usuariosFiltrados.forEach(usuario => {
                 const tr = document.createElement('tr');
-                
-                // Estilo para usuarios deshabilitados
                 if (usuario.status === 'disabled') {
                     tr.style.opacity = '0.5';
-                    tr.title = 'Usuario deshabilitado';
                     tr.style.backgroundColor = '#f8f9fa';
                 }
 
-                // Normalización para clases CSS de roles
-                const normalizedRole = (usuario.role || 'default')
-                    .normalize("NFD")
-                    .replace(/[\u0300-\u036f]/g, "");
+                const normalizedRole = (usuario.role || 'default').normalize("NFD").replace(/[\u0300-\u036f]/g, "");
                 const roleBadgeClass = `role-${normalizedRole.toLowerCase().replace(/\s/g, '-')}`;
                 
-                // --- CORRECCIÓN CRÍTICA AQUÍ ---
-                // Reemplazamos las comillas dobles por la entidad HTML &quot;
-                // Esto permite que el objeto JSON completo viaje seguro dentro del atributo onclick
-                const usuarioJsonString = JSON.stringify(usuario).replace(/"/g, "&quot;");
-
+                // --- CAMBIO CLAVE: PASAMOS SOLO EL ID ---
                 tr.innerHTML = `
                     <td>${usuario.email || 'N/A'}</td>
                     <td>${usuario.name || 'N/A'}</td>
@@ -2215,7 +2202,7 @@ async function loadUsersTable() {
                     <td>${usuario.ruta || '--'}</td>
                     <td>${usuario.status === 'disabled' ? '<span class="badge badge-danger">Inactivo</span>' : '<span class="badge badge-success">Activo</span>'}</td>
                     <td class="action-buttons">
-                        <button class="btn btn-sm btn-info" onclick='mostrarFormularioUsuario(${usuarioJsonString})' title="Editar">
+                        <button class="btn btn-sm btn-info" onclick="prepararEdicionUsuario('${usuario.id}')" title="Editar">
                             <i class="fas fa-edit"></i>
                         </button>
                         ${usuario.status !== 'disabled' ? 
@@ -2227,19 +2214,36 @@ async function loadUsersTable() {
                 `;
                 tbody.appendChild(tr);
             });
-            
             showStatus('status_usuarios', `${usuariosFiltrados.length} usuarios encontrados.`, 'success');
         }
 
     } catch (error) {
-        console.error("Error cargando tabla de usuarios:", error);
-        tbody.innerHTML = `<tr><td colspan="7" style="color:red; text-align:center;">Error al cargar usuarios: ${error.message}</td></tr>`;
+        console.error("Error cargando usuarios:", error);
+        tbody.innerHTML = `<tr><td colspan="7" style="color:red;">Error: ${error.message}</td></tr>`;
         showStatus('status_usuarios', `Error: ${error.message}`, 'error');
     } finally {
         cargaEnProgreso = false;
         showButtonLoading(btnBuscar, false);
     }
 }
+
+// ====================================== //
+// ** PREPARAR EDICIÓN POR ID ** //
+// ====================================== //
+window.prepararEdicionUsuario = function(idUsuario) {
+    console.log("🔍 Buscando usuario para editar, ID:", idUsuario);
+    
+    // Buscamos en la caché global que llenaremos en loadUsersTable
+    const usuarioEncontrado = window.usuariosCache.find(u => u.id === idUsuario);
+    
+    if (usuarioEncontrado) {
+        console.log("✅ Usuario encontrado:", usuarioEncontrado.email);
+        mostrarFormularioUsuario(usuarioEncontrado);
+    } else {
+        console.error("❌ Error: No se encontró el usuario en memoria con ID:", idUsuario);
+        alert("Error al cargar los datos del usuario. Por favor recarga la tabla.");
+    }
+};
 
 /**
  * Limpia los filtros de la vista de Gestión de Usuarios.
@@ -7947,6 +7951,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
