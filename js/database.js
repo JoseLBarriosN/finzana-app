@@ -117,19 +117,20 @@ const database = {
 
     // --- OBTENER USUARIOS ---
     async obtenerUsuarios() {
-        try {
-            const snapshot = await db.collection('users').get();
-            const users = snapshot.docs.map(doc => doc.data());
-            return { success: true, data: users };
-        } catch (error) {
-            if (error.code === 'permission-denied') {
-                console.log("Info: Usuario actual no tiene permiso para listar usuarios.");
-                return { success: false, data: [], message: "Sin permisos" };
-            }
-            console.warn("Error obtenerUsuarios:", error);
-            return { success: false, message: error.message, data: [] };
+    try {
+        const snapshot = await db.collection('users').get();
+        // CORRECCIÓN: Agregamos { id: doc.id, ... } para que el objeto tenga su ID
+        const users = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        return { success: true, data: users };
+    } catch (error) {
+        if (error.code === 'permission-denied') {
+            console.log("Info: Usuario actual no tiene permiso para listar usuarios.");
+            return { success: false, data: [], message: "Sin permisos" };
         }
-    },
+        console.warn("Error obtenerUsuarios:", error);
+        return { success: false, message: error.message, data: [] };
+    }
+},
 
     // --- OBTENER USUARIO POR ID ---
     obtenerUsuarioPorId: async (uid) => {
@@ -2468,6 +2469,7 @@ const database = {
     },
 
 };
+
 
 
 
