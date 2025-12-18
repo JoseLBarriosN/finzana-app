@@ -2855,7 +2855,9 @@ async function handleSearchCreditForPayment() {
     }
 }
 
-
+// ========================================= //
+    // ** FUNCION DE PAGO INDIVIDUAL ** //
+// ========================================= //
 async function handlePaymentForm(e) {
     e.preventDefault();
     const submitButton = e.target.querySelector('button[type="submit"]');
@@ -2879,16 +2881,46 @@ async function handlePaymentForm(e) {
         montoInput.classList.remove('input-error');
     }
 
-    // --- REGLAS DE COMISIÓN (Pago Individual) ---
+    // --- CÁLCULO DE COMISIÓN (REGLAS ACTUALIZADAS) ---
     let comision = 0;
     const plazo = creditoActual.plazo || 14;
-    
-    // Solo si no es comisionista (10 semanas)
+    // IMPORTANTE: Obtenemos el estado CALCULADO recientemente al buscar, o del objeto.
+    // Si usaste la función _calcularEstadoCredito antes, asegúrate de que 'creditoActual' tenga el estado actualizado.
+    // Usualmente se actualiza la UI, pero el objeto creditoActual puede tener el estado viejo.
+    // Leemos el valor del input de estado que ya se calculó en handleSearchCreditForPayment
+    const estadoInput = document.getElementById('estado_cobranza'); 
+    const estadoActual = estadoInput ? estadoInput.value.toLowerCase() : (creditoActual.estado || 'al corriente');
+
+    // 1. Regla Comisionista (10 sem) -> $0
     if (plazo !== 10) { 
-        if (tipoPago === 'normal' || tipoPago === 'adelanto' || tipoPago === 'actualizado') {
-            comision = 10;
+        
+        // 2. REGLA ESTATUS: Solo 'al corriente' o 'liquidado' generan comisión
+        if (estadoActual === 'al corriente' || estadoActual === 'liquidado' || estadoActual === 'adelantado') {
+            
+            if (tipoPago === 'normal' || tipoPago === 'adelanto') {
+                // Lógica Estándar: $10 por cada pago completo.
+                // Necesitamos el pago semanal para calcular múltiplos.
+                const pagoSemanal = creditoActual.montoTotal / creditoActual.plazo;
+                if (pagoSemanal > 0) {
+                    const pagosCompletos = Math.floor((montoPago + 0.1) / pagoSemanal);
+                    comision = pagosCompletos * 10;
+                }
+            } 
+            else if (tipoPago === 'actualizado') {
+                // 3. REGLA RENOVACIÓN: Comisión tope $10 (si cubre al menos 1 pago)
+                const pagoSemanal = creditoActual.montoTotal / creditoActual.plazo;
+                if (pagoSemanal > 0 && montoPago >= (pagoSemanal - 0.9)) {
+                    comision = 10;
+                } else {
+                    comision = 0;
+                }
+            }
+            // Extraordinario y Bancario -> $0
+        } else {
+            // Si está en atraso/cobranza/jurídico -> $0
+            comision = 0;
+            console.log("Comisión anulada por estatus:", estadoActual);
         }
-        // Extraordinario y Bancario se quedan en 0
     }
     // --------------------------------------------
 
@@ -2902,7 +2934,7 @@ async function handlePaymentForm(e) {
             idCredito: historicalId,
             monto: montoPago,
             tipoPago: tipoPago,
-            comisionGenerada: comision, // Enviamos la comisión calculada
+            comisionGenerada: comision, 
             origen: 'manual'
         };
 
@@ -2910,7 +2942,7 @@ async function handlePaymentForm(e) {
 
         if (resultado.success) {
             showFixedProgress(100, 'Pago registrado');
-            let successMsg = '¡Pago registrado exitosamente!';
+            let successMsg = `¡Pago registrado! Comisión generada: $${comision}`;
             if (!isOnline) successMsg += ' (Guardado localmente).';
             
             showStatus('status_cobranza', successMsg, 'success');
@@ -2931,7 +2963,9 @@ async function handlePaymentForm(e) {
     }
 }
 
-
+// ========================================= //
+    // ** FUNCION DE MONTO DE PAGO ** //
+// ========================================= //
 async function handleMontoPagoChange() {
     if (!creditoActual) return;
 
@@ -3609,22 +3643,27 @@ function renderizarCobranzaRuta(data, container) {
             const linkId = cred.firestoreId;
             const montoPagarSugerido = cred.pagoSemanalAcumulado; 
             const adelantoPrevio = cred.adelantoAcumulado || 0;
-            const estadoClase = `status-${cred.estadoCredito.replace(/\s/g, '-')}`;
+            const estadoRaw = cred.estadoCredito || 'al corriente'; // Variable cruda para lógica
+            const estadoClase = `status-${estadoRaw.replace(/\s/g, '-')}`;
             const plazo = cred.plazo || 14;
-            const pagoSemanalUnitario = cred.pagoSemanalUnitario; // Ahora viene fijo y correcto desde la función anterior
+            
+            let pagoSemanalUnitario = cred.pagoSemanalUnitario;
+            if (!pagoSemanalUnitario || pagoSemanalUnitario <= 0) {
+                pagoSemanalUnitario = (cred.montoTotal && cred.plazo) ? (cred.montoTotal / cred.plazo) : 0;
+            }
 
-            // Cálculo visual inicial de la comisión
+            // Calculo inicial de comisión para visualización (Aplicando reglas nuevas)
             let comisionInicial = 0;
-            if (plazo !== 10 && pagoSemanalUnitario > 0) {
-                 // Lógica: (Lo que sugiero pagar + lo que ya pagó adelantado) / Precio semanal
-                 // Usamos el sugerido como base
+            const estaAlCorriente = (estadoRaw === 'al corriente' || estadoRaw === 'adelantado' || estadoRaw === 'liquidado');
+            
+            if (plazo !== 10 && pagoSemanalUnitario > 0 && estaAlCorriente) {
                  const totalParaCalculo = montoPagarSugerido + adelantoPrevio;
                  const pagosCompletos = Math.floor((totalParaCalculo + 0.1) / pagoSemanalUnitario);
                  comisionInicial = pagosCompletos * 10;
             }
 
             html += `
-                <tr class="fila-cobro" data-plazo="${plazo}" data-grupo-id="${grupoId}" id="row-${linkId}">
+                <tr class="fila-cobro" data-plazo="${plazo}" data-grupo-id="${grupoId}" data-estado="${estadoRaw}" id="row-${linkId}">
                     <td style="vertical-align: middle;">
                         <div style="line-height: 1.2;">
                             <strong>${cred.nombreCliente}</strong><br>
@@ -3635,7 +3674,7 @@ function renderizarCobranzaRuta(data, container) {
                         </div>
                     </td>
                     <td style="vertical-align: middle;">
-                        <span class="info-value ${estadoClase}" style="font-size: 0.75rem; padding: 4px 8px;">${cred.estadoCredito.toUpperCase()}</span>
+                        <span class="info-value ${estadoClase}" style="font-size: 0.75rem; padding: 4px 8px;">${estadoRaw.toUpperCase()}</span>
                     </td>
                     
                     <td style="vertical-align: middle; font-weight: 500;">${formatMoney(cred.saldoRestante)}</td>
@@ -3743,18 +3782,19 @@ function recalcularComision(idLink) {
     const labelComision = document.getElementById(`comision-val-${idLink}`);
     const boxComision = document.getElementById(`comision-box-${idLink}`);
     const grupoId = row.getAttribute('data-grupo-id');
+    const estado = row.getAttribute('data-estado'); // Obtenemos el estado
 
     const tipo = select.value;
     const monto = parseFloat(inputMonto.value) || 0;
     const plazo = parseInt(row.getAttribute('data-plazo'));
     const isChecked = checkbox.checked;
     
-    // Obtenemos pago semanal fijo y adelanto previo oculto
     const pagoSemanalUnitario = parseFloat(inputMonto.getAttribute('data-pago-semanal')) || 0;
     const adelantoPrevio = parseFloat(inputMonto.getAttribute('data-adelanto-previo')) || 0;
 
     let comision = 0;
 
+    // Habilitar/Deshabilitar inputs visualmente
     if (!isChecked) {
         row.style.opacity = '0.5';
         row.style.backgroundColor = '#f9f9f9';
@@ -3767,23 +3807,38 @@ function recalcularComision(idLink) {
         inputMonto.disabled = false;
     }
 
-    // --- REGLAS CORREGIDAS (COMPLEMENTO) ---
-    // Si la suma del dinero que entra HOY + lo que sobraba de AYER >= 1 semana, se paga.
-    
+    // --- REGLAS DE COMISIÓN ---
+
+    // 1. Validaciones básicas (Checkbox apagado, monto 0, plazo comisionista)
     if (!isChecked || monto <= 0 || plazo === 10 || pagoSemanalUnitario <= 0) {
         comision = 0;
-    } else {
-        // AQUÍ ESTÁ LA CONFIRMACIÓN QUE PEDISTE:
+    } 
+    // 2. REGLA DE ESTATUS (Nueva): Si no está al corriente o liquidado, NO genera comisión.
+    else if (estado !== 'al corriente' && estado !== 'liquidado' && estado !== 'adelantado') {
+        comision = 0;
+        // Opcional: Feedback visual de por qué es 0
+        if(boxComision) boxComision.title = `No genera comisión por estatus: ${estado}`;
+    }
+    else {
+        // Cálculo de pagos completos
         const totalConsiderado = monto + adelantoPrevio;
-        
-        // Calculamos cuántos pagos COMPLETOS se cubren con este total acumulado
         const pagosCompletos = Math.floor((totalConsiderado + 0.1) / pagoSemanalUnitario);
 
         switch (tipo) {
             case 'normal':
             case 'adelanto':
-            case 'actualizado':
+                // $10 por cada pago completo
                 comision = pagosCompletos * 10;
+                break;
+
+            case 'actualizado': // (Renovación/Liquidación)
+                // REGLA DE RENOVACIÓN (Nueva): Solo 1 comisión ($10) si cubre al menos 1 pago.
+                // No importa si paga $7000, si es renovación, solo cuenta como 1 gestión.
+                if (pagosCompletos >= 1) {
+                    comision = 10;
+                } else {
+                    comision = 0;
+                }
                 break;
 
             case 'extraordinario':
@@ -3803,19 +3858,21 @@ function recalcularComision(idLink) {
         boxComision.style.color = '#28a745';
         labelComision.style.fontWeight = 'bold';
         labelComision.style.textDecoration = 'none';
-        boxComision.title = "Comisión generada";
+        if(boxComision.title === "") boxComision.title = "Comisión generada";
     } else {
         boxComision.style.color = '#dc3545'; 
         labelComision.style.fontWeight = 'normal';
         
-        // Si hay pago (monto > 0) pero no alcanzó la comisión, mostramos tachado
-        if (isChecked && monto > 0 && plazo !== 10 && tipo !== 'bancario' && tipo !== 'extraordinario') {
+        // Si hay dinero pero 0 comisión, tachamos (excepto si es por estatus o tipo exento)
+        if (isChecked && monto > 0 && plazo !== 10 && 
+            tipo !== 'bancario' && tipo !== 'extraordinario' &&
+            (estado === 'al corriente' || estado === 'liquidado')) {
+             
              labelComision.style.textDecoration = 'line-through';
-             const totalSuma = (monto + adelantoPrevio).toFixed(2);
-             boxComision.title = `Total (${totalSuma}) no alcanza para pago semanal (${pagoSemanalUnitario})`;
+             // Si el motivo no se puso arriba, ponemos el de falta de saldo
+             if(!boxComision.title) boxComision.title = "Monto insuficiente para completar pago semanal";
         } else {
              labelComision.style.textDecoration = 'none';
-             boxComision.title = "";
         }
     }
 
@@ -7951,6 +8008,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
