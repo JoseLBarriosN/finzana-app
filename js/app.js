@@ -2130,56 +2130,83 @@ async function handleUserForm(e) {
     }
 }
 
-//=========================================//
-    // ** CARGAR TABLA DE USUARIOS ** //
-//=========================================//
+// ========================================= //
+// ** CARGAR TABLA DE USUARIOS (CORREGIDA) ** //
+// ========================================= //
 async function loadUsersTable() {
-    if (cargaEnProgreso) { /* ... sin cambios ... */ return; }
+    // Si ya hay carga en progreso, no hacemos nada para evitar duplicados
+    if (cargaEnProgreso) { return; }
+    
     cargaEnProgreso = true;
     const tbody = document.getElementById('tabla-usuarios');
-    tbody.innerHTML = '<tr><td colspan="7">...</td></tr>';
-    showButtonLoading('#btn-aplicar-filtros-usuarios', true, 'Buscando...');
+    const btnBuscar = document.querySelector('#btn-aplicar-filtros-usuarios');
+    
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">Cargando usuarios...</td></tr>';
+    showButtonLoading(btnBuscar, true, 'Buscando...');
     showStatus('status_usuarios', '', 'info');
 
     try {
         const resultado = await database.obtenerUsuarios();
-        if (!resultado.success) throw new Error(resultado.message);
+        
+        if (!resultado.success) {
+            throw new Error(resultado.message);
+        }
+        
         let usuarios = resultado.data || [];
 
+        // --- FILTROS DE BÚSQUEDA ---
         const filtroEmail = (document.getElementById('filtro-email-usuario')?.value || '').trim().toLowerCase();
         const filtroNombre = (document.getElementById('filtro-nombre-usuario')?.value || '').trim().toLowerCase();
         const filtroRol = document.getElementById('filtro-rol-usuario')?.value || '';
         const filtroOfficeUsuario = document.getElementById('filtro-sucursal-usuario')?.value || '';
 
+        // Obtenemos los permisos del usuario actual para saber qué puede ver
+        const adminOffice = currentUserData?.office;
+        
         const usuariosFiltrados = usuarios.filter(usuario => {
             const emailMatch = !filtroEmail || (usuario.email && usuario.email.toLowerCase().includes(filtroEmail));
             const nombreMatch = !filtroNombre || (usuario.name && usuario.name.toLowerCase().includes(filtroNombre));
             const rolMatch = !filtroRol || usuario.role === filtroRol;
+            
+            // Filtro visual de la tabla
             const officeUiMatch = !filtroOfficeUsuario || usuario.office === filtroOfficeUsuario || (filtroOfficeUsuario === 'AMBAS' && usuario.office === 'AMBAS');
-            const adminOffice = currentUserData?.office;
+            
+            // Filtro de seguridad (Segregación de datos)
+            // Si soy 'AMBAS' o SuperAdmin veo todo. Si tengo oficina fija, solo veo mi oficina.
             const adminOfficeMatch = !adminOffice || adminOffice === 'AMBAS' || usuario.office === adminOffice || !usuario.office;
+            
             return emailMatch && nombreMatch && rolMatch && officeUiMatch && adminOfficeMatch;
         });
 
         tbody.innerHTML = '';
 
         if (usuariosFiltrados.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="7">No se encontraron usuarios...</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">No se encontraron usuarios con esos criterios.</td></tr>';
             showStatus('status_usuarios', 'No se encontraron usuarios.', 'info');
         } else {
+            // Ordenar alfabéticamente
             usuariosFiltrados.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 
             usuariosFiltrados.forEach(usuario => {
                 const tr = document.createElement('tr');
+                
+                // Estilo para usuarios deshabilitados
                 if (usuario.status === 'disabled') {
                     tr.style.opacity = '0.5';
                     tr.title = 'Usuario deshabilitado';
+                    tr.style.backgroundColor = '#f8f9fa';
                 }
+
+                // Normalización para clases CSS de roles
                 const normalizedRole = (usuario.role || 'default')
                     .normalize("NFD")
                     .replace(/[\u0300-\u036f]/g, "");
                 const roleBadgeClass = `role-${normalizedRole.toLowerCase().replace(/\s/g, '-')}`;
-                const usuarioJsonString = JSON.stringify(usuario).replace(/'/g, "&apos;").replace(/"/g, "&quot;");
+                
+                // --- CORRECCIÓN CRÍTICA AQUÍ ---
+                // Usamos &quot; para que el JSON sea válido dentro del atributo onclick='' del HTML.
+                // Esto evita que IDs como "77-abc" rompan el código.
+                const usuarioJsonString = JSON.stringify(usuario).replace(/"/g, "&quot;");
 
                 tr.innerHTML = `
                     <td>${usuario.email || 'N/A'}</td>
@@ -2187,23 +2214,31 @@ async function loadUsersTable() {
                     <td><span class="role-badge ${roleBadgeClass}">${usuario.role || 'Sin Rol'}</span></td>
                     <td>${usuario.office || 'N/A'}</td>
                     <td>${usuario.ruta || '--'}</td>
-                    <td>${usuario.status === 'disabled' ? 'Deshabilitado' : 'Activo'}</td>
+                    <td>${usuario.status === 'disabled' ? '<span class="badge badge-danger">Inactivo</span>' : '<span class="badge badge-success">Activo</span>'}</td>
                     <td class="action-buttons">
-                        <button class="btn btn-sm btn-info" onclick='mostrarFormularioUsuario(${usuarioJsonString})' title="Editar"><i class="fas fa-edit"></i></button>
-                        ${usuario.status !== 'disabled' ? `<button class="btn btn-sm btn-warning" onclick="disableUsuario('${usuario.id}', '${usuario.name || usuario.email}')" title="Deshabilitar"><i class="fas fa-user-slash"></i></button>` : ''}                       
+                        <button class="btn btn-sm btn-info" onclick='mostrarFormularioUsuario(${usuarioJsonString})' title="Editar">
+                            <i class="fas fa-edit"></i>
+                        </button>
+                        ${usuario.status !== 'disabled' ? 
+                            `<button class="btn btn-sm btn-warning" onclick="disableUsuario('${usuario.id}', '${usuario.name || usuario.email}')" title="Deshabilitar">
+                                <i class="fas fa-user-slash"></i>
+                             </button>` : ''
+                        }                        
                     </td>
                 `;
                 tbody.appendChild(tr);
             });
+            
             showStatus('status_usuarios', `${usuariosFiltrados.length} usuarios encontrados.`, 'success');
         }
+
     } catch (error) {
         console.error("Error cargando tabla de usuarios:", error);
-        tbody.innerHTML = `<tr><td colspan="7">Error al cargar usuarios: ${error.message}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="7" style="color:red; text-align:center;">Error al cargar usuarios: ${error.message}</td></tr>`;
         showStatus('status_usuarios', `Error: ${error.message}`, 'error');
     } finally {
         cargaEnProgreso = false;
-        showButtonLoading('#btn-aplicar-filtros-usuarios', false);
+        showButtonLoading(btnBuscar, false);
     }
 }
 
@@ -7913,5 +7948,6 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
