@@ -2172,7 +2172,6 @@ async function loadUsersTable() {
             const officeUiMatch = !filtroOfficeUsuario || usuario.office === filtroOfficeUsuario || (filtroOfficeUsuario === 'AMBAS' && usuario.office === 'AMBAS');
             
             // Filtro de seguridad (Segregación de datos)
-            // Si soy 'AMBAS' o SuperAdmin veo todo. Si tengo oficina fija, solo veo mi oficina.
             const adminOfficeMatch = !adminOffice || adminOffice === 'AMBAS' || usuario.office === adminOffice || !usuario.office;
             
             return emailMatch && nombreMatch && rolMatch && officeUiMatch && adminOfficeMatch;
@@ -2204,8 +2203,8 @@ async function loadUsersTable() {
                 const roleBadgeClass = `role-${normalizedRole.toLowerCase().replace(/\s/g, '-')}`;
                 
                 // --- CORRECCIÓN CRÍTICA AQUÍ ---
-                // Usamos &quot; para que el JSON sea válido dentro del atributo onclick='' del HTML.
-                // Esto evita que IDs como "77-abc" rompan el código.
+                // Reemplazamos las comillas dobles por la entidad HTML &quot;
+                // Esto permite que el objeto JSON completo viaje seguro dentro del atributo onclick
                 const usuarioJsonString = JSON.stringify(usuario).replace(/"/g, "&quot;");
 
                 tr.innerHTML = `
@@ -7948,6 +7947,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
