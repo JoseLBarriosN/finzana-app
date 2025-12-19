@@ -2581,10 +2581,9 @@ async function handleSearchClientForCredit() {
         }
         clienteParaCredito = cliente;
 
-        // 2. VERIFICACIÓN DE REGLAS (CORREGIDO: Pasa la oficina)
+        // 2. VERIFICACIÓN DE REGLAS
         const analisis = await database.verificarElegibilidadCliente(curp, currentUserData?.office);
 
-        // Si falló la verificación (ej. permisos), analisis.elegible será undefined o false
         if (analisis.elegible === false) {
             throw new Error(analisis.mensaje);
         }
@@ -2597,16 +2596,50 @@ async function handleSearchClientForCredit() {
         
         plazoSelect.disabled = false;
 
+        // --- LÓGICA DE TIPOS Y CANDADOS ---
         if (analisis.esRenovacion) {
-            tipoCreditoSelect.value = 'renovacion';
-            tipoCreditoSelect.disabled = true;
+            // Verificar si el último pago marca una renovación obligatoria
+            let forzarRenovacion = false;
+            const creditoAnterior = analisis.datosCreditoAnterior;
             
-            if (analisis.datosCreditoAnterior && analisis.datosCreditoAnterior.saldo > 0) {
-                showStatus('status_colocacion', `✅ ${analisis.mensaje} (Saldo pendiente: $${analisis.datosCreditoAnterior.saldo})`, 'success');
-            } else {
-                showStatus('status_colocacion', `✅ ${analisis.mensaje}`, 'success');
+            if (creditoAnterior) {
+                const histId = creditoAnterior.historicalIdCredito || creditoAnterior.id;
+                // Buscamos el último pago registrado
+                const pagosPrevios = await database.getPagosPorCredito(histId, creditoAnterior.office);
+                if (pagosPrevios.length > 0) {
+                    pagosPrevios.sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+                    const ultimoPago = pagosPrevios[0];
+                    
+                    // Si el último pago fue marcado como 'actualizado' (renovación)
+                    if (ultimoPago.tipoPago === 'actualizado' || ultimoPago.tipoPago === 'renovacion') {
+                        forzarRenovacion = true;
+                    }
+                }
             }
+
+            if (forzarRenovacion) {
+                tipoCreditoSelect.value = 'renovacion';
+                tipoCreditoSelect.disabled = true; // CANDADO: Solo permite renovación
+                showStatus('status_colocacion', `🔒 RENOVACIÓN OBLIGATORIA (Último pago marcado como renovación). Saldo a liquidar: $${creditoAnterior.saldo}`, 'info');
+            } else {
+                // Es elegible pero no forzoso, sugerimos renovación
+                tipoCreditoSelect.value = 'renovacion';
+                tipoCreditoSelect.disabled = false; // Permitimos cambiar si fue error
+                if (analisis.datosCreditoAnterior && analisis.datosCreditoAnterior.saldo > 0) {
+                    showStatus('status_colocacion', `✅ Elegible para renovación (Saldo pendiente: $${analisis.datosCreditoAnterior.saldo})`, 'success');
+                } else {
+                    showStatus('status_colocacion', `✅ Elegible para renovación.`, 'success');
+                }
+            }
+
+        } else if (analisis.esReingreso) {
+            // REINGRESO: Historial existe pero sin deuda actual
+            tipoCreditoSelect.value = 'reingreso';
+            tipoCreditoSelect.disabled = false; 
+            showStatus('status_colocacion', '✅ Cliente de REINGRESO (Historial encontrado).', 'success');
+        
         } else {
+            // NUEVO: Virgen
             tipoCreditoSelect.value = 'nuevo';
             tipoCreditoSelect.disabled = false; 
             showStatus('status_colocacion', '✅ Cliente elegible para crédito NUEVO.', 'success');
@@ -7127,11 +7160,14 @@ async function loadHojaCorte() {
 
 function renderizarResultadosCorte(datos) {
     const containerResumen = document.getElementById('corte-resumen-cards');
-    const tbody = document.querySelector('#tabla-corte-detalle tbody');
+    // Obtenemos el contenedor padre para reemplazar la tabla completa si es necesario
+    const tableContainer = document.querySelector('#tabla-corte-detalle').parentNode; 
     
-    // Variables para totales
+    // Variables para totales globales
     let totalEntradas = 0;
     let totalSalidas = 0;
+    
+    // Subtotales globales para tarjetas
     let subCobranza = 0; 
     let subPolizas = 0; 
     let subColocacion = 0; 
@@ -7139,45 +7175,55 @@ function renderizarResultadosCorte(datos) {
     let subComisiones = 0; 
     let subFondeo = 0;
 
-    // Procesar datos para la tabla
-    const filasRenderizadas = datos.map(item => {
-        let monto = 0; 
+    // 1. Agrupar datos por población
+    const gruposPoblacion = {};
+
+    datos.forEach(item => {
+        // Normalizar y clasificar
+        let monto = Math.abs(item.monto || 0); 
         let esEntrada = false; 
         let concepto = '';
         
         if (item.categoria === 'COBRANZA') {
-            monto = Math.abs(item.monto || 0); esEntrada = true; concepto = 'COBRANZA'; subCobranza += monto;
+            esEntrada = true; concepto = 'COBRANZA'; subCobranza += monto;
         } else if (item.tipo === 'INGRESO_POLIZA') {
-            monto = Math.abs(item.monto || 0); esEntrada = true; concepto = 'PÓLIZA'; subPolizas += monto;
+            esEntrada = true; concepto = 'PÓLIZA'; subPolizas += monto;
         } else if (item.tipo === 'ENTREGA_INICIAL') {
-            monto = Math.abs(item.monto || 0); esEntrada = true; concepto = 'FONDEO'; subFondeo += monto;
-        } 
-        else if (item.tipo === 'COLOCACION') {
-            monto = Math.abs(item.monto || 0); esEntrada = false; concepto = 'COLOCACIÓN'; subColocacion += monto;
+            esEntrada = true; concepto = 'FONDEO'; subFondeo += monto;
+        } else if (item.tipo === 'COLOCACION') {
+            esEntrada = false; concepto = 'COLOCACIÓN'; subColocacion += monto;
         } else if (item.tipo === 'GASTO') {
-            monto = Math.abs(item.monto || 0); esEntrada = false; concepto = 'GASTO'; subGastos += monto;
+            esEntrada = false; concepto = 'GASTO'; subGastos += monto;
         } else if (item.tipo && item.tipo.includes('COMISION')) {
-            monto = Math.abs(item.monto || 0); esEntrada = false; concepto = 'COMISIÓN'; subComisiones += monto;
+            esEntrada = false; concepto = 'COMISIÓN'; subComisiones += monto;
         } else {
-            monto = Math.abs(item.monto || 0); esEntrada = (item.monto >= 0); concepto = 'OTRO';
+            esEntrada = (item.monto >= 0); 
+            monto = Math.abs(item.monto);
+            concepto = 'OTRO';
         }
 
         if (esEntrada) totalEntradas += monto; else totalSalidas += monto;
 
-        return { 
+        // Obtener población (Si no tiene, agrupamos en 'GENERAL')
+        const poblacion = item.poblacion || 'GENERAL / OFICINA';
+        
+        if (!gruposPoblacion[poblacion]) {
+            gruposPoblacion[poblacion] = [];
+        }
+
+        gruposPoblacion[poblacion].push({ 
             hora: new Date(item.rawDate), 
             concepto, 
             descripcion: item.descripcion || '-', 
             monto, 
             esEntrada, 
             ref: item.registradoPor || '-' 
-        };
+        });
     });
 
-    filasRenderizadas.sort((a, b) => a.hora - b.hora);
     const efectivoEnMano = totalEntradas - totalSalidas;
 
-    // 1. Renderizar Tarjetas de Resumen
+    // 2. Renderizar Tarjetas de Resumen (Globales)
     containerResumen.innerHTML = `
         <div class="card" style="border-left: 5px solid var(--info); flex: 1;">
             <h5 style="color:#666; margin:0;">EFECTIVO EN MANO</h5>
@@ -7195,27 +7241,87 @@ function renderizarResultadosCorte(datos) {
         </div>
     `;
 
-    // 2. Renderizar Tabla Detallada
-    if (filasRenderizadas.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:20px;">No hay movimientos para este criterio.</td></tr>';
+    // 3. Renderizar Tablas Agrupadas por Población
+    let htmlTablas = '';
+    
+    // Ordenar nombres de población alfabéticamente
+    const nombresPoblacion = Object.keys(gruposPoblacion).sort();
+
+    if (nombresPoblacion.length === 0) {
+        htmlTablas = '<div style="text-align:center; padding:20px;">No hay movimientos para este criterio.</div>';
     } else {
-        let htmlRows = '';
-        filasRenderizadas.forEach(row => {
-            const horaStr = row.hora.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-            const entradaStr = row.esEntrada ? `$${row.monto.toFixed(2)}` : '';
-            const salidaStr = !row.esEntrada ? `$${row.monto.toFixed(2)}` : '';
-            
-            htmlRows += `
-                <tr>
-                    <td style="text-align:center; color:#666;">${horaStr}</td>
-                    <td><strong>${row.concepto}</strong></td>
-                    <td>${row.descripcion}</td>
-                    <td style="color:var(--success); text-align:right;">${entradaStr}</td>
-                    <td style="color:var(--danger); text-align:right;">${salidaStr}</td>
-                    <td style="font-size:0.8em; color:#888;">${row.ref}</td>
-                </tr>`;
+        nombresPoblacion.forEach(pob => {
+            const movimientos = gruposPoblacion[pob];
+            movimientos.sort((a, b) => a.hora - b.hora); // Orden cronológico
+
+            // Calcular subtotales por población para mostrar en el encabezado
+            const totalPob = movimientos.reduce((acc, m) => acc + (m.esEntrada ? m.monto : -m.monto), 0);
+            const colorTotal = totalPob >= 0 ? 'var(--success)' : 'var(--danger)';
+
+            htmlTablas += `
+                <div class="poblacion-corte-group" style="margin-bottom: 25px; border: 1px solid #dee2e6; border-radius: 8px; overflow: hidden;">
+                    <h4 style="background: #e9ecef; padding: 10px 15px; margin: 0; display:flex; justify-content:space-between; align-items: center; border-bottom: 1px solid #dee2e6;">
+                        <span style="color: var(--primary);"><i class="fas fa-map-marker-alt"></i> ${pob}</span>
+                        <span style="font-size:0.9em; font-weight:bold; color: ${colorTotal}">Neto Población: $${totalPob.toLocaleString('es-MX', {minimumFractionDigits: 2})}</span>
+                    </h4>
+                    <div class="table-responsive">
+                        <table class="table" style="width: 100%; border-collapse: collapse; margin-bottom: 0;">
+                            <thead>
+                                <tr style="background-color: #fff;">
+                                    <th style="padding: 8px; border-bottom: 2px solid #eee; width: 80px;">Hora</th>
+                                    <th style="padding: 8px; border-bottom: 2px solid #eee;">Concepto</th>
+                                    <th style="padding: 8px; border-bottom: 2px solid #eee;">Descripción</th>
+                                    <th style="padding: 8px; border-bottom: 2px solid #eee; color: var(--success); text-align:right;">Entrada (+)</th>
+                                    <th style="padding: 8px; border-bottom: 2px solid #eee; color: var(--danger); text-align:right;">Salida (-)</th>
+                                    <th style="padding: 8px; border-bottom: 2px solid #eee;">Ref.</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+            `;
+
+            movimientos.forEach(row => {
+                const horaStr = row.hora.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                const entradaStr = row.esEntrada ? `$${row.monto.toFixed(2)}` : '';
+                const salidaStr = !row.esEntrada ? `$${row.monto.toFixed(2)}` : '';
+
+                htmlTablas += `
+                    <tr>
+                        <td style="text-align:center; color:#666; font-size:0.85em; border-bottom: 1px solid #eee;">${horaStr}</td>
+                        <td style="border-bottom: 1px solid #eee;"><strong>${row.concepto}</strong></td>
+                        <td style="font-size:0.9em; border-bottom: 1px solid #eee;">${row.descripcion}</td>
+                        <td style="color:var(--success); text-align:right; border-bottom: 1px solid #eee;">${entradaStr}</td>
+                        <td style="color:var(--danger); text-align:right; border-bottom: 1px solid #eee;">${salidaStr}</td>
+                        <td style="font-size:0.8em; color:#888; border-bottom: 1px solid #eee;">${row.ref}</td>
+                    </tr>
+                `;
+            });
+
+            htmlTablas += `
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
         });
-        tbody.innerHTML = htmlRows;
+    }
+
+    // Inyectar el HTML generado en el contenedor
+    // Nota: El ID original 'tabla-corte-detalle' es una tabla, así que reemplazamos su contenedor padre
+    // o el contenido si es un div wrapper.
+    
+    // Si estás en la vista de Hoja de Corte
+    const detalleContainer = document.getElementById('reporte-contable-detalle'); // Vista Reporte Contable (Admin)
+    if (detalleContainer) {
+        detalleContainer.innerHTML = htmlTablas;
+    } else {
+        // Vista Hoja de Corte (Usuario)
+        // Buscamos el div padre de la tabla original para reemplazarlo o inyectar dentro
+        // Asumiendo estructura: <div class="card"> <h3>...</h3> <div class="table-responsive"> <table id="tabla-corte-detalle">...
+        const table = document.getElementById('tabla-corte-detalle');
+        if (table) {
+            const responsiveDiv = table.parentElement;
+            responsiveDiv.innerHTML = htmlTablas;
+        }
     }
 }
 
@@ -8057,6 +8163,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
