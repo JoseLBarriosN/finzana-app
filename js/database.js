@@ -649,22 +649,82 @@ const database = {
     }
 },
 
+    // --- GENERADOR DE FOLIOS SEGURO (ONLINE/OFFLINE) ---
+async _generarSiguienteFolio(office, userData) {
+    const prefijo = (office === 'GDL') ? '3' : '2';
+    // Aseguramos que el código de agente sea de 2 dígitos
+    const agenteCode = (userData.agentCode || '99').toString().padStart(2, '0');
+    
+    // 1. Buscamos el ÚLTIMO crédito generado por este agente en la BD (o caché offline)
+    // Ordenamos por consecutivo descendente para obtener el más alto.
+    let ultimoConsecutivo = 0;
+    
+    try {
+        // Esta consulta funciona offline gracias a la persistencia activada
+        const snapshot = await db.collection('creditos')
+            .where('creadoPorId', '==', userData.id) // Solo mis créditos
+            .where('office', '==', office)
+            .orderBy('consecutivoAgente', 'desc')
+            .limit(1)
+            .get();
+
+        if (!snapshot.empty) {
+            const data = snapshot.docs[0].data();
+            // Leemos el último número registrado
+            ultimoConsecutivo = data.consecutivoAgente || 0;
+        }
+    } catch (e) {
+        console.warn("⚠️ No se pudo leer el último consecutivo de la DB, intentando fallback local...", e);
+        // Fallback de emergencia a localStorage si la query falla (raro)
+        ultimoConsecutivo = parseInt(localStorage.getItem('local_credit_counter') || '0');
+    }
+
+    // 2. Calculamos el siguiente y VERIFICAMOS COLISIÓN
+    // Entramos en un bucle: generamos ID -> ¿Existe? -> Si sí, sumamos 1 y repetimos.
+    let nuevoConsecutivo = ultimoConsecutivo + 1;
+    let nuevoFolio = '';
+    let esUnico = false;
+    let intentos = 0;
+
+    while (!esUnico && intentos < 10) { // Límite de seguridad de 10 intentos
+        nuevoFolio = `${prefijo}${agenteCode}${nuevoConsecutivo.toString().padStart(4, '0')}`;
+        
+        // Verificación rápida: ¿Existe este ID exacto en la colección?
+        const checkSnap = await db.collection('creditos')
+            .where('historicalIdCredito', '==', nuevoFolio)
+            .limit(1)
+            .get();
+
+        if (checkSnap.empty) {
+            esUnico = true; // ¡Libre!
+        } else {
+            console.warn(`⚠️ ALERTA DE DUPLICADO: El folio ${nuevoFolio} ya existe. Calculando siguiente...`);
+            nuevoConsecutivo++; // Incrementamos y probamos de nuevo
+            intentos++;
+        }
+    }
+
+    if (!esUnico) {
+        throw new Error("No se pudo generar un folio único después de varios intentos. Verifique su conexión.");
+    }
+
+    return { folio: nuevoFolio, consecutivo: nuevoConsecutivo };
+},
+
     // --- AGREGAR CRÉDITO ---
     async agregarCredito(creditoData, userEmail, userData) {
     try {
-        // --- 1. VALIDACIONES BÁSICAS ---
+        // --- 1. VALIDACIONES ---
         const office = creditoData.office;
         if (!office || (office !== 'GDL' && office !== 'LEON')) {
             return { success: false, message: 'Error crítico: Oficina inválida.' };
         }
 
-        // Validación de plazos para renovación
         if ((creditoData.tipo === 'renovacion' || creditoData.tipo === 'reingreso') && creditoData.plazo !== 14 && creditoData.plazo !== 13) {
             return { success: false, message: 'Plazo no permitido para renovación.' };
         }
 
-        // Validaciones de Elegibilidad (Ya incluyen reglas de etiquetas 'no_renovar')
-        // Confiamos en que la UI ya llamó a verificarElegibilidadCliente, pero por seguridad:
+        // Validaciones de Elegibilidad
         const cliente = await database.buscarClientePorCURP(creditoData.curpCliente, office); 
         if (!cliente) return { success: false, message: "Cliente no encontrado." };
 
@@ -672,12 +732,11 @@ const database = {
             return { success: false, message: "Solo comisionistas pueden acceder a 10 semanas." };
         }
 
-        // --- 2. VALIDACIÓN DE ETIQUETA "NO AUMENTAR" (CORREGIDO CON FILTRO DE OFICINA) ---
-        // Esta era la parte que causaba el error de permisos
+        // Validación "No Aumentar"
         if (cliente.etiqueta === 'no_aumentar') {
             const creditosPreviosSnap = await db.collection('creditos')
                 .where('curpCliente', '==', creditoData.curpCliente)
-                .where('office', '==', office) // <--- CRÍTICO: Filtro para evitar error de permisos
+                .where('office', '==', office)
                 .orderBy('fechaCreacion', 'desc')
                 .limit(1)
                 .get();
@@ -685,26 +744,22 @@ const database = {
             if (!creditosPreviosSnap.empty) {
                 const credPrevio = creditosPreviosSnap.docs[0].data();
                 const montoAnterior = credPrevio.monto; 
-                
                 if (parseFloat(creditoData.monto) > montoAnterior) {
-                    return { 
-                        success: false, 
-                        message: `📉 BLOQUEADO: El cliente tiene etiqueta 'NO AUMENTAR'. Monto solicitado ($${creditoData.monto}) es mayor al anterior ($${montoAnterior}).` 
-                    };
+                    return { success: false, message: `📉 BLOQUEADO: Etiqueta 'NO AUMENTAR'. Monto solicitado mayor al anterior.` };
                 }
             }
         }
 
-        // --- 3. GENERACIÓN DE FOLIO ---
-        const prefijoOficina = (office === 'GDL') ? '3' : '2';
-        const codigoAgente = (userData && userData.agentCode) ? userData.agentCode.toString().padStart(2, '0') : '99';
-        let contadorLocal = parseInt(localStorage.getItem('local_credit_counter') || '0');
-        const nuevoConsecutivo = contadorLocal + 1;
-        const nuevoFolio = `${prefijoOficina}${codigoAgente}${nuevoConsecutivo.toString().padStart(4, '0')}`;
+        // --- 2. GENERACIÓN DE FOLIO SEGURA (NUEVO) ---
+        // Usamos la función auxiliar que verifica en BD para evitar duplicados
+        console.log("🔄 Generando folio único...");
+        const datosFolio = await this._generarSiguienteFolio(office, userData);
+        const nuevoFolio = datosFolio.folio;
+        const nuevoConsecutivo = datosFolio.consecutivo;
         
-        console.log(`🎫 Generando Folio Agente: ${nuevoFolio}`);
+        console.log(`🎫 Folio asignado: ${nuevoFolio}`);
 
-        // --- 4. PREPARACIÓN DE DATOS DEL NUEVO CRÉDITO ---
+        // --- 3. PREPARACIÓN DE DATOS ---
         const fechaCreacionISO = database.obtenerFechaLocalISO(); 
         const esCreditoComisionista = (creditoData.plazo === 10 && cliente.isComisionista);
         let montoPolizaDeduccion = esCreditoComisionista ? 0 : 100;
@@ -716,7 +771,7 @@ const database = {
             plazo: parseInt(creditoData.plazo),
             tipo: creditoData.tipo, 
             montoTotal: parseFloat(creditoData.montoTotal),
-            saldo: parseFloat(creditoData.montoTotal), // Empieza con deuda total
+            saldo: parseFloat(creditoData.montoTotal), 
             curpCliente: creditoData.curpCliente.toUpperCase(),
             curpAval: (creditoData.curpAval || '').toUpperCase(),
             nombreAval: creditoData.nombreAval || '',
@@ -733,21 +788,19 @@ const database = {
             busqueda: [ creditoData.curpCliente.toUpperCase(), nuevoFolio ]
         };
 
-        // --- 5. CÁLCULO DE LIQUIDACIÓN (RENOVACIÓN) ---
+        // --- 4. CÁLCULO DE RENOVACIÓN ---
         let saldoA_Liquidar = 0;
         let creditoAnteriorRef = null;
         let idCreditoAnteriorString = null;
         
         if (creditoData.tipo === 'renovacion') {
-            // Buscamos el crédito activo para liquidarlo
             const activeCredits = await db.collection('creditos')
                                     .where('curpCliente', '==', creditoData.curpCliente)
-                                    .where('office', '==', office) // <--- CRÍTICO: Filtro para permisos
+                                    .where('office', '==', office) 
                                     .where('estado', '!=', 'liquidado')
                                     .get();
             
             if (!activeCredits.empty) {
-                // Ordenar por fecha ascendente (el más viejo primero)
                 const docs = activeCredits.docs.sort((a,b) => a.data().fechaCreacion.localeCompare(b.data().fechaCreacion));
                 const oldCred = docs[0];
                 const oldData = oldCred.data();
@@ -761,23 +814,20 @@ const database = {
             }
         }
 
-        // --- 6. CÁLCULO DE EFECTIVO NETO A ENTREGAR ---
-        // Fórmula: Monto Nuevo - Póliza - Deuda Anterior
         const montoEfectivoEntregado = nuevoCreditoData.monto - montoPolizaDeduccion - saldoA_Liquidar;
 
         // =========================================================
-        // TRANSACCIONES (ONLINE / OFFLINE)
+        // TRANSACCIONES
         // =========================================================
         
         if (navigator.onLine) {
             await db.runTransaction(async (transaction) => {
                 
-                // A. Crear Nuevo Crédito
+                // A. Crear Nuevo
                 transaction.set(nuevoCreditoRef, nuevoCreditoData);
 
-                // B. Liquidar Crédito Anterior
+                // B. Liquidar Viejo
                 if (creditoAnteriorRef && saldoA_Liquidar > 0) {
-                    // Actualizar estatus
                     transaction.update(creditoAnteriorRef, {
                         estado: 'liquidado',
                         saldo: 0,
@@ -785,14 +835,13 @@ const database = {
                         nota: `Liquidado por renovación ${nuevoFolio}`
                     });
 
-                    // CREAR PAGO VIRTUAL DE RENOVACIÓN (Para cerrar el ciclo contable)
                     const pagoRef = db.collection('pagos').doc();
                     transaction.set(pagoRef, {
                         idCredito: idCreditoAnteriorString,
                         firestoreIdCredito: creditoAnteriorRef.id,
                         monto: parseFloat(saldoA_Liquidar.toFixed(2)),
                         fecha: fechaCreacionISO,
-                        tipoPago: 'renovacion', // Tipo especial
+                        tipoPago: 'renovacion', 
                         registradoPor: userEmail,
                         office: office,
                         origen: 'sistema_renovacion',
@@ -800,8 +849,7 @@ const database = {
                     });
                 }
 
-                // C. Registrar Salida de Efectivo Real
-                // Solo registramos lo que sale físicamente de la caja
+                // C. Salida Efectivo
                 const salidaCaja = montoEfectivoEntregado + montoPolizaDeduccion; 
                 const movimientoRef = db.collection('movimientos_efectivo').doc();
                 
@@ -817,7 +865,7 @@ const database = {
                     office: office
                 });
 
-                // D. Registrar Entrada de Póliza (Si aplica)
+                // D. Entrada Póliza
                 if (montoPolizaDeduccion > 0) {
                     const polizaRef = db.collection('movimientos_efectivo').doc();
                     transaction.set(polizaRef, {
@@ -833,7 +881,7 @@ const database = {
                     });
                 }
 
-                // E. Comisión Vendedor
+                // E. Comisión
                 if (!esCreditoComisionista) {
                     const comisionRef = db.collection('movimientos_efectivo').doc();
                     transaction.set(comisionRef, {
@@ -850,17 +898,14 @@ const database = {
                 }
             });
 
+            // Actualizamos localStorage solo como referencia, aunque ya no dependemos 100% de él
             localStorage.setItem('local_credit_counter', nuevoConsecutivo.toString());
-            return { 
-                success: true, 
-                offline: false,
-                message: 'Crédito generado exitosamente.', 
-                data: { id: nuevoCreditoRef.id, historicalIdCredito: nuevoFolio } 
-            };
+            return { success: true, offline: false, message: 'Crédito generado exitosamente.', data: { id: nuevoCreditoRef.id, historicalIdCredito: nuevoFolio } };
 
         } else {
             // --- MODO OFFLINE (Batch) ---
-            console.warn("⚠️ Generando crédito OFFLINE:", nuevoFolio);
+            // IMPORTANTE: Incluso offline, _generarSiguienteFolio ya validó contra la caché local
+            console.warn("⚠️ Guardando crédito OFFLINE:", nuevoFolio);
             const batch = db.batch();
             batch.set(nuevoCreditoRef, nuevoCreditoData);
 
@@ -2545,6 +2590,7 @@ const database = {
     },
 
 };
+
 
 
 
