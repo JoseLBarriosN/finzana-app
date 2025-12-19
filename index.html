@@ -655,6 +655,13 @@
                             <label for="monto_cobranza">Monto del Pago <span class="required">*</span></label>
                             <input type="number" id="monto_cobranza" min="0.01" step="0.01" required>
                         </div>
+                        <div class="form-group hidden" id="div-fecha-manual-container" style="background: #fff3cd; padding: 10px; border-radius: 5px; border: 1px solid #ffeeba; margin-bottom: 15px;">
+                            <label for="fecha_cobranza_manual" style="color: #856404; font-weight: bold;">📅 Fecha del Pago (Solo Admins)</label>
+                            <input type="date" id="fecha_cobranza_manual" class="form-control">
+                            <small style="display:block; color:#856404; font-size:0.8em; margin-top:3px;">
+                                Úsalo para regularizar créditos registrando pagos de fechas anteriores.
+                            </small>
+                        </div>
                         <div class="form-group">
                             <label for="tipo_cobranza">Tipo de Pago <span class="required">*</span></label>
                             <select id="tipo_cobranza" required>
@@ -1261,6 +1268,7 @@
 </script>
 </body>
 </html>
+
 
 
 
