@@ -652,17 +652,14 @@ const database = {
     // --- GENERADOR DE FOLIOS SEGURO (ONLINE/OFFLINE) ---
 async _generarSiguienteFolio(office, userData) {
     const prefijo = (office === 'GDL') ? '3' : '2';
-    // Aseguramos que el código de agente sea de 2 dígitos
     const agenteCode = (userData.agentCode || '99').toString().padStart(2, '0');
     
-    // 1. Buscamos el ÚLTIMO crédito generado por este agente en la BD (o caché offline)
-    // Ordenamos por consecutivo descendente para obtener el más alto.
+    // 1. Buscamos el ÚLTIMO crédito generado por este agente
     let ultimoConsecutivo = 0;
     
     try {
-        // Esta consulta funciona offline gracias a la persistencia activada
         const snapshot = await db.collection('creditos')
-            .where('creadoPorId', '==', userData.id) // Solo mis créditos
+            .where('creadoPorId', '==', userData.id)
             .where('office', '==', office)
             .orderBy('consecutivoAgente', 'desc')
             .limit(1)
@@ -670,42 +667,50 @@ async _generarSiguienteFolio(office, userData) {
 
         if (!snapshot.empty) {
             const data = snapshot.docs[0].data();
-            // Leemos el último número registrado
             ultimoConsecutivo = data.consecutivoAgente || 0;
         }
     } catch (e) {
-        console.warn("⚠️ No se pudo leer el último consecutivo de la DB, intentando fallback local...", e);
-        // Fallback de emergencia a localStorage si la query falla (raro)
+        // Si falla (ej. índice construyéndose), usamos el local como base
+        console.warn("⚠️ Fallback a contador local (DB no disponible o índice cargando)...");
         ultimoConsecutivo = parseInt(localStorage.getItem('local_credit_counter') || '0');
     }
 
     // 2. Calculamos el siguiente y VERIFICAMOS COLISIÓN
-    // Entramos en un bucle: generamos ID -> ¿Existe? -> Si sí, sumamos 1 y repetimos.
     let nuevoConsecutivo = ultimoConsecutivo + 1;
     let nuevoFolio = '';
     let esUnico = false;
     let intentos = 0;
 
-    while (!esUnico && intentos < 10) { // Límite de seguridad de 10 intentos
+    while (!esUnico && intentos < 10) {
         nuevoFolio = `${prefijo}${agenteCode}${nuevoConsecutivo.toString().padStart(4, '0')}`;
         
-        // Verificación rápida: ¿Existe este ID exacto en la colección?
-        const checkSnap = await db.collection('creditos')
-            .where('historicalIdCredito', '==', nuevoFolio)
-            .limit(1)
-            .get();
+        // CORRECCIÓN DE PERMISOS AQUÍ:
+        // Agregamos .where('office', '==', office) para cumplir las reglas de seguridad
+        // del rol 'Área comercial'.
+        try {
+            const checkSnap = await db.collection('creditos')
+                .where('historicalIdCredito', '==', nuevoFolio)
+                .where('office', '==', office) // <--- ¡ESTA LÍNEA FALTABA!
+                .limit(1)
+                .get();
 
-        if (checkSnap.empty) {
-            esUnico = true; // ¡Libre!
-        } else {
-            console.warn(`⚠️ ALERTA DE DUPLICADO: El folio ${nuevoFolio} ya existe. Calculando siguiente...`);
-            nuevoConsecutivo++; // Incrementamos y probamos de nuevo
-            intentos++;
+            if (checkSnap.empty) {
+                esUnico = true; // ¡Libre!
+            } else {
+                console.warn(`⚠️ ALERTA: El folio ${nuevoFolio} ya existe. Intentando siguiente...`);
+                nuevoConsecutivo++;
+                intentos++;
+            }
+        } catch (error) {
+            // Si incluso esta verificación falla (ej. offline total), confiamos en el cálculo
+            // y esperamos que la sincronización posterior resuelva conflictos.
+            console.warn("No se pudo verificar colisión online (probablemente offline). Usando folio calculado.");
+            esUnico = true; 
         }
     }
 
     if (!esUnico) {
-        throw new Error("No se pudo generar un folio único después de varios intentos. Verifique su conexión.");
+        throw new Error("No se pudo generar un folio único. Intenta nuevamente.");
     }
 
     return { folio: nuevoFolio, consecutivo: nuevoConsecutivo };
@@ -2590,6 +2595,7 @@ async _generarSiguienteFolio(office, userData) {
     },
 
 };
+
 
 
 
