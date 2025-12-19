@@ -652,23 +652,59 @@ const database = {
     // --- AGREGAR CRÉDITO ---
     async agregarCredito(creditoData, userEmail, userData) {
     try {
-        // --- 1. VALIDACIONES ---
+        // --- 1. VALIDACIONES BÁSICAS ---
         const office = creditoData.office;
         if (!office || (office !== 'GDL' && office !== 'LEON')) {
             return { success: false, message: 'Error crítico: Oficina inválida.' };
         }
 
+        // Validación de plazos para renovación
+        if ((creditoData.tipo === 'renovacion' || creditoData.tipo === 'reingreso') && creditoData.plazo !== 14 && creditoData.plazo !== 13) {
+            return { success: false, message: 'Plazo no permitido para renovación.' };
+        }
+
+        // Validaciones de Elegibilidad (Ya incluyen reglas de etiquetas 'no_renovar')
+        // Confiamos en que la UI ya llamó a verificarElegibilidadCliente, pero por seguridad:
         const cliente = await database.buscarClientePorCURP(creditoData.curpCliente, office); 
         if (!cliente) return { success: false, message: "Cliente no encontrado." };
 
-        // --- 2. GENERACIÓN DE FOLIO ---
+        if (creditoData.plazo === 10 && !cliente.isComisionista) {
+            return { success: false, message: "Solo comisionistas pueden acceder a 10 semanas." };
+        }
+
+        // --- 2. VALIDACIÓN DE ETIQUETA "NO AUMENTAR" (CORREGIDO CON FILTRO DE OFICINA) ---
+        // Esta era la parte que causaba el error de permisos
+        if (cliente.etiqueta === 'no_aumentar') {
+            const creditosPreviosSnap = await db.collection('creditos')
+                .where('curpCliente', '==', creditoData.curpCliente)
+                .where('office', '==', office) // <--- CRÍTICO: Filtro para evitar error de permisos
+                .orderBy('fechaCreacion', 'desc')
+                .limit(1)
+                .get();
+                
+            if (!creditosPreviosSnap.empty) {
+                const credPrevio = creditosPreviosSnap.docs[0].data();
+                const montoAnterior = credPrevio.monto; 
+                
+                if (parseFloat(creditoData.monto) > montoAnterior) {
+                    return { 
+                        success: false, 
+                        message: `📉 BLOQUEADO: El cliente tiene etiqueta 'NO AUMENTAR'. Monto solicitado ($${creditoData.monto}) es mayor al anterior ($${montoAnterior}).` 
+                    };
+                }
+            }
+        }
+
+        // --- 3. GENERACIÓN DE FOLIO ---
         const prefijoOficina = (office === 'GDL') ? '3' : '2';
         const codigoAgente = (userData && userData.agentCode) ? userData.agentCode.toString().padStart(2, '0') : '99';
         let contadorLocal = parseInt(localStorage.getItem('local_credit_counter') || '0');
         const nuevoConsecutivo = contadorLocal + 1;
         const nuevoFolio = `${prefijoOficina}${codigoAgente}${nuevoConsecutivo.toString().padStart(4, '0')}`;
         
-        // --- 3. PREPARACIÓN DE DATOS NUEVOS ---
+        console.log(`🎫 Generando Folio Agente: ${nuevoFolio}`);
+
+        // --- 4. PREPARACIÓN DE DATOS DEL NUEVO CRÉDITO ---
         const fechaCreacionISO = database.obtenerFechaLocalISO(); 
         const esCreditoComisionista = (creditoData.plazo === 10 && cliente.isComisionista);
         let montoPolizaDeduccion = esCreditoComisionista ? 0 : 100;
@@ -680,7 +716,7 @@ const database = {
             plazo: parseInt(creditoData.plazo),
             tipo: creditoData.tipo, 
             montoTotal: parseFloat(creditoData.montoTotal),
-            saldo: parseFloat(creditoData.montoTotal), 
+            saldo: parseFloat(creditoData.montoTotal), // Empieza con deuda total
             curpCliente: creditoData.curpCliente.toUpperCase(),
             curpAval: (creditoData.curpAval || '').toUpperCase(),
             nombreAval: creditoData.nombreAval || '',
@@ -697,21 +733,21 @@ const database = {
             busqueda: [ creditoData.curpCliente.toUpperCase(), nuevoFolio ]
         };
 
-        // --- 4. CÁLCULO DE RENOVACIÓN (CORREGIDO PARA PERMISOS) ---
+        // --- 5. CÁLCULO DE LIQUIDACIÓN (RENOVACIÓN) ---
         let saldoA_Liquidar = 0;
         let creditoAnteriorRef = null;
         let idCreditoAnteriorString = null;
         
         if (creditoData.tipo === 'renovacion') {
-            // CORRECCIÓN AQUÍ: Agregamos el filtro de oficina.
-            // Sin esto, Firebase bloquea al Área Comercial por intentar leer "globalmente".
+            // Buscamos el crédito activo para liquidarlo
             const activeCredits = await db.collection('creditos')
                                     .where('curpCliente', '==', creditoData.curpCliente)
-                                    .where('office', '==', office) // <--- ESTA LÍNEA ES LA CLAVE
+                                    .where('office', '==', office) // <--- CRÍTICO: Filtro para permisos
                                     .where('estado', '!=', 'liquidado')
                                     .get();
             
             if (!activeCredits.empty) {
+                // Ordenar por fecha ascendente (el más viejo primero)
                 const docs = activeCredits.docs.sort((a,b) => a.data().fechaCreacion.localeCompare(b.data().fechaCreacion));
                 const oldCred = docs[0];
                 const oldData = oldCred.data();
@@ -725,20 +761,23 @@ const database = {
             }
         }
 
-        // --- 5. CÁLCULO DE EFECTIVO NETO A ENTREGAR ---
+        // --- 6. CÁLCULO DE EFECTIVO NETO A ENTREGAR ---
+        // Fórmula: Monto Nuevo - Póliza - Deuda Anterior
         const montoEfectivoEntregado = nuevoCreditoData.monto - montoPolizaDeduccion - saldoA_Liquidar;
 
         // =========================================================
-        // TRANSACCIONES (ONLINE)
+        // TRANSACCIONES (ONLINE / OFFLINE)
         // =========================================================
+        
         if (navigator.onLine) {
             await db.runTransaction(async (transaction) => {
                 
-                // A. Guardar Nuevo Crédito
+                // A. Crear Nuevo Crédito
                 transaction.set(nuevoCreditoRef, nuevoCreditoData);
 
                 // B. Liquidar Crédito Anterior
                 if (creditoAnteriorRef && saldoA_Liquidar > 0) {
+                    // Actualizar estatus
                     transaction.update(creditoAnteriorRef, {
                         estado: 'liquidado',
                         saldo: 0,
@@ -746,13 +785,14 @@ const database = {
                         nota: `Liquidado por renovación ${nuevoFolio}`
                     });
 
+                    // CREAR PAGO VIRTUAL DE RENOVACIÓN (Para cerrar el ciclo contable)
                     const pagoRef = db.collection('pagos').doc();
                     transaction.set(pagoRef, {
                         idCredito: idCreditoAnteriorString,
                         firestoreIdCredito: creditoAnteriorRef.id,
                         monto: parseFloat(saldoA_Liquidar.toFixed(2)),
                         fecha: fechaCreacionISO,
-                        tipoPago: 'renovacion', 
+                        tipoPago: 'renovacion', // Tipo especial
                         registradoPor: userEmail,
                         office: office,
                         origen: 'sistema_renovacion',
@@ -760,9 +800,10 @@ const database = {
                     });
                 }
 
-                // C. Registrar Salida de Efectivo
+                // C. Registrar Salida de Efectivo Real
+                // Solo registramos lo que sale físicamente de la caja
+                const salidaCaja = montoEfectivoEntregado + montoPolizaDeduccion; 
                 const movimientoRef = db.collection('movimientos_efectivo').doc();
-                const salidaCaja = montoEfectivoEntregado + montoPolizaDeduccion;
                 
                 transaction.set(movimientoRef, {
                     userId: auth.currentUser.uid,
@@ -776,7 +817,7 @@ const database = {
                     office: office
                 });
 
-                // D. Registrar Entrada Póliza
+                // D. Registrar Entrada de Póliza (Si aplica)
                 if (montoPolizaDeduccion > 0) {
                     const polizaRef = db.collection('movimientos_efectivo').doc();
                     transaction.set(polizaRef, {
@@ -801,7 +842,7 @@ const database = {
                         tipo: 'COMISION_COLOCACION',
                         categoria: 'COMISION',
                         monto: -100,
-                        descripcion: `Comisión colocación ${cliente.nombre}`,
+                        descripcion: `Comisión colocación ${cliente.nombre} (${nuevoFolio})`,
                         creditoId: nuevoCreditoRef.id,
                         registradoPor: userEmail,
                         office: office
@@ -818,7 +859,7 @@ const database = {
             };
 
         } else {
-            // MODO OFFLINE (Batch)
+            // --- MODO OFFLINE (Batch) ---
             console.warn("⚠️ Generando crédito OFFLINE:", nuevoFolio);
             const batch = db.batch();
             batch.set(nuevoCreditoRef, nuevoCreditoData);
@@ -875,7 +916,7 @@ const database = {
                     tipo: 'COMISION_COLOCACION',
                     categoria: 'COMISION',
                     monto: -100,
-                    descripcion: `Comisión colocación ${cliente.nombre}`,
+                    descripcion: `Comisión colocación ${cliente.nombre} (${nuevoFolio})`,
                     creditoId: nuevoCreditoRef.id,
                     registradoPor: userEmail,
                     office: office
@@ -2504,6 +2545,7 @@ const database = {
     },
 
 };
+
 
 
 
