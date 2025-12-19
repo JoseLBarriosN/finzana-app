@@ -3595,10 +3595,12 @@ function renderizarCobranzaRuta(data, container) {
     }
 
     let html = '';
+    // Ordenar grupos (poblaciones) alfabéticamente
     const grupos = Object.keys(data).sort((a, b) => a.localeCompare(b));
 
     grupos.forEach(grupo => {
         const creditos = data[grupo];
+        // Ordenar créditos por ID descendente
         creditos.sort((a, b) => {
             const idA = (a.historicalIdCredito || '').toString();
             const idB = (b.historicalIdCredito || '').toString();
@@ -3643,7 +3645,9 @@ function renderizarCobranzaRuta(data, container) {
             const linkId = cred.firestoreId;
             const montoPagarSugerido = cred.pagoSemanalAcumulado; 
             const adelantoPrevio = cred.adelantoAcumulado || 0;
-            const estadoRaw = cred.estadoCredito || 'al corriente'; // Variable cruda para lógica
+            
+            // Normalizamos el estado para comparaciones
+            const estadoRaw = (cred.estadoCredito || 'al corriente').toLowerCase(); 
             const estadoClase = `status-${estadoRaw.replace(/\s/g, '-')}`;
             const plazo = cred.plazo || 14;
             
@@ -3652,24 +3656,38 @@ function renderizarCobranzaRuta(data, container) {
                 pagoSemanalUnitario = (cred.montoTotal && cred.plazo) ? (cred.montoTotal / cred.plazo) : 0;
             }
 
-            // Calculo inicial de comisión para visualización (Aplicando reglas nuevas)
+            // --- LÓGICA INICIAL DE COMISIÓN (Al cargar la tabla) ---
             let comisionInicial = 0;
-            const estaAlCorriente = (estadoRaw === 'al corriente' || estadoRaw === 'adelantado' || estadoRaw === 'liquidado');
             
-            if (plazo !== 10 && pagoSemanalUnitario > 0 && estaAlCorriente) {
-                 const totalParaCalculo = montoPagarSugerido + adelantoPrevio;
-                 const pagosCompletos = Math.floor((totalParaCalculo + 0.1) / pagoSemanalUnitario);
-                 comisionInicial = pagosCompletos * 10;
+            // Definir si tiene derecho a comisión por estatus
+            const estatusPermiteComision = (estadoRaw === 'al corriente' || estadoRaw === 'adelantado' || estadoRaw === 'liquidado');
+
+            // Solo calculamos si el plazo NO es comisionista (10) Y si el estatus lo permite
+            if (plazo !== 10 && pagoSemanalUnitario > 0) {
+                 if (estatusPermiteComision) {
+                     // Lógica normal: Suma de dinero / Pago Semanal
+                     const totalParaCalculo = montoPagarSugerido + adelantoPrevio;
+                     const pagosCompletos = Math.floor((totalParaCalculo + 0.1) / pagoSemanalUnitario);
+                     comisionInicial = pagosCompletos * 10;
+                 } else {
+                     // Si está en mora/atrasado/jurídico, nace en $0
+                     comisionInicial = 0;
+                 }
             }
 
             html += `
                 <tr class="fila-cobro" data-plazo="${plazo}" data-grupo-id="${grupoId}" data-estado="${estadoRaw}" id="row-${linkId}">
                     <td style="vertical-align: middle;">
-                        <div style="line-height: 1.2;">
+                        <div style="line-height: 1.3;">
                             <strong>${cred.nombreCliente}</strong><br>
                             <small class="text-muted" style="font-size: 0.75em;">${cred.curpCliente}</small><br>
                             <small style="color:#aaa; font-size: 0.75em;">ID: ${cred.historicalIdCredito}</small>
-                            ${plazo === 10 ? '<span class="badge badge-warning" style="font-size:0.6em; margin-left:3px;">10 SEM</span>' : ''}
+                            
+                            <div style="margin-top:2px; border-top:1px dashed #eee; padding-top:2px;">
+                                <span style="font-weight:600; color:#555; font-size:0.85em;">Pago Regular: ${formatMoney(pagoSemanalUnitario)}</span>
+                            </div>
+
+                            ${plazo === 10 ? '<span class="badge badge-warning" style="font-size:0.6em; margin-top:2px;">10 SEM</span>' : ''}
                             ${adelantoPrevio > 1 ? `<br><span class="badge badge-info" style="font-size:0.65em;">Adelanto previo: $${adelantoPrevio.toFixed(2)}</span>` : ''}
                         </div>
                     </td>
@@ -3705,7 +3723,7 @@ function renderizarCobranzaRuta(data, container) {
                             </div>
                         </div>
                         
-                        <div class="comision-container" id="comision-box-${linkId}" style="font-size: 0.8em; color: #28a745; display: flex; align-items: center; justify-content: flex-end; gap: 4px;">
+                        <div class="comision-container" id="comision-box-${linkId}" style="font-size: 0.8em; color: ${comisionInicial > 0 ? '#28a745' : '#dc3545'}; display: flex; align-items: center; justify-content: flex-end; gap: 4px;">
                             <i class="fas fa-hand-holding-usd"></i> Comisión: 
                             <strong id="comision-val-${linkId}" class="valor-comision-fila">${formatMoney(comisionInicial)}</strong>
                         </div>
@@ -3782,7 +3800,7 @@ function recalcularComision(idLink) {
     const labelComision = document.getElementById(`comision-val-${idLink}`);
     const boxComision = document.getElementById(`comision-box-${idLink}`);
     const grupoId = row.getAttribute('data-grupo-id');
-    const estado = row.getAttribute('data-estado'); // Obtenemos el estado
+    const estado = (row.getAttribute('data-estado') || '').toLowerCase(); // Leemos el estado de la fila
 
     const tipo = select.value;
     const monto = parseFloat(inputMonto.value) || 0;
@@ -3793,8 +3811,9 @@ function recalcularComision(idLink) {
     const adelantoPrevio = parseFloat(inputMonto.getAttribute('data-adelanto-previo')) || 0;
 
     let comision = 0;
+    let mensajeTooltip = "";
 
-    // Habilitar/Deshabilitar inputs visualmente
+    // Control visual de habilitado/deshabilitado
     if (!isChecked) {
         row.style.opacity = '0.5';
         row.style.backgroundColor = '#f9f9f9';
@@ -3807,33 +3826,38 @@ function recalcularComision(idLink) {
         inputMonto.disabled = false;
     }
 
-    // --- REGLAS DE COMISIÓN ---
+    // --- REGLAS DE NEGOCIO ---
 
-    // 1. Validaciones básicas (Checkbox apagado, monto 0, plazo comisionista)
+    // 1. REGLA DE BLOQUEO POR ESTATUS (Prioridad Máxima)
+    // Si NO está al corriente (ni liquidado/adelantado), la comisión es 0 SIEMPRE.
+    const estatusPermiteComision = (estado === 'al corriente' || estado === 'adelantado' || estado === 'liquidado');
+
     if (!isChecked || monto <= 0 || plazo === 10 || pagoSemanalUnitario <= 0) {
         comision = 0;
     } 
-    // 2. REGLA DE ESTATUS (Nueva): Si no está al corriente o liquidado, NO genera comisión.
-    else if (estado !== 'al corriente' && estado !== 'liquidado' && estado !== 'adelantado') {
+    else if (!estatusPermiteComision) {
         comision = 0;
-        // Opcional: Feedback visual de por qué es 0
-        if(boxComision) boxComision.title = `No genera comisión por estatus: ${estado}`;
+        mensajeTooltip = `Estatus '${estado.toUpperCase()}' no genera comisión.`;
     }
     else {
-        // Cálculo de pagos completos
+        // El cliente está al corriente, calculamos en base al dinero
         const totalConsiderado = monto + adelantoPrevio;
+        
+        // Calculamos cuántos pagos COMPLETOS se cubren
+        // (Usamos 0.1 de tolerancia para decimales)
         const pagosCompletos = Math.floor((totalConsiderado + 0.1) / pagoSemanalUnitario);
 
         switch (tipo) {
             case 'normal':
             case 'adelanto':
-                // $10 por cada pago completo
+                // Regla estándar: $10 por cada pago completo
                 comision = pagosCompletos * 10;
                 break;
 
-            case 'actualizado': // (Renovación/Liquidación)
-                // REGLA DE RENOVACIÓN (Nueva): Solo 1 comisión ($10) si cubre al menos 1 pago.
-                // No importa si paga $7000, si es renovación, solo cuenta como 1 gestión.
+            case 'actualizado': // Renovación
+                // REGLA DE RENOVACIÓN (Nueva): 
+                // Si cubre al menos 1 pago completo -> $10 fijos (no acumulables).
+                // Si paga menos de 1 semana -> $0.
                 if (pagosCompletos >= 1) {
                     comision = 10;
                 } else {
@@ -3851,28 +3875,33 @@ function recalcularComision(idLink) {
         }
     }
 
-    // Renderizar
+    // Renderizar resultado
     labelComision.textContent = formatMoney(comision);
     
     if (comision > 0) {
         boxComision.style.color = '#28a745';
         labelComision.style.fontWeight = 'bold';
         labelComision.style.textDecoration = 'none';
-        if(boxComision.title === "") boxComision.title = "Comisión generada";
+        boxComision.title = "Comisión generada";
     } else {
-        boxComision.style.color = '#dc3545'; 
+        boxComision.style.color = '#dc3545'; // Rojo
         labelComision.style.fontWeight = 'normal';
         
-        // Si hay dinero pero 0 comisión, tachamos (excepto si es por estatus o tipo exento)
-        if (isChecked && monto > 0 && plazo !== 10 && 
-            tipo !== 'bancario' && tipo !== 'extraordinario' &&
-            (estado === 'al corriente' || estado === 'liquidado')) {
-             
+        // Lógica visual para tachado (explicación del cero)
+        if (isChecked && monto > 0 && plazo !== 10 && tipo !== 'bancario' && tipo !== 'extraordinario') {
+             // Si el motivo es el estatus, se muestra en el tooltip
+             // Si el motivo es falta de dinero, se indica también.
              labelComision.style.textDecoration = 'line-through';
-             // Si el motivo no se puso arriba, ponemos el de falta de saldo
-             if(!boxComision.title) boxComision.title = "Monto insuficiente para completar pago semanal";
+             
+             if (mensajeTooltip) {
+                 boxComision.title = mensajeTooltip;
+             } else {
+                 const totalSuma = (monto + adelantoPrevio).toFixed(2);
+                 boxComision.title = `Total (${totalSuma}) insuficiente para cubrir pago semanal (${pagoSemanalUnitario})`;
+             }
         } else {
              labelComision.style.textDecoration = 'none';
+             boxComision.title = "";
         }
     }
 
@@ -8008,6 +8037,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
