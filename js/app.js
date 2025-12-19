@@ -2554,44 +2554,63 @@ async function _actualizarDropdownGrupo(selectId, office, placeholder) {
 // SECCIÓN DE CRÉDITOS (COLOCACIÓN)
 // =============================================
 
+// EN app.js -> Reemplaza handleSearchClientForCredit
+
 async function handleSearchClientForCredit() {
-    // Referencias al DOM
-    const curpInput = document.getElementById('curp_cliente_colocacion');
-    const curp = curpInput.value.trim().toUpperCase();
+    // --- 1. CORRECCIÓN DE IDS HTML ---
+    // Buscamos el input por su ID estándar en tu HTML ('busqueda_colocacion') 
+    // Si no está, intentamos el alternativo ('curp_cliente_colocacion')
+    const curpInput = document.getElementById('busqueda_colocacion') || document.getElementById('curp_cliente_colocacion');
+    
+    // Referencias a los otros elementos de la UI
     const statusColocacion = document.getElementById('status_colocacion');
     const formColocacion = document.getElementById('form-colocacion');
-    const btnBuscar = document.getElementById('btnBuscarCliente_colocacion');
-    const selectTipo = document.getElementById('tipo_colocacion'); // El Dropdown
+    const btnBuscar = document.getElementById('btnBuscarCliente_colocacion'); // O 'btn_buscar_colocacion'
+    const selectTipo = document.getElementById('tipo_colocacion'); 
 
-    // --- 1. SEGURIDAD: Obtener Oficina del Usuario ---
+    // Validación de UI para evitar el crash (null value)
+    if (!curpInput) {
+        console.error("❌ Error UI: No se encuentra el input de búsqueda (ID: busqueda_colocacion).");
+        alert("Error: No se encuentra el campo de búsqueda de CURP en el HTML. Contacte soporte.");
+        return;
+    }
+
+    const curp = curpInput.value.trim().toUpperCase();
+
+    // --- 2. VALIDACIÓN DE PERFIL (OFICINA) ---
     const userOffice = currentUserData ? currentUserData.office : null;
     if (!userOffice) {
          showStatus('status_colocacion', 'Error: Perfil incompleto (Sin Oficina). Recarga la página.', 'error');
          return;
     }
 
-    // --- 2. VALIDACIÓN CURP ---
+    // --- 3. VALIDACIÓN DE FORMATO CURP ---
     if (curp.length < 10) { 
-        showStatus('status_colocacion', 'Formato de CURP inválido.', 'error');
+        showStatus('status_colocacion', 'Formato de CURP inválido (muy corto).', 'error');
+        curpInput.focus();
         return;
     }
 
-    showButtonLoading(btnBuscar, true, 'Verificando...');
+    // --- 4. INICIO DE BÚSQUEDA ---
+    // Si el botón tiene otro ID en tu HTML, lo manejamos con seguridad
+    if(btnBuscar) showButtonLoading(btnBuscar, true, 'Verificando...');
+    
     statusColocacion.innerHTML = 'Verificando historial...';
     statusColocacion.className = 'status-message status-info';
 
     try {
-        // --- 3. LLAMADA A DATABASE ---
-        // Pasamos explícitamente userOffice para evitar error de permisos
+        // Llamada a la DB (versión blindada con filtro de oficina)
         const elegibilidad = await database.verificarElegibilidadCliente(curp, userOffice);
 
         // Limpiar UI previa
-        formColocacion.classList.add('hidden');
-        document.getElementById('monto_colocacion').value = '';
-        selectTipo.disabled = false; 
-        selectTipo.value = 'nuevo'; // Valor por defecto
+        if (formColocacion) formColocacion.classList.add('hidden');
+        const inputMonto = document.getElementById('monto_colocacion');
+        if (inputMonto) inputMonto.value = '';
         
-        // Limpiar avisos visuales
+        selectTipo.disabled = false; 
+        selectTipo.value = 'nuevo'; 
+        
+        // Limpiar avisos
         const avisoExistente = document.getElementById('aviso-renovacion-candado');
         if(avisoExistente) avisoExistente.remove();
 
@@ -2599,52 +2618,50 @@ async function handleSearchClientForCredit() {
             // --- CLIENTE APTO ---
             showStatus('status_colocacion', elegibilidad.mensaje, 'success');
             
-            // Cargar nombre para confirmar visualmente
+            // Cargar nombre
             const cliente = await database.buscarClientePorCURP(curp, userOffice);
-            document.getElementById('nombre_cliente_colocacion').value = cliente.nombre;
+            const inputNombre = document.getElementById('nombre_cliente_colocacion');
+            if (inputNombre && cliente) inputNombre.value = cliente.nombre;
 
-            // --- 4. LÓGICA DEL CANDADO DE RENOVACIÓN ---
+            // --- 5. LÓGICA CANDADO DE RENOVACIÓN ---
             if (elegibilidad.esRenovacion) {
-                
-                // A. Identificar crédito anterior
                 const histId = elegibilidad.datosCreditoAnterior ? 
                               (elegibilidad.datosCreditoAnterior.historicalIdCredito || elegibilidad.datosCreditoAnterior.id) : null;
                 
                 let forzarRenovacion = false;
                 
-                // B. Buscar si ya pagó la liquidación (Tipo 'renovacion')
                 if (histId) {
+                   // Verificar si pagó liquidación marcada como 'renovacion'
                    const pagosLiq = await database.db.collection('pagos')
                        .where('idCredito', '==', histId)
-                       .where('office', '==', userOffice) // Filtro oficina obligatorio
+                       .where('office', '==', userOffice)
                        .where('tipoPago', '==', 'renovacion')
                        .limit(1).get();
                    
                    if (!pagosLiq.empty) forzarRenovacion = true;
                 }
 
-                // C. Aplicar bloqueo si es necesario
                 if (forzarRenovacion || elegibilidad.forzarRenovacion) {
                     selectTipo.value = 'renovacion';
                     selectTipo.disabled = true; // BLOQUEO
                     
-                    // Crear aviso visual
                     const divTipo = selectTipo.parentElement;
-                    const aviso = document.createElement('small');
-                    aviso.id = 'aviso-renovacion-candado';
+                    let aviso = document.getElementById('aviso-renovacion-candado');
+                    if (!aviso) {
+                        aviso = document.createElement('small');
+                        aviso.id = 'aviso-renovacion-candado';
+                        divTipo.appendChild(aviso);
+                    }
                     aviso.style.color = '#d63384';
                     aviso.style.fontWeight = 'bold';
                     aviso.style.display = 'block';
                     aviso.textContent = "🔒 Bloqueado en Renovación (Requisito del Sistema)";
-                    divTipo.appendChild(aviso);
                 } else {
-                    // Si es opcional (ej. multicrédito), sugerimos 'renovacion' pero dejamos cambiar
                     selectTipo.value = 'renovacion'; 
                 }
             }
-            // ----------------------------------------
 
-            formColocacion.classList.remove('hidden');
+            if (formColocacion) formColocacion.classList.remove('hidden');
 
         } else {
             // --- CLIENTE NO APTO ---
@@ -2653,9 +2670,9 @@ async function handleSearchClientForCredit() {
 
     } catch (error) {
         console.error(error);
-        showStatus('status_colocacion', 'Error verificando: ' + error.message, 'error');
+        showStatus('status_colocacion', 'Error al verificar: ' + error.message, 'error');
     } finally {
-        showButtonLoading(btnBuscar, false);
+        if(btnBuscar) showButtonLoading(btnBuscar, false);
     }
 }
 
@@ -8155,6 +8172,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
