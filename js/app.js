@@ -2554,80 +2554,75 @@ async function _actualizarDropdownGrupo(selectId, office, placeholder) {
 // SECCIÓN DE CRÉDITOS (COLOCACIÓN)
 // =============================================
 async function handleSearchClientForCredit() {
-    // --- 1. REFERENCIAS AL DOM (CORREGIDAS SEGÚN TU HTML) ---
-    // ID encontrado en tu HTML: id="curp_colocacion"
+    // 1. REFERENCIAS AL DOM
     const curpInput = document.getElementById('curp_colocacion'); 
-    
-    // Referencias generales
     const statusColocacion = document.getElementById('status_colocacion');
     const formColocacion = document.getElementById('form-colocacion');
     const btnBuscar = document.getElementById('btnBuscarCliente_colocacion');
     const selectTipo = document.getElementById('tipo_colocacion'); 
 
-    // Bloque de seguridad: Si falta algún elemento crítico, avisamos
+    // Bloque de seguridad
     if (!curpInput || !statusColocacion || !selectTipo) {
-        console.error("❌ ERROR CRÍTICO UI: IDs no coinciden con el HTML.");
-        console.log("Diagnóstico IDs:", {
-            curp_colocacion: curpInput ? "OK" : "FALTA",
-            status_colocacion: statusColocacion ? "OK" : "FALTA",
-            tipo_colocacion: selectTipo ? "OK" : "FALTA"
-        });
-        alert("Error de interfaz: Faltan campos en la vista. Recarga la página.");
+        console.error("❌ ERROR UI: Faltan elementos ID en el HTML.");
         return;
     }
 
     const curp = curpInput.value.trim().toUpperCase();
 
-    // --- 2. VALIDACIÓN DE PERFIL (OFICINA) ---
+    // 2. VALIDACIÓN DE PERFIL
     const userOffice = currentUserData ? currentUserData.office : null;
     if (!userOffice) {
-         showStatus('status_colocacion', 'Error: Perfil incompleto (Sin Oficina). Recarga la página.', 'error');
+         showStatus('status_colocacion', 'Error: Perfil incompleto. Recarga la página.', 'error');
          return;
     }
 
-    // --- 3. VALIDACIÓN DE FORMATO CURP ---
+    // 3. VALIDACIÓN FORMATO
     if (curp.length < 10) { 
-        showStatus('status_colocacion', 'Formato de CURP inválido (muy corto).', 'error');
+        showStatus('status_colocacion', 'Formato de CURP inválido.', 'error');
         curpInput.focus();
         return;
     }
 
-    // --- 4. INICIO DE BÚSQUEDA ---
+    // 4. BÚSQUEDA
     showButtonLoading(btnBuscar, true, 'Verificando...');
     statusColocacion.innerHTML = 'Verificando historial...';
     statusColocacion.className = 'status-message status-info';
+    
+    // IMPORTANTE: Limpiamos la variable global antes de buscar uno nuevo
+    window.clienteEnProceso = null; 
 
     try {
-        // Llamada a la DB (versión blindada con filtro de oficina)
         const elegibilidad = await database.verificarElegibilidadCliente(curp, userOffice);
 
         // Limpiar UI previa
         if (formColocacion) formColocacion.classList.add('hidden');
-        
-        // Limpiar campos del formulario
         const inputMonto = document.getElementById('monto_colocacion');
         if (inputMonto) inputMonto.value = '';
         
-        // Reiniciar dropdown de tipo
         selectTipo.disabled = false; 
         selectTipo.value = 'nuevo'; 
         
-        // Limpiar aviso visual de candado
         const avisoExistente = document.getElementById('aviso-renovacion-candado');
         if(avisoExistente) avisoExistente.remove();
 
         if (elegibilidad.elegible) {
-            // --- CLIENTE APTO ---
             showStatus('status_colocacion', elegibilidad.mensaje, 'success');
             
-            // Cargar nombre del cliente para confirmación visual
+            // --- OBTENER Y GUARDAR DATOS DEL CLIENTE ---
             const cliente = await database.buscarClientePorCURP(curp, userOffice);
             
-            // ID encontrado en tu HTML: id="nombre_colocacion"
+            // =========================================================
+            // 🔥 CORRECCIÓN CRÍTICA: GUARDAR EN MEMORIA GLOBAL 🔥
+            // Sin esto, handleCreditForm falla con "Datos perdidos"
+            // =========================================================
+            window.clienteEnProceso = cliente; 
+            console.log("✅ Cliente seleccionado en memoria:", window.clienteEnProceso);
+
+            // Mostrar nombre en pantalla
             const inputNombre = document.getElementById('nombre_colocacion');
             if (inputNombre && cliente) inputNombre.value = cliente.nombre;
 
-            // --- 5. LÓGICA CANDADO DE RENOVACIÓN ---
+            // --- LÓGICA CANDADO DE RENOVACIÓN ---
             if (elegibilidad.esRenovacion) {
                 const histId = elegibilidad.datosCreditoAnterior ? 
                               (elegibilidad.datosCreditoAnterior.historicalIdCredito || elegibilidad.datosCreditoAnterior.id) : null;
@@ -2635,7 +2630,6 @@ async function handleSearchClientForCredit() {
                 let forzarRenovacion = false;
                 
                 if (histId) {
-                   // Verificar si pagó liquidación marcada como 'renovacion'
                    const pagosLiq = await database.db.collection('pagos')
                        .where('idCredito', '==', histId)
                        .where('office', '==', userOffice)
@@ -2647,9 +2641,8 @@ async function handleSearchClientForCredit() {
 
                 if (forzarRenovacion || elegibilidad.forzarRenovacion) {
                     selectTipo.value = 'renovacion';
-                    selectTipo.disabled = true; // BLOQUEO
+                    selectTipo.disabled = true; 
                     
-                    // Crear aviso visual debajo del select
                     const divTipo = selectTipo.parentElement;
                     let aviso = document.getElementById('aviso-renovacion-candado');
                     if (!aviso) {
@@ -2670,7 +2663,6 @@ async function handleSearchClientForCredit() {
             if (formColocacion) formColocacion.classList.remove('hidden');
 
         } else {
-            // --- CLIENTE NO APTO ---
             showStatus('status_colocacion', elegibilidad.message || elegibilidad.mensaje, 'error');
         }
 
@@ -8178,6 +8170,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
