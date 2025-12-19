@@ -902,96 +902,107 @@ const database = {
 
    // --- REGISTRAR PAGO (CON VÍNCULO A COMISIÓN) ---
     async agregarPago(pagoData, emailUsuario, firestoreIdCredito) {
+    try {
+        const creditoRef = db.collection('creditos').doc(firestoreIdCredito);
+        const pagosRef = db.collection('pagos').doc();
+        const batch = db.batch();
+
+        let doc;
         try {
-            const creditoRef = db.collection('creditos').doc(firestoreIdCredito);
-            const pagosRef = db.collection('pagos').doc();
-            const batch = db.batch();
+            doc = await creditoRef.get();
+        } catch (e) {
+            console.warn("Lectura red falló, intentando caché...", e);
+            doc = await creditoRef.get({ source: 'cache' });
+        }
 
-            // Lectura del crédito (Con soporte caché)
-            let doc;
-            try {
-                doc = await creditoRef.get();
-            } catch (e) {
-                console.warn("Lectura red falló, intentando caché...", e);
-                doc = await creditoRef.get({ source: 'cache' });
-            }
+        if (!doc.exists) throw new Error("No se encontró el crédito.");
 
-            if (!doc.exists) throw new Error("No se encontró el crédito.");
+        const credito = doc.data();
+        const saldoActual = credito.saldo !== undefined ? credito.saldo : credito.montoTotal;
+        const officeCredito = credito.office || 'GDL';
+        
+        // --- AQUÍ ESTÁ EL CAMBIO DE FECHA ---
+        // Si viene fechaPersonalizada, la usamos. Si no, usamos la fecha local actual.
+        // Aseguramos que sea formato ISO.
+        let fechaISO;
+        if (pagoData.fechaPersonalizada) {
+            // Asumimos que viene como YYYY-MM-DDT12:00:00 o similar
+            // Convertimos a objeto Date y luego a ISO para estandarizar
+            fechaISO = new Date(pagoData.fechaPersonalizada).toISOString();
+        } else {
+            fechaISO = database.obtenerFechaLocalISO();
+        }
+        // ------------------------------------
 
-            const credito = doc.data();
-            const saldoActual = credito.saldo !== undefined ? credito.saldo : credito.montoTotal;
-            const officeCredito = credito.office || 'GDL';
-            const fechaISO = database.obtenerFechaLocalISO();
-            
-            const nuevoPago = {
-                id: pagosRef.id,
-                idCredito: pagoData.idCredito, 
-                firestoreIdCredito: firestoreIdCredito,
-                monto: parseFloat(pagoData.monto),
-                fecha: fechaISO,
-                tipoPago: pagoData.tipoPago || 'normal',
+        const nuevoPago = {
+            id: pagosRef.id,
+            idCredito: pagoData.idCredito, 
+            firestoreIdCredito: firestoreIdCredito,
+            monto: parseFloat(pagoData.monto),
+            fecha: fechaISO, // Usamos la fecha definida arriba
+            tipoPago: pagoData.tipoPago || 'normal',
+            registradoPor: emailUsuario,
+            office: officeCredito, 
+            origen: pagoData.origen || 'manual',
+            syncStatus: 'pending'
+        };
+
+        const nuevoSaldo = parseFloat((saldoActual - nuevoPago.monto).toFixed(2));
+
+        // Operaciones Batch
+        batch.set(pagosRef, nuevoPago);
+        batch.update(creditoRef, {
+            saldo: nuevoSaldo,
+            fechaUltimoPago: fechaISO,
+            ...(nuevoSaldo < 0.05 ? { estado: 'liquidado' } : {})
+        });
+
+        // --- REGISTRO DE COMISIÓN VINCULADA ---
+        if (pagoData.comisionGenerada && pagoData.comisionGenerada > 0) {
+            const movimientoRef = db.collection('movimientos_efectivo').doc();
+            batch.set(movimientoRef, {
+                id: movimientoRef.id,
+                tipo: 'COMISION_PAGO', 
+                categoria: 'COMISION', 
+                monto: -Math.abs(pagoData.comisionGenerada), 
+                descripcion: `Comisión cobro crédito ${pagoData.idCredito}`,
+                fecha: fechaISO, // Usamos la misma fecha del pago
+                userId: (auth.currentUser) ? auth.currentUser.uid : 'offline_user',
                 registradoPor: emailUsuario,
-                office: officeCredito, 
-                origen: pagoData.origen || 'manual',
-                syncStatus: 'pending'
-            };
-
-            const nuevoSaldo = parseFloat((saldoActual - nuevoPago.monto).toFixed(2));
-
-            // Operaciones Batch
-            batch.set(pagosRef, nuevoPago);
-            batch.update(creditoRef, {
-                saldo: nuevoSaldo,
-                fechaUltimoPago: fechaISO,
-                ...(nuevoSaldo < 0.05 ? { estado: 'liquidado' } : {})
+                office: officeCredito,
+                creditoIdAsociado: firestoreIdCredito, 
+                pagoIdAsociado: pagosRef.id 
             });
+        }
 
-            // --- REGISTRO DE COMISIÓN VINCULADA ---
-            if (pagoData.comisionGenerada && pagoData.comisionGenerada > 0) {
-                const movimientoRef = db.collection('movimientos_efectivo').doc();
-                batch.set(movimientoRef, {
-                    id: movimientoRef.id,
-                    tipo: 'COMISION_PAGO', 
-                    categoria: 'COMISION', 
-                    monto: -Math.abs(pagoData.comisionGenerada), 
-                    descripcion: `Comisión cobro crédito ${pagoData.idCredito}`,
-                    fecha: fechaISO,
-                    userId: (auth.currentUser) ? auth.currentUser.uid : 'offline_user',
-                    registradoPor: emailUsuario,
-                    office: officeCredito,
-                    creditoIdAsociado: firestoreIdCredito, // Para borrar si se borra el crédito
-                    pagoIdAsociado: pagosRef.id           // <--- CLAVE: Para borrar si se borra el pago
-                });
-            }
+        const commitOp = batch.commit();
 
-            const commitOp = batch.commit();
-
-            if (!navigator.onLine) {
-                return { 
-                    success: true, 
-                    message: "Pago guardado en dispositivo (Pendiente de subir)",
-                    nuevoSaldo: nuevoSaldo,
-                    historicalIdCredito: pagoData.idCredito,
-                    offline: true
-                };
-            }
-
-            await commitOp;
+        if (!navigator.onLine) {
             return { 
                 success: true, 
-                message: "Pago registrado y sincronizado",
+                message: "Pago guardado en dispositivo (Pendiente de subir)",
                 nuevoSaldo: nuevoSaldo,
-                historicalIdCredito: pagoData.idCredito
+                historicalIdCredito: pagoData.idCredito,
+                offline: true
             };
-
-        } catch (error) {
-            console.error("Error en agregarPago:", error);
-            if (error.message.includes("offline") || error.code === 'unavailable') {
-                 return { success: true, message: "Guardado forzoso en caché.", offline: true };
-            }
-            return { success: false, message: error.message };
         }
-    },
+
+        await commitOp;
+        return { 
+            success: true, 
+            message: "Pago registrado y sincronizado",
+            nuevoSaldo: nuevoSaldo,
+            historicalIdCredito: pagoData.idCredito
+        };
+
+    } catch (error) {
+        console.error("Error en agregarPago:", error);
+        if (error.message.includes("offline") || error.code === 'unavailable') {
+             return { success: true, message: "Guardado forzoso en caché.", offline: true };
+        }
+        return { success: false, message: error.message };
+    }
+},
 
     // --- IMPORTACIÓN MASIVA (CORREGIDO) ---
     importarDatosDesdeCSV: async (csvData, tipo, office) => {
@@ -2469,6 +2480,7 @@ const database = {
     },
 
 };
+
 
 
 
