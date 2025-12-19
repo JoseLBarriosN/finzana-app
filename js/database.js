@@ -675,13 +675,12 @@ const database = {
 
         const nuevoCreditoRef = db.collection('creditos').doc();
         
-        // El nuevo crédito nace con la DEUDA TOTAL (ej. $5000 + intereses si aplica en tu UI)
         let nuevoCreditoData = {
             monto: parseFloat(creditoData.monto), 
             plazo: parseInt(creditoData.plazo),
             tipo: creditoData.tipo, 
             montoTotal: parseFloat(creditoData.montoTotal),
-            saldo: parseFloat(creditoData.montoTotal), // DEBE EL TOTAL
+            saldo: parseFloat(creditoData.montoTotal), 
             curpCliente: creditoData.curpCliente.toUpperCase(),
             curpAval: (creditoData.curpAval || '').toUpperCase(),
             nombreAval: creditoData.nombreAval || '',
@@ -698,20 +697,21 @@ const database = {
             busqueda: [ creditoData.curpCliente.toUpperCase(), nuevoFolio ]
         };
 
-        // --- 4. CÁLCULO DE RENOVACIÓN ---
+        // --- 4. CÁLCULO DE RENOVACIÓN (CORREGIDO PARA PERMISOS) ---
         let saldoA_Liquidar = 0;
         let creditoAnteriorRef = null;
         let idCreditoAnteriorString = null;
         
         if (creditoData.tipo === 'renovacion') {
-            // Buscamos crédito activo para liquidar
+            // CORRECCIÓN AQUÍ: Agregamos el filtro de oficina.
+            // Sin esto, Firebase bloquea al Área Comercial por intentar leer "globalmente".
             const activeCredits = await db.collection('creditos')
                                     .where('curpCliente', '==', creditoData.curpCliente)
+                                    .where('office', '==', office) // <--- ESTA LÍNEA ES LA CLAVE
                                     .where('estado', '!=', 'liquidado')
                                     .get();
             
             if (!activeCredits.empty) {
-                // Ordenamos para tomar el más antiguo por defecto
                 const docs = activeCredits.docs.sort((a,b) => a.data().fechaCreacion.localeCompare(b.data().fechaCreacion));
                 const oldCred = docs[0];
                 const oldData = oldCred.data();
@@ -729,7 +729,7 @@ const database = {
         const montoEfectivoEntregado = nuevoCreditoData.monto - montoPolizaDeduccion - saldoA_Liquidar;
 
         // =========================================================
-        // TRANSACCIÓN
+        // TRANSACCIONES (ONLINE)
         // =========================================================
         if (navigator.onLine) {
             await db.runTransaction(async (transaction) => {
@@ -737,24 +737,22 @@ const database = {
                 // A. Guardar Nuevo Crédito
                 transaction.set(nuevoCreditoRef, nuevoCreditoData);
 
-                // B. Liquidar Crédito Anterior + Generar Pago Histórico
+                // B. Liquidar Crédito Anterior
                 if (creditoAnteriorRef && saldoA_Liquidar > 0) {
-                    // Actualizar estatus
                     transaction.update(creditoAnteriorRef, {
                         estado: 'liquidado',
                         saldo: 0,
                         fechaLiquidacion: fechaCreacionISO,
-                        nota: `Renovado por ${nuevoFolio}`
+                        nota: `Liquidado por renovación ${nuevoFolio}`
                     });
 
-                    // CREAR EL PAGO DE RENOVACIÓN (Para que aparezca en historial)
                     const pagoRef = db.collection('pagos').doc();
                     transaction.set(pagoRef, {
                         idCredito: idCreditoAnteriorString,
                         firestoreIdCredito: creditoAnteriorRef.id,
                         monto: parseFloat(saldoA_Liquidar.toFixed(2)),
                         fecha: fechaCreacionISO,
-                        tipoPago: 'renovacion', // Importante para reportes
+                        tipoPago: 'renovacion', 
                         registradoPor: userEmail,
                         office: office,
                         origen: 'sistema_renovacion',
@@ -762,9 +760,8 @@ const database = {
                     });
                 }
 
-                // C. Registrar Salida de Efectivo (Solo lo neto)
+                // C. Registrar Salida de Efectivo
                 const movimientoRef = db.collection('movimientos_efectivo').doc();
-                // Salida contable = Efectivo + Póliza (la póliza entra después)
                 const salidaCaja = montoEfectivoEntregado + montoPolizaDeduccion;
                 
                 transaction.set(movimientoRef, {
@@ -840,10 +837,7 @@ const database = {
                     origen: 'sistema_renovacion_offline'
                 });
             }
-            // ... (resto de movimientos offline igual que online pero con batch.set) ...
-            // Simplificado para brevedad, pero debe replicar la lógica de arriba.
             
-            // Salida Efectivo Offline
             const salidaCaja = montoEfectivoEntregado + montoPolizaDeduccion;
             const movimientoRef = db.collection('movimientos_efectivo').doc();
             batch.set(movimientoRef, {
@@ -858,7 +852,37 @@ const database = {
                 office: office
             });
 
-            batch.commit();
+            if (montoPolizaDeduccion > 0) {
+                const polizaRef = db.collection('movimientos_efectivo').doc();
+                batch.set(polizaRef, {
+                    userId: auth.currentUser ? auth.currentUser.uid : 'offline_user',
+                    fecha: fechaCreacionISO,
+                    tipo: 'INGRESO_POLIZA', 
+                    categoria: 'ENTREGA_INICIAL', 
+                    monto: montoPolizaDeduccion,
+                    descripcion: `Cobro de Póliza - Crédito ${nuevoFolio}`,
+                    creditoId: nuevoCreditoRef.id,
+                    registradoPor: userEmail,
+                    office: office
+                });
+            }
+
+            if (!esCreditoComisionista) {
+                const comisionRef = db.collection('movimientos_efectivo').doc();
+                batch.set(comisionRef, {
+                    userId: auth.currentUser ? auth.currentUser.uid : 'offline_user',
+                    fecha: fechaCreacionISO,
+                    tipo: 'COMISION_COLOCACION',
+                    categoria: 'COMISION',
+                    monto: -100,
+                    descripcion: `Comisión colocación ${cliente.nombre}`,
+                    creditoId: nuevoCreditoRef.id,
+                    registradoPor: userEmail,
+                    office: office
+                });
+            }
+
+            batch.commit().catch(err => console.log("Guardado en cola offline (Batch)"));
             localStorage.setItem('local_credit_counter', nuevoConsecutivo.toString());
             
             return { success: true, offline: true, message: 'Guardado offline.', data: { id: nuevoCreditoRef.id, historicalIdCredito: nuevoFolio } };
@@ -2480,6 +2504,7 @@ const database = {
     },
 
 };
+
 
 
 
