@@ -2765,13 +2765,16 @@ async function handleCreditForm(e) {
 // =============================================
 // SECCIÓN DE PAGOS (COBRANZA)
 // =============================================
-
 async function handleSearchCreditForPayment() {
     const idCreditoInput = document.getElementById('idCredito_cobranza');
     const historicalIdCredito = idCreditoInput.value.trim();
     const statusCobranza = document.getElementById('status_cobranza');
     const formCobranza = document.getElementById('form-cobranza');
     const btnBuscar = document.getElementById('btnBuscarCredito_cobranza');
+    
+    // Referencias al nuevo input de fecha
+    const divFechaManual = document.getElementById('div-fecha-manual-container');
+    const inputFechaManual = document.getElementById('fecha_cobranza_manual');
 
     creditoActual = null;
 
@@ -2788,61 +2791,75 @@ async function handleSearchCreditForPayment() {
     formCobranza.classList.add('hidden');
 
     try {
-        const creditosEncontrados = await database.buscarCreditosPorHistoricalId(historicalIdCredito, { userOffice: currentUserData?.office }); // Aplicar segregación
+        const creditosEncontrados = await database.buscarCreditosPorHistoricalId(historicalIdCredito, { userOffice: currentUserData?.office });
 
         if (creditosEncontrados.length === 0) {
             showFixedProgress(100, 'Crédito no encontrado');
             throw new Error(`No se encontró ningún crédito con el ID histórico: ${historicalIdCredito} (en tu sucursal).`);
         }
 
+        // Si hay duplicados, tomamos el más reciente
         if (creditosEncontrados.length > 1) {
-            console.warn(`Se encontraron ${creditosEncontrados.length} créditos con el ID histórico ${historicalIdCredito}. Mostrando el más reciente.`);
             creditosEncontrados.sort((a, b) => (parsearFecha(b.fechaCreacion)?.getTime() || 0) - (parsearFecha(a.fechaCreacion)?.getTime() || 0));
-            showStatus('status_cobranza', `Advertencia: Se encontraron ${creditosEncontrados.length} créditos con ID ${historicalIdCredito}. Se cargó el más reciente (${creditosEncontrados[0].curpCliente}).`, 'warning');
+            showStatus('status_cobranza', `Advertencia: Múltiples créditos con ID ${historicalIdCredito}. Se cargó el más reciente.`, 'warning');
         }
 
         creditoActual = creditosEncontrados[0];
 
         showFixedProgress(60, 'Obteniendo datos del cliente...');
-        const cliente = await database.buscarClientePorCURP(creditoActual.curpCliente, currentUserData?.office); // Aplicar segregación
-        if (!cliente) {
-            console.warn(`No se encontró cliente para CURP ${creditoActual.curpCliente} del crédito ${historicalIdCredito}`);
-        }
-
+        const cliente = await database.buscarClientePorCURP(creditoActual.curpCliente, currentUserData?.office);
+        
         showFixedProgress(80, 'Calculando historial del crédito...');
-        // *** CORRECCIÓN: Obtener pagos para cálculo de estado ***
         const pagos = await database.getPagosPorCredito(historicalIdCredito, creditoActual.office);
         pagos.sort((a, b) => (parsearFecha(b.fecha)?.getTime() || 0) - (parsearFecha(a.fecha)?.getTime() || 0));
 
-        const historial = _calcularEstadoCredito(creditoActual, pagos); // <-- Pasa los pagos
+        const historial = _calcularEstadoCredito(creditoActual, pagos);
 
         if (!historial) {
-            console.error("No se pudo calcular el historial para el crédito:", creditoActual);
-            throw new Error(`No se pudo calcular el historial del crédito ${historicalIdCredito}. Verifica los datos del crédito (monto, plazo, fecha).`);
+            throw new Error(`Error calculando historial del crédito.`);
         }
 
+        // Llenar Formulario
         document.getElementById('nombre_cobranza').value = cliente ? cliente.nombre : (creditoActual.nombreCliente || 'Cliente Desconocido');
         document.getElementById('saldo_cobranza').value = `$${historial.saldoRestante.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
         document.getElementById('estado_cobranza').value = historial.estado.toUpperCase();
         document.getElementById('semanas_atraso_cobranza').value = historial.semanasAtraso || 0;
         document.getElementById('pago_semanal_cobranza').value = `$${historial.pagoSemanal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
         document.getElementById('fecha_proximo_pago_cobranza').value = historial.proximaFechaPago || 'N/A';
+        
         const montoInput = document.getElementById('monto_cobranza');
         montoInput.value = historial.pagoSemanal > 0 ? historial.pagoSemanal.toFixed(2) : '';
         handleMontoPagoChange();
+
+        // --- LÓGICA DE FECHA MANUAL (NUEVO) ---
+        if (divFechaManual && inputFechaManual) {
+            // Establecer fecha de hoy por defecto (Local)
+            const hoyLocal = new Date();
+            const offset = hoyLocal.getTimezoneOffset() * 60000;
+            const fechaISO = new Date(hoyLocal.getTime() - offset).toISOString().split('T')[0];
+            inputFechaManual.value = fechaISO;
+
+            // Mostrar solo si NO es área comercial
+            if (currentUserData.role === 'Área comercial') {
+                divFechaManual.classList.add('hidden');
+            } else {
+                divFechaManual.classList.remove('hidden');
+            }
+        }
+        // --------------------------------------
 
         showFixedProgress(100, 'Crédito encontrado');
         formCobranza.classList.remove('hidden');
 
         if (!statusCobranza.textContent.includes('Advertencia')) {
-            showStatus('status_cobranza', `Crédito ${historicalIdCredito} encontrado (${creditoActual.curpCliente}). Listo para registrar pago.`, 'success');
+            showStatus('status_cobranza', `Crédito ${historicalIdCredito} encontrado.`, 'success');
         }
 
         montoInput.focus();
         montoInput.select();
 
     } catch (error) {
-        console.error("Error buscando crédito para pago:", error);
+        console.error("Error buscando crédito:", error);
         showStatus('status_cobranza', `Error: ${error.message}`, 'error');
         formCobranza.classList.add('hidden');
         creditoActual = null;
@@ -2881,25 +2898,27 @@ async function handlePaymentForm(e) {
         montoInput.classList.remove('input-error');
     }
 
-    // --- CÁLCULO DE COMISIÓN (REGLAS ACTUALIZADAS) ---
+    // --- CAPTURA DE FECHA MANUAL (NUEVO) ---
+    let fechaPersonalizada = null;
+    const inputFechaManual = document.getElementById('fecha_cobranza_manual');
+    
+    // Solo si el input es visible y el usuario NO es comercial
+    if (currentUserData.role !== 'Área comercial' && inputFechaManual && inputFechaManual.value) {
+        // Le agregamos la hora T12:00:00 para evitar problemas de zona horaria (UTC vs Local)
+        fechaPersonalizada = inputFechaManual.value + 'T12:00:00';
+    }
+    // ---------------------------------------
+
+    // --- REGLAS DE COMISIÓN (Tus reglas vigentes) ---
     let comision = 0;
     const plazo = creditoActual.plazo || 14;
-    // IMPORTANTE: Obtenemos el estado CALCULADO recientemente al buscar, o del objeto.
-    // Si usaste la función _calcularEstadoCredito antes, asegúrate de que 'creditoActual' tenga el estado actualizado.
-    // Usualmente se actualiza la UI, pero el objeto creditoActual puede tener el estado viejo.
-    // Leemos el valor del input de estado que ya se calculó en handleSearchCreditForPayment
     const estadoInput = document.getElementById('estado_cobranza'); 
     const estadoActual = estadoInput ? estadoInput.value.toLowerCase() : (creditoActual.estado || 'al corriente');
 
-    // 1. Regla Comisionista (10 sem) -> $0
     if (plazo !== 10) { 
-        
-        // 2. REGLA ESTATUS: Solo 'al corriente' o 'liquidado' generan comisión
         if (estadoActual === 'al corriente' || estadoActual === 'liquidado' || estadoActual === 'adelantado') {
             
             if (tipoPago === 'normal' || tipoPago === 'adelanto') {
-                // Lógica Estándar: $10 por cada pago completo.
-                // Necesitamos el pago semanal para calcular múltiplos.
                 const pagoSemanal = creditoActual.montoTotal / creditoActual.plazo;
                 if (pagoSemanal > 0) {
                     const pagosCompletos = Math.floor((montoPago + 0.1) / pagoSemanal);
@@ -2907,7 +2926,6 @@ async function handlePaymentForm(e) {
                 }
             } 
             else if (tipoPago === 'actualizado') {
-                // 3. REGLA RENOVACIÓN: Comisión tope $10 (si cubre al menos 1 pago)
                 const pagoSemanal = creditoActual.montoTotal / creditoActual.plazo;
                 if (pagoSemanal > 0 && montoPago >= (pagoSemanal - 0.9)) {
                     comision = 10;
@@ -2915,14 +2933,10 @@ async function handlePaymentForm(e) {
                     comision = 0;
                 }
             }
-            // Extraordinario y Bancario -> $0
         } else {
-            // Si está en atraso/cobranza/jurídico -> $0
-            comision = 0;
-            console.log("Comisión anulada por estatus:", estadoActual);
+            comision = 0; // Bloqueo por estatus
         }
     }
-    // --------------------------------------------
 
     showButtonLoading(submitButton, true, 'Registrando...');
     showFixedProgress(50, 'Procesando pago...');
@@ -2935,7 +2949,9 @@ async function handlePaymentForm(e) {
             monto: montoPago,
             tipoPago: tipoPago,
             comisionGenerada: comision, 
-            origen: 'manual'
+            origen: 'manual',
+            // Enviamos la fecha personalizada (puede ser null, la DB lo manejará)
+            fechaPersonalizada: fechaPersonalizada 
         };
 
         const resultado = await database.agregarPago(pagoData, currentUser.email, creditoActual.id);
@@ -2943,6 +2959,10 @@ async function handlePaymentForm(e) {
         if (resultado.success) {
             showFixedProgress(100, 'Pago registrado');
             let successMsg = `¡Pago registrado! Comisión generada: $${comision}`;
+            
+            if (fechaPersonalizada) {
+                successMsg += ` (Fecha: ${inputFechaManual.value})`;
+            }
             if (!isOnline) successMsg += ' (Guardado localmente).';
             
             showStatus('status_cobranza', successMsg, 'success');
@@ -8037,6 +8057,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
