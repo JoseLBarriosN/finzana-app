@@ -2555,117 +2555,109 @@ async function _actualizarDropdownGrupo(selectId, office, placeholder) {
 // =============================================
 
 async function handleSearchClientForCredit() {
-    const curpInput = document.getElementById('curp_colocacion');
+    // Referencias al DOM
+    const curpInput = document.getElementById('curp_cliente_colocacion');
     const curp = curpInput.value.trim().toUpperCase();
     const statusColocacion = document.getElementById('status_colocacion');
     const formColocacion = document.getElementById('form-colocacion');
     const btnBuscar = document.getElementById('btnBuscarCliente_colocacion');
-    
-    clienteParaCredito = null;
-    if (!validarFormatoCURP(curp)) {
-        showStatus('status_colocacion', 'El CURP debe tener 18 caracteres y formato válido.', 'error');
-        formColocacion.classList.add('hidden');
+    const selectTipo = document.getElementById('tipo_colocacion'); // El Dropdown
+
+    // --- 1. SEGURIDAD: Obtener Oficina del Usuario ---
+    const userOffice = currentUserData ? currentUserData.office : null;
+    if (!userOffice) {
+         showStatus('status_colocacion', 'Error: Perfil incompleto (Sin Oficina). Recarga la página.', 'error');
+         return;
+    }
+
+    // --- 2. VALIDACIÓN CURP ---
+    if (curp.length < 10) { 
+        showStatus('status_colocacion', 'Formato de CURP inválido.', 'error');
         return;
     }
 
-    showButtonLoading(btnBuscar, true, 'Buscando...');
-    statusColocacion.innerHTML = 'Consultando historial y elegibilidad...';
+    showButtonLoading(btnBuscar, true, 'Verificando...');
+    statusColocacion.innerHTML = 'Verificando historial...';
     statusColocacion.className = 'status-message status-info';
-    formColocacion.classList.add('hidden');
 
     try {
-        // 1. Buscar Cliente
-        const cliente = await database.buscarClientePorCURP(curp, currentUserData?.office);
-        if (!cliente) {
-            throw new Error('CURP no registrada. Debes registrar al cliente primero.');
-        }
-        clienteParaCredito = cliente;
+        // --- 3. LLAMADA A DATABASE ---
+        // Pasamos explícitamente userOffice para evitar error de permisos
+        const elegibilidad = await database.verificarElegibilidadCliente(curp, userOffice);
 
-        // 2. VERIFICACIÓN DE REGLAS
-        const analisis = await database.verificarElegibilidadCliente(curp, currentUserData?.office);
-
-        if (analisis.elegible === false) {
-            throw new Error(analisis.mensaje);
-        }
-
-        // 3. Configuración Exitosa
-        const plazoSelect = document.getElementById('plazo_colocacion');
-        const tipoCreditoSelect = document.getElementById('tipo_colocacion');
-
-        actualizarPlazosSegunCliente(cliente.isComisionista || false, analisis.esRenovacion);
-        
-        plazoSelect.disabled = false;
-
-        // --- LÓGICA DE TIPOS Y CANDADOS ---
-        if (analisis.esRenovacion) {
-            // Verificar si el último pago marca una renovación obligatoria
-            let forzarRenovacion = false;
-            const creditoAnterior = analisis.datosCreditoAnterior;
-            
-            if (creditoAnterior) {
-                const histId = creditoAnterior.historicalIdCredito || creditoAnterior.id;
-                // Buscamos el último pago registrado
-                const pagosPrevios = await database.getPagosPorCredito(histId, creditoAnterior.office);
-                if (pagosPrevios.length > 0) {
-                    pagosPrevios.sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
-                    const ultimoPago = pagosPrevios[0];
-                    
-                    // Si el último pago fue marcado como 'actualizado' (renovación)
-                    if (ultimoPago.tipoPago === 'actualizado' || ultimoPago.tipoPago === 'renovacion') {
-                        forzarRenovacion = true;
-                    }
-                }
-            }
-
-            if (forzarRenovacion) {
-                tipoCreditoSelect.value = 'renovacion';
-                tipoCreditoSelect.disabled = true; // CANDADO: Solo permite renovación
-                showStatus('status_colocacion', `🔒 RENOVACIÓN OBLIGATORIA (Último pago marcado como renovación). Saldo a liquidar: $${creditoAnterior.saldo}`, 'info');
-            } else {
-                // Es elegible pero no forzoso, sugerimos renovación
-                tipoCreditoSelect.value = 'renovacion';
-                tipoCreditoSelect.disabled = false; // Permitimos cambiar si fue error
-                if (analisis.datosCreditoAnterior && analisis.datosCreditoAnterior.saldo > 0) {
-                    showStatus('status_colocacion', `✅ Elegible para renovación (Saldo pendiente: $${analisis.datosCreditoAnterior.saldo})`, 'success');
-                } else {
-                    showStatus('status_colocacion', `✅ Elegible para renovación.`, 'success');
-                }
-            }
-
-        } else if (analisis.esReingreso) {
-            // REINGRESO: Historial existe pero sin deuda actual
-            tipoCreditoSelect.value = 'reingreso';
-            tipoCreditoSelect.disabled = false; 
-            showStatus('status_colocacion', '✅ Cliente de REINGRESO (Historial encontrado).', 'success');
-        
-        } else {
-            // NUEVO: Virgen
-            tipoCreditoSelect.value = 'nuevo';
-            tipoCreditoSelect.disabled = false; 
-            showStatus('status_colocacion', '✅ Cliente elegible para crédito NUEVO.', 'success');
-        }
-
-        // Llenar campos
-        document.getElementById('nombre_colocacion').value = cliente.nombre;
-        document.getElementById('idCredito_colocacion').value = 'Se asignará automáticamente';
+        // Limpiar UI previa
+        formColocacion.classList.add('hidden');
         document.getElementById('monto_colocacion').value = '';
-        document.getElementById('montoTotal_colocacion').value = '';
+        selectTipo.disabled = false; 
+        selectTipo.value = 'nuevo'; // Valor por defecto
         
-        document.getElementById('curpAval_colocacion').value = '';
-        document.getElementById('nombreAval_colocacion').value = '';
-        
-        calcularMontoTotalColocacion();
-        formColocacion.classList.remove('hidden');
+        // Limpiar avisos visuales
+        const avisoExistente = document.getElementById('aviso-renovacion-candado');
+        if(avisoExistente) avisoExistente.remove();
+
+        if (elegibilidad.elegible) {
+            // --- CLIENTE APTO ---
+            showStatus('status_colocacion', elegibilidad.mensaje, 'success');
+            
+            // Cargar nombre para confirmar visualmente
+            const cliente = await database.buscarClientePorCURP(curp, userOffice);
+            document.getElementById('nombre_cliente_colocacion').value = cliente.nombre;
+
+            // --- 4. LÓGICA DEL CANDADO DE RENOVACIÓN ---
+            if (elegibilidad.esRenovacion) {
+                
+                // A. Identificar crédito anterior
+                const histId = elegibilidad.datosCreditoAnterior ? 
+                              (elegibilidad.datosCreditoAnterior.historicalIdCredito || elegibilidad.datosCreditoAnterior.id) : null;
+                
+                let forzarRenovacion = false;
+                
+                // B. Buscar si ya pagó la liquidación (Tipo 'renovacion')
+                if (histId) {
+                   const pagosLiq = await database.db.collection('pagos')
+                       .where('idCredito', '==', histId)
+                       .where('office', '==', userOffice) // Filtro oficina obligatorio
+                       .where('tipoPago', '==', 'renovacion')
+                       .limit(1).get();
+                   
+                   if (!pagosLiq.empty) forzarRenovacion = true;
+                }
+
+                // C. Aplicar bloqueo si es necesario
+                if (forzarRenovacion || elegibilidad.forzarRenovacion) {
+                    selectTipo.value = 'renovacion';
+                    selectTipo.disabled = true; // BLOQUEO
+                    
+                    // Crear aviso visual
+                    const divTipo = selectTipo.parentElement;
+                    const aviso = document.createElement('small');
+                    aviso.id = 'aviso-renovacion-candado';
+                    aviso.style.color = '#d63384';
+                    aviso.style.fontWeight = 'bold';
+                    aviso.style.display = 'block';
+                    aviso.textContent = "🔒 Bloqueado en Renovación (Requisito del Sistema)";
+                    divTipo.appendChild(aviso);
+                } else {
+                    // Si es opcional (ej. multicrédito), sugerimos 'renovacion' pero dejamos cambiar
+                    selectTipo.value = 'renovacion'; 
+                }
+            }
+            // ----------------------------------------
+
+            formColocacion.classList.remove('hidden');
+
+        } else {
+            // --- CLIENTE NO APTO ---
+            showStatus('status_colocacion', elegibilidad.message || elegibilidad.mensaje, 'error');
+        }
 
     } catch (error) {
-        console.error("Error búsqueda crédito:", error);
-        showStatus('status_colocacion', `🚫 ${error.message}`, 'error');
-        formColocacion.classList.add('hidden');
+        console.error(error);
+        showStatus('status_colocacion', 'Error verificando: ' + error.message, 'error');
     } finally {
         showButtonLoading(btnBuscar, false);
     }
 }
-
 
 // CREDIT FORM
 async function handleCreditForm(e) {
@@ -8163,6 +8155,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
