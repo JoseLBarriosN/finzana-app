@@ -725,9 +725,8 @@ async _generarSiguienteFolio(office, userData) {
             return { success: false, message: 'Error crítico: Oficina inválida.' };
         }
 
-        // Validación de plazos permitidos para renovación/reingreso
         if ((creditoData.tipo === 'renovacion' || creditoData.tipo === 'reingreso') && creditoData.plazo !== 14 && creditoData.plazo !== 13) {
-            return { success: false, message: 'Plazo no permitido para renovación o reingreso.' };
+            return { success: false, message: 'Plazo no permitido para renovación.' };
         }
 
         // Validaciones de Elegibilidad
@@ -756,7 +755,8 @@ async _generarSiguienteFolio(office, userData) {
             }
         }
 
-        // --- 2. GENERACIÓN DE FOLIO SEGURA ---
+        // --- 2. GENERACIÓN DE FOLIO SEGURA (NUEVO) ---
+        // Usamos la función auxiliar que verifica en BD para evitar duplicados
         console.log("🔄 Generando folio único...");
         const datosFolio = await this._generarSiguienteFolio(office, userData);
         const nuevoFolio = datosFolio.folio;
@@ -767,29 +767,21 @@ async _generarSiguienteFolio(office, userData) {
         // --- 3. PREPARACIÓN DE DATOS ---
         const fechaCreacionISO = database.obtenerFechaLocalISO(); 
         const esCreditoComisionista = (creditoData.plazo === 10 && cliente.isComisionista);
-        
-        // Póliza: $100 (se cobra en Nuevo, Renovación y Reingreso, excepto a comisionistas)
         let montoPolizaDeduccion = esCreditoComisionista ? 0 : 100;
 
         const nuevoCreditoRef = db.collection('creditos').doc();
         
-        // Lógica de tipos
-        const tipoCredito = creditoData.tipo; // 'nuevo', 'renovacion', 'reingreso'
-        const esRenovacion = tipoCredito === 'renovacion';
-        // Nuevo y Reingreso generan comisión de apertura ($100). Renovación NO.
-        const generaComisionApertura = (tipoCredito === 'nuevo' || tipoCredito === 'reingreso');
-
         let nuevoCreditoData = {
             monto: parseFloat(creditoData.monto), 
             plazo: parseInt(creditoData.plazo),
-            tipo: tipoCredito, 
+            tipo: creditoData.tipo, 
             montoTotal: parseFloat(creditoData.montoTotal),
             saldo: parseFloat(creditoData.montoTotal), 
             curpCliente: creditoData.curpCliente.toUpperCase(),
             curpAval: (creditoData.curpAval || '').toUpperCase(),
             nombreAval: creditoData.nombreAval || '',
             office: cliente.office,
-            poblacion_grupo: cliente.poblacion_grupo, // Vital para hoja de corte
+            poblacion_grupo: cliente.poblacion_grupo,
             ruta: cliente.ruta,
             estado: 'al corriente',
             fechaCreacion: fechaCreacionISO,
@@ -801,20 +793,19 @@ async _generarSiguienteFolio(office, userData) {
             busqueda: [ creditoData.curpCliente.toUpperCase(), nuevoFolio ]
         };
 
-        // --- 4. CÁLCULO DE RENOVACIÓN (LIQUIDACIÓN ANTERIOR) ---
+        // --- 4. CÁLCULO DE RENOVACIÓN ---
         let saldoA_Liquidar = 0;
         let creditoAnteriorRef = null;
         let idCreditoAnteriorString = null;
         
-        if (esRenovacion) {
+        if (creditoData.tipo === 'renovacion') {
             const activeCredits = await db.collection('creditos')
-                                            .where('curpCliente', '==', creditoData.curpCliente)
-                                            .where('office', '==', office) 
-                                            .where('estado', '!=', 'liquidado')
-                                            .get();
+                                    .where('curpCliente', '==', creditoData.curpCliente)
+                                    .where('office', '==', office) 
+                                    .where('estado', '!=', 'liquidado')
+                                    .get();
             
             if (!activeCredits.empty) {
-                // Tomamos el más antiguo activo para liquidarlo
                 const docs = activeCredits.docs.sort((a,b) => a.data().fechaCreacion.localeCompare(b.data().fechaCreacion));
                 const oldCred = docs[0];
                 const oldData = oldCred.data();
@@ -828,98 +819,133 @@ async _generarSiguienteFolio(office, userData) {
             }
         }
 
-        // --- 5. CÁLCULO DE DINERO EN MANO ---
-        // Fórmula: Monto Solicitado - Póliza - (Saldo Anterior si es renovación)
-        let dineroRealEntregado = nuevoCreditoData.monto - montoPolizaDeduccion;
-        
-        if (esRenovacion) {
-            dineroRealEntregado -= saldoA_Liquidar;
-        }
-
-        if (dineroRealEntregado < 0) {
-            return { success: false, message: "Error: El saldo a liquidar es mayor al nuevo préstamo." };
-        }
+        const montoEfectivoEntregado = nuevoCreditoData.monto - montoPolizaDeduccion - saldoA_Liquidar;
 
         // =========================================================
-        // TRANSACCIONES (ONLINE / OFFLINE)
+        // TRANSACCIONES
         // =========================================================
         
-        // Función helper para construir el batch de operaciones
-        const ejecutarOperaciones = (transactionOrBatch) => {
-            const t = transactionOrBatch; // Alias corto
+        if (navigator.onLine) {
+            await db.runTransaction(async (transaction) => {
+                
+                // A. Crear Nuevo
+                transaction.set(nuevoCreditoRef, nuevoCreditoData);
 
-            // A. Crear Nuevo Crédito
-            t.set(nuevoCreditoRef, nuevoCreditoData);
+                // B. Liquidar Viejo
+                if (creditoAnteriorRef && saldoA_Liquidar > 0) {
+                    transaction.update(creditoAnteriorRef, {
+                        estado: 'liquidado',
+                        saldo: 0,
+                        fechaLiquidacion: fechaCreacionISO,
+                        nota: `Liquidado por renovación ${nuevoFolio}`
+                    });
 
-            // B. Liquidar Viejo (Solo si es Renovación y existe deuda)
-            if (esRenovacion && creditoAnteriorRef && saldoA_Liquidar > 0) {
-                // 1. Actualizar estado del viejo a liquidado
-                t.update(creditoAnteriorRef, {
-                    estado: 'liquidado',
-                    saldo: 0,
-                    fechaLiquidacion: fechaCreacionISO,
-                    nota: `Liquidado por renovación ${nuevoFolio}`
+                    const pagoRef = db.collection('pagos').doc();
+                    transaction.set(pagoRef, {
+                        idCredito: idCreditoAnteriorString,
+                        firestoreIdCredito: creditoAnteriorRef.id,
+                        monto: parseFloat(saldoA_Liquidar.toFixed(2)),
+                        fecha: fechaCreacionISO,
+                        tipoPago: 'renovacion', 
+                        registradoPor: userEmail,
+                        office: office,
+                        origen: 'sistema_renovacion',
+                        descripcion: `Liquidación por renovación ${nuevoFolio}`
+                    });
+                }
+
+                // C. Salida Efectivo
+                const salidaCaja = montoEfectivoEntregado + montoPolizaDeduccion; 
+                const movimientoRef = db.collection('movimientos_efectivo').doc();
+                
+                transaction.set(movimientoRef, {
+                    userId: auth.currentUser.uid,
+                    fecha: fechaCreacionISO,
+                    tipo: 'COLOCACION',
+                    categoria: 'COLOCACION',
+                    monto: -Math.abs(salidaCaja), 
+                    descripcion: `Colocación ${nuevoFolio} (Renovación). Liq: $${saldoA_Liquidar}`,
+                    creditoId: nuevoCreditoRef.id,
+                    registradoPor: userEmail,
+                    office: office
                 });
 
-                // 2. Registrar el PAGO de liquidación (Tipo: renovación)
+                // D. Entrada Póliza
+                if (montoPolizaDeduccion > 0) {
+                    const polizaRef = db.collection('movimientos_efectivo').doc();
+                    transaction.set(polizaRef, {
+                        userId: auth.currentUser.uid,
+                        fecha: fechaCreacionISO,
+                        tipo: 'INGRESO_POLIZA', 
+                        categoria: 'ENTREGA_INICIAL', 
+                        monto: montoPolizaDeduccion,
+                        descripcion: `Póliza crédito ${nuevoFolio}`,
+                        creditoId: nuevoCreditoRef.id,
+                        registradoPor: userEmail,
+                        office: office
+                    });
+                }
+
+                // E. Comisión
+                if (!esCreditoComisionista) {
+                    const comisionRef = db.collection('movimientos_efectivo').doc();
+                    transaction.set(comisionRef, {
+                        userId: auth.currentUser.uid,
+                        fecha: fechaCreacionISO,
+                        tipo: 'COMISION_COLOCACION',
+                        categoria: 'COMISION',
+                        monto: -100,
+                        descripcion: `Comisión colocación ${cliente.nombre} (${nuevoFolio})`,
+                        creditoId: nuevoCreditoRef.id,
+                        registradoPor: userEmail,
+                        office: office
+                    });
+                }
+            });
+
+            // Actualizamos localStorage solo como referencia, aunque ya no dependemos 100% de él
+            localStorage.setItem('local_credit_counter', nuevoConsecutivo.toString());
+            return { success: true, offline: false, message: 'Crédito generado exitosamente.', data: { id: nuevoCreditoRef.id, historicalIdCredito: nuevoFolio } };
+
+        } else {
+            // --- MODO OFFLINE (Batch) ---
+            // IMPORTANTE: Incluso offline, _generarSiguienteFolio ya validó contra la caché local
+            console.warn("⚠️ Guardando crédito OFFLINE:", nuevoFolio);
+            const batch = db.batch();
+            batch.set(nuevoCreditoRef, nuevoCreditoData);
+
+            if (creditoAnteriorRef && saldoA_Liquidar > 0) {
+                batch.update(creditoAnteriorRef, { estado: 'liquidado', saldo: 0, fechaLiquidacion: fechaCreacionISO });
                 const pagoRef = db.collection('pagos').doc();
-                t.set(pagoRef, {
+                batch.set(pagoRef, {
                     idCredito: idCreditoAnteriorString,
                     firestoreIdCredito: creditoAnteriorRef.id,
                     monto: parseFloat(saldoA_Liquidar.toFixed(2)),
                     fecha: fechaCreacionISO,
-                    tipoPago: 'renovacion', 
+                    tipoPago: 'renovacion',
                     registradoPor: userEmail,
                     office: office,
-                    origen: 'sistema_renovacion',
-                    descripcion: `Liquidación por renovación ${nuevoFolio}`
-                });
-
-                // 3. GENERAR COMISIÓN DE $10 POR EL PAGO DE LIQUIDACIÓN
-                // (Tu regla: "la única comisión que se da es por el pago de la liquidación")
-                const comisionPagoRef = db.collection('movimientos_efectivo').doc();
-                t.set(comisionPagoRef, {
-                    userId: auth.currentUser ? auth.currentUser.uid : 'system',
-                    fecha: fechaCreacionISO,
-                    tipo: 'COMISION_PAGO',
-                    categoria: 'COMISION',
-                    monto: -10, // Salida de $10 para el agente
-                    descripcion: `Comisión por liquidación (Renovación) crédito ${idCreditoAnteriorString}`,
-                    creditoId: nuevoCreditoRef.id, // Vinculado al nuevo
-                    poblacion: cliente.poblacion_grupo,
-                    registradoPor: userEmail,
-                    office: office
+                    origen: 'sistema_renovacion_offline'
                 });
             }
-
-            // C. SALIDA DE EFECTIVO REAL (HOJA DE CORTE)
-            // Registramos SOLO el dinero entregado en mano
-            const movimientoRef = db.collection('movimientos_efectivo').doc();
-            let descCaja = `Colocación ${tipoCredito.toUpperCase()} ${nuevoFolio}.`;
             
-            if (esRenovacion) {
-                descCaja += ` (Crédito: $${nuevoCreditoData.monto} - Liq: $${saldoA_Liquidar} - Póliza: $${montoPolizaDeduccion})`;
-            } else {
-                descCaja += ` (Crédito: $${nuevoCreditoData.monto} - Póliza: $${montoPolizaDeduccion})`;
-            }
-
-            t.set(movimientoRef, {
+            const salidaCaja = montoEfectivoEntregado + montoPolizaDeduccion;
+            const movimientoRef = db.collection('movimientos_efectivo').doc();
+            batch.set(movimientoRef, {
                 userId: auth.currentUser ? auth.currentUser.uid : 'offline_user',
                 fecha: fechaCreacionISO,
                 tipo: 'COLOCACION',
                 categoria: 'COLOCACION',
-                monto: -Math.abs(dineroRealEntregado), // Salida neta real
-                descripcion: descCaja,
+                monto: -Math.abs(salidaCaja),
+                descripcion: `Colocación ${nuevoFolio} (Renovación)`,
                 creditoId: nuevoCreditoRef.id,
-                poblacion: cliente.poblacion_grupo,
                 registradoPor: userEmail,
                 office: office
             });
 
-            // D. INGRESO PÓLIZA (Registro Contable)
             if (montoPolizaDeduccion > 0) {
                 const polizaRef = db.collection('movimientos_efectivo').doc();
-                t.set(polizaRef, {
+                batch.set(polizaRef, {
                     userId: auth.currentUser ? auth.currentUser.uid : 'offline_user',
                     fecha: fechaCreacionISO,
                     tipo: 'INGRESO_POLIZA', 
@@ -927,43 +953,29 @@ async _generarSiguienteFolio(office, userData) {
                     monto: montoPolizaDeduccion,
                     descripcion: `Cobro de Póliza - Crédito ${nuevoFolio}`,
                     creditoId: nuevoCreditoRef.id,
-                    poblacion: cliente.poblacion_grupo,
                     registradoPor: userEmail,
                     office: office
                 });
             }
 
-            // E. COMISIÓN DE APERTURA ($100)
-            // REGLA: NUEVO O REINGRESO -> $100. RENOVACION -> $0 (Ya cobró los $10 arriba).
-            if (!esCreditoComisionista && generaComisionApertura) {
+            if (!esCreditoComisionista) {
                 const comisionRef = db.collection('movimientos_efectivo').doc();
-                t.set(comisionRef, {
+                batch.set(comisionRef, {
                     userId: auth.currentUser ? auth.currentUser.uid : 'offline_user',
                     fecha: fechaCreacionISO,
                     tipo: 'COMISION_COLOCACION',
                     categoria: 'COMISION',
-                    monto: -100, // Salida de $100
-                    descripcion: `Comisión apertura ${tipoCredito.toUpperCase()} ${cliente.nombre} (${nuevoFolio})`,
+                    monto: -100,
+                    descripcion: `Comisión colocación ${cliente.nombre} (${nuevoFolio})`,
                     creditoId: nuevoCreditoRef.id,
-                    poblacion: cliente.poblacion_grupo,
                     registradoPor: userEmail,
                     office: office
                 });
             }
-        };
 
-        // Ejecutar Transacción (Online) o Batch (Offline)
-        if (navigator.onLine) {
-            await db.runTransaction(async (transaction) => {
-                ejecutarOperaciones(transaction);
-            });
-            localStorage.setItem('local_credit_counter', nuevoConsecutivo.toString());
-            return { success: true, offline: false, message: 'Crédito generado exitosamente.', data: { id: nuevoCreditoRef.id, historicalIdCredito: nuevoFolio } };
-        } else {
-            const batch = db.batch();
-            ejecutarOperaciones(batch);
             batch.commit().catch(err => console.log("Guardado en cola offline (Batch)"));
             localStorage.setItem('local_credit_counter', nuevoConsecutivo.toString());
+            
             return { success: true, offline: true, message: 'Guardado offline.', data: { id: nuevoCreditoRef.id, historicalIdCredito: nuevoFolio } };
         }
 
@@ -2250,131 +2262,64 @@ async _generarSiguienteFolio(office, userData) {
 
     // --- OBTENER DATOS HOJA DE CORTE (FILTRADO POR USUARIO) ---
     obtenerDatosHojaCorte: async (fecha, userOffice, userId = null) => {
-        // Aseguramos formato ISO para comparación de strings
         const fechaInicio = `${fecha}T00:00:00`;
         const fechaFin = `${fecha}T23:59:59`;
         
-        console.log(`🔍 [HOJA CORTE] Generando reporte...`);
-        console.log(`📅 Fecha: ${fecha} (Rango: ${fechaInicio} -> ${fechaFin})`);
-        console.log(`🏢 Oficina: ${userOffice || 'Todas'}`);
-        console.log(`👤 Filtro Agente (ID): ${userId || 'Ninguno (Todos)'}`);
-
         try {
-            // Paso 1: Resolver el Email del agente si hay filtro de ID
-            // (Necesario porque la colección 'pagos' usa 'registradoPor' que es el email)
+            // Paso 1: Si hay filtro de Usuario, necesitamos su email para filtrar los PAGOS
             let userEmail = null;
             if (userId) {
-                try {
-                    const userDoc = await db.collection('users').doc(userId).get();
-                    if (userDoc.exists) {
-                        userEmail = userDoc.data().email;
-                        console.log(`📧 Email del Agente encontrado: ${userEmail}`);
-                    } else {
-                        console.warn(`⚠️ ALERTA: No se encontró el usuario con ID ${userId} en la BD.`);
-                    }
-                } catch (e) {
-                    console.error("Error buscando usuario:", e);
-                }
+                const userDoc = await db.collection('users').doc(userId).get();
+                if (userDoc.exists) userEmail = userDoc.data().email;
             }
 
             const promises = [];
             
             // 1. Movimientos (Fondeo, Gasto, Comisión, Colocación)
-            // Esta colección SÍ tiene campo 'userId', filtramos directo.
+            // Estos SÍ tienen campo 'userId', filtramos directo.
             let qMovs = db.collection('movimientos_efectivo')
                 .where('fecha', '>=', fechaInicio)
                 .where('fecha', '<=', fechaFin);
             
-            if (userOffice && userOffice !== 'AMBAS') {
-                qMovs = qMovs.where('office', '==', userOffice);
-            }
-            if (userId) {
-                qMovs = qMovs.where('userId', '==', userId); 
-            }
+            if (userOffice && userOffice !== 'AMBAS') qMovs = qMovs.where('office', '==', userOffice);
+            if (userId) qMovs = qMovs.where('userId', '==', userId); // Filtro directo
             
             promises.push(qMovs.get());
 
             // 2. Pagos (Cobranza)
-            // Esta colección usa 'registradoPor' (email), NO tiene 'userId'.
+            // Estos NO tienen 'userId', tienen 'registradoPor' (email).
             let qPagos = db.collection('pagos')
                 .where('fecha', '>=', fechaInicio)
                 .where('fecha', '<=', fechaFin);
             
-            if (userOffice && userOffice !== 'AMBAS') {
-                qPagos = qPagos.where('office', '==', userOffice);
-            }
-            
-            // Lógica corregida para filtro de usuario en pagos
-            if (userId) {
-                if (userEmail) {
-                    qPagos = qPagos.where('registradoPor', '==', userEmail);
-                } else {
-                    // Si se pidió filtrar por usuario pero no se halló su email,
-                    // forzamos una consulta que no traiga nada para evitar errores de datos cruzados.
-                    console.warn("⚠️ Filtro de agente activo pero sin email válido. Se omitirán los pagos en la búsqueda.");
-                    qPagos = qPagos.where('registradoPor', '==', 'EMAIL_NO_ENCONTRADO_FORCE_EMPTY'); 
-                }
-            }
+            if (userOffice && userOffice !== 'AMBAS') qPagos = qPagos.where('office', '==', userOffice);
+            if (userEmail) qPagos = qPagos.where('registradoPor', '==', userEmail); // Filtro por email
             
             promises.push(qPagos.get());
 
-            // 3. Comisiones (Colección legacy 'comisiones', si aún existe)
+            // 3. Comisiones (Colección legacy 'comisiones', si aún la usas)
             let qComis = db.collection('comisiones')
                 .where('fecha', '>=', fechaInicio)
                 .where('fecha', '<=', fechaFin);
             
-            if (userOffice && userOffice !== 'AMBAS') {
-                qComis = qComis.where('office', '==', userOffice);
-            }
-            if (userId) {
-                qComis = qComis.where('userId', '==', userId);
-            }
+            if (userOffice && userOffice !== 'AMBAS') qComis = qComis.where('office', '==', userOffice);
+            if (userId) qComis = qComis.where('userId', '==', userId);
             
             promises.push(qComis.get());
 
-            // EJECUTAR CONSULTAS
             const [snapMovs, snapPagos, snapComis] = await Promise.all(promises);
 
-            console.log(`✅ Resultados DB:`);
-            console.log(`   - Movimientos Caja: ${snapMovs.size}`);
-            console.log(`   - Pagos Cobranza: ${snapPagos.size}`);
-            console.log(`   - Comisiones (Legacy): ${snapComis.size}`);
-
-            // Procesar y Unificar Datos
-            // Nota: Agregamos 'rawDate' para asegurar el ordenamiento correcto en la vista
-            const movimientos = snapMovs.docs.map(d => ({
-                id: d.id, 
-                ...d.data(), 
-                categoria: d.data().categoria || 'MOVIMIENTO', 
-                rawDate: d.data().fecha 
-            }));
-            
-            const pagos = snapPagos.docs.map(d => ({
-                id: d.id, 
-                ...d.data(), 
-                categoria: 'COBRANZA', 
-                tipo: 'PAGO', 
-                rawDate: d.data().fecha, 
-                descripcion: `Pago Crédito ${d.data().idCredito} (${d.data().tipoPago || 'Normal'})`
-            }));
-            
-            const comisiones = snapComis.docs.map(d => ({
-                id: d.id, 
-                ...d.data(), 
-                categoria: 'COMISION', 
-                tipo: 'COMISION', 
-                rawDate: d.data().fecha
-            })); 
+            const movimientos = snapMovs.docs.map(d => ({...d.data(), categoria: d.data().categoria || 'MOVIMIENTO', rawDate: d.data().fecha}));
+            const pagos = snapPagos.docs.map(d => ({...d.data(), categoria: 'COBRANZA', tipo: 'PAGO', rawDate: d.data().fecha, descripcion: `Pago Crédito ${d.data().idCredito}`}));
+            const comisiones = snapComis.docs.map(d => ({...d.data(), categoria: 'COMISION', tipo: 'COMISION', rawDate: d.data().fecha})); 
 
             const reporte = [...movimientos, ...pagos, ...comisiones];
-            
-            // Ordenar cronológicamente
-            reporte.sort((a, b) => (a.rawDate || '').localeCompare(b.rawDate || ''));
+            reporte.sort((a, b) => a.fecha.localeCompare(b.fecha));
 
             return reporte;
 
         } catch (error) {
-            console.error("❌ Error CRÍTICO obteniendo hoja de corte:", error);
+            console.error("Error obteniendo datos hoja corte:", error);
             throw error;
         }
     },
@@ -2650,5 +2595,3 @@ async _generarSiguienteFolio(office, userData) {
     },
 
 };
-
-
