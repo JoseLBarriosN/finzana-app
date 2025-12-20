@@ -7160,18 +7160,12 @@ async function loadHojaCorte() {
 
 function renderizarResultadosCorte(datos) {
     const containerResumen = document.getElementById('corte-resumen-cards');
-    // Encontramos el contenedor padre de la tabla para reemplazar el contenido completo
-    // Asumiendo que #tabla-corte-detalle está dentro de un div .table-responsive
-    const tableElement = document.getElementById('tabla-corte-detalle');
-    const tableWrapper = tableElement ? tableElement.parentNode : null;
-    
     if (!containerResumen) return;
 
-    // Totales Globales
+    // 1. CÁLCULO DE TOTALES
     let totalEntradas = 0;
     let totalSalidas = 0;
     
-    // Subtotales Globales
     let subCobranza = 0; 
     let subPolizas = 0; 
     let subColocacion = 0; 
@@ -7179,14 +7173,15 @@ function renderizarResultadosCorte(datos) {
     let subComisiones = 0; 
     let subFondeo = 0;
 
-    // AGRUPAR POR POBLACIÓN
-    const grupos = {}; 
+    // Estructura para agrupar: { 'Nombre Poblacion': [ array de movimientos ] }
+    const gruposPoblacion = {};
 
     datos.forEach(item => {
         let monto = Math.abs(item.monto || 0); 
         let esEntrada = false; 
         let concepto = '';
         
+        // Clasificación
         if (item.categoria === 'COBRANZA') {
             esEntrada = true; concepto = 'COBRANZA'; subCobranza += monto;
         } else if (item.tipo === 'INGRESO_POLIZA') {
@@ -7207,11 +7202,11 @@ function renderizarResultadosCorte(datos) {
 
         if (esEntrada) totalEntradas += monto; else totalSalidas += monto;
 
-        const poblacion = item.poblacion || 'GENERAL / SIN POBLACION';
-        
-        if (!grupos[poblacion]) grupos[poblacion] = [];
-        
-        grupos[poblacion].push({ 
+        // Agrupar por población (si no tiene, usar GENERAL)
+        const poblacion = item.poblacion || 'GENERAL / OFICINA';
+        if (!gruposPoblacion[poblacion]) gruposPoblacion[poblacion] = [];
+
+        gruposPoblacion[poblacion].push({ 
             hora: new Date(item.rawDate), 
             concepto, 
             descripcion: item.descripcion || '-', 
@@ -7223,7 +7218,7 @@ function renderizarResultadosCorte(datos) {
 
     const efectivoEnMano = totalEntradas - totalSalidas;
 
-    // 1. RENDERIZAR TARJETAS RESUMEN (GLOBAL)
+    // 2. RENDERIZAR RESUMEN (TARJETAS SUPERIORES)
     containerResumen.innerHTML = `
         <div class="card" style="border-left: 5px solid var(--info); flex: 1;">
             <h5 style="color:#666; margin:0;">EFECTIVO EN MANO</h5>
@@ -7241,72 +7236,84 @@ function renderizarResultadosCorte(datos) {
         </div>
     `;
 
-    // 2. RENDERIZAR TABLAS POR POBLACIÓN
-    let htmlContent = '';
-    const poblacionesOrdenadas = Object.keys(grupos).sort();
+    // 3. GENERAR HTML DE LAS TABLAS AGRUPADAS
+    let htmlTablas = '';
+    const nombresPoblacion = Object.keys(gruposPoblacion).sort();
 
-    if (poblacionesOrdenadas.length === 0) {
-        htmlContent = '<div style="text-align:center; padding:20px;">No hay movimientos para este criterio.</div>';
+    if (nombresPoblacion.length === 0) {
+        htmlTablas = '<div style="text-align:center; padding:20px; color:#666;">No hay movimientos para mostrar.</div>';
     } else {
-        poblacionesOrdenadas.forEach(pob => {
-            const movs = grupos[pob];
-            movs.sort((a, b) => a.hora - b.hora);
+        nombresPoblacion.forEach(pob => {
+            const movimientos = gruposPoblacion[pob];
+            movimientos.sort((a, b) => a.hora - b.hora);
 
             // Calcular neto por población
-            const neto = movs.reduce((acc, m) => acc + (m.esEntrada ? m.monto : -m.monto), 0);
+            const neto = movimientos.reduce((acc, m) => acc + (m.esEntrada ? m.monto : -m.monto), 0);
             const colorNeto = neto >= 0 ? 'var(--success)' : 'var(--danger)';
 
-            htmlContent += `
-                <div class="card" style="margin-bottom: 25px; padding: 0; border: 1px solid #dee2e6; overflow: hidden;">
+            htmlTablas += `
+                <div class="card" style="margin-bottom: 20px; border: 1px solid #dee2e6; overflow: hidden; border-radius:8px;">
                     <div style="background-color: #e9ecef; padding: 10px 15px; display: flex; justify-content: space-between; align-items: center;">
-                        <h4 style="margin:0; color: var(--primary); font-size: 1.1em;"><i class="fas fa-map-marker-alt"></i> ${pob}</h4>
-                        <span style="font-weight:bold; color: ${colorNeto}">Neto Población: $${neto.toLocaleString('es-MX', {minimumFractionDigits: 2})}</span>
+                        <h4 style="margin:0; font-size: 1.1em; color: var(--primary);"><i class="fas fa-map-marker-alt"></i> ${pob}</h4>
+                        <span style="font-weight:bold; color: ${colorNeto}">Neto: $${neto.toLocaleString('es-MX', {minimumFractionDigits: 2})}</span>
                     </div>
                     <div class="table-responsive">
                         <table class="table table-striped" style="width: 100%; border-collapse: collapse; margin-bottom: 0;">
                             <thead>
                                 <tr style="background-color: #fff;">
-                                    <th style="padding: 8px; font-size: 0.85em; width:80px;">Hora</th>
-                                    <th style="padding: 8px; font-size: 0.85em;">Concepto</th>
-                                    <th style="padding: 8px; font-size: 0.85em;">Descripción</th>
-                                    <th style="padding: 8px; font-size: 0.85em; text-align:right; color:var(--success);">Entrada (+)</th>
-                                    <th style="padding: 8px; font-size: 0.85em; text-align:right; color:var(--danger);">Salida (-)</th>
-                                    <th style="padding: 8px; font-size: 0.85em;">Ref.</th>
+                                    <th style="padding:8px; font-size:0.85em; width:80px;">Hora</th>
+                                    <th style="padding:8px; font-size:0.85em;">Concepto</th>
+                                    <th style="padding:8px; font-size:0.85em;">Descripción</th>
+                                    <th style="padding:8px; font-size:0.85em; text-align:right; color:var(--success);">Entrada</th>
+                                    <th style="padding:8px; font-size:0.85em; text-align:right; color:var(--danger);">Salida</th>
                                 </tr>
                             </thead>
                             <tbody>
             `;
 
-            movs.forEach(row => {
+            movimientos.forEach(row => {
                 const horaStr = row.hora.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
                 const entradaStr = row.esEntrada ? `$${row.monto.toFixed(2)}` : '';
                 const salidaStr = !row.esEntrada ? `$${row.monto.toFixed(2)}` : '';
 
-                htmlContent += `
+                htmlTablas += `
                     <tr>
-                        <td style="text-align:center; color:#666; font-size:0.8em; border-bottom: 1px solid #eee;">${horaStr}</td>
-                        <td style="font-weight:500; font-size:0.9em; border-bottom: 1px solid #eee;">${row.concepto}</td>
-                        <td style="font-size:0.85em; border-bottom: 1px solid #eee;">${row.descripcion}</td>
-                        <td style="text-align:right; color:var(--success); font-weight:500; border-bottom: 1px solid #eee;">${entradaStr}</td>
-                        <td style="text-align:right; color:var(--danger); font-weight:500; border-bottom: 1px solid #eee;">${salidaStr}</td>
-                        <td style="font-size:0.8em; color:#888; border-bottom: 1px solid #eee;">${row.ref}</td>
+                        <td style="text-align:center; color:#666; font-size:0.8em;">${horaStr}</td>
+                        <td style="font-weight:600; font-size:0.85em;">${row.concepto}</td>
+                        <td style="font-size:0.85em;">${row.descripcion}</td>
+                        <td style="text-align:right; color:var(--success); font-weight:500;">${entradaStr}</td>
+                        <td style="text-align:right; color:var(--danger); font-weight:500;">${salidaStr}</td>
                     </tr>
                 `;
             });
 
-            htmlContent += `</tbody></table></div></div>`;
+            htmlTablas += `</tbody></table></div></div>`;
         });
     }
 
-    // Inyectar en el DOM (compatible con vista Admin y Usuario)
-    const detalleContainer = document.getElementById('reporte-contable-detalle'); 
+    // 4. INYECTAR EL HTML (CORRECCIÓN: HACERLO EN AMBOS LUGARES SIN EL "ELSE")
     
-    if (detalleContainer) {
-        // Vista Admin (Reporte Contable)
-        detalleContainer.innerHTML = htmlContent;
-    } else if (tableWrapper) {
-        // Vista Usuario (Hoja de Corte)
-        tableWrapper.innerHTML = htmlContent;
+    // A. Vista Admin (Reporte Contable)
+    const adminContainer = document.getElementById('reporte-contable-detalle');
+    if (adminContainer) adminContainer.innerHTML = htmlTablas;
+
+    // B. Vista Usuario (Hoja de Corte)
+    // Buscamos la tabla original para reemplazar su contenedor padre con las nuevas tablas agrupadas
+    const userTable = document.getElementById('tabla-corte-detalle');
+    if (userTable) {
+        // Reemplazamos el div .table-responsive completo
+        const parent = userTable.closest('.table-responsive') || userTable.parentNode;
+        if (parent) {
+            // Le ponemos un ID único para encontrarlo en futuras actualizaciones
+            parent.id = 'contenedor-dinamico-corte'; 
+            parent.innerHTML = htmlTablas;
+        }
+    } else {
+        // Si la tabla ya fue reemplazada en una búsqueda anterior, buscamos el contenedor por ID
+        const dynamicContainer = document.getElementById('contenedor-dinamico-corte');
+        if (dynamicContainer) {
+            dynamicContainer.innerHTML = htmlTablas;
+        }
     }
 }
 
@@ -8148,5 +8155,6 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
