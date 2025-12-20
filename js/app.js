@@ -6213,14 +6213,13 @@ async function handleSucursalReporteContableChange() {
     // Si el usuario es Comercial, NO tiene permiso para listar usuarios.
     // Le asignamos su propio nombre y terminamos la función.
     const rolActual = currentUserData ? currentUserData.role : '';
-    // Normalizamos para detectar variaciones (con acento, sin acento, mayúsculas)
     const rolNormalizado = rolActual.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
     
     if (rolNormalizado.includes('comercial') || rolNormalizado.includes('ventas')) {
         console.log("🛡️ Rol comercial detectado: Asignando usuario actual y saliendo.");
         selectAgente.innerHTML = `<option value="${currentUserData.id}" selected>${currentUserData.name || 'Mi Usuario'}</option>`;
-        selectAgente.disabled = true; // Bloqueado, solo puede verse a sí mismo
-        return; // <--- IMPORTANTE: Detiene la ejecución aquí.
+        selectAgente.disabled = true; 
+        return; 
     }
     // ------------------------------------
 
@@ -6238,12 +6237,19 @@ async function handleSucursalReporteContableChange() {
             return;
         }
 
+        // *** CAMBIO APLICADO AQUÍ ***
+        // Ahora filtramos usuarios que sean 'Área comercial' O 'Administrador'
         const agentes = resultado.data.filter(u =>
-            u.role === 'Área comercial' && u.office === office
+            (u.role === 'Área comercial' || u.role === 'Administrador' || u.role === 'Gerencia') && 
+            u.office === office
         ).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 
-        const opciones = agentes.map(a => ({ value: a.id, text: a.name }));
-        popularDropdown('reporte-contable-agente', opciones, 'Todos los Agentes', true);
+        const opciones = agentes.map(a => ({ 
+            value: a.id, 
+            text: `${a.name} (${a.role})` // Agregué el rol visualmente para distinguirlos
+        }));
+
+        popularDropdown('reporte-contable-agente', opciones, 'Todos los Usuarios (Agentes y Admins)', true);
         selectAgente.disabled = false;
         
     } catch (error) {
@@ -8155,6 +8161,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
