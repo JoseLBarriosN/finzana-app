@@ -2569,74 +2569,89 @@ async function handleSearchClientForCredit() {
     }
 
     showButtonLoading(btnBuscar, true, 'Buscando...');
-    statusColocacion.innerHTML = 'Consultando historial...';
+    statusColocacion.innerHTML = 'Consultando historial y elegibilidad...';
     statusColocacion.className = 'status-message status-info';
     formColocacion.classList.add('hidden');
 
     try {
+        // 1. Buscar Cliente
         const cliente = await database.buscarClientePorCURP(curp, currentUserData?.office);
-        if (!cliente) throw new Error('CURP no registrada. Registra al cliente primero.');
-        
+        if (!cliente) {
+            throw new Error('CURP no registrada. Debes registrar al cliente primero.');
+        }
         clienteParaCredito = cliente;
 
-        // Verificar elegibilidad
+        // 2. VERIFICACIÓN DE REGLAS
         const analisis = await database.verificarElegibilidadCliente(curp, currentUserData?.office);
 
         if (analisis.elegible === false) {
             throw new Error(analisis.mensaje);
         }
 
-        // Preparar formulario
+        // 3. Configuración Exitosa
         const plazoSelect = document.getElementById('plazo_colocacion');
         const tipoCreditoSelect = document.getElementById('tipo_colocacion');
+
         actualizarPlazosSegunCliente(cliente.isComisionista || false, analisis.esRenovacion);
         
         plazoSelect.disabled = false;
+
+        // --- LÓGICA DE CANDADOS Y TIPOS ---
         
-        // --- LOGICA DE CANDADO ---
         if (analisis.esRenovacion) {
-            // Verificar si el último pago fue marcado como renovación (lo que obliga a renovar)
-            let obligarRenovacion = false;
+            // Caso Renovación
+            let forzarRenovacion = false;
             
+            // Verificamos si el último pago fue marcado como 'actualizado' o 'renovacion'
             if (analisis.datosCreditoAnterior) {
-                const credAnt = analisis.datosCreditoAnterior;
-                const histId = credAnt.historicalIdCredito || credAnt.id;
-                // Buscar último pago
-                const pagos = await database.getPagosPorCredito(histId, credAnt.office);
-                if (pagos.length > 0) {
-                    pagos.sort((a,b) => new Date(b.fecha) - new Date(a.fecha)); // Mas reciente primero
-                    // Si el ultimo pago es 'actualizado' (nuestra marca interna para renovación)
-                    if (pagos[0].tipoPago === 'actualizado' || pagos[0].tipoPago === 'renovacion') {
-                        obligarRenovacion = true;
-                    }
+                 const credAnt = analisis.datosCreditoAnterior;
+                 const histId = credAnt.historicalIdCredito || credAnt.id;
+                 const pagos = await database.getPagosPorCredito(histId, credAnt.office);
+                 
+                 if (pagos.length > 0) {
+                     // Ordenar por fecha descendente
+                     pagos.sort((a,b) => new Date(b.fecha) - new Date(a.fecha));
+                     const ultimoPago = pagos[0];
+                     
+                     if (ultimoPago.tipoPago === 'actualizado' || ultimoPago.tipoPago === 'renovacion') {
+                         forzarRenovacion = true;
+                     }
+                 }
+            }
+
+            if (forzarRenovacion) {
+                tipoCreditoSelect.value = 'renovacion';
+                tipoCreditoSelect.disabled = true; // CANDADO ACTIVADO
+                showStatus('status_colocacion', `🔒 RENOVACIÓN OBLIGATORIA (Último pago marcado).`, 'info');
+            } else {
+                tipoCreditoSelect.value = 'renovacion';
+                tipoCreditoSelect.disabled = false;
+                if (analisis.datosCreditoAnterior && analisis.datosCreditoAnterior.saldo > 0) {
+                    showStatus('status_colocacion', `✅ Elegible para renovación (Saldo pendiente: $${analisis.datosCreditoAnterior.saldo})`, 'success');
+                } else {
+                    showStatus('status_colocacion', `✅ Elegible para renovación.`, 'success');
                 }
             }
 
-            if (obligarRenovacion) {
-                tipoCreditoSelect.value = 'renovacion';
-                tipoCreditoSelect.disabled = true; // BLOQUEADO
-                showStatus('status_colocacion', `🔒 CLIENTE EN PROCESO DE RENOVACIÓN. Tipo bloqueado.`, 'info');
-            } else {
-                tipoCreditoSelect.value = 'renovacion';
-                tipoCreditoSelect.disabled = false; // Sugerido pero cambiable
-                showStatus('status_colocacion', `✅ Cliente elegible para renovación (Saldo pendiente).`, 'success');
-            }
-
         } else if (analisis.esReingreso) {
+            // Caso Reingreso (Ya tuvo créditos, no debe nada)
             tipoCreditoSelect.value = 'reingreso';
             tipoCreditoSelect.disabled = false;
-            showStatus('status_colocacion', '✅ Cliente REINGRESO (Historial limpio).', 'success');
+            showStatus('status_colocacion', `✅ Cliente REINGRESO (Historial limpio).`, 'success');
+        
         } else {
+            // Caso Nuevo
             tipoCreditoSelect.value = 'nuevo';
-            tipoCreditoSelect.disabled = false;
-            showStatus('status_colocacion', '✅ Cliente NUEVO.', 'success');
+            tipoCreditoSelect.disabled = false; 
+            showStatus('status_colocacion', '✅ Cliente elegible para crédito NUEVO.', 'success');
         }
 
-        // Llenar datos visuales
+        // Llenar campos
         document.getElementById('nombre_colocacion').value = cliente.nombre;
-        document.getElementById('idCredito_colocacion').value = 'Automático';
+        document.getElementById('idCredito_colocacion').value = 'Se asignará automáticamente';
         document.getElementById('monto_colocacion').value = '';
         document.getElementById('montoTotal_colocacion').value = '';
+        
         document.getElementById('curpAval_colocacion').value = '';
         document.getElementById('nombreAval_colocacion').value = '';
         
@@ -2644,14 +2659,13 @@ async function handleSearchClientForCredit() {
         formColocacion.classList.remove('hidden');
 
     } catch (error) {
-        console.error("Error:", error);
+        console.error("Error búsqueda crédito:", error);
         showStatus('status_colocacion', `🚫 ${error.message}`, 'error');
         formColocacion.classList.add('hidden');
     } finally {
         showButtonLoading(btnBuscar, false);
     }
 }
-
 
 // CREDIT FORM
 async function handleCreditForm(e) {
@@ -7146,69 +7160,70 @@ async function loadHojaCorte() {
 
 function renderizarResultadosCorte(datos) {
     const containerResumen = document.getElementById('corte-resumen-cards');
-    // Buscamos el contenedor donde insertar las tablas (usamos el padre de la tabla original)
+    // Encontramos el contenedor padre de la tabla para reemplazar el contenido completo
+    // Asumiendo que #tabla-corte-detalle está dentro de un div .table-responsive
     const tableElement = document.getElementById('tabla-corte-detalle');
-    const tableContainer = tableElement ? tableElement.parentNode : null;
-
-    if (!containerResumen || !tableContainer) return;
+    const tableWrapper = tableElement ? tableElement.parentNode : null;
+    
+    if (!containerResumen) return;
 
     // Totales Globales
     let totalEntradas = 0;
     let totalSalidas = 0;
     
     // Subtotales Globales
-    let subCobranza = 0;
-    let subColocacion = 0;
-    let subGastos = 0;
-    let subComisiones = 0;
+    let subCobranza = 0; 
+    let subPolizas = 0; 
+    let subColocacion = 0; 
+    let subGastos = 0; 
+    let subComisiones = 0; 
     let subFondeo = 0;
 
-    // Agrupamiento
-    const grupos = {}; // { 'NOMBRE POBLACION': [items...] }
+    // AGRUPAR POR POBLACIÓN
+    const grupos = {}; 
 
     datos.forEach(item => {
-        // Normalización de valores
-        const montoAbs = Math.abs(item.monto || 0);
-        let esEntrada = (item.monto >= 0);
-        let concepto = 'OTRO';
-
-        // Categorización para colores y etiquetas
-        if (item.categoria === 'COBRANZA') {
-            concepto = 'COBRANZA'; subCobranza += montoAbs; esEntrada = true;
-        } else if (item.tipo === 'COLOCACION') {
-            concepto = 'COLOCACIÓN'; subColocacion += montoAbs; esEntrada = false;
-        } else if (item.tipo === 'GASTO') {
-            concepto = 'GASTO'; subGastos += montoAbs; esEntrada = false;
-        } else if (item.tipo && item.tipo.includes('COMISION')) {
-            concepto = 'COMISIÓN'; subComisiones += montoAbs; esEntrada = false;
-        } else if (item.tipo === 'ENTREGA_INICIAL' || item.tipo === 'INGRESO_POLIZA') {
-            concepto = 'FONDEO/POLIZA'; subFondeo += montoAbs; esEntrada = true;
-        }
-
-        // Sumar a totales globales
-        if (esEntrada) totalEntradas += montoAbs;
-        else totalSalidas += montoAbs;
-
-        // Determinar Población (Si es gasto o fondeo a veces no tiene población, poner 'GENERAL')
-        const nombrePoblacion = item.poblacion || 'GENERAL / OFICINA';
+        let monto = Math.abs(item.monto || 0); 
+        let esEntrada = false; 
+        let concepto = '';
         
-        if (!grupos[nombrePoblacion]) {
-            grupos[nombrePoblacion] = [];
+        if (item.categoria === 'COBRANZA') {
+            esEntrada = true; concepto = 'COBRANZA'; subCobranza += monto;
+        } else if (item.tipo === 'INGRESO_POLIZA') {
+            esEntrada = true; concepto = 'PÓLIZA'; subPolizas += monto;
+        } else if (item.tipo === 'ENTREGA_INICIAL') {
+            esEntrada = true; concepto = 'FONDEO'; subFondeo += monto;
+        } else if (item.tipo === 'COLOCACION') {
+            esEntrada = false; concepto = 'COLOCACIÓN'; subColocacion += monto;
+        } else if (item.tipo === 'GASTO') {
+            esEntrada = false; concepto = 'GASTO'; subGastos += monto;
+        } else if (item.tipo && item.tipo.includes('COMISION')) {
+            esEntrada = false; concepto = 'COMISIÓN'; subComisiones += monto;
+        } else {
+            esEntrada = (item.monto >= 0); 
+            monto = Math.abs(item.monto);
+            concepto = 'OTRO';
         }
 
-        grupos[nombrePoblacion].push({
-            hora: new Date(item.rawDate),
-            concepto,
-            descripcion: item.descripcion || '',
-            monto: montoAbs,
-            esEntrada,
-            ref: item.registradoPor || '-'
+        if (esEntrada) totalEntradas += monto; else totalSalidas += monto;
+
+        const poblacion = item.poblacion || 'GENERAL / SIN POBLACION';
+        
+        if (!grupos[poblacion]) grupos[poblacion] = [];
+        
+        grupos[poblacion].push({ 
+            hora: new Date(item.rawDate), 
+            concepto, 
+            descripcion: item.descripcion || '-', 
+            monto, 
+            esEntrada, 
+            ref: item.registradoPor || '-' 
         });
     });
 
     const efectivoEnMano = totalEntradas - totalSalidas;
 
-    // 1. RENDERIZAR TARJETAS GLOBALES
+    // 1. RENDERIZAR TARJETAS RESUMEN (GLOBAL)
     containerResumen.innerHTML = `
         <div class="card" style="border-left: 5px solid var(--info); flex: 1;">
             <h5 style="color:#666; margin:0;">EFECTIVO EN MANO</h5>
@@ -7217,7 +7232,7 @@ function renderizarResultadosCorte(datos) {
         <div class="card" style="border-left: 5px solid var(--success); flex: 1;">
             <h5 style="color:#666; margin:0;">ENTRADAS (+)</h5>
             <h3 style="color:var(--success); margin:5px 0;">$${totalEntradas.toLocaleString('es-MX', {minimumFractionDigits: 2})}</h3>
-            <div style="font-size:0.8em;">Cobranza: $${subCobranza.toLocaleString()} | Fondeo/Póliza: $${subFondeo.toLocaleString()}</div>
+            <div style="font-size:0.8em;">Cobranza: $${subCobranza.toLocaleString()} | Pólizas: $${subPolizas.toLocaleString()} | Fondeo: $${subFondeo.toLocaleString()}</div>
         </div>
         <div class="card" style="border-left: 5px solid var(--danger); flex: 1;">
             <h5 style="color:#666; margin:0;">SALIDAS (-)</h5>
@@ -7231,21 +7246,21 @@ function renderizarResultadosCorte(datos) {
     const poblacionesOrdenadas = Object.keys(grupos).sort();
 
     if (poblacionesOrdenadas.length === 0) {
-        htmlContent = '<div style="text-align:center; padding:20px;">No hay movimientos para mostrar.</div>';
+        htmlContent = '<div style="text-align:center; padding:20px;">No hay movimientos para este criterio.</div>';
     } else {
         poblacionesOrdenadas.forEach(pob => {
-            const movimientos = grupos[pob];
-            movimientos.sort((a, b) => a.hora - b.hora); // Ordenar por hora
+            const movs = grupos[pob];
+            movs.sort((a, b) => a.hora - b.hora);
 
-            // Calcular neto de esta población
-            const netoPoblacion = movimientos.reduce((acc, m) => acc + (m.esEntrada ? m.monto : -m.monto), 0);
-            const colorNeto = netoPoblacion >= 0 ? 'var(--success)' : 'var(--danger)';
+            // Calcular neto por población
+            const neto = movs.reduce((acc, m) => acc + (m.esEntrada ? m.monto : -m.monto), 0);
+            const colorNeto = neto >= 0 ? 'var(--success)' : 'var(--danger)';
 
             htmlContent += `
-                <div class="card" style="margin-bottom: 25px; padding: 0; overflow: hidden; border: 1px solid #dee2e6;">
+                <div class="card" style="margin-bottom: 25px; padding: 0; border: 1px solid #dee2e6; overflow: hidden;">
                     <div style="background-color: #e9ecef; padding: 10px 15px; display: flex; justify-content: space-between; align-items: center;">
-                        <h4 style="margin:0; color: var(--primary);"><i class="fas fa-map-marker-alt"></i> ${pob}</h4>
-                        <span style="font-weight:bold; color: ${colorNeto}">Neto: $${netoPoblacion.toLocaleString('es-MX', {minimumFractionDigits: 2})}</span>
+                        <h4 style="margin:0; color: var(--primary); font-size: 1.1em;"><i class="fas fa-map-marker-alt"></i> ${pob}</h4>
+                        <span style="font-weight:bold; color: ${colorNeto}">Neto Población: $${neto.toLocaleString('es-MX', {minimumFractionDigits: 2})}</span>
                     </div>
                     <div class="table-responsive">
                         <table class="table table-striped" style="width: 100%; border-collapse: collapse; margin-bottom: 0;">
@@ -7254,39 +7269,45 @@ function renderizarResultadosCorte(datos) {
                                     <th style="padding: 8px; font-size: 0.85em; width:80px;">Hora</th>
                                     <th style="padding: 8px; font-size: 0.85em;">Concepto</th>
                                     <th style="padding: 8px; font-size: 0.85em;">Descripción</th>
-                                    <th style="padding: 8px; font-size: 0.85em; text-align:right; color:var(--success);">Entrada</th>
-                                    <th style="padding: 8px; font-size: 0.85em; text-align:right; color:var(--danger);">Salida</th>
+                                    <th style="padding: 8px; font-size: 0.85em; text-align:right; color:var(--success);">Entrada (+)</th>
+                                    <th style="padding: 8px; font-size: 0.85em; text-align:right; color:var(--danger);">Salida (-)</th>
+                                    <th style="padding: 8px; font-size: 0.85em;">Ref.</th>
                                 </tr>
                             </thead>
                             <tbody>
             `;
 
-            movimientos.forEach(row => {
+            movs.forEach(row => {
                 const horaStr = row.hora.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
                 const entradaStr = row.esEntrada ? `$${row.monto.toFixed(2)}` : '';
                 const salidaStr = !row.esEntrada ? `$${row.monto.toFixed(2)}` : '';
 
                 htmlContent += `
                     <tr>
-                        <td style="text-align:center; color:#666; font-size:0.8em;">${horaStr}</td>
-                        <td style="font-weight:500; font-size:0.9em;">${row.concepto}</td>
-                        <td style="font-size:0.85em;">${row.descripcion}</td>
-                        <td style="text-align:right; color:var(--success); font-weight:500;">${entradaStr}</td>
-                        <td style="text-align:right; color:var(--danger); font-weight:500;">${salidaStr}</td>
+                        <td style="text-align:center; color:#666; font-size:0.8em; border-bottom: 1px solid #eee;">${horaStr}</td>
+                        <td style="font-weight:500; font-size:0.9em; border-bottom: 1px solid #eee;">${row.concepto}</td>
+                        <td style="font-size:0.85em; border-bottom: 1px solid #eee;">${row.descripcion}</td>
+                        <td style="text-align:right; color:var(--success); font-weight:500; border-bottom: 1px solid #eee;">${entradaStr}</td>
+                        <td style="text-align:right; color:var(--danger); font-weight:500; border-bottom: 1px solid #eee;">${salidaStr}</td>
+                        <td style="font-size:0.8em; color:#888; border-bottom: 1px solid #eee;">${row.ref}</td>
                     </tr>
                 `;
             });
 
-            htmlContent += `
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            `;
+            htmlContent += `</tbody></table></div></div>`;
         });
     }
 
-    tableContainer.innerHTML = htmlContent;
+    // Inyectar en el DOM (compatible con vista Admin y Usuario)
+    const detalleContainer = document.getElementById('reporte-contable-detalle'); 
+    
+    if (detalleContainer) {
+        // Vista Admin (Reporte Contable)
+        detalleContainer.innerHTML = htmlContent;
+    } else if (tableWrapper) {
+        // Vista Usuario (Hoja de Corte)
+        tableWrapper.innerHTML = htmlContent;
+    }
 }
 
 // ==========================================
@@ -8127,4 +8148,5 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
