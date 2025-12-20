@@ -2250,64 +2250,131 @@ async _generarSiguienteFolio(office, userData) {
 
     // --- OBTENER DATOS HOJA DE CORTE (FILTRADO POR USUARIO) ---
     obtenerDatosHojaCorte: async (fecha, userOffice, userId = null) => {
+        // Aseguramos formato ISO para comparación de strings
         const fechaInicio = `${fecha}T00:00:00`;
         const fechaFin = `${fecha}T23:59:59`;
         
+        console.log(`🔍 [HOJA CORTE] Generando reporte...`);
+        console.log(`📅 Fecha: ${fecha} (Rango: ${fechaInicio} -> ${fechaFin})`);
+        console.log(`🏢 Oficina: ${userOffice || 'Todas'}`);
+        console.log(`👤 Filtro Agente (ID): ${userId || 'Ninguno (Todos)'}`);
+
         try {
-            // Paso 1: Si hay filtro de Usuario, necesitamos su email para filtrar los PAGOS
+            // Paso 1: Resolver el Email del agente si hay filtro de ID
+            // (Necesario porque la colección 'pagos' usa 'registradoPor' que es el email)
             let userEmail = null;
             if (userId) {
-                const userDoc = await db.collection('users').doc(userId).get();
-                if (userDoc.exists) userEmail = userDoc.data().email;
+                try {
+                    const userDoc = await db.collection('users').doc(userId).get();
+                    if (userDoc.exists) {
+                        userEmail = userDoc.data().email;
+                        console.log(`📧 Email del Agente encontrado: ${userEmail}`);
+                    } else {
+                        console.warn(`⚠️ ALERTA: No se encontró el usuario con ID ${userId} en la BD.`);
+                    }
+                } catch (e) {
+                    console.error("Error buscando usuario:", e);
+                }
             }
 
             const promises = [];
             
             // 1. Movimientos (Fondeo, Gasto, Comisión, Colocación)
-            // Estos SÍ tienen campo 'userId', filtramos directo.
+            // Esta colección SÍ tiene campo 'userId', filtramos directo.
             let qMovs = db.collection('movimientos_efectivo')
                 .where('fecha', '>=', fechaInicio)
                 .where('fecha', '<=', fechaFin);
             
-            if (userOffice && userOffice !== 'AMBAS') qMovs = qMovs.where('office', '==', userOffice);
-            if (userId) qMovs = qMovs.where('userId', '==', userId); // Filtro directo
+            if (userOffice && userOffice !== 'AMBAS') {
+                qMovs = qMovs.where('office', '==', userOffice);
+            }
+            if (userId) {
+                qMovs = qMovs.where('userId', '==', userId); 
+            }
             
             promises.push(qMovs.get());
 
             // 2. Pagos (Cobranza)
-            // Estos NO tienen 'userId', tienen 'registradoPor' (email).
+            // Esta colección usa 'registradoPor' (email), NO tiene 'userId'.
             let qPagos = db.collection('pagos')
                 .where('fecha', '>=', fechaInicio)
                 .where('fecha', '<=', fechaFin);
             
-            if (userOffice && userOffice !== 'AMBAS') qPagos = qPagos.where('office', '==', userOffice);
-            if (userEmail) qPagos = qPagos.where('registradoPor', '==', userEmail); // Filtro por email
+            if (userOffice && userOffice !== 'AMBAS') {
+                qPagos = qPagos.where('office', '==', userOffice);
+            }
+            
+            // Lógica corregida para filtro de usuario en pagos
+            if (userId) {
+                if (userEmail) {
+                    qPagos = qPagos.where('registradoPor', '==', userEmail);
+                } else {
+                    // Si se pidió filtrar por usuario pero no se halló su email,
+                    // forzamos una consulta que no traiga nada para evitar errores de datos cruzados.
+                    console.warn("⚠️ Filtro de agente activo pero sin email válido. Se omitirán los pagos en la búsqueda.");
+                    qPagos = qPagos.where('registradoPor', '==', 'EMAIL_NO_ENCONTRADO_FORCE_EMPTY'); 
+                }
+            }
             
             promises.push(qPagos.get());
 
-            // 3. Comisiones (Colección legacy 'comisiones', si aún la usas)
+            // 3. Comisiones (Colección legacy 'comisiones', si aún existe)
             let qComis = db.collection('comisiones')
                 .where('fecha', '>=', fechaInicio)
                 .where('fecha', '<=', fechaFin);
             
-            if (userOffice && userOffice !== 'AMBAS') qComis = qComis.where('office', '==', userOffice);
-            if (userId) qComis = qComis.where('userId', '==', userId);
+            if (userOffice && userOffice !== 'AMBAS') {
+                qComis = qComis.where('office', '==', userOffice);
+            }
+            if (userId) {
+                qComis = qComis.where('userId', '==', userId);
+            }
             
             promises.push(qComis.get());
 
+            // EJECUTAR CONSULTAS
             const [snapMovs, snapPagos, snapComis] = await Promise.all(promises);
 
-            const movimientos = snapMovs.docs.map(d => ({...d.data(), categoria: d.data().categoria || 'MOVIMIENTO', rawDate: d.data().fecha}));
-            const pagos = snapPagos.docs.map(d => ({...d.data(), categoria: 'COBRANZA', tipo: 'PAGO', rawDate: d.data().fecha, descripcion: `Pago Crédito ${d.data().idCredito}`}));
-            const comisiones = snapComis.docs.map(d => ({...d.data(), categoria: 'COMISION', tipo: 'COMISION', rawDate: d.data().fecha})); 
+            console.log(`✅ Resultados DB:`);
+            console.log(`   - Movimientos Caja: ${snapMovs.size}`);
+            console.log(`   - Pagos Cobranza: ${snapPagos.size}`);
+            console.log(`   - Comisiones (Legacy): ${snapComis.size}`);
+
+            // Procesar y Unificar Datos
+            // Nota: Agregamos 'rawDate' para asegurar el ordenamiento correcto en la vista
+            const movimientos = snapMovs.docs.map(d => ({
+                id: d.id, 
+                ...d.data(), 
+                categoria: d.data().categoria || 'MOVIMIENTO', 
+                rawDate: d.data().fecha 
+            }));
+            
+            const pagos = snapPagos.docs.map(d => ({
+                id: d.id, 
+                ...d.data(), 
+                categoria: 'COBRANZA', 
+                tipo: 'PAGO', 
+                rawDate: d.data().fecha, 
+                descripcion: `Pago Crédito ${d.data().idCredito} (${d.data().tipoPago || 'Normal'})`
+            }));
+            
+            const comisiones = snapComis.docs.map(d => ({
+                id: d.id, 
+                ...d.data(), 
+                categoria: 'COMISION', 
+                tipo: 'COMISION', 
+                rawDate: d.data().fecha
+            })); 
 
             const reporte = [...movimientos, ...pagos, ...comisiones];
-            reporte.sort((a, b) => a.fecha.localeCompare(b.fecha));
+            
+            // Ordenar cronológicamente
+            reporte.sort((a, b) => (a.rawDate || '').localeCompare(b.rawDate || ''));
 
             return reporte;
 
         } catch (error) {
-            console.error("Error obteniendo datos hoja corte:", error);
+            console.error("❌ Error CRÍTICO obteniendo hoja de corte:", error);
             throw error;
         }
     },
@@ -2583,4 +2650,5 @@ async _generarSiguienteFolio(office, userData) {
     },
 
 };
+
 
