@@ -2569,55 +2569,74 @@ async function handleSearchClientForCredit() {
     }
 
     showButtonLoading(btnBuscar, true, 'Buscando...');
-    statusColocacion.innerHTML = 'Consultando historial y elegibilidad...';
+    statusColocacion.innerHTML = 'Consultando historial...';
     statusColocacion.className = 'status-message status-info';
     formColocacion.classList.add('hidden');
 
     try {
-        // 1. Buscar Cliente
         const cliente = await database.buscarClientePorCURP(curp, currentUserData?.office);
-        if (!cliente) {
-            throw new Error('CURP no registrada. Debes registrar al cliente primero.');
-        }
+        if (!cliente) throw new Error('CURP no registrada. Registra al cliente primero.');
+        
         clienteParaCredito = cliente;
 
-        // 2. VERIFICACIÓN DE REGLAS (CORREGIDO: Pasa la oficina)
+        // Verificar elegibilidad
         const analisis = await database.verificarElegibilidadCliente(curp, currentUserData?.office);
 
-        // Si falló la verificación (ej. permisos), analisis.elegible será undefined o false
         if (analisis.elegible === false) {
             throw new Error(analisis.mensaje);
         }
 
-        // 3. Configuración Exitosa
+        // Preparar formulario
         const plazoSelect = document.getElementById('plazo_colocacion');
         const tipoCreditoSelect = document.getElementById('tipo_colocacion');
-
         actualizarPlazosSegunCliente(cliente.isComisionista || false, analisis.esRenovacion);
         
         plazoSelect.disabled = false;
-
+        
+        // --- LOGICA DE CANDADO ---
         if (analisis.esRenovacion) {
-            tipoCreditoSelect.value = 'renovacion';
-            tipoCreditoSelect.disabled = true;
+            // Verificar si el último pago fue marcado como renovación (lo que obliga a renovar)
+            let obligarRenovacion = false;
             
-            if (analisis.datosCreditoAnterior && analisis.datosCreditoAnterior.saldo > 0) {
-                showStatus('status_colocacion', `✅ ${analisis.mensaje} (Saldo pendiente: $${analisis.datosCreditoAnterior.saldo})`, 'success');
-            } else {
-                showStatus('status_colocacion', `✅ ${analisis.mensaje}`, 'success');
+            if (analisis.datosCreditoAnterior) {
+                const credAnt = analisis.datosCreditoAnterior;
+                const histId = credAnt.historicalIdCredito || credAnt.id;
+                // Buscar último pago
+                const pagos = await database.getPagosPorCredito(histId, credAnt.office);
+                if (pagos.length > 0) {
+                    pagos.sort((a,b) => new Date(b.fecha) - new Date(a.fecha)); // Mas reciente primero
+                    // Si el ultimo pago es 'actualizado' (nuestra marca interna para renovación)
+                    if (pagos[0].tipoPago === 'actualizado' || pagos[0].tipoPago === 'renovacion') {
+                        obligarRenovacion = true;
+                    }
+                }
             }
+
+            if (obligarRenovacion) {
+                tipoCreditoSelect.value = 'renovacion';
+                tipoCreditoSelect.disabled = true; // BLOQUEADO
+                showStatus('status_colocacion', `🔒 CLIENTE EN PROCESO DE RENOVACIÓN. Tipo bloqueado.`, 'info');
+            } else {
+                tipoCreditoSelect.value = 'renovacion';
+                tipoCreditoSelect.disabled = false; // Sugerido pero cambiable
+                showStatus('status_colocacion', `✅ Cliente elegible para renovación (Saldo pendiente).`, 'success');
+            }
+
+        } else if (analisis.esReingreso) {
+            tipoCreditoSelect.value = 'reingreso';
+            tipoCreditoSelect.disabled = false;
+            showStatus('status_colocacion', '✅ Cliente REINGRESO (Historial limpio).', 'success');
         } else {
             tipoCreditoSelect.value = 'nuevo';
-            tipoCreditoSelect.disabled = false; 
-            showStatus('status_colocacion', '✅ Cliente elegible para crédito NUEVO.', 'success');
+            tipoCreditoSelect.disabled = false;
+            showStatus('status_colocacion', '✅ Cliente NUEVO.', 'success');
         }
 
-        // Llenar campos
+        // Llenar datos visuales
         document.getElementById('nombre_colocacion').value = cliente.nombre;
-        document.getElementById('idCredito_colocacion').value = 'Se asignará automáticamente';
+        document.getElementById('idCredito_colocacion').value = 'Automático';
         document.getElementById('monto_colocacion').value = '';
         document.getElementById('montoTotal_colocacion').value = '';
-        
         document.getElementById('curpAval_colocacion').value = '';
         document.getElementById('nombreAval_colocacion').value = '';
         
@@ -2625,7 +2644,7 @@ async function handleSearchClientForCredit() {
         formColocacion.classList.remove('hidden');
 
     } catch (error) {
-        console.error("Error búsqueda crédito:", error);
+        console.error("Error:", error);
         showStatus('status_colocacion', `🚫 ${error.message}`, 'error');
         formColocacion.classList.add('hidden');
     } finally {
@@ -7127,57 +7146,69 @@ async function loadHojaCorte() {
 
 function renderizarResultadosCorte(datos) {
     const containerResumen = document.getElementById('corte-resumen-cards');
-    const tbody = document.querySelector('#tabla-corte-detalle tbody');
-    
-    // Variables para totales
+    // Buscamos el contenedor donde insertar las tablas (usamos el padre de la tabla original)
+    const tableElement = document.getElementById('tabla-corte-detalle');
+    const tableContainer = tableElement ? tableElement.parentNode : null;
+
+    if (!containerResumen || !tableContainer) return;
+
+    // Totales Globales
     let totalEntradas = 0;
     let totalSalidas = 0;
-    let subCobranza = 0; 
-    let subPolizas = 0; 
-    let subColocacion = 0; 
-    let subGastos = 0; 
-    let subComisiones = 0; 
+    
+    // Subtotales Globales
+    let subCobranza = 0;
+    let subColocacion = 0;
+    let subGastos = 0;
+    let subComisiones = 0;
     let subFondeo = 0;
 
-    // Procesar datos para la tabla
-    const filasRenderizadas = datos.map(item => {
-        let monto = 0; 
-        let esEntrada = false; 
-        let concepto = '';
-        
+    // Agrupamiento
+    const grupos = {}; // { 'NOMBRE POBLACION': [items...] }
+
+    datos.forEach(item => {
+        // Normalización de valores
+        const montoAbs = Math.abs(item.monto || 0);
+        let esEntrada = (item.monto >= 0);
+        let concepto = 'OTRO';
+
+        // Categorización para colores y etiquetas
         if (item.categoria === 'COBRANZA') {
-            monto = Math.abs(item.monto || 0); esEntrada = true; concepto = 'COBRANZA'; subCobranza += monto;
-        } else if (item.tipo === 'INGRESO_POLIZA') {
-            monto = Math.abs(item.monto || 0); esEntrada = true; concepto = 'PÓLIZA'; subPolizas += monto;
-        } else if (item.tipo === 'ENTREGA_INICIAL') {
-            monto = Math.abs(item.monto || 0); esEntrada = true; concepto = 'FONDEO'; subFondeo += monto;
-        } 
-        else if (item.tipo === 'COLOCACION') {
-            monto = Math.abs(item.monto || 0); esEntrada = false; concepto = 'COLOCACIÓN'; subColocacion += monto;
+            concepto = 'COBRANZA'; subCobranza += montoAbs; esEntrada = true;
+        } else if (item.tipo === 'COLOCACION') {
+            concepto = 'COLOCACIÓN'; subColocacion += montoAbs; esEntrada = false;
         } else if (item.tipo === 'GASTO') {
-            monto = Math.abs(item.monto || 0); esEntrada = false; concepto = 'GASTO'; subGastos += monto;
+            concepto = 'GASTO'; subGastos += montoAbs; esEntrada = false;
         } else if (item.tipo && item.tipo.includes('COMISION')) {
-            monto = Math.abs(item.monto || 0); esEntrada = false; concepto = 'COMISIÓN'; subComisiones += monto;
-        } else {
-            monto = Math.abs(item.monto || 0); esEntrada = (item.monto >= 0); concepto = 'OTRO';
+            concepto = 'COMISIÓN'; subComisiones += montoAbs; esEntrada = false;
+        } else if (item.tipo === 'ENTREGA_INICIAL' || item.tipo === 'INGRESO_POLIZA') {
+            concepto = 'FONDEO/POLIZA'; subFondeo += montoAbs; esEntrada = true;
         }
 
-        if (esEntrada) totalEntradas += monto; else totalSalidas += monto;
+        // Sumar a totales globales
+        if (esEntrada) totalEntradas += montoAbs;
+        else totalSalidas += montoAbs;
 
-        return { 
-            hora: new Date(item.rawDate), 
-            concepto, 
-            descripcion: item.descripcion || '-', 
-            monto, 
-            esEntrada, 
-            ref: item.registradoPor || '-' 
-        };
+        // Determinar Población (Si es gasto o fondeo a veces no tiene población, poner 'GENERAL')
+        const nombrePoblacion = item.poblacion || 'GENERAL / OFICINA';
+        
+        if (!grupos[nombrePoblacion]) {
+            grupos[nombrePoblacion] = [];
+        }
+
+        grupos[nombrePoblacion].push({
+            hora: new Date(item.rawDate),
+            concepto,
+            descripcion: item.descripcion || '',
+            monto: montoAbs,
+            esEntrada,
+            ref: item.registradoPor || '-'
+        });
     });
 
-    filasRenderizadas.sort((a, b) => a.hora - b.hora);
     const efectivoEnMano = totalEntradas - totalSalidas;
 
-    // 1. Renderizar Tarjetas de Resumen
+    // 1. RENDERIZAR TARJETAS GLOBALES
     containerResumen.innerHTML = `
         <div class="card" style="border-left: 5px solid var(--info); flex: 1;">
             <h5 style="color:#666; margin:0;">EFECTIVO EN MANO</h5>
@@ -7186,7 +7217,7 @@ function renderizarResultadosCorte(datos) {
         <div class="card" style="border-left: 5px solid var(--success); flex: 1;">
             <h5 style="color:#666; margin:0;">ENTRADAS (+)</h5>
             <h3 style="color:var(--success); margin:5px 0;">$${totalEntradas.toLocaleString('es-MX', {minimumFractionDigits: 2})}</h3>
-            <div style="font-size:0.8em;">Cobranza: $${subCobranza.toLocaleString()} | Pólizas: $${subPolizas.toLocaleString()} | Fondeo: $${subFondeo.toLocaleString()}</div>
+            <div style="font-size:0.8em;">Cobranza: $${subCobranza.toLocaleString()} | Fondeo/Póliza: $${subFondeo.toLocaleString()}</div>
         </div>
         <div class="card" style="border-left: 5px solid var(--danger); flex: 1;">
             <h5 style="color:#666; margin:0;">SALIDAS (-)</h5>
@@ -7195,28 +7226,67 @@ function renderizarResultadosCorte(datos) {
         </div>
     `;
 
-    // 2. Renderizar Tabla Detallada
-    if (filasRenderizadas.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:20px;">No hay movimientos para este criterio.</td></tr>';
+    // 2. RENDERIZAR TABLAS POR POBLACIÓN
+    let htmlContent = '';
+    const poblacionesOrdenadas = Object.keys(grupos).sort();
+
+    if (poblacionesOrdenadas.length === 0) {
+        htmlContent = '<div style="text-align:center; padding:20px;">No hay movimientos para mostrar.</div>';
     } else {
-        let htmlRows = '';
-        filasRenderizadas.forEach(row => {
-            const horaStr = row.hora.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-            const entradaStr = row.esEntrada ? `$${row.monto.toFixed(2)}` : '';
-            const salidaStr = !row.esEntrada ? `$${row.monto.toFixed(2)}` : '';
-            
-            htmlRows += `
-                <tr>
-                    <td style="text-align:center; color:#666;">${horaStr}</td>
-                    <td><strong>${row.concepto}</strong></td>
-                    <td>${row.descripcion}</td>
-                    <td style="color:var(--success); text-align:right;">${entradaStr}</td>
-                    <td style="color:var(--danger); text-align:right;">${salidaStr}</td>
-                    <td style="font-size:0.8em; color:#888;">${row.ref}</td>
-                </tr>`;
+        poblacionesOrdenadas.forEach(pob => {
+            const movimientos = grupos[pob];
+            movimientos.sort((a, b) => a.hora - b.hora); // Ordenar por hora
+
+            // Calcular neto de esta población
+            const netoPoblacion = movimientos.reduce((acc, m) => acc + (m.esEntrada ? m.monto : -m.monto), 0);
+            const colorNeto = netoPoblacion >= 0 ? 'var(--success)' : 'var(--danger)';
+
+            htmlContent += `
+                <div class="card" style="margin-bottom: 25px; padding: 0; overflow: hidden; border: 1px solid #dee2e6;">
+                    <div style="background-color: #e9ecef; padding: 10px 15px; display: flex; justify-content: space-between; align-items: center;">
+                        <h4 style="margin:0; color: var(--primary);"><i class="fas fa-map-marker-alt"></i> ${pob}</h4>
+                        <span style="font-weight:bold; color: ${colorNeto}">Neto: $${netoPoblacion.toLocaleString('es-MX', {minimumFractionDigits: 2})}</span>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-striped" style="width: 100%; border-collapse: collapse; margin-bottom: 0;">
+                            <thead>
+                                <tr style="background-color: #fff;">
+                                    <th style="padding: 8px; font-size: 0.85em; width:80px;">Hora</th>
+                                    <th style="padding: 8px; font-size: 0.85em;">Concepto</th>
+                                    <th style="padding: 8px; font-size: 0.85em;">Descripción</th>
+                                    <th style="padding: 8px; font-size: 0.85em; text-align:right; color:var(--success);">Entrada</th>
+                                    <th style="padding: 8px; font-size: 0.85em; text-align:right; color:var(--danger);">Salida</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+            `;
+
+            movimientos.forEach(row => {
+                const horaStr = row.hora.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                const entradaStr = row.esEntrada ? `$${row.monto.toFixed(2)}` : '';
+                const salidaStr = !row.esEntrada ? `$${row.monto.toFixed(2)}` : '';
+
+                htmlContent += `
+                    <tr>
+                        <td style="text-align:center; color:#666; font-size:0.8em;">${horaStr}</td>
+                        <td style="font-weight:500; font-size:0.9em;">${row.concepto}</td>
+                        <td style="font-size:0.85em;">${row.descripcion}</td>
+                        <td style="text-align:right; color:var(--success); font-weight:500;">${entradaStr}</td>
+                        <td style="text-align:right; color:var(--danger); font-weight:500;">${salidaStr}</td>
+                    </tr>
+                `;
+            });
+
+            htmlContent += `
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
         });
-        tbody.innerHTML = htmlRows;
     }
+
+    tableContainer.innerHTML = htmlContent;
 }
 
 // ==========================================
@@ -8057,3 +8127,4 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
