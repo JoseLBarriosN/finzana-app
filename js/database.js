@@ -2317,7 +2317,6 @@ async _generarSiguienteFolio(office, userData) {
             console.log(`🔎 Buscando multicréditos en ${office}...`);
             
             // 1. Obtener TODOS los créditos activos de la oficina
-            // Nota: Esto puede ser pesado, pero es un reporte administrativo
             const snapshot = await db.collection('creditos')
                 .where('office', '==', office)
                 .where('estado', '!=', 'liquidado')
@@ -2326,11 +2325,11 @@ async _generarSiguienteFolio(office, userData) {
             if (snapshot.empty) return {};
 
             // 2. Agrupar créditos por CURP Cliente en memoria
-            const mapaClientes = new Map(); // CURP -> [credito1, credito2]
+            const mapaClientes = new Map(); 
 
             snapshot.docs.forEach(doc => {
                 const cred = { id: doc.id, ...doc.data() };
-                // Filtro de seguridad extra para saldo
+                // Filtro de seguridad: ignorar saldos microscópicos
                 if (cred.saldo !== undefined && cred.saldo <= 0.05) return;
 
                 if (!mapaClientes.has(cred.curpCliente)) {
@@ -2339,10 +2338,9 @@ async _generarSiguienteFolio(office, userData) {
                 mapaClientes.get(cred.curpCliente).push(cred);
             });
 
-            // 3. Filtrar clientes con MÁS DE 2 créditos activos
-            const clientesProblema = [];
-            const idsCreditosProblema = [];
-
+            // 3. Filtrar clientes con MÁS DE 1 crédito activo
+            let clientesProblema = [];
+            
             for (const [curp, listaCreditos] of mapaClientes.entries()) {
                 if (listaCreditos.length > 1) {
                     clientesProblema.push({
@@ -2350,29 +2348,46 @@ async _generarSiguienteFolio(office, userData) {
                         nombre: listaCreditos[0].nombreCliente,
                         ruta: listaCreditos[0].ruta || 'SIN RUTA',
                         poblacion: listaCreditos[0].poblacion_grupo || 'SIN POBLACION',
-                        creditos: listaCreditos
+                        creditos: listaCreditos,
+                        isComisionista: false // Por defecto false, lo llenamos abajo
                     });
-                    // Guardamos IDs para buscar pagos
-                    listaCreditos.forEach(c => idsCreditosProblema.push(c.historicalIdCredito));
                 }
             }
 
             if (clientesProblema.length === 0) return {};
 
-            // 4. Buscar Pagos (Solo de estos créditos)
-            // Hacemos lotes de 30 para usar 'in' query o traemos todos los pagos activos si son muchos
-            // Para optimizar en reporte pesado: Traemos pagos por fecha reciente o iteramos.
-            // Opción robusta: Iterar por crédito (lento pero seguro) o traer pagos activos.
+            // --- 4. NUEVO: ENRIQUECER CON STATUS DE COMISIONISTA ---
+            // Consultamos los clientes reales para ver si tienen la marca "isComisionista"
+            const curpsAInvestigar = clientesProblema.map(c => c.curp);
             
-            const mapaPagos = new Map(); // HistoricalID -> [pago1, pago2]
+            // Hacemos lotes de 10 para no saturar la consulta 'in'
+            const chunks = [];
+            for (let i = 0; i < curpsAInvestigar.length; i += 10) {
+                chunks.push(curpsAInvestigar.slice(i, i + 10));
+            }
 
-            // Estrategia: Consultar pagos por crédito individualmente (Limitado a visualización)
-            // OJO: Si son 1000 créditos, esto es demasiado.
-            // MEJOR: Devolvemos los créditos y cargamos los pagos "On Demand" (al dar clic en la vista).
-            // PERO: Tú pediste que se muestren. Haremos una búsqueda optimizada.
+            const clientInfoPromises = chunks.map(chunk => 
+                db.collection('clientes').where('curp', 'in', chunk).get()
+            );
             
-            // Estructura Final Jerárquica:
-            // Arbol[Ruta][Poblacion][Cliente] = [Creditos...]
+            const clientSnapshots = await Promise.all(clientInfoPromises);
+            const mapaInfoClientes = new Map();
+            
+            clientSnapshots.forEach(snap => {
+                snap.docs.forEach(doc => {
+                    const d = doc.data();
+                    mapaInfoClientes.set(d.curp, d.isComisionista === true);
+                });
+            });
+
+            // Asignamos el valor real al array de problemas
+            clientesProblema = clientesProblema.map(cp => ({
+                ...cp,
+                isComisionista: mapaInfoClientes.get(cp.curp) || false
+            }));
+            // -------------------------------------------------------
+
+            // 5. Estructurar Árbol para el Reporte
             const arbol = {};
 
             clientesProblema.forEach(cliente => {
@@ -2580,4 +2595,5 @@ async _generarSiguienteFolio(office, userData) {
     },
 
 };
+
 
