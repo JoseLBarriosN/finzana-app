@@ -2317,6 +2317,7 @@ async _generarSiguienteFolio(office, userData) {
             console.log(`🔎 Buscando multicréditos en ${office}...`);
             
             // 1. Obtener TODOS los créditos activos de la oficina
+            // Nota: Traemos los que NO están marcados como liquidados
             const snapshot = await db.collection('creditos')
                 .where('office', '==', office)
                 .where('estado', '!=', 'liquidado')
@@ -2329,9 +2330,9 @@ async _generarSiguienteFolio(office, userData) {
 
             snapshot.docs.forEach(doc => {
                 const cred = { id: doc.id, ...doc.data() };
-                // Filtro de seguridad: ignorar saldos microscópicos
-                if (cred.saldo !== undefined && cred.saldo <= 0.05) return;
-
+                
+                // NOTA: No filtramos por saldo aquí todavía, porque vamos a auditar si el saldo es real.
+                
                 if (!mapaClientes.has(cred.curpCliente)) {
                     mapaClientes.set(cred.curpCliente, []);
                 }
@@ -2349,54 +2350,92 @@ async _generarSiguienteFolio(office, userData) {
                         ruta: listaCreditos[0].ruta || 'SIN RUTA',
                         poblacion: listaCreditos[0].poblacion_grupo || 'SIN POBLACION',
                         creditos: listaCreditos,
-                        isComisionista: false // Por defecto false, lo llenamos abajo
+                        isComisionista: false
                     });
                 }
             }
 
             if (clientesProblema.length === 0) return {};
 
-            // --- 4. NUEVO: ENRIQUECER CON STATUS DE COMISIONISTA ---
-            // Consultamos los clientes reales para ver si tienen la marca "isComisionista"
+            // --- 4. AUDITORÍA PROFUNDA DE SALDOS (NUEVO) ---
+            // Vamos a sumar los pagos reales para ver si el saldo coincide o si ya está liquidado.
+            const promesasCalculo = [];
+
+            // Recorremos cada cliente y cada crédito
+            clientesProblema.forEach(cliente => {
+                cliente.creditos.forEach(cred => {
+                    const histId = cred.historicalIdCredito || cred.id;
+                    
+                    // Promesa para sumar pagos de este crédito específico
+                    const p = db.collection('pagos')
+                        .where('idCredito', '==', histId)
+                        .where('office', '==', office)
+                        .get()
+                        .then(snapPagos => {
+                            // Sumar montos
+                            const totalPagadoReal = snapPagos.docs.reduce((acc, doc) => acc + (doc.data().monto || 0), 0);
+                            
+                            // Recalcular saldo real
+                            let saldoMatematico = (cred.montoTotal || 0) - totalPagadoReal;
+                            
+                            // Ajuste de centavos
+                            if (saldoMatematico < 1) saldoMatematico = 0;
+
+                            // Inyectamos el valor real en el objeto
+                            cred.saldoAuditoria = parseFloat(saldoMatematico.toFixed(2));
+                            cred.totalPagadoAuditoria = parseFloat(totalPagadoReal.toFixed(2));
+                        })
+                        .catch(err => console.error("Error calculando saldo auditoria", err));
+
+                    promesasCalculo.push(p);
+                });
+            });
+
+            // Esperamos a que todos los cálculos terminen
+            await Promise.all(promesasCalculo);
+
+            // --- 5. LIMPIEZA POST-CALCULO ---
+            // Si después de recalcular, resulta que un crédito ya tiene saldo 0, 
+            // significa que el cliente NO tiene exceso de créditos reales (uno ya se pagó).
+            // Filtramos de nuevo.
+            clientesProblema = clientesProblema.filter(cliente => {
+                // Contar cuántos créditos tienen saldo real > 0
+                const creditosRealesActivos = cliente.creditos.filter(c => c.saldoAuditoria > 0);
+                // Solo nos interesa si sigue teniendo más de 1 deuda real
+                return creditosRealesActivos.length > 1;
+            });
+
+            if (clientesProblema.length === 0) return {};
+
+            // --- 6. INFO DE COMISIONISTA ---
             const curpsAInvestigar = clientesProblema.map(c => c.curp);
-            
-            // Hacemos lotes de 10 para no saturar la consulta 'in'
             const chunks = [];
             for (let i = 0; i < curpsAInvestigar.length; i += 10) {
                 chunks.push(curpsAInvestigar.slice(i, i + 10));
             }
-
             const clientInfoPromises = chunks.map(chunk => 
                 db.collection('clientes').where('curp', 'in', chunk).get()
             );
-            
             const clientSnapshots = await Promise.all(clientInfoPromises);
             const mapaInfoClientes = new Map();
-            
             clientSnapshots.forEach(snap => {
                 snap.docs.forEach(doc => {
                     const d = doc.data();
                     mapaInfoClientes.set(d.curp, d.isComisionista === true);
                 });
             });
-
-            // Asignamos el valor real al array de problemas
             clientesProblema = clientesProblema.map(cp => ({
                 ...cp,
                 isComisionista: mapaInfoClientes.get(cp.curp) || false
             }));
-            // -------------------------------------------------------
 
-            // 5. Estructurar Árbol para el Reporte
+            // 7. Estructurar Árbol
             const arbol = {};
-
             clientesProblema.forEach(cliente => {
                 const ruta = cliente.ruta;
                 const pob = cliente.poblacion;
-
                 if (!arbol[ruta]) arbol[ruta] = {};
                 if (!arbol[ruta][pob]) arbol[ruta][pob] = [];
-
                 arbol[ruta][pob].push(cliente);
             });
 
@@ -2595,5 +2634,6 @@ async _generarSiguienteFolio(office, userData) {
     },
 
 };
+
 
 
