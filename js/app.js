@@ -7561,6 +7561,20 @@ async function generarReporteMulticreditos(office) {
     const container = document.getElementById('multicreditos-resultados');
     container.innerHTML = '<div style="text-align:center; padding:20px;"><i class="fas fa-spinner fa-spin fa-2x"></i><p>Analizando historial completo...</p></div>';
 
+    // --- HELPER LOCAL PARA FECHAS ESTRICTAS (Corrige el error de -1 día) ---
+    const formatFechaUTC = (fechaInput) => {
+        if (!fechaInput) return 'N/A';
+        // Usamos parsearFecha de tu app, o new Date directo
+        const d = (typeof fechaInput === 'object' && fechaInput.toDate) ? fechaInput.toDate() : new Date(fechaInput);
+        if (isNaN(d.getTime())) return 'N/A';
+        
+        // USAR MÉTODOS UTC PARA EVITAR CAMBIO DE ZONA HORARIA
+        const dia = String(d.getUTCDate()).padStart(2, '0');
+        const mes = String(d.getUTCMonth() + 1).padStart(2, '0');
+        const anio = d.getUTCFullYear();
+        return `${dia}/${mes}/${anio}`;
+    };
+
     try {
         const { arbol, totalCasos } = await database.obtenerReporteMulticreditos(office);
 
@@ -7602,7 +7616,6 @@ async function generarReporteMulticreditos(office) {
                 const clientes = poblaciones[pob];
                 for (const cliente of clientes) {
                     
-                    // Badge de Comisionista
                     const badgeComisionista = cliente.isComisionista 
                         ? '<span class="badge badge-warning" style="margin-left:5px; color:#000;">★ Comisionista</span>' 
                         : '';
@@ -7622,33 +7635,32 @@ async function generarReporteMulticreditos(office) {
                     for (const cred of cliente.creditos) {
                         const saldo = cred.saldo !== undefined ? cred.saldo : cred.montoTotal;
                         const pctPagado = cred.montoTotal > 0 ? (1 - (saldo/cred.montoTotal)) * 100 : 0;
-                        const fechaObj = parsearFecha(cred.fechaCreacion);
-                        const fechaCred = fechaObj?.toLocaleDateString('es-MX') || 'N/A';
                         
-                        // --- CORRECCIÓN PLAZO (Lógica de Respaldo) ---
+                        // CORRECCIÓN FECHA AQUÍ
+                        const fechaCred = formatFechaUTC(cred.fechaCreacion);
+                        
+                        // CORRECCIÓN PLAZO Y ANTIGÜEDAD
                         let plazoMostrar = cred.plazo;
                         if (!plazoMostrar) {
-                            // Si no tiene plazo guardado, intentamos deducir por el interés (heurística simple)
                             const monto = parseFloat(cred.monto) || 0;
                             const total = parseFloat(cred.montoTotal) || 0;
                             if (monto > 0 && total > 0) {
                                 const ratio = total / monto;
-                                if (ratio < 1.1) plazoMostrar = 10;      // 0% interés
-                                else if (ratio < 1.35) plazoMostrar = 13; // 30% interés
-                                else plazoMostrar = 14;                   // 40% interés
+                                if (ratio < 1.1) plazoMostrar = 10;
+                                else if (ratio < 1.35) plazoMostrar = 13;
+                                else plazoMostrar = 14;
                             } else {
-                                plazoMostrar = 14; // Default final
+                                plazoMostrar = 14;
                             }
                         }
 
-                        // Cálculo de antigüedad
                         let semanasAntiguedad = 0;
-                        if (fechaObj) {
-                            const diffTime = Math.abs(new Date() - fechaObj);
+                        const dCreate = parsearFecha(cred.fechaCreacion);
+                        if (dCreate) {
+                            const diffTime = Math.abs(new Date() - dCreate);
                             semanasAntiguedad = Math.floor(diffTime / (1000 * 60 * 60 * 24 * 7)); 
                         }
                         
-                        // Alerta si la antigüedad supera el plazo por mucho
                         const alertaAtraso = semanasAntiguedad > (plazoMostrar + 2) ? 'color:var(--danger); font-weight:bold;' : 'color:#555;';
 
                         html += `
@@ -7832,29 +7844,82 @@ function renderTablaClientes(listaDatos) {
 // ================================================ //
 window.cargarPagosHist = async function(detailsId, historicalId, office) {
     const details = document.getElementById(detailsId);
-    if (!details.open) return; // Solo cargar si se abre
+    if (!details.open) return; // Solo cargar si se abre el acordeón
     
     const container = details.querySelector('.pagos-container');
-    if (container.getAttribute('data-loaded') === 'true') return; // Ya cargado
+    
+    // Evitar recargar si ya se cargó (atributo 'data-loaded')
+    if (container.getAttribute('data-loaded') === 'true') return; 
+
+    // Helper fecha UTC (Local scope para esta función)
+    const formatFechaUTC = (fechaInput) => {
+        if (!fechaInput) return '-';
+        const d = (typeof fechaInput === 'object' && fechaInput.toDate) ? fechaInput.toDate() : new Date(fechaInput);
+        if (isNaN(d.getTime())) return '-';
+        const dia = String(d.getUTCDate()).padStart(2, '0');
+        const mes = String(d.getUTCMonth() + 1).padStart(2, '0');
+        const anio = d.getUTCFullYear();
+        return `${dia}/${mes}/${anio}`;
+    };
 
     try {
-        const pagos = await database.obtenerPagosParaReporte(historicalId, office); // Reutilizamos o usamos el helper
-        // Nota: Si no existe, crear 'obtenerPagosParaReporte' en database o usar 'getPagosPorCredito'
+        // Usamos la función estándar que usa Gestión de Clientes
+        const pagos = await database.getPagosPorCredito(historicalId, office); 
         
         if (pagos.length === 0) {
-            container.innerHTML = '<em>Sin pagos registrados.</em>';
+            container.innerHTML = '<div style="padding:10px; color:#666; font-style:italic;">No hay pagos registrados para este crédito.</div>';
         } else {
-            let tabla = '<table style="width:100%; text-align:left;"><thead><tr><th>Fecha</th><th>Monto</th><th>Tipo</th></tr></thead><tbody>';
+            // Ordenar por fecha descendente (más reciente arriba)
+            pagos.sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+
+            let tablaHTML = `
+            <table style="width:100%; border-collapse:collapse; background:white; border:1px solid #ddd;">
+                <thead style="background:#f1f1f1;">
+                    <tr>
+                        <th style="padding:5px; border:1px solid #ccc; text-align:center;">Fecha</th>
+                        <th style="padding:5px; border:1px solid #ccc; text-align:right;">Monto</th>
+                        <th style="padding:5px; border:1px solid #ccc;">Tipo</th>
+                        <th style="padding:5px; border:1px solid #ccc;">Registrado Por</th>
+                    </tr>
+                </thead>
+                <tbody>
+            `;
+
+            let totalPagado = 0;
+
             pagos.forEach(p => {
-                const f = parsearFecha(p.fecha)?.toLocaleDateString('es-MX') || '-';
-                tabla += `<tr><td>${f}</td><td>$${p.monto}</td><td>${p.tipoPago}</td></tr>`;
+                const fechaStr = formatFechaUTC(p.fecha);
+                const montoStr = parseFloat(p.monto).toLocaleString('es-MX', {minimumFractionDigits: 2});
+                totalPagado += parseFloat(p.monto || 0);
+
+                tablaHTML += `
+                    <tr>
+                        <td style="padding:5px; border:1px solid #eee; text-align:center;">${fechaStr}</td>
+                        <td style="padding:5px; border:1px solid #eee; text-align:right; font-weight:bold; color:#28a745;">$${montoStr}</td>
+                        <td style="padding:5px; border:1px solid #eee;">${p.tipoPago || 'normal'}</td>
+                        <td style="padding:5px; border:1px solid #eee; font-size:0.85em; color:#666;">${p.registradoPor || 'N/A'}</td>
+                    </tr>
+                `;
             });
-            tabla += '</tbody></table>';
-            container.innerHTML = tabla;
+
+            tablaHTML += `
+                <tr style="background:#e9ecef; font-weight:bold;">
+                    <td style="padding:5px; text-align:right;">TOTAL:</td>
+                    <td style="padding:5px; text-align:right;">$${totalPagado.toLocaleString('es-MX', {minimumFractionDigits: 2})}</td>
+                    <td colspan="2"></td>
+                </tr>
+                </tbody></table>
+            `;
+            
+            container.innerHTML = tablaHTML;
         }
+        
+        // Marcar como cargado para no volver a pedir a la BD si el usuario cierra y abre
         container.setAttribute('data-loaded', 'true');
+
     } catch (e) {
-        container.innerHTML = 'Error cargando pagos.';
+        console.error("Error cargando pagos en historial:", e);
+        container.innerHTML = `<div style="color:red;">Error cargando pagos: ${e.message}</div>`;
     }
 };
 
@@ -8202,6 +8267,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
