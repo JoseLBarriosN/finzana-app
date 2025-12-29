@@ -7615,15 +7615,35 @@ async function generarReporteMulticreditos(office) {
                     for (const cred of cliente.creditos) {
                         const saldo = cred.saldo !== undefined ? cred.saldo : cred.montoTotal;
                         const pctPagado = cred.montoTotal > 0 ? (1 - (saldo/cred.montoTotal)) * 100 : 0;
-                        const fechaCred = parsearFecha(cred.fechaCreacion)?.toLocaleDateString('es-MX') || 'N/A';
+                        const fechaObj = parsearFecha(cred.fechaCreacion);
+                        const fechaCred = fechaObj?.toLocaleDateString('es-MX') || 'N/A';
+                        
+                        // --- CORRECCIÓN 1: Plazo real desde la base de datos ---
+                        const plazoReal = cred.plazo || '?'; 
+
+                        // --- CORRECCIÓN 2: Cálculo de antigüedad (Semanas Transcurridas) ---
+                        let semanasAntiguedad = 0;
+                        if (fechaObj) {
+                            const diffTime = Math.abs(new Date() - fechaObj);
+                            semanasAntiguedad = Math.floor(diffTime / (1000 * 60 * 60 * 24 * 7)); 
+                        }
+
+                        // Formato visual para detectar atrasos graves
+                        const alertaAtraso = semanasAntiguedad > plazoReal ? 'color:var(--danger); font-weight:bold;' : 'color:#555;';
 
                         html += `
                             <details id="details-${cred.id}" ontoggle="cargarPagosHist('details-${cred.id}', '${cred.historicalIdCredito}', '${office}')" 
                                 style="margin-bottom: 5px; border: 1px solid #e9ecef; border-radius: 4px;">
                                 <summary style="padding: 8px; cursor: pointer; background: #fff; font-size: 0.9em;">
-                                    <div style="display:flex; justify-content:space-between;">
-                                        <span><strong>ID: ${cred.historicalIdCredito}</strong> | ${fechaCred} | $${cred.monto} (14 sem)</span>
-                                        <span style="color: ${pctPagado >= 80 ? 'green' : 'red'};">Saldo: $${saldo.toFixed(2)} (${pctPagado.toFixed(0)}%)</span>
+                                    <div style="display:flex; justify-content:space-between; flex-wrap:wrap;">
+                                        <span>
+                                            <strong>ID: ${cred.historicalIdCredito}</strong> | ${fechaCred} | 
+                                            <span style="background:#eee; padding:2px 5px; border-radius:4px;">$${cred.monto} (${plazoReal} sem)</span>
+                                        </span>
+                                        <span style="font-size:0.85em;">
+                                            <span style="${alertaAtraso}">Antigüedad: ${semanasAntiguedad} sem</span> |
+                                            <span style="color: ${pctPagado >= 80 ? 'green' : 'red'}; font-weight:bold;">Saldo: $${saldo.toFixed(2)} (${pctPagado.toFixed(0)}%)</span>
+                                        </span>
                                     </div>
                                 </summary>
                                 <div class="pagos-container" style="padding: 10px; background: #fafafa; font-size: 0.85em;">
@@ -7642,6 +7662,7 @@ async function generarReporteMulticreditos(office) {
         container.innerHTML = html;
 
     } catch (error) {
+        console.error(error);
         container.innerHTML = `<div class="alert alert-danger">Error: ${error.message}</div>`;
     }
 }
@@ -8161,6 +8182,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
