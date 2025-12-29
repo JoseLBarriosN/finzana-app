@@ -7601,10 +7601,16 @@ async function generarReporteMulticreditos(office) {
                 // NIVEL 3: CLIENTE
                 const clientes = poblaciones[pob];
                 for (const cliente of clientes) {
+                    
+                    // Badge de Comisionista
+                    const badgeComisionista = cliente.isComisionista 
+                        ? '<span class="badge badge-warning" style="margin-left:5px; color:#000;">★ Comisionista</span>' 
+                        : '';
+
                     html += `
                     <div style="background: white; padding: 10px; margin-bottom: 10px; border-radius: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
                         <div style="display:flex; justify-content:space-between; align-items:center;">
-                            <strong><i class="fas fa-user"></i> ${cliente.nombre}</strong>
+                            <strong><i class="fas fa-user"></i> ${cliente.nombre} ${badgeComisionista}</strong>
                             <span class="badge badge-danger">${cliente.creditos.length} Créditos Activos</span>
                         </div>
                         <div style="font-size: 0.85em; color: #666;">CURP: ${cliente.curp}</div>
@@ -7612,24 +7618,38 @@ async function generarReporteMulticreditos(office) {
                         <div style="margin-top: 10px;">
                     `;
 
+                    // NIVEL 4: CRÉDITOS
                     for (const cred of cliente.creditos) {
                         const saldo = cred.saldo !== undefined ? cred.saldo : cred.montoTotal;
                         const pctPagado = cred.montoTotal > 0 ? (1 - (saldo/cred.montoTotal)) * 100 : 0;
                         const fechaObj = parsearFecha(cred.fechaCreacion);
                         const fechaCred = fechaObj?.toLocaleDateString('es-MX') || 'N/A';
                         
-                        // --- CORRECCIÓN 1: Plazo real desde la base de datos ---
-                        const plazoReal = cred.plazo || '?'; 
+                        // --- CORRECCIÓN PLAZO (Lógica de Respaldo) ---
+                        let plazoMostrar = cred.plazo;
+                        if (!plazoMostrar) {
+                            // Si no tiene plazo guardado, intentamos deducir por el interés (heurística simple)
+                            const monto = parseFloat(cred.monto) || 0;
+                            const total = parseFloat(cred.montoTotal) || 0;
+                            if (monto > 0 && total > 0) {
+                                const ratio = total / monto;
+                                if (ratio < 1.1) plazoMostrar = 10;      // 0% interés
+                                else if (ratio < 1.35) plazoMostrar = 13; // 30% interés
+                                else plazoMostrar = 14;                   // 40% interés
+                            } else {
+                                plazoMostrar = 14; // Default final
+                            }
+                        }
 
-                        // --- CORRECCIÓN 2: Cálculo de antigüedad (Semanas Transcurridas) ---
+                        // Cálculo de antigüedad
                         let semanasAntiguedad = 0;
                         if (fechaObj) {
                             const diffTime = Math.abs(new Date() - fechaObj);
                             semanasAntiguedad = Math.floor(diffTime / (1000 * 60 * 60 * 24 * 7)); 
                         }
-
-                        // Formato visual para detectar atrasos graves
-                        const alertaAtraso = semanasAntiguedad > plazoReal ? 'color:var(--danger); font-weight:bold;' : 'color:#555;';
+                        
+                        // Alerta si la antigüedad supera el plazo por mucho
+                        const alertaAtraso = semanasAntiguedad > (plazoMostrar + 2) ? 'color:var(--danger); font-weight:bold;' : 'color:#555;';
 
                         html += `
                             <details id="details-${cred.id}" ontoggle="cargarPagosHist('details-${cred.id}', '${cred.historicalIdCredito}', '${office}')" 
@@ -7638,7 +7658,7 @@ async function generarReporteMulticreditos(office) {
                                     <div style="display:flex; justify-content:space-between; flex-wrap:wrap;">
                                         <span>
                                             <strong>ID: ${cred.historicalIdCredito}</strong> | ${fechaCred} | 
-                                            <span style="background:#eee; padding:2px 5px; border-radius:4px;">$${cred.monto} (${plazoReal} sem)</span>
+                                            <span style="background:#eee; padding:2px 5px; border-radius:4px;">$${cred.monto} (${plazoMostrar} sem)</span>
                                         </span>
                                         <span style="font-size:0.85em;">
                                             <span style="${alertaAtraso}">Antigüedad: ${semanasAntiguedad} sem</span> |
@@ -7652,11 +7672,11 @@ async function generarReporteMulticreditos(office) {
                             </details>
                         `;
                     }
-                    html += `</div></div>`; // Fin cliente
+                    html += `</div></div>`; 
                 }
-                html += `</div>`; // Fin población
+                html += `</div>`; 
             }
-            html += `</div></details>`; // Fin ruta
+            html += `</div></details>`; 
         }
 
         container.innerHTML = html;
@@ -8182,6 +8202,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
