@@ -1,4 +1,3 @@
-
 // =============================================
 // INICIALIZACIÓN DE LA APLICACIÓN CON FIREBASE
 // =============================================
@@ -7559,16 +7558,13 @@ async function inicializarVistaMulticreditos() {
 // ============================================ //
 async function generarReporteMulticreditos(office) {
     const container = document.getElementById('multicreditos-resultados');
-    container.innerHTML = '<div style="text-align:center; padding:20px;"><i class="fas fa-spinner fa-spin fa-2x"></i><p>Analizando historial completo...</p></div>';
+    container.innerHTML = '<div style="text-align:center; padding:20px;"><i class="fas fa-spinner fa-spin fa-2x"></i><p>Auditando saldos y pagos reales...</p></div>';
 
-    // --- HELPER LOCAL PARA FECHAS ESTRICTAS (Corrige el error de -1 día) ---
+    // Helper fechas
     const formatFechaUTC = (fechaInput) => {
         if (!fechaInput) return 'N/A';
-        // Usamos parsearFecha de tu app, o new Date directo
         const d = (typeof fechaInput === 'object' && fechaInput.toDate) ? fechaInput.toDate() : new Date(fechaInput);
         if (isNaN(d.getTime())) return 'N/A';
-        
-        // USAR MÉTODOS UTC PARA EVITAR CAMBIO DE ZONA HORARIA
         const dia = String(d.getUTCDate()).padStart(2, '0');
         const mes = String(d.getUTCMonth() + 1).padStart(2, '0');
         const anio = d.getUTCFullYear();
@@ -7583,14 +7579,13 @@ async function generarReporteMulticreditos(office) {
                 <div class="alert alert-success" style="text-align:center; margin-top:20px;">
                     <i class="fas fa-check-circle fa-2x"></i><br>
                     <strong>¡Todo limpio!</strong><br>
-                    No se encontraron clientes con más de 1 créditos activos en ${office}.
+                    No se encontraron duplicidades de deuda activa real en ${office}.
                 </div>`;
             return;
         }
 
-        let html = `<div class="alert alert-warning">Se encontraron <strong>${totalCasos}</strong> clientes con exceso de créditos activos.</div>`;
+        let html = `<div class="alert alert-warning">Se encontraron <strong>${totalCasos}</strong> casos críticos (Saldos Recalculados).</div>`;
 
-        // NIVEL 1: RUTA
         const rutasOrdenadas = Object.keys(arbol).sort();
         
         for (const ruta of rutasOrdenadas) {
@@ -7602,7 +7597,6 @@ async function generarReporteMulticreditos(office) {
                 <div style="padding: 10px; background: #f8f9fa;">
             `;
 
-            // NIVEL 2: POBLACIÓN
             const poblaciones = arbol[ruta];
             const pobsOrdenadas = Object.keys(poblaciones).sort();
 
@@ -7612,7 +7606,6 @@ async function generarReporteMulticreditos(office) {
                     <h5 style="color: #6f42c1; border-bottom: 1px solid #ccc;">${pob}</h5>
                 `;
 
-                // NIVEL 3: CLIENTE
                 const clientes = poblaciones[pob];
                 for (const cliente of clientes) {
                     
@@ -7624,28 +7617,27 @@ async function generarReporteMulticreditos(office) {
                     <div style="background: white; padding: 10px; margin-bottom: 10px; border-radius: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
                         <div style="display:flex; justify-content:space-between; align-items:center;">
                             <strong><i class="fas fa-user"></i> ${cliente.nombre} ${badgeComisionista}</strong>
-                            <span class="badge badge-danger">${cliente.creditos.length} Créditos Activos</span>
+                            <span class="badge badge-danger">${cliente.creditos.length} Créditos</span>
                         </div>
                         <div style="font-size: 0.85em; color: #666;">CURP: ${cliente.curp}</div>
                         
                         <div style="margin-top: 10px;">
                     `;
 
-                    // NIVEL 4: CRÉDITOS
                     for (const cred of cliente.creditos) {
-                        const saldo = cred.saldo !== undefined ? cred.saldo : cred.montoTotal;
-                        const pctPagado = cred.montoTotal > 0 ? (1 - (saldo/cred.montoTotal)) * 100 : 0;
+                        // USAMOS EL SALDO DE LA AUDITORÍA, NO EL GUARDADO
+                        const saldoReal = cred.saldoAuditoria !== undefined ? cred.saldoAuditoria : (cred.saldo || 0);
+                        const montoTotal = cred.montoTotal || 0;
+                        const pctPagado = montoTotal > 0 ? (1 - (saldoReal/montoTotal)) * 100 : 0;
                         
-                        // CORRECCIÓN FECHA AQUÍ
                         const fechaCred = formatFechaUTC(cred.fechaCreacion);
                         
-                        // CORRECCIÓN PLAZO Y ANTIGÜEDAD
+                        // Determinar Plazo
                         let plazoMostrar = cred.plazo;
                         if (!plazoMostrar) {
                             const monto = parseFloat(cred.monto) || 0;
-                            const total = parseFloat(cred.montoTotal) || 0;
-                            if (monto > 0 && total > 0) {
-                                const ratio = total / monto;
+                            if (monto > 0 && montoTotal > 0) {
+                                const ratio = montoTotal / monto;
                                 if (ratio < 1.1) plazoMostrar = 10;
                                 else if (ratio < 1.35) plazoMostrar = 13;
                                 else plazoMostrar = 14;
@@ -7654,14 +7646,24 @@ async function generarReporteMulticreditos(office) {
                             }
                         }
 
+                        // Antigüedad
                         let semanasAntiguedad = 0;
                         const dCreate = parsearFecha(cred.fechaCreacion);
                         if (dCreate) {
                             const diffTime = Math.abs(new Date() - dCreate);
                             semanasAntiguedad = Math.floor(diffTime / (1000 * 60 * 60 * 24 * 7)); 
                         }
-                        
                         const alertaAtraso = semanasAntiguedad > (plazoMostrar + 2) ? 'color:var(--danger); font-weight:bold;' : 'color:#555;';
+
+                        // Detectar discrepancia (Si la BD dice que debe X pero la auditoría dice Y)
+                        let alertaDiscrepancia = '';
+                        if (Math.abs(saldoReal - (cred.saldo || 0)) > 5) {
+                            alertaDiscrepancia = `<br><span style="font-size:0.8em; color:orange;"><i class="fas fa-exclamation-triangle"></i> Error en BD: Marca $${cred.saldo}, Realidad: $${saldoReal}</span>`;
+                        }
+
+                        // Si el saldo real es 0, lo pintamos verde indicando que es un "Falso Positivo" de activo
+                        const estiloSaldo = saldoReal <= 0.05 ? 'color:green; font-weight:bold;' : 'color:red; font-weight:bold;';
+                        const textoSaldo = saldoReal <= 0.05 ? 'LIQUIDADO (Auditado)' : `$${saldoReal.toFixed(2)}`;
 
                         html += `
                             <details id="details-${cred.id}" ontoggle="cargarPagosHist('details-${cred.id}', '${cred.historicalIdCredito}', '${office}')" 
@@ -7672,14 +7674,15 @@ async function generarReporteMulticreditos(office) {
                                             <strong>ID: ${cred.historicalIdCredito}</strong> | ${fechaCred} | 
                                             <span style="background:#eee; padding:2px 5px; border-radius:4px;">$${cred.monto} (${plazoMostrar} sem)</span>
                                         </span>
-                                        <span style="font-size:0.85em;">
-                                            <span style="${alertaAtraso}">Antigüedad: ${semanasAntiguedad} sem</span> |
-                                            <span style="color: ${pctPagado >= 80 ? 'green' : 'red'}; font-weight:bold;">Saldo: $${saldo.toFixed(2)} (${pctPagado.toFixed(0)}%)</span>
+                                        <span style="font-size:0.85em; text-align:right;">
+                                            <span style="${alertaAtraso}">Ant: ${semanasAntiguedad} sem</span> |
+                                            <span style="${estiloSaldo}">Saldo Real: ${textoSaldo} (${pctPagado.toFixed(0)}%)</span>
+                                            ${alertaDiscrepancia}
                                         </span>
                                     </div>
                                 </summary>
                                 <div class="pagos-container" style="padding: 10px; background: #fafafa; font-size: 0.85em;">
-                                    <i class="fas fa-spinner fa-spin"></i> Cargando pagos...
+                                    <i class="fas fa-spinner fa-spin"></i> Verificando pagos...
                                 </div>
                             </details>
                         `;
@@ -8267,6 +8270,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
