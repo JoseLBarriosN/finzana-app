@@ -2568,94 +2568,89 @@ async function handleSearchClientForCredit() {
     }
 
     showButtonLoading(btnBuscar, true, 'Buscando...');
-    statusColocacion.innerHTML = 'Consultando historial...';
+    statusColocacion.innerHTML = 'Consultando historial y elegibilidad...';
     statusColocacion.className = 'status-message status-info';
     formColocacion.classList.add('hidden');
 
     try {
+        // 1. Buscar Cliente
         const cliente = await database.buscarClientePorCURP(curp, currentUserData?.office);
-        if (!cliente) throw new Error('CURP no registrada. Debes registrar al cliente primero.');
-        
+        if (!cliente) {
+            throw new Error('CURP no registrada. Debes registrar al cliente primero.');
+        }
         clienteParaCredito = cliente;
-        
-        // Usamos la verificación de elegibilidad que ya arreglamos para detectar Renovación vs Reingreso
+
+        // 2. VERIFICACIÓN DE REGLAS
         const analisis = await database.verificarElegibilidadCliente(curp, currentUserData?.office);
 
         if (analisis.elegible === false) {
             throw new Error(analisis.mensaje);
         }
 
+        // 3. Configuración Exitosa
         const plazoSelect = document.getElementById('plazo_colocacion');
         const tipoCreditoSelect = document.getElementById('tipo_colocacion');
 
         actualizarPlazosSegunCliente(cliente.isComisionista || false, analisis.esRenovacion);
+        
         plazoSelect.disabled = false;
 
-        let mensajeInfo = "";
-
+        // --- LÓGICA DE CANDADOS Y TIPOS ---
+        
         if (analisis.esRenovacion) {
-            let pagoPrevioEncontrado = false;
-            let montoDeduccion = 0;
+            // Caso Renovación
+            let forzarRenovacion = false;
             
-            // Revisamos si el sistema ya detectó el historial (incluso si está liquidado)
+            // Verificamos si el último pago fue marcado como 'actualizado' o 'renovacion'
             if (analisis.datosCreditoAnterior) {
-                const credAnt = analisis.datosCreditoAnterior;
-                const histId = credAnt.historicalIdCredito || credAnt.id;
-                
-                // 1. Buscamos el pago de renovación manualmente
-                const pagos = await database.getPagosPorCredito(histId, credAnt.office);
-                if (pagos.length > 0) {
-                    pagos.sort((a,b) => new Date(b.fecha) - new Date(a.fecha)); // Orden desc
-                    
-                    const pagoRenovacion = pagos.find(p => p.tipoPago === 'actualizado' || p.tipoPago === 'renovacion');
-                    if (pagoRenovacion) {
-                        pagoPrevioEncontrado = true;
-                        montoDeduccion = parseFloat(pagoRenovacion.monto);
-                        mensajeInfo = `Renovación: Se detectó pago previo de $${montoDeduccion.toFixed(2)}. Se descontará del efectivo (NO se cobra doble).`;
-                    }
-                }
-                
-                // 2. Si no hay pago, usamos el saldo
-                if (!pagoPrevioEncontrado && credAnt.saldo > 1) {
-                     montoDeduccion = credAnt.saldo;
-                     mensajeInfo = `Renovación: Se liquidará el saldo pendiente ($${montoDeduccion.toFixed(2)}).`;
-                }
+                 const credAnt = analisis.datosCreditoAnterior;
+                 const histId = credAnt.historicalIdCredito || credAnt.id;
+                 const pagos = await database.getPagosPorCredito(histId, credAnt.office);
+                 
+                 if (pagos.length > 0) {
+                     // Ordenar por fecha descendente
+                     pagos.sort((a,b) => new Date(b.fecha) - new Date(a.fecha));
+                     const ultimoPago = pagos[0];
+                     
+                     if (ultimoPago.tipoPago === 'actualizado' || ultimoPago.tipoPago === 'renovacion') {
+                         forzarRenovacion = true;
+                     }
+                 }
             }
 
-            // Forzar Renovación si ya pagó o es elegible
-            const tiposPermitidos = [{ value: 'renovacion', text: 'Renovación' }];
-            popularDropdown('tipo_colocacion', tiposPermitidos, null, true);
-            tipoCreditoSelect.value = 'renovacion';
-            
-            // Si ya pagó, bloqueamos para que no cambie a 'nuevo'
-            if (pagoPrevioEncontrado) {
-                tipoCreditoSelect.disabled = true; 
-                showStatus('status_colocacion', `🔒 ${mensajeInfo}`, 'info');
+            if (forzarRenovacion) {
+                tipoCreditoSelect.value = 'renovacion';
+                tipoCreditoSelect.disabled = true; // CANDADO ACTIVADO
+                showStatus('status_colocacion', `🔒 RENOVACIÓN OBLIGATORIA (Último pago marcado).`, 'info');
             } else {
+                tipoCreditoSelect.value = 'renovacion';
                 tipoCreditoSelect.disabled = false;
-                showStatus('status_colocacion', `✅ Elegible para renovación. ${mensajeInfo}`, 'success');
+                if (analisis.datosCreditoAnterior && analisis.datosCreditoAnterior.saldo > 0) {
+                    showStatus('status_colocacion', `✅ Elegible para renovación (Saldo pendiente: $${analisis.datosCreditoAnterior.saldo})`, 'success');
+                } else {
+                    showStatus('status_colocacion', `✅ Elegible para renovación.`, 'success');
+                }
             }
 
         } else if (analisis.esReingreso) {
-            const tiposPermitidos = [{ value: 'reingreso', text: 'Reingreso' }];
-            popularDropdown('tipo_colocacion', tiposPermitidos, null, true);
+            // Caso Reingreso (Ya tuvo créditos, no debe nada)
             tipoCreditoSelect.value = 'reingreso';
             tipoCreditoSelect.disabled = false;
-            showStatus('status_colocacion', `✅ Cliente REINGRESO.`, 'success');
+            showStatus('status_colocacion', `✅ Cliente REINGRESO (Historial limpio).`, 'success');
         
         } else {
-            const tiposPermitidos = [{ value: 'nuevo', text: 'Nuevo' }];
-            popularDropdown('tipo_colocacion', tiposPermitidos, null, true);
+            // Caso Nuevo
             tipoCreditoSelect.value = 'nuevo';
             tipoCreditoSelect.disabled = false; 
-            showStatus('status_colocacion', '✅ Cliente NUEVO.', 'success');
+            showStatus('status_colocacion', '✅ Cliente elegible para crédito NUEVO.', 'success');
         }
 
         // Llenar campos
         document.getElementById('nombre_colocacion').value = cliente.nombre;
-        document.getElementById('idCredito_colocacion').value = 'Automático';
+        document.getElementById('idCredito_colocacion').value = 'Se asignará automáticamente';
         document.getElementById('monto_colocacion').value = '';
         document.getElementById('montoTotal_colocacion').value = '';
+        
         document.getElementById('curpAval_colocacion').value = '';
         document.getElementById('nombreAval_colocacion').value = '';
         
@@ -2935,35 +2930,43 @@ async function handlePaymentForm(e) {
         montoInput.classList.remove('input-error');
     }
 
+    // --- CAPTURA DE FECHA MANUAL (NUEVO) ---
     let fechaPersonalizada = null;
     const inputFechaManual = document.getElementById('fecha_cobranza_manual');
+    
+    // Solo si el input es visible y el usuario NO es comercial
     if (currentUserData.role !== 'Área comercial' && inputFechaManual && inputFechaManual.value) {
+        // Le agregamos la hora T12:00:00 para evitar problemas de zona horaria (UTC vs Local)
         fechaPersonalizada = inputFechaManual.value + 'T12:00:00';
     }
+    // ---------------------------------------
 
-    // --- REGLAS DE COMISIÓN ---
+    // --- REGLAS DE COMISIÓN (Tus reglas vigentes) ---
     let comision = 0;
     const plazo = creditoActual.plazo || 14;
     const estadoInput = document.getElementById('estado_cobranza'); 
     const estadoActual = estadoInput ? estadoInput.value.toLowerCase() : (creditoActual.estado || 'al corriente');
 
     if (plazo !== 10) { 
-        // Permitimos comisión si está al corriente, liquidado (para renovar) o adelantado
         if (estadoActual === 'al corriente' || estadoActual === 'liquidado' || estadoActual === 'adelantado') {
             
-            if (tipoPago === 'actualizado' || tipoPago === 'renovacion') {
-                // *** CORRECCIÓN CRÍTICA: COMISIÓN FIJA DE $10 PARA RENOVACIÓN ***
-                comision = 10; 
-            }
-            else if (tipoPago === 'normal' || tipoPago === 'adelanto') {
+            if (tipoPago === 'normal' || tipoPago === 'adelanto') {
                 const pagoSemanal = creditoActual.montoTotal / creditoActual.plazo;
                 if (pagoSemanal > 0) {
                     const pagosCompletos = Math.floor((montoPago + 0.1) / pagoSemanal);
                     comision = pagosCompletos * 10;
                 }
             } 
+            else if (tipoPago === 'actualizado') {
+                const pagoSemanal = creditoActual.montoTotal / creditoActual.plazo;
+                if (pagoSemanal > 0 && montoPago >= (pagoSemanal - 0.9)) {
+                    comision = 10;
+                } else {
+                    comision = 0;
+                }
+            }
         } else {
-            comision = 0; 
+            comision = 0; // Bloqueo por estatus
         }
     }
 
@@ -2979,6 +2982,7 @@ async function handlePaymentForm(e) {
             tipoPago: tipoPago,
             comisionGenerada: comision, 
             origen: 'manual',
+            // Enviamos la fecha personalizada (puede ser null, la DB lo manejará)
             fechaPersonalizada: fechaPersonalizada 
         };
 
@@ -2987,7 +2991,10 @@ async function handlePaymentForm(e) {
         if (resultado.success) {
             showFixedProgress(100, 'Pago registrado');
             let successMsg = `¡Pago registrado! Comisión generada: $${comision}`;
-            if (fechaPersonalizada) successMsg += ` (Fecha: ${inputFechaManual.value})`;
+            
+            if (fechaPersonalizada) {
+                successMsg += ` (Fecha: ${inputFechaManual.value})`;
+            }
             if (!isOnline) successMsg += ' (Guardado localmente).';
             
             showStatus('status_cobranza', successMsg, 'success');
@@ -7551,18 +7558,7 @@ async function inicializarVistaMulticreditos() {
 // ============================================ //
 async function generarReporteMulticreditos(office) {
     const container = document.getElementById('multicreditos-resultados');
-    container.innerHTML = '<div style="text-align:center; padding:20px;"><i class="fas fa-spinner fa-spin fa-2x"></i><p>Auditando saldos y pagos reales...</p></div>';
-
-    // Helper fechas
-    const formatFechaUTC = (fechaInput) => {
-        if (!fechaInput) return 'N/A';
-        const d = (typeof fechaInput === 'object' && fechaInput.toDate) ? fechaInput.toDate() : new Date(fechaInput);
-        if (isNaN(d.getTime())) return 'N/A';
-        const dia = String(d.getUTCDate()).padStart(2, '0');
-        const mes = String(d.getUTCMonth() + 1).padStart(2, '0');
-        const anio = d.getUTCFullYear();
-        return `${dia}/${mes}/${anio}`;
-    };
+    container.innerHTML = '<div style="text-align:center; padding:20px;"><i class="fas fa-spinner fa-spin fa-2x"></i><p>Analizando historial completo...</p></div>';
 
     try {
         const { arbol, totalCasos } = await database.obtenerReporteMulticreditos(office);
@@ -7572,13 +7568,14 @@ async function generarReporteMulticreditos(office) {
                 <div class="alert alert-success" style="text-align:center; margin-top:20px;">
                     <i class="fas fa-check-circle fa-2x"></i><br>
                     <strong>¡Todo limpio!</strong><br>
-                    No se encontraron duplicidades de deuda activa real en ${office}.
+                    No se encontraron clientes con más de 1 créditos activos en ${office}.
                 </div>`;
             return;
         }
 
-        let html = `<div class="alert alert-warning">Se encontraron <strong>${totalCasos}</strong> casos críticos (Saldos Recalculados).</div>`;
+        let html = `<div class="alert alert-warning">Se encontraron <strong>${totalCasos}</strong> clientes con exceso de créditos activos.</div>`;
 
+        // NIVEL 1: RUTA
         const rutasOrdenadas = Object.keys(arbol).sort();
         
         for (const ruta of rutasOrdenadas) {
@@ -7590,6 +7587,7 @@ async function generarReporteMulticreditos(office) {
                 <div style="padding: 10px; background: #f8f9fa;">
             `;
 
+            // NIVEL 2: POBLACIÓN
             const poblaciones = arbol[ruta];
             const pobsOrdenadas = Object.keys(poblaciones).sort();
 
@@ -7599,18 +7597,14 @@ async function generarReporteMulticreditos(office) {
                     <h5 style="color: #6f42c1; border-bottom: 1px solid #ccc;">${pob}</h5>
                 `;
 
+                // NIVEL 3: CLIENTE
                 const clientes = poblaciones[pob];
                 for (const cliente of clientes) {
-                    
-                    const badgeComisionista = cliente.isComisionista 
-                        ? '<span class="badge badge-warning" style="margin-left:5px; color:#000;">★ Comisionista</span>' 
-                        : '';
-
                     html += `
                     <div style="background: white; padding: 10px; margin-bottom: 10px; border-radius: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
                         <div style="display:flex; justify-content:space-between; align-items:center;">
-                            <strong><i class="fas fa-user"></i> ${cliente.nombre} ${badgeComisionista}</strong>
-                            <span class="badge badge-danger">${cliente.creditos.length} Créditos</span>
+                            <strong><i class="fas fa-user"></i> ${cliente.nombre}</strong>
+                            <span class="badge badge-danger">${cliente.creditos.length} Créditos Activos</span>
                         </div>
                         <div style="font-size: 0.85em; color: #666;">CURP: ${cliente.curp}</div>
                         
@@ -7618,79 +7612,35 @@ async function generarReporteMulticreditos(office) {
                     `;
 
                     for (const cred of cliente.creditos) {
-                        // USAMOS EL SALDO DE LA AUDITORÍA, NO EL GUARDADO
-                        const saldoReal = cred.saldoAuditoria !== undefined ? cred.saldoAuditoria : (cred.saldo || 0);
-                        const montoTotal = cred.montoTotal || 0;
-                        const pctPagado = montoTotal > 0 ? (1 - (saldoReal/montoTotal)) * 100 : 0;
-                        
-                        const fechaCred = formatFechaUTC(cred.fechaCreacion);
-                        
-                        // Determinar Plazo
-                        let plazoMostrar = cred.plazo;
-                        if (!plazoMostrar) {
-                            const monto = parseFloat(cred.monto) || 0;
-                            if (monto > 0 && montoTotal > 0) {
-                                const ratio = montoTotal / monto;
-                                if (ratio < 1.1) plazoMostrar = 10;
-                                else if (ratio < 1.35) plazoMostrar = 13;
-                                else plazoMostrar = 14;
-                            } else {
-                                plazoMostrar = 14;
-                            }
-                        }
-
-                        // Antigüedad
-                        let semanasAntiguedad = 0;
-                        const dCreate = parsearFecha(cred.fechaCreacion);
-                        if (dCreate) {
-                            const diffTime = Math.abs(new Date() - dCreate);
-                            semanasAntiguedad = Math.floor(diffTime / (1000 * 60 * 60 * 24 * 7)); 
-                        }
-                        const alertaAtraso = semanasAntiguedad > (plazoMostrar + 2) ? 'color:var(--danger); font-weight:bold;' : 'color:#555;';
-
-                        // Detectar discrepancia (Si la BD dice que debe X pero la auditoría dice Y)
-                        let alertaDiscrepancia = '';
-                        if (Math.abs(saldoReal - (cred.saldo || 0)) > 5) {
-                            alertaDiscrepancia = `<br><span style="font-size:0.8em; color:orange;"><i class="fas fa-exclamation-triangle"></i> Error en BD: Marca $${cred.saldo}, Realidad: $${saldoReal}</span>`;
-                        }
-
-                        // Si el saldo real es 0, lo pintamos verde indicando que es un "Falso Positivo" de activo
-                        const estiloSaldo = saldoReal <= 0.05 ? 'color:green; font-weight:bold;' : 'color:red; font-weight:bold;';
-                        const textoSaldo = saldoReal <= 0.05 ? 'LIQUIDADO (Auditado)' : `$${saldoReal.toFixed(2)}`;
+                        const saldo = cred.saldo !== undefined ? cred.saldo : cred.montoTotal;
+                        const pctPagado = cred.montoTotal > 0 ? (1 - (saldo/cred.montoTotal)) * 100 : 0;
+                        const fechaCred = parsearFecha(cred.fechaCreacion)?.toLocaleDateString('es-MX') || 'N/A';
 
                         html += `
                             <details id="details-${cred.id}" ontoggle="cargarPagosHist('details-${cred.id}', '${cred.historicalIdCredito}', '${office}')" 
                                 style="margin-bottom: 5px; border: 1px solid #e9ecef; border-radius: 4px;">
                                 <summary style="padding: 8px; cursor: pointer; background: #fff; font-size: 0.9em;">
-                                    <div style="display:flex; justify-content:space-between; flex-wrap:wrap;">
-                                        <span>
-                                            <strong>ID: ${cred.historicalIdCredito}</strong> | ${fechaCred} | 
-                                            <span style="background:#eee; padding:2px 5px; border-radius:4px;">$${cred.monto} (${plazoMostrar} sem)</span>
-                                        </span>
-                                        <span style="font-size:0.85em; text-align:right;">
-                                            <span style="${alertaAtraso}">Ant: ${semanasAntiguedad} sem</span> |
-                                            <span style="${estiloSaldo}">Saldo Real: ${textoSaldo} (${pctPagado.toFixed(0)}%)</span>
-                                            ${alertaDiscrepancia}
-                                        </span>
+                                    <div style="display:flex; justify-content:space-between;">
+                                        <span><strong>ID: ${cred.historicalIdCredito}</strong> | ${fechaCred} | $${cred.monto} (14 sem)</span>
+                                        <span style="color: ${pctPagado >= 80 ? 'green' : 'red'};">Saldo: $${saldo.toFixed(2)} (${pctPagado.toFixed(0)}%)</span>
                                     </div>
                                 </summary>
                                 <div class="pagos-container" style="padding: 10px; background: #fafafa; font-size: 0.85em;">
-                                    <i class="fas fa-spinner fa-spin"></i> Verificando pagos...
+                                    <i class="fas fa-spinner fa-spin"></i> Cargando pagos...
                                 </div>
                             </details>
                         `;
                     }
-                    html += `</div></div>`; 
+                    html += `</div></div>`; // Fin cliente
                 }
-                html += `</div>`; 
+                html += `</div>`; // Fin población
             }
-            html += `</div></details>`; 
+            html += `</div></details>`; // Fin ruta
         }
 
         container.innerHTML = html;
 
     } catch (error) {
-        console.error(error);
         container.innerHTML = `<div class="alert alert-danger">Error: ${error.message}</div>`;
     }
 }
@@ -7840,82 +7790,29 @@ function renderTablaClientes(listaDatos) {
 // ================================================ //
 window.cargarPagosHist = async function(detailsId, historicalId, office) {
     const details = document.getElementById(detailsId);
-    if (!details.open) return; // Solo cargar si se abre el acordeón
+    if (!details.open) return; // Solo cargar si se abre
     
     const container = details.querySelector('.pagos-container');
-    
-    // Evitar recargar si ya se cargó (atributo 'data-loaded')
-    if (container.getAttribute('data-loaded') === 'true') return; 
-
-    // Helper fecha UTC (Local scope para esta función)
-    const formatFechaUTC = (fechaInput) => {
-        if (!fechaInput) return '-';
-        const d = (typeof fechaInput === 'object' && fechaInput.toDate) ? fechaInput.toDate() : new Date(fechaInput);
-        if (isNaN(d.getTime())) return '-';
-        const dia = String(d.getUTCDate()).padStart(2, '0');
-        const mes = String(d.getUTCMonth() + 1).padStart(2, '0');
-        const anio = d.getUTCFullYear();
-        return `${dia}/${mes}/${anio}`;
-    };
+    if (container.getAttribute('data-loaded') === 'true') return; // Ya cargado
 
     try {
-        // Usamos la función estándar que usa Gestión de Clientes
-        const pagos = await database.getPagosPorCredito(historicalId, office); 
+        const pagos = await database.obtenerPagosParaReporte(historicalId, office); // Reutilizamos o usamos el helper
+        // Nota: Si no existe, crear 'obtenerPagosParaReporte' en database o usar 'getPagosPorCredito'
         
         if (pagos.length === 0) {
-            container.innerHTML = '<div style="padding:10px; color:#666; font-style:italic;">No hay pagos registrados para este crédito.</div>';
+            container.innerHTML = '<em>Sin pagos registrados.</em>';
         } else {
-            // Ordenar por fecha descendente (más reciente arriba)
-            pagos.sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
-
-            let tablaHTML = `
-            <table style="width:100%; border-collapse:collapse; background:white; border:1px solid #ddd;">
-                <thead style="background:#f1f1f1;">
-                    <tr>
-                        <th style="padding:5px; border:1px solid #ccc; text-align:center;">Fecha</th>
-                        <th style="padding:5px; border:1px solid #ccc; text-align:right;">Monto</th>
-                        <th style="padding:5px; border:1px solid #ccc;">Tipo</th>
-                        <th style="padding:5px; border:1px solid #ccc;">Registrado Por</th>
-                    </tr>
-                </thead>
-                <tbody>
-            `;
-
-            let totalPagado = 0;
-
+            let tabla = '<table style="width:100%; text-align:left;"><thead><tr><th>Fecha</th><th>Monto</th><th>Tipo</th></tr></thead><tbody>';
             pagos.forEach(p => {
-                const fechaStr = formatFechaUTC(p.fecha);
-                const montoStr = parseFloat(p.monto).toLocaleString('es-MX', {minimumFractionDigits: 2});
-                totalPagado += parseFloat(p.monto || 0);
-
-                tablaHTML += `
-                    <tr>
-                        <td style="padding:5px; border:1px solid #eee; text-align:center;">${fechaStr}</td>
-                        <td style="padding:5px; border:1px solid #eee; text-align:right; font-weight:bold; color:#28a745;">$${montoStr}</td>
-                        <td style="padding:5px; border:1px solid #eee;">${p.tipoPago || 'normal'}</td>
-                        <td style="padding:5px; border:1px solid #eee; font-size:0.85em; color:#666;">${p.registradoPor || 'N/A'}</td>
-                    </tr>
-                `;
+                const f = parsearFecha(p.fecha)?.toLocaleDateString('es-MX') || '-';
+                tabla += `<tr><td>${f}</td><td>$${p.monto}</td><td>${p.tipoPago}</td></tr>`;
             });
-
-            tablaHTML += `
-                <tr style="background:#e9ecef; font-weight:bold;">
-                    <td style="padding:5px; text-align:right;">TOTAL:</td>
-                    <td style="padding:5px; text-align:right;">$${totalPagado.toLocaleString('es-MX', {minimumFractionDigits: 2})}</td>
-                    <td colspan="2"></td>
-                </tr>
-                </tbody></table>
-            `;
-            
-            container.innerHTML = tablaHTML;
+            tabla += '</tbody></table>';
+            container.innerHTML = tabla;
         }
-        
-        // Marcar como cargado para no volver a pedir a la BD si el usuario cierra y abre
         container.setAttribute('data-loaded', 'true');
-
     } catch (e) {
-        console.error("Error cargando pagos en historial:", e);
-        container.innerHTML = `<div style="color:red;">Error cargando pagos: ${e.message}</div>`;
+        container.innerHTML = 'Error cargando pagos.';
     }
 };
 
@@ -8263,19 +8160,3 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
