@@ -757,6 +757,7 @@ async _generarSiguienteFolio(office, userData) {
             return { success: false, message: "Solo comisionistas pueden acceder a 10 semanas." };
         }
 
+        // Validación "No Aumentar"
         if (cliente.etiqueta === 'no_aumentar') {
             const creditosPreviosSnap = await db.collection('creditos')
                 .where('curpCliente', '==', creditoData.curpCliente)
@@ -818,10 +819,11 @@ async _generarSiguienteFolio(office, userData) {
         let idCreditoAnteriorHist = null;
         
         if (esRenovacion) {
+            // Buscamos el crédito anterior (el más reciente, activo o liquidado)
             const creditosAnteriores = await db.collection('creditos')
                                             .where('curpCliente', '==', creditoData.curpCliente)
                                             .where('office', '==', office)
-                                            .orderBy('fechaCreacion', 'desc') // El más reciente
+                                            .orderBy('fechaCreacion', 'desc')
                                             .limit(1)
                                             .get();
             
@@ -833,8 +835,7 @@ async _generarSiguienteFolio(office, userData) {
                 nuevoCreditoData.renovacionDe = idCreditoAnteriorHist;
 
                 // --- DETECCIÓN DE PAGO PREVIO (ANTI-DUPLICADOS) ---
-                // Buscamos si ya existe un pago marcado como 'actualizado' o 'renovacion'
-                // en este crédito anterior.
+                // Buscamos si el ÚLTIMO pago registrado es de tipo renovación/actualizado.
                 const pagosSnap = await db.collection('pagos')
                     .where('idCredito', '==', idCreditoAnteriorHist)
                     .where('office', '==', office)
@@ -847,8 +848,7 @@ async _generarSiguienteFolio(office, userData) {
 
                 if (!pagosSnap.empty) {
                     const ultimoPago = pagosSnap.docs[0].data();
-                    // Si el tipo es 'actualizado' (el que usa tu dropdown de cobro para renovar) 
-                    // o 'renovacion' (sistema).
+                    // Si el tipo es 'actualizado' (manual) o 'renovacion' (sistema)
                     if (ultimoPago.tipoPago === 'actualizado' || ultimoPago.tipoPago === 'renovacion') {
                         pagoRenovacionEncontrado = true;
                         montoPagoPrevio = ultimoPago.monto;
@@ -856,8 +856,9 @@ async _generarSiguienteFolio(office, userData) {
                 }
 
                 if (pagoRenovacionEncontrado) {
-                    // ESCENARIO 1: YA PAGÓ MANUALMENTE
-                    console.log("✅ Pago de renovación previo detectado. NO se generará duplicado.");
+                    // ESCENARIO 1: YA PAGÓ MANUALMENTE (LIQUIDADO O PRE-LIQUIDADO)
+                    console.log(`✅ Pago de renovación previo detectado ($${montoPagoPrevio}). NO se generará duplicado.`);
+                    // Descontamos ese monto de la caja (rollover) porque el agente ya lo tiene "virtualmente"
                     montoADescontarDeCaja = montoPagoPrevio;
                     crearPagoLiquidacion = false; // ¡IMPORTANTE! No crear pago nuevo
                 } else {
@@ -865,13 +866,12 @@ async _generarSiguienteFolio(office, userData) {
                     // Usamos el saldo actual de la BD
                     const saldoPendiente = oldData.saldo !== undefined ? oldData.saldo : oldData.montoTotal;
                     
-                    if (saldoPendiente > 0.5) { // Tolerancia de 50 centavos
+                    if (saldoPendiente > 0.5) { // Tolerancia
                         console.log("ℹ️ Liquidación automática por saldo pendiente.");
                         montoADescontarDeCaja = saldoPendiente;
-                        crearPagoLiquidacion = true; // Sí crear pago
+                        crearPagoLiquidacion = true; // Sí crear pago para matar la deuda
                     } else {
-                        // Si saldo es 0 y no encontramos pago marcado (raro, pero posible si fue pago 'normal')
-                        // Asumimos que ya está pagado y no descontamos nada extra, ni creamos pago.
+                        // Saldo 0 y no hay pago marcado como renovación (quizás pago normal liquidó)
                         montoADescontarDeCaja = 0;
                         crearPagoLiquidacion = false;
                     }
@@ -880,7 +880,7 @@ async _generarSiguienteFolio(office, userData) {
         }
 
         // --- 5. CÁLCULO DE DINERO EN MANO ---
-        // Nuevo Préstamo - Póliza - (Monto que ya tengo en la mano por el pago anterior)
+        // Nuevo Préstamo - Póliza - (Monto que ya tengo en la mano por el pago anterior o liquidación)
         let dineroEnMano = nuevoCreditoData.monto - montoPolizaDeduccion - montoADescontarDeCaja;
 
         if (dineroEnMano < 0) {
@@ -898,6 +898,7 @@ async _generarSiguienteFolio(office, userData) {
              // B. Procesar Renovación (Liquidar viejo)
              if (esRenovacion && creditoAnteriorRef) {
                  // Siempre aseguramos que el viejo quede en estado liquidado
+                 // (Aunque ya lo esté, reafirmamos para consistencia)
                  t.update(creditoAnteriorRef, {
                      estado: 'liquidado',
                      saldo: 0,
@@ -905,7 +906,7 @@ async _generarSiguienteFolio(office, userData) {
                      nota: `Renovado hacia ${nuevoFolio}`
                  });
 
-                 // Solo creamos el pago si NO existía uno previo (Escenario 2)
+                 // Solo creamos el pago si NO existía uno previo marcado (Escenario 2)
                  if (crearPagoLiquidacion) {
                      const pagoRef = db.collection('pagos').doc();
                      t.set(pagoRef, {
@@ -938,6 +939,7 @@ async _generarSiguienteFolio(office, userData) {
              }
 
              // C. Salida de Efectivo Real (Corte de Caja)
+             // Registramos el neto entregado al cliente
              const movimientoRef = db.collection('movimientos_efectivo').doc();
              let descCaja = `Colocación ${tipoCredito.toUpperCase()} ${nuevoFolio}.`;
              
@@ -977,7 +979,7 @@ async _generarSiguienteFolio(office, userData) {
                  });
              }
 
-             // E. Comisión Apertura ($100) - SOLO SI NO ES RENOVACIÓN
+             // E. Comisión Apertura ($100) - SOLO NUEVO O REINGRESO
              if (!esCreditoComisionista && generaComisionApertura) {
                  const comisionRef = db.collection('movimientos_efectivo').doc();
                  t.set(comisionRef, {
@@ -2680,6 +2682,7 @@ async _generarSiguienteFolio(office, userData) {
     },
 
 };
+
 
 
 
