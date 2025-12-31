@@ -2591,37 +2591,38 @@ async function handleSearchClientForCredit() {
 
         let mensajeInfo = "";
 
+        // --- LÓGICA VISUAL DE RENOVACIÓN ---
         if (analisis.esRenovacion) {
-            let obligarRenovacion = false;
+            let pagoPrevioEncontrado = false;
             let montoDeduccion = 0;
             
-            // Lógica para detectar pago previo o saldo pendiente
             if (analisis.datosCreditoAnterior) {
                 const credAnt = analisis.datosCreditoAnterior;
+                const histId = credAnt.historicalIdCredito || credAnt.id;
                 
-                // Si debe saldo, eso se descuenta
-                if (credAnt.saldo > 1) {
+                // 1. Buscamos si ya hay un pago de renovación
+                const pagos = await database.getPagosPorCredito(histId, credAnt.office);
+                if (pagos.length > 0) {
+                    pagos.sort((a,b) => new Date(b.fecha) - new Date(a.fecha));
+                    const ultimoPago = pagos[0];
+                    if (ultimoPago.tipoPago === 'actualizado' || ultimoPago.tipoPago === 'renovacion') {
+                        pagoPrevioEncontrado = true;
+                        montoDeduccion = ultimoPago.monto;
+                        mensajeInfo = `Renovación: Se detectó pago previo de $${montoDeduccion.toFixed(2)}. Se descontará del efectivo a entregar (No se duplicará el cobro).`;
+                    }
+                }
+                
+                // 2. Si no hay pago, usamos el saldo
+                if (!pagoPrevioEncontrado && credAnt.saldo > 1) {
                      montoDeduccion = credAnt.saldo;
-                     mensajeInfo = `Renovación: Se descontará el saldo pendiente ($${montoDeduccion.toFixed(2)}).`;
-                } else {
-                     // Si saldo es 0, buscamos el último pago 'actualizado'
-                     const histId = credAnt.historicalIdCredito || credAnt.id;
-                     const pagos = await database.getPagosPorCredito(histId, credAnt.office);
-                     if (pagos.length > 0) {
-                         pagos.sort((a,b) => new Date(b.fecha) - new Date(a.fecha));
-                         const ultimoPago = pagos[0];
-                         if (ultimoPago.tipoPago === 'actualizado' || ultimoPago.tipoPago === 'renovacion') {
-                             obligarRenovacion = true;
-                             montoDeduccion = ultimoPago.monto;
-                             mensajeInfo = `Renovación: Se descontará el pago previo registrado ($${montoDeduccion.toFixed(2)}).`;
-                         }
-                     }
+                     mensajeInfo = `Renovación: Se descontará el saldo pendiente ($${montoDeduccion.toFixed(2)}) y se liquidará automáticamente.`;
                 }
             }
 
-            if (obligarRenovacion) {
+            // Aplicar Candado
+            if (pagoPrevioEncontrado) {
                 tipoCreditoSelect.value = 'renovacion';
-                tipoCreditoSelect.disabled = true; 
+                tipoCreditoSelect.disabled = true; // Obligatorio porque ya pagó para esto
                 showStatus('status_colocacion', `🔒 ${mensajeInfo}`, 'info');
             } else {
                 tipoCreditoSelect.value = 'renovacion';
@@ -8264,6 +8265,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
