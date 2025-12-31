@@ -2608,35 +2608,42 @@ async function handleSearchClientForCredit() {
                     if (ultimoPago.tipoPago === 'actualizado' || ultimoPago.tipoPago === 'renovacion') {
                         pagoPrevioEncontrado = true;
                         montoDeduccion = ultimoPago.monto;
-                        mensajeInfo = `Renovación: Se detectó pago previo de $${montoDeduccion.toFixed(2)}. Se descontará del efectivo a entregar (NO se duplicará el cobro).`;
+                        // Mensaje claro para el usuario
+                        mensajeInfo = `Renovación pre-pagada detectada ($${montoDeduccion.toFixed(2)}). Se tomará en cuenta para el nuevo crédito.`;
                     }
                 }
                 
-                // 2. Si NO hay pago de renovación, pero hay saldo, se descuenta el saldo
+                // 2. Si NO hay pago de renovación previo, pero hay saldo, se descuenta el saldo
                 if (!pagoPrevioEncontrado && credAnt.saldo > 1) {
                      montoDeduccion = credAnt.saldo;
-                     mensajeInfo = `Renovación: Se descontará el saldo pendiente ($${montoDeduccion.toFixed(2)}) y se liquidará automáticamente.`;
+                     mensajeInfo = `Renovación: Se liquidará el saldo pendiente ($${montoDeduccion.toFixed(2)}).`;
                 }
             }
 
-            // Aplicar Candado si hay indicio de renovación
-            // Si ya pagó, forzamos renovación. Si debe saldo, sugerimos renovación.
+            // Aplicar Candado Estricto
+            // Si ya pagó renovación o es elegible para ello, forzamos "Renovación".
+            const tiposPermitidos = [{ value: 'renovacion', text: 'Renovación' }];
+            popularDropdown('tipo_colocacion', tiposPermitidos, null, true);
+            tipoCreditoSelect.value = 'renovacion';
+            
             if (pagoPrevioEncontrado) {
-                tipoCreditoSelect.value = 'renovacion';
-                tipoCreditoSelect.disabled = true; 
+                tipoCreditoSelect.disabled = true; // Bloqueado porque ya pagó para esto
                 showStatus('status_colocacion', `🔒 ${mensajeInfo}`, 'info');
             } else {
-                tipoCreditoSelect.value = 'renovacion';
-                tipoCreditoSelect.disabled = false;
+                tipoCreditoSelect.disabled = false; // Se puede ver, pero solo hay una opción
                 showStatus('status_colocacion', `✅ Elegible para renovación. ${mensajeInfo}`, 'success');
             }
 
         } else if (analisis.esReingreso) {
+            const tiposPermitidos = [{ value: 'reingreso', text: 'Reingreso' }];
+            popularDropdown('tipo_colocacion', tiposPermitidos, null, true);
             tipoCreditoSelect.value = 'reingreso';
             tipoCreditoSelect.disabled = false;
             showStatus('status_colocacion', `✅ Cliente REINGRESO.`, 'success');
         
         } else {
+            const tiposPermitidos = [{ value: 'nuevo', text: 'Nuevo' }];
+            popularDropdown('tipo_colocacion', tiposPermitidos, null, true);
             tipoCreditoSelect.value = 'nuevo';
             tipoCreditoSelect.disabled = false; 
             showStatus('status_colocacion', '✅ Cliente NUEVO.', 'success');
@@ -8266,6 +8273,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
