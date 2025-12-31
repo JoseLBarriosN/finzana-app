@@ -596,58 +596,78 @@ const database = {
     }
 },
 
+    
     verificarElegibilidadAval: async (curpAval, office) => {
-    if (!curpAval) return { elegible: false, message: "CURP de aval vacía." };
+        if (!curpAval) return { elegible: false, message: "CURP de aval vacía." };
 
-    try {
-        let query = db.collection('creditos')
-            .where('curpAval', '==', curpAval)
-            .where('estado', '!=', 'liquidado');
-        
-        if (office && office !== 'AMBAS') {
-            query = query.where('office', '==', office);
-        }
-
-        const snapshot = await query.get();
-
-        if (snapshot.empty) {
-            return { elegible: true, message: "Aval limpio." };
-        }
-
-        const creditosAvalados = snapshot.docs.map(doc => doc.data());
-        
-        for (const credito of creditosAvalados) {
-            const saldo = credito.saldo !== undefined ? credito.saldo : credito.montoTotal;
-            const montoTotal = credito.montoTotal || 0;
+        try {
+            // Buscamos créditos donde esta persona es aval y que NO estén marcados como liquidados
+            let query = db.collection('creditos')
+                .where('curpAval', '==', curpAval)
+                .where('estado', '!=', 'liquidado');
             
-            // Cálculo del porcentaje pagado
-            const pagado = montoTotal - saldo;
-            const porcentajePagado = montoTotal > 0 ? (pagado / montoTotal) : 0;
-
-            // REGLA: Debe tener cubierto el 80%
-            if (porcentajePagado < 0.80) {
-                return { 
-                    elegible: false, 
-                    message: `El aval garantiza el crédito activo ${credito.historicalIdCredito || ''} que solo lleva el ${(porcentajePagado*100).toFixed(0)}% pagado (Req: 80%).` 
-                };
+            if (office && office !== 'AMBAS') {
+                query = query.where('office', '==', office);
             }
 
-            // REGLA ADICIONAL: Buen comportamiento (opcional, pero recomendada)
-            if (credito.estado === 'cobranza' || credito.estado === 'juridico') {
-                return { 
-                    elegible: false, 
-                    message: `El aval garantiza el crédito ${credito.historicalIdCredito || ''} que está en estatus negativo (${credito.estado}).` 
-                };
+            const snapshot = await query.get();
+
+            if (snapshot.empty) {
+                return { elegible: true, message: "Aval limpio." };
             }
+
+            const creditosAvalados = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            
+            for (const credito of creditosAvalados) {
+                const montoTotal = credito.montoTotal || 0;
+                let saldoReal = credito.saldo !== undefined ? credito.saldo : montoTotal;
+
+                // --- CORRECCIÓN CRÍTICA: AUDITORÍA DE PAGOS ---
+                // No confiamos en credito.saldo porque puede estar pendiente de liquidar por renovación.
+                // Buscamos los pagos reales para ver cuánto ha cubierto realmente.
+                
+                const histId = credito.historicalIdCredito || credito.id;
+                const pagosSnap = await db.collection('pagos')
+                    .where('idCredito', '==', histId)
+                    .where('office', '==', (credito.office || office))
+                    .get();
+
+                const totalPagadoReal = pagosSnap.docs.reduce((sum, doc) => sum + (doc.data().monto || 0), 0);
+                
+                // Recalculamos el saldo matemático
+                saldoReal = montoTotal - totalPagadoReal;
+                if (saldoReal < 1) saldoReal = 0; // Tolerancia de $1 peso
+
+                // Cálculo del porcentaje pagado REAL
+                const pagado = montoTotal - saldoReal;
+                const porcentajePagado = montoTotal > 0 ? (pagado / montoTotal) : 0;
+
+                // REGLA: Debe tener cubierto el 80%
+                // Si ya está liquidado matemáticamente (saldoReal == 0), pasa automáticamente (100%)
+                if (porcentajePagado < 0.80) {
+                    return { 
+                        elegible: false, 
+                        message: `El aval garantiza el crédito activo ${credito.historicalIdCredito || ''} que solo lleva el ${(porcentajePagado*100).toFixed(0)}% pagado (Req: 80%).` 
+                    };
+                }
+
+                // REGLA ADICIONAL: Buen comportamiento
+                // Si matemáticamente ya pagó, ignoramos si la etiqueta dice 'cobranza' porque ya cumplió.
+                if (saldoReal > 0 && (credito.estado === 'cobranza' || credito.estado === 'juridico')) {
+                    return { 
+                        elegible: false, 
+                        message: `El aval garantiza el crédito ${credito.historicalIdCredito || ''} que está en estatus negativo (${credito.estado}).` 
+                    };
+                }
+            }
+
+            return { elegible: true, message: "Aval elegible (créditos anteriores >80% pagados)." };
+
+        } catch (error) {
+            console.error("Error verificando aval:", error);
+            return { elegible: false, message: `Error verificando aval: ${error.message}` };
         }
-
-        return { elegible: true, message: "Aval elegible (créditos anteriores >80%)." };
-
-    } catch (error) {
-        console.error("Error verificando aval:", error);
-        return { elegible: false, message: `Error verificando aval: ${error.message}` };
-    }
-},
+    },
 
     // --- GENERADOR DE FOLIOS SEGURO (ONLINE/OFFLINE) ---
 async _generarSiguienteFolio(office, userData) {
@@ -2634,6 +2654,7 @@ async _generarSiguienteFolio(office, userData) {
     },
 
 };
+
 
 
 
