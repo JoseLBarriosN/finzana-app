@@ -2604,33 +2604,35 @@ async function handleSearchClientForCredit() {
                 const pagos = await database.getPagosPorCredito(histId, credAnt.office);
                 if (pagos.length > 0) {
                     pagos.sort((a,b) => new Date(b.fecha) - new Date(a.fecha)); // Orden desc
-                    const ultimoPago = pagos[0];
-                    if (ultimoPago.tipoPago === 'actualizado' || ultimoPago.tipoPago === 'renovacion') {
+                    
+                    // Buscamos cualquier pago reciente marcado como renovacion
+                    // No solo el último, por si hubo algún ajuste posterior
+                    const pagoRenovacion = pagos.find(p => p.tipoPago === 'actualizado' || p.tipoPago === 'renovacion');
+                    
+                    if (pagoRenovacion) {
                         pagoPrevioEncontrado = true;
-                        montoDeduccion = ultimoPago.monto;
-                        // Mensaje claro para el usuario
-                        mensajeInfo = `Renovación pre-pagada detectada ($${montoDeduccion.toFixed(2)}). Se tomará en cuenta para el nuevo crédito.`;
+                        montoDeduccion = parseFloat(pagoRenovacion.monto);
+                        mensajeInfo = `Renovación: Pago previo detectado ($${montoDeduccion.toFixed(2)}). Se descontará (NO se cobra doble).`;
                     }
                 }
                 
-                // 2. Si NO hay pago de renovación previo, pero hay saldo, se descuenta el saldo
+                // 2. Si NO hay pago de renovación previo, pero hay saldo > 1 peso
                 if (!pagoPrevioEncontrado && credAnt.saldo > 1) {
                      montoDeduccion = credAnt.saldo;
-                     mensajeInfo = `Renovación: Se liquidará el saldo pendiente ($${montoDeduccion.toFixed(2)}).`;
+                     mensajeInfo = `Renovación: Se descontará y liquidará el saldo pendiente ($${montoDeduccion.toFixed(2)}).`;
                 }
             }
 
-            // Aplicar Candado Estricto
-            // Si ya pagó renovación o es elegible para ello, forzamos "Renovación".
+            // Aplicar Candado
             const tiposPermitidos = [{ value: 'renovacion', text: 'Renovación' }];
             popularDropdown('tipo_colocacion', tiposPermitidos, null, true);
             tipoCreditoSelect.value = 'renovacion';
             
             if (pagoPrevioEncontrado) {
-                tipoCreditoSelect.disabled = true; // Bloqueado porque ya pagó para esto
+                tipoCreditoSelect.disabled = true; // Bloqueado, ya pagó
                 showStatus('status_colocacion', `🔒 ${mensajeInfo}`, 'info');
             } else {
-                tipoCreditoSelect.disabled = false; // Se puede ver, pero solo hay una opción
+                tipoCreditoSelect.disabled = false; // Sugerido
                 showStatus('status_colocacion', `✅ Elegible para renovación. ${mensajeInfo}`, 'success');
             }
 
@@ -8273,6 +8275,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
