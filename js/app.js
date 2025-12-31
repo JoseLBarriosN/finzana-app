@@ -2560,6 +2560,9 @@ async function handleSearchClientForCredit() {
     const formColocacion = document.getElementById('form-colocacion');
     const btnBuscar = document.getElementById('btnBuscarCliente_colocacion');
     
+    // Obtenemos el botón de submit del formulario de abajo para bloquearlo
+    const btnSubmitCredito = document.querySelector('#form-credito-submit button[type="submit"]');
+
     clienteParaCredito = null;
     if (!validarFormatoCURP(curp)) {
         showStatus('status_colocacion', 'El CURP debe tener 18 caracteres y formato válido.', 'error');
@@ -2588,38 +2591,40 @@ async function handleSearchClientForCredit() {
 
         actualizarPlazosSegunCliente(cliente.isComisionista || false, analisis.esRenovacion);
         plazoSelect.disabled = false;
+        
+        // Desbloqueamos el botón por defecto, lo bloquearemos abajo si es necesario
+        if(btnSubmitCredito) btnSubmitCredito.disabled = false;
 
         let mensajeInfo = "";
 
-        // --- LÓGICA VISUAL DE RENOVACIÓN ---
+        // --- LÓGICA VISUAL DE RENOVACIÓN (ESTRICTA) ---
         if (analisis.esRenovacion) {
             let pagoPrevioEncontrado = false;
             let montoDeduccion = 0;
+            let tieneDeudaSinPagar = false;
             
             if (analisis.datosCreditoAnterior) {
                 const credAnt = analisis.datosCreditoAnterior;
                 const histId = credAnt.historicalIdCredito || credAnt.id;
+                const saldoPendiente = credAnt.saldo !== undefined ? credAnt.saldo : credAnt.montoTotal;
                 
-                // 1. Buscamos si ya hay un pago de renovación (incluso si el saldo ya es 0)
+                // 1. Buscamos si ya hay un pago de renovación
                 const pagos = await database.getPagosPorCredito(histId, credAnt.office);
                 if (pagos.length > 0) {
                     pagos.sort((a,b) => new Date(b.fecha) - new Date(a.fecha)); // Orden desc
                     
-                    // Buscamos cualquier pago reciente marcado como renovacion
-                    // No solo el último, por si hubo algún ajuste posterior
                     const pagoRenovacion = pagos.find(p => p.tipoPago === 'actualizado' || p.tipoPago === 'renovacion');
-                    
                     if (pagoRenovacion) {
                         pagoPrevioEncontrado = true;
                         montoDeduccion = parseFloat(pagoRenovacion.monto);
-                        mensajeInfo = `Renovación: Pago previo detectado ($${montoDeduccion.toFixed(2)}). Se descontará (NO se cobra doble).`;
+                        mensajeInfo = `Renovación: Pago previo detectado ($${montoDeduccion.toFixed(2)}). Se descontará del efectivo.`;
                     }
                 }
                 
-                // 2. Si NO hay pago de renovación previo, pero hay saldo > 1 peso
-                if (!pagoPrevioEncontrado && credAnt.saldo > 1) {
-                     montoDeduccion = credAnt.saldo;
-                     mensajeInfo = `Renovación: Se descontará y liquidará el saldo pendiente ($${montoDeduccion.toFixed(2)}).`;
+                // 2. Si NO hay pago y hay saldo, MARCADO COMO BLOQUEO
+                if (!pagoPrevioEncontrado && saldoPendiente > 0.5) {
+                     tieneDeudaSinPagar = true;
+                     montoDeduccion = saldoPendiente;
                 }
             }
 
@@ -2627,13 +2632,27 @@ async function handleSearchClientForCredit() {
             const tiposPermitidos = [{ value: 'renovacion', text: 'Renovación' }];
             popularDropdown('tipo_colocacion', tiposPermitidos, null, true);
             tipoCreditoSelect.value = 'renovacion';
+            tipoCreditoSelect.disabled = false;
+
+            if (tieneDeudaSinPagar) {
+                // BLOQUEO ABSOLUTO EN UI
+                showStatus('status_colocacion', `⛔ ATENCIÓN: El crédito anterior tiene saldo pendiente ($${montoDeduccion.toFixed(2)}). <br><strong>Debes registrar el pago de liquidación (tipo 'Actualizado') ANTES de generar el nuevo crédito.</strong>`, 'error');
+                if(btnSubmitCredito) btnSubmitCredito.disabled = true; // Botón gris
+                // Aún mostramos el formulario para que vean los datos, pero no pueden guardar
+                formColocacion.classList.remove('hidden');
+                // IMPORTANTE: Retornamos aquí para no sobrescribir el mensaje de status abajo, pero dejamos el form visible (solo disabled)
+                // O mejor, ocultamos el form si quieres ser más estricto:
+                // formColocacion.classList.add('hidden'); 
+                // Pero es mejor que lo vean disabled:
+                return;
+            } 
             
             if (pagoPrevioEncontrado) {
-                tipoCreditoSelect.disabled = true; // Bloqueado, ya pagó
+                tipoCreditoSelect.disabled = true; 
                 showStatus('status_colocacion', `🔒 ${mensajeInfo}`, 'info');
             } else {
-                tipoCreditoSelect.disabled = false; // Sugerido
-                showStatus('status_colocacion', `✅ Elegible para renovación. ${mensajeInfo}`, 'success');
+                // Caso raro: Saldo 0 y sin pago de renovación (liquidó normal). Permitimos renovar limpio.
+                showStatus('status_colocacion', `✅ Elegible para renovación (Historial limpio).`, 'success');
             }
 
         } else if (analisis.esReingreso) {
@@ -8263,6 +8282,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
