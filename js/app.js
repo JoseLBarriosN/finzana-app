@@ -2600,29 +2600,30 @@ async function handleSearchClientForCredit() {
                 const credAnt = analisis.datosCreditoAnterior;
                 const histId = credAnt.historicalIdCredito || credAnt.id;
                 
-                // 1. Buscamos si ya hay un pago de renovación
+                // 1. Buscamos si ya hay un pago de renovación (incluso si el saldo ya es 0)
                 const pagos = await database.getPagosPorCredito(histId, credAnt.office);
                 if (pagos.length > 0) {
-                    pagos.sort((a,b) => new Date(b.fecha) - new Date(a.fecha));
+                    pagos.sort((a,b) => new Date(b.fecha) - new Date(a.fecha)); // Orden desc
                     const ultimoPago = pagos[0];
                     if (ultimoPago.tipoPago === 'actualizado' || ultimoPago.tipoPago === 'renovacion') {
                         pagoPrevioEncontrado = true;
                         montoDeduccion = ultimoPago.monto;
-                        mensajeInfo = `Renovación: Se detectó pago previo de $${montoDeduccion.toFixed(2)}. Se descontará del efectivo a entregar (No se duplicará el cobro).`;
+                        mensajeInfo = `Renovación: Se detectó pago previo de $${montoDeduccion.toFixed(2)}. Se descontará del efectivo a entregar (NO se duplicará el cobro).`;
                     }
                 }
                 
-                // 2. Si no hay pago, usamos el saldo
+                // 2. Si NO hay pago de renovación, pero hay saldo, se descuenta el saldo
                 if (!pagoPrevioEncontrado && credAnt.saldo > 1) {
                      montoDeduccion = credAnt.saldo;
                      mensajeInfo = `Renovación: Se descontará el saldo pendiente ($${montoDeduccion.toFixed(2)}) y se liquidará automáticamente.`;
                 }
             }
 
-            // Aplicar Candado
+            // Aplicar Candado si hay indicio de renovación
+            // Si ya pagó, forzamos renovación. Si debe saldo, sugerimos renovación.
             if (pagoPrevioEncontrado) {
                 tipoCreditoSelect.value = 'renovacion';
-                tipoCreditoSelect.disabled = true; // Obligatorio porque ya pagó para esto
+                tipoCreditoSelect.disabled = true; 
                 showStatus('status_colocacion', `🔒 ${mensajeInfo}`, 'info');
             } else {
                 tipoCreditoSelect.value = 'renovacion';
@@ -8265,6 +8266,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
