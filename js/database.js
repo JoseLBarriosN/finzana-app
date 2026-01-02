@@ -818,7 +818,7 @@ const database = {
     try {
         const office = creditoData.office;
         
-        // --- 1. VALIDACIONES ---
+        // --- VALIDACIONES ---
         if (!office || (office !== 'GDL' && office !== 'LEON')) return { success: false, message: 'Oficina inválida.' };
         if ((creditoData.tipo === 'renovacion' || creditoData.tipo === 'reingreso') && creditoData.plazo !== 14 && creditoData.plazo !== 13) return { success: false, message: 'Plazo no permitido.' };
 
@@ -827,13 +827,13 @@ const database = {
 
         if (creditoData.plazo === 10 && !cliente.isComisionista) return { success: false, message: "Solo comisionistas 10 semanas." };
 
-        // --- 2. FOLIO ---
+        // --- FOLIO ---
         const datosFolio = await this._generarSiguienteFolio(office, userData);
         const nuevoFolio = datosFolio.folio;
         const nuevoConsecutivo = datosFolio.consecutivo;
         const fechaISO = database.obtenerFechaLocalISO(); 
 
-        // --- 3. DATOS ---
+        // --- DATOS ---
         const esCreditoComisionista = (creditoData.plazo === 10 && cliente.isComisionista);
         let montoPolizaDeduccion = esCreditoComisionista ? 0 : 100;
 
@@ -864,11 +864,10 @@ const database = {
             busqueda: [ creditoData.curpCliente.toUpperCase(), nuevoFolio ]
         };
 
-        // --- 4. LÓGICA DE RENOVACIÓN Y ANTI-DUPLICADOS ---
+        // --- LÓGICA RENOVACIÓN ---
         let montoReferenciaRenovacion = 0; 
         let idCreditoAnteriorHist = null;
         let creditoAnteriorRef = null;
-        // Esta bandera es la clave: TRUE = Sistema crea el pago. FALSE = Ya existe.
         let crearPagoLiquidacionAutomatico = false; 
         let pagoPrevioEncontrado = false; 
         
@@ -885,7 +884,7 @@ const database = {
                 creditoAnteriorRef = oldDoc.ref;
                 nuevoCreditoData.renovacionDe = idCreditoAnteriorHist;
 
-                // A. Buscar si ya existe un pago MANUAL (Actualizado/Renovacion)
+                // 1. Buscar si YA SE PAGÓ hoy (Manual)
                 const pagosSnap = await db.collection('pagos')
                     .where('idCredito', '==', idCreditoAnteriorHist)
                     .where('office', '==', office)
@@ -898,19 +897,18 @@ const database = {
                         return p.tipoPago === 'actualizado' || p.tipoPago === 'renovacion';
                     });
                     if (pagoTrigger) {
-                        pagoPrevioEncontrado = true;
+                        pagoPrevioEncontrado = true; // YA EXISTE EL PAGO
                         montoReferenciaRenovacion = parseFloat(pagoTrigger.data().monto);
-                        // IMPORTANTE: Como ya existe, NO creamos nada automático
-                        crearPagoLiquidacionAutomatico = false; 
+                        crearPagoLiquidacionAutomatico = false; // NO CREAR OTRO PAGO
                     }
                 }
 
-                // B. Si NO existe pago, calculamos saldo para liquidar automáticamente
+                // 2. Si no ha pagado, liquidar automático
                 if (!pagoPrevioEncontrado) {
                     const saldoPendiente = oldDoc.data().saldo !== undefined ? oldDoc.data().saldo : oldDoc.data().montoTotal;
                     if (saldoPendiente > 0.5) {
                         montoReferenciaRenovacion = parseFloat(saldoPendiente);
-                        crearPagoLiquidacionAutomatico = true; // El sistema creará el pago
+                        crearPagoLiquidacionAutomatico = true; // CREAR AUTOMÁTICO
                     }
                 }
             }
@@ -926,13 +924,13 @@ const database = {
 
         // B. MOVIMIENTOS DE CAJA (HOJA DE CORTE)
         
-        // 1. SALIDA TOTAL DEL CRÉDITO (COLOCACIÓN)
-        // Ejemplo: Sale -$4500 completos (Siempre se registra)
+        // 1. SALIDA TOTAL DEL CRÉDITO
+        // Siempre registramos la salida completa. 
         const movSalidaRef = db.collection('movimientos_efectivo').doc();
         let descCaja = `Colocación ${tipoCredito.toUpperCase()} ${nuevoFolio}`;
         
         if (montoReferenciaRenovacion > 0) {
-            descCaja += ` (Con Renovación Cr. ${idCreditoAnteriorHist})`;
+            descCaja += ` (Renovación Cr. ${idCreditoAnteriorHist})`;
         }
 
         batch.set(movSalidaRef, {
@@ -948,9 +946,9 @@ const database = {
             office: office
         });
 
-        // 2. ENTRADA POR RENOVACIÓN (CORRECCIÓN ANTI-DUPLICADOS)
-        // Solo registramos la entrada "virtual" si el sistema está creando la liquidación automática.
-        // Si fue pago manual, esa entrada YA EXISTE gracias a la función 'agregarPago'.
+        // 2. ENTRADA POR RENOVACIÓN (¡SOLO SI ES AUTOMÁTICA!)
+        // Si el pago fue manual (pagoPrevioEncontrado = true), el dinero YA entró en 'agregarPago'.
+        // NO lo registramos aquí para no duplicar.
         if (montoReferenciaRenovacion > 0 && crearPagoLiquidacionAutomatico) {
             const movEntradaRef = db.collection('movimientos_efectivo').doc();
             batch.set(movEntradaRef, {
@@ -993,7 +991,7 @@ const database = {
                  nota: `Renovado hacia ${nuevoFolio}`
              });
 
-             // Si es automático, creamos el pago y la comisión
+             // Si es automático, creamos el pago en la colección 'pagos'
              if (crearPagoLiquidacionAutomatico) {
                  const pagoRef = db.collection('pagos').doc();
                  batch.set(pagoRef, {
@@ -1008,13 +1006,14 @@ const database = {
                      descripcion: `Liquidación automática`
                  });
 
+                 // Comisión $10 (Salida en movimientos_efectivo)
                  const comisionPagoRef = db.collection('movimientos_efectivo').doc();
                  batch.set(comisionPagoRef, {
                      userId: auth.currentUser ? auth.currentUser.uid : 'system',
                      fecha: fechaISO,
                      tipo: 'COMISION_PAGO', 
                      categoria: 'COMISION',
-                     monto: -10, // Comisión $10 por liquidación automática
+                     monto: -10, // Salida $10
                      descripcion: `Comisión Renovación Cr. ${idCreditoAnteriorHist}`,
                      creditoId: nuevoCreditoRef.id,
                      poblacion: cliente.poblacion_grupo,
@@ -1087,13 +1086,13 @@ const database = {
     // --- 
     // REGISTRAR PAGO (CON VÍNCULO A COMISIÓN)
     // ---
-    async agregarPago(pagoData, emailUsuario, firestoreIdCredito) {
+   async agregarPago(pagoData, emailUsuario, firestoreIdCredito) {
     try {
         const creditoRef = db.collection('creditos').doc(firestoreIdCredito);
         const pagosRef = db.collection('pagos').doc();
         const batch = db.batch();
 
-        // 1. Obtener datos actuales
+        // 1. Obtener datos actuales del crédito
         let doc;
         try {
             doc = await creditoRef.get();
@@ -1109,11 +1108,12 @@ const database = {
         const officeCredito = credito.office || 'GDL';
         const poblacionCredito = credito.poblacion_grupo || '';
         
+        // 2. Definir Fecha
         let fechaISO = pagoData.fechaPersonalizada 
             ? new Date(pagoData.fechaPersonalizada).toISOString() 
             : database.obtenerFechaLocalISO();
 
-        // 2. Preparar Objeto Pago
+        // 3. Preparar Objeto Pago (Colección Pagos - Historial Cliente)
         const nuevoPago = {
             id: pagosRef.id,
             idCredito: pagoData.idCredito, 
@@ -1129,7 +1129,7 @@ const database = {
 
         const nuevoSaldo = parseFloat((saldoActual - nuevoPago.monto).toFixed(2));
 
-        // Agregar al Batch
+        // Agregar al Batch principal
         batch.set(pagosRef, nuevoPago);
         batch.update(creditoRef, {
             saldo: nuevoSaldo,
@@ -1137,14 +1137,14 @@ const database = {
             ...(nuevoSaldo < 0.05 ? { estado: 'liquidado' } : {})
         });
 
-        // 3. REGISTRAR ENTRADA DE DINERO (COBRANZA) EN HOJA DE CORTE
-        // Esto registra que entró dinero a la caja
+        // 4. CONTABILIDAD: REGISTRAR ENTRADA DE DINERO EN CAJA
+        // Esto hace que aparezca como INGRESO en la Hoja de Corte
         const movIngresoRef = db.collection('movimientos_efectivo').doc();
         batch.set(movIngresoRef, {
             id: movIngresoRef.id,
             tipo: 'COBRANZA', 
-            categoria: 'COBRANZA', 
-            monto: Math.abs(parseFloat(pagoData.monto)), // Positivo (Entrada)
+            categoria: 'COBRANZA', // Suma a Entradas
+            monto: Math.abs(parseFloat(pagoData.monto)), // Positivo
             descripcion: `Cobro ${nuevoPago.tipoPago.toUpperCase()} Crédito ${pagoData.idCredito}`,
             fecha: fechaISO,
             userId: (auth.currentUser) ? auth.currentUser.uid : 'offline_user',
@@ -1155,18 +1155,17 @@ const database = {
             pagoIdAsociado: pagosRef.id 
         });
 
-        // 4. REGISTRAR COMISIÓN EN HOJA DE CORTE (SALIDA)
-        // Convertimos el valor que viene del front (app.js) a número
+        // 5. CONTABILIDAD: REGISTRAR COMISIÓN (GASTO)
+        // Convertimos el valor recibido a número. Si app.js calculó $30, aquí guardamos -$30.
         const comisionVal = parseFloat(pagoData.comisionGenerada);
         
-        // Solo registramos si es mayor a 0 (ej. $10, $20, etc.)
         if (!isNaN(comisionVal) && comisionVal > 0) {
             const movComisionRef = db.collection('movimientos_efectivo').doc();
             batch.set(movComisionRef, {
                 id: movComisionRef.id,
                 tipo: 'COMISION_PAGO', 
-                categoria: 'COMISION', 
-                monto: -Math.abs(comisionVal), // Negativo (Salida de dinero al agente)
+                categoria: 'COMISION', // Suma a Salidas/Comisiones
+                monto: -Math.abs(comisionVal), // Negativo (Salida)
                 descripcion: `Comisión pago ${pagoData.tipoPago} - Crédito ${pagoData.idCredito}`,
                 fecha: fechaISO,
                 userId: (auth.currentUser) ? auth.currentUser.uid : 'offline_user',
@@ -1176,7 +1175,7 @@ const database = {
                 creditoIdAsociado: firestoreIdCredito,
                 pagoIdAsociado: pagosRef.id 
             });
-            console.log(`✅ Comisión registrada en hoja de corte: $${comisionVal}`);
+            console.log(`✅ Comisión registrada en hoja de corte: -$${comisionVal}`);
         }
 
         const commitOp = batch.commit();
@@ -2678,4 +2677,5 @@ const database = {
     },
 
 };
+
 
