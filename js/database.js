@@ -60,9 +60,9 @@ function _parsearFechaImportacion(fechaStr) {
     return fecha.toISOString();
 }
 
-/**
- * Función general para convertir cualquier input a objeto Date
- */
+// --- 
+// CONVERTIR FECHAS EN STANDARD  
+// ---
 function parsearFecha(fechaInput) {
     if (!fechaInput) return null;
     if (fechaInput instanceof Date) return fechaInput;
@@ -89,8 +89,9 @@ function parsearFecha(fechaInput) {
     return null;
 }
 
-// --- OBJETO PRINCIPAL DATABASE ---
-
+// --- 
+// OBJETO PRINCIPAL DATABASE 
+// ---
 const database = {
 
     /**
@@ -132,7 +133,9 @@ const database = {
     }
 },
 
-    // --- OBTENER USUARIO POR ID ---
+    // --- 
+    // OBTENER USUARIO POR ID
+    // ---    
     obtenerUsuarioPorId: async (uid) => {
         try {
             const docRef = db.collection('users').doc(uid);
@@ -156,7 +159,9 @@ const database = {
         }
     },
 
-    // --- ACTUALIZAR USUARIOS ---
+    // --- 
+    // ACTUALIZAR USUARIOS 
+    // --- 
     actualizarUsuario: async (uid, userData) => {
         try {
             const dataToUpdate = { ...userData };
@@ -190,7 +195,9 @@ const database = {
         }
     },
 
-    // --- GESTIÓN DE CLIENTES ---
+    // --- 
+    // GESTIÓN DE CLIENTES
+    // ---
     obtenerClientePorId: async (id) => {
         try {
             const doc = await db.collection('clientes').doc(id).get();
@@ -202,6 +209,9 @@ const database = {
         }
     },
 
+    // --- 
+    // ACTUALIZAR CLIENTES
+    // ---    
     actualizarCliente: async (id, clienteData, userEmail) => {
         try {
             clienteData.curp = clienteData.curp.toUpperCase();
@@ -215,6 +225,9 @@ const database = {
         }
     },
 
+    // --- 
+    // ELIMINAR CLIENTES
+    // ---       
     eliminarCliente: async (id) => {
         try {
             await db.collection('clientes').doc(id).delete();
@@ -225,7 +238,9 @@ const database = {
         }
     },
 
+    // --- 
     // CUSCAR CLIENTE POR CURP
+    // ---   
     buscarClientePorCURP: async (curp, userOffice = null) => {
         try {
             console.log(`🔎 Buscando CURP: ${curp} (Oficina: ${userOffice || 'Cualquiera'})`);
@@ -271,7 +286,10 @@ const database = {
         }
     },
 
+
+    // --- 
     // BUSCAR CLIENTE POR CURPS
+    // ---      
     buscarClientesPorCURPs: async (curps, userOffice = null) => {
         if (!curps || curps.length === 0) return [];
         const upperCaseCurps = curps.map(c => String(c).toUpperCase());
@@ -301,6 +319,9 @@ const database = {
         }
     },
 
+    // --- 
+    // AGREGAR CLIENTE
+    // ---     
     async agregarCliente(clienteData, userEmail) {
         try {
             // 1. Validar duplicados (Usando búsqueda híbrida)
@@ -359,6 +380,9 @@ const database = {
         }
     },
 
+    // --- 
+    // BUSCAR CLIENTE
+    // ---     
     buscarClientes: async (filtros) => {
         try {
             let query = db.collection('clientes');
@@ -408,7 +432,10 @@ const database = {
         }
     },
 
-    // --- GESTIÓN DE CRÉDITOS ---
+
+    // --- 
+    // GESTIÓN DE CRÉDITOS
+    // ---     
     buscarCreditosPorCliente: async (curp, userOffice = null) => {
         try {
             let query = db.collection('creditos').where('curpCliente', '==', curp.toUpperCase());
@@ -423,6 +450,9 @@ const database = {
         }
     },
 
+    // --- 
+    // GESTIÓN DE CRÉDITOS POR ID HISTORICO
+    // ---     
     buscarCreditosPorHistoricalId: async (historicalId, options = {}) => {
         try {
             let query = db.collection('creditos').where('historicalIdCredito', '==', historicalId);
@@ -442,6 +472,9 @@ const database = {
         }
     },
 
+    // --- 
+    // GESTIÓN DE CRÉDITOS POR ID
+    // --- 
     buscarCreditoPorId: async (firestoreId) => {
         try {
             const doc = await db.collection('creditos').doc(firestoreId).get();
@@ -453,6 +486,9 @@ const database = {
         }
     },
 
+    // --- 
+    // GESTIÓN DE CRÉDITOS
+    // --- 
     buscarCreditos: async (filtros) => {
         try {
             let query = db.collection('creditos');
@@ -478,6 +514,9 @@ const database = {
         }
     },
 
+    // --- 
+    // GESTIÓN DE CRÉDITO ACTIVO POR CLIENTE
+    // ---     
     buscarCreditoActivoPorCliente: async (curp, userOffice = null) => {
         try {
             const creditos = await database.buscarCreditosPorCliente(curp, userOffice);
@@ -2663,6 +2702,7 @@ const database = {
     },
 
 };
+
 
 
 
