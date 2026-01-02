@@ -838,7 +838,7 @@ const database = {
         let montoPolizaDeduccion = esCreditoComisionista ? 0 : 100;
 
         const nuevoCreditoRef = db.collection('creditos').doc();
-        const tipoCredito = creditoData.tipo; 
+        const tipoCredito = creditoData.tipo;
         const esRenovacion = tipoCredito === 'renovacion';
         const generaComisionApertura = (tipoCredito === 'nuevo' || tipoCredito === 'reingreso');
 
@@ -864,13 +864,14 @@ const database = {
             busqueda: [ creditoData.curpCliente.toUpperCase(), nuevoFolio ]
         };
 
-        // --- LÓGICA DE RENOVACIÓN (DESGLOSE) ---
-        let montoDeduccionRenovacion = 0; 
+        // --- LÓGICA DE RENOVACIÓN (DESGLOSE CONTABLE) ---
+        let montoEntradaRenovacion = 0; 
         let idCreditoAnteriorHist = null;
         let creditoAnteriorRef = null;
-        let crearPagoLiquidacionAutomatico = false; // Solo si NO existe pago previo
+        let crearPagoLiquidacionAutomatico = false;
         
         if (esRenovacion) {
+            // Buscamos el último crédito
             const creditosAnteriores = await db.collection('creditos')
                                             .where('curpCliente', '==', creditoData.curpCliente)
                                             .where('office', '==', office)
@@ -900,7 +901,8 @@ const database = {
                     });
                     if (pagoTrigger) {
                         pagoPrevioEncontrado = true;
-                        montoDeduccionRenovacion = parseFloat(pagoTrigger.data().monto);
+                        // Este es el dinero que "entra" virtualmente para liquidar el viejo
+                        montoEntradaRenovacion = parseFloat(pagoTrigger.data().monto);
                         crearPagoLiquidacionAutomatico = false; 
                     }
                 }
@@ -909,7 +911,7 @@ const database = {
                 if (!pagoPrevioEncontrado) {
                     const saldoPendiente = oldDoc.data().saldo !== undefined ? oldDoc.data().saldo : oldDoc.data().montoTotal;
                     if (saldoPendiente > 0.5) {
-                        montoDeduccionRenovacion = parseFloat(saldoPendiente);
+                        montoEntradaRenovacion = parseFloat(saldoPendiente);
                         crearPagoLiquidacionAutomatico = true; 
                     }
                 }
@@ -924,35 +926,35 @@ const database = {
         // A. Guardar Nuevo Crédito
         batch.set(nuevoCreditoRef, nuevoCreditoData);
 
-        // B. Movimientos de Caja (DESGLOSADOS)
+        // B. Movimientos de Caja (DESGLOSADOS PARA HOJA DE CORTE)
         
-        // 1. SALIDA TOTAL DEL CRÉDITO (Monto Completo)
-        // Esto registra la salida "teórica" completa: -$4500
+        // 1. SALIDA TOTAL (COLOCACIÓN)
+        // Ejemplo: Sale -$4500 completos
         const movSalidaRef = db.collection('movimientos_efectivo').doc();
         batch.set(movSalidaRef, {
             userId: auth.currentUser ? auth.currentUser.uid : 'offline_user',
             fecha: fechaISO,
             tipo: 'COLOCACION',
             categoria: 'COLOCACION',
-            monto: -Math.abs(nuevoCreditoData.monto), // -$4500
-            descripcion: `Colocación ${tipoCredito.toUpperCase()} ${nuevoFolio} (Total)`,
+            monto: -Math.abs(nuevoCreditoData.monto), 
+            descripcion: `Colocación ${tipoCredito.toUpperCase()} ${nuevoFolio}`,
             creditoId: nuevoCreditoRef.id,
             poblacion: cliente.poblacion_grupo,
             registradoPor: userEmail,
             office: office
         });
 
-        // 2. ENTRADA POR RENOVACIÓN (Si aplica)
-        // Esto registra el dinero que "regresa" para pagar el anterior: +$1350
-        if (montoDeduccionRenovacion > 0) {
+        // 2. ENTRADA POR RENOVACIÓN (Si hubo pago de renovación previo o automático)
+        // Ejemplo: Entra +$1350 (Retención)
+        if (montoEntradaRenovacion > 0) {
             const movEntradaRef = db.collection('movimientos_efectivo').doc();
             batch.set(movEntradaRef, {
                 userId: auth.currentUser ? auth.currentUser.uid : 'offline_user',
                 fecha: fechaISO,
-                tipo: 'ABONO_RENOVACION', // Tipo especial para identificarlo
-                categoria: 'COBRANZA',    // Categoria cobranza para que sume como entrada
-                monto: Math.abs(montoDeduccionRenovacion), // +$1350
-                descripcion: `Retención/Cobro Renovación del Crédito ${idCreditoAnteriorHist || 'Anterior'}`,
+                tipo: 'ENTREGA_INICIAL', // Usamos un tipo que sume como entrada en tu reporte
+                categoria: 'COBRANZA',   // Categoría para que cuente como dinero positivo
+                monto: Math.abs(montoEntradaRenovacion), 
+                descripcion: `Retención/Pago Renovación Cr. ${idCreditoAnteriorHist || 'Anterior'}`,
                 creditoId: nuevoCreditoRef.id,
                 poblacion: cliente.poblacion_grupo,
                 registradoPor: userEmail,
@@ -992,7 +994,7 @@ const database = {
                  batch.set(pagoRef, {
                      idCredito: idCreditoAnteriorHist,
                      firestoreIdCredito: creditoAnteriorRef.id,
-                     monto: parseFloat(montoDeduccionRenovacion.toFixed(2)),
+                     monto: parseFloat(montoEntradaRenovacion.toFixed(2)),
                      fecha: fechaISO,
                      tipoPago: 'renovacion', 
                      registradoPor: userEmail,
@@ -1001,14 +1003,14 @@ const database = {
                      descripcion: `Liquidación automática renovación ${nuevoFolio}`
                  });
 
-                 // Comisión $10 (Solo si es automático, si fue manual ya debe tenerla)
+                 // Comisión $10 (Solo si es automático)
                  const comisionPagoRef = db.collection('movimientos_efectivo').doc();
                  batch.set(comisionPagoRef, {
                      userId: auth.currentUser ? auth.currentUser.uid : 'system',
                      fecha: fechaISO,
                      tipo: 'COMISION_PAGO', 
                      categoria: 'COMISION',
-                     monto: -10, // Salida fija de $10
+                     monto: -10, 
                      descripcion: `Comisión por Renovación Crédito ${idCreditoAnteriorHist}`,
                      creditoId: nuevoCreditoRef.id,
                      poblacion: cliente.poblacion_grupo,
@@ -1141,28 +1143,27 @@ const database = {
             ...(nuevoSaldo < 0.05 ? { estado: 'liquidado' } : {})
         });
 
-        // 5. --- CORRECCIÓN COMISIÓN ---
-        // Registramos explícitamente la salida en movimientos_efectivo para la Hoja de Corte
+        // 5. --- REGISTRO DE COMISIÓN EN HOJA DE CORTE ---
+        // Aquí aseguramos que se escriba en movimientos_efectivo
         if (pagoData.comisionGenerada && pagoData.comisionGenerada > 0) {
             const movimientoRef = db.collection('movimientos_efectivo').doc();
             
             const comisionData = {
                 id: movimientoRef.id,
-                tipo: 'COMISION_PAGO', 
+                tipo: 'COMISION_PAGO', // Esto asegura que la Hoja de Corte lo lea como comisión
                 categoria: 'COMISION', 
-                monto: -Math.abs(pagoData.comisionGenerada), // Salida negativa
+                monto: -Math.abs(pagoData.comisionGenerada), // Salida negativa (Gasto para la empresa/Salida de caja)
                 descripcion: `Comisión cobro crédito ${pagoData.idCredito} (${pagoData.tipoPago})`,
                 fecha: fechaISO,
                 userId: (auth.currentUser) ? auth.currentUser.uid : 'offline_user',
                 registradoPor: emailUsuario,
                 office: officeCredito,
-                poblacion: poblacionCredito, // Importante para filtros
+                poblacion: poblacionCredito,
                 creditoIdAsociado: firestoreIdCredito,
                 pagoIdAsociado: pagosRef.id 
             };
 
             batch.set(movimientoRef, comisionData);
-            console.log("✅ Comisión agregada al batch:", comisionData);
         }
 
         // 6. Ejecutar
@@ -2679,6 +2680,7 @@ const database = {
     },
 
 };
+
 
 
 
