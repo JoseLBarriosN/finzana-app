@@ -2592,42 +2592,46 @@ async function handleSearchClientForCredit() {
 
         let mensajeInfo = "";
 
-        // --- LÓGICA DE CANDADO PARA RENOVACIÓN ---
+        // --- LÓGICA DE RENOVACIÓN ---
         if (analisis.esRenovacion) {
             let forzarRenovacion = false;
-            let montoPagoPrevio = 0;
+            let montoDeduccion = 0;
             
-            // Verificamos si hay un historial reciente (aunque esté liquidado)
-            if (analisis.datosCreditoAnterior) {
+            // Si viene la bandera triggerRenovacion (porque se liquidó con pago actualizado)
+            // O si aún está activo y cumple las semanas.
+            
+            if (analisis.triggerRenovacion && analisis.datosCreditoAnterior) {
+                 // Caso: Crédito liquidado recientemente para renovar
                  const credAnt = analisis.datosCreditoAnterior;
                  const histId = credAnt.historicalIdCredito || credAnt.id;
                  
-                 // Buscamos el último pago para ver si fue renovación
+                 // Buscamos el monto del pago gatillo
                  const pagos = await database.getPagosPorCredito(histId, credAnt.office);
                  if (pagos.length > 0) {
-                     pagos.sort((a,b) => new Date(b.fecha) - new Date(a.fecha)); // Orden descendente
+                     pagos.sort((a,b) => new Date(b.fecha) - new Date(a.fecha)); 
                      const ultimoPago = pagos[0];
-                     
-                     // Si el último pago fue de renovación, activamos el candado
                      if (ultimoPago.tipoPago === 'actualizado' || ultimoPago.tipoPago === 'renovacion') {
                          forzarRenovacion = true;
-                         montoPagoPrevio = ultimoPago.monto;
-                         mensajeInfo = `Pago de renovación detectado ($${montoPagoPrevio}). Se descontará del efectivo a entregar.`;
+                         montoDeduccion = ultimoPago.monto;
+                         mensajeInfo = `Pago de renovación detectado ($${montoDeduccion.toFixed(2)}). Se descontará del efectivo.`;
                      }
                  }
+            } else if (analisis.forzarRenovacion) {
+                 // Caso: Crédito aún activo, pero cumple las semanas
+                 // Aquí sugerimos renovación, pero no forzamos el bloqueo hasta que paguen
+                 mensajeInfo = "Cumple semanas para renovar.";
             }
 
-            // Aplicar el candado en la interfaz
-            // Llenamos el dropdown explícitamente para asegurar que 'renovacion' esté disponible
+            // Aplicar Candado
             const tiposPermitidos = [{ value: 'renovacion', text: 'Renovación' }];
             popularDropdown('tipo_colocacion', tiposPermitidos, null, true);
             tipoCreditoSelect.value = 'renovacion';
 
             if (forzarRenovacion) {
-                tipoCreditoSelect.disabled = true; // Bloqueado: Solo puede ser renovación
+                tipoCreditoSelect.disabled = true; // BLOQUEADO
                 showStatus('status_colocacion', `🔒 ${mensajeInfo}`, 'info');
             } else {
-                tipoCreditoSelect.disabled = false; // Libre
+                tipoCreditoSelect.disabled = false; 
                 showStatus('status_colocacion', `✅ Elegible para renovación.`, 'success');
             }
 
@@ -8160,4 +8164,5 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
