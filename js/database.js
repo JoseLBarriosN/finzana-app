@@ -495,7 +495,9 @@ const database = {
         }
     },
 
-    // -- ELIGIBILIDAD DE CLIENTES -- //
+    // --- 
+    // ELIGIBILIDAD DE CLIENTES  
+    // ---
     verificarElegibilidadCliente: async (curp, office) => {
         try {
             // 1. Obtener Cliente
@@ -645,7 +647,9 @@ const database = {
         }
     },
 
-    // -- ELIGIBILIDAD DE AVAL -- //
+    // --- 
+    // ELIGIBILIDAD DE AVAL  
+    // ---
     verificarElegibilidadAval: async (curpAval, office) => {
     if (!curpAval) return { elegible: false, message: "CURP de aval vacía." };
 
@@ -698,9 +702,11 @@ const database = {
         return { elegible: false, message: `Error verificando aval: ${error.message}` };
     }
 },
-
-    // --- GENERADOR DE FOLIOS SEGURO (ONLINE/OFFLINE) ---
-async _generarSiguienteFolio(office, userData) {
+    
+    // --- 
+    // GENERADOR DE FOLIOS SEGURO (ONLINE/OFFLINE) 
+    // ---
+    async _generarSiguienteFolio(office, userData) {
     const prefijo = (office === 'GDL') ? '3' : '2';
     const agenteCode = (userData.agentCode || '99').toString().padStart(2, '0');
     
@@ -766,32 +772,58 @@ async _generarSiguienteFolio(office, userData) {
     return { folio: nuevoFolio, consecutivo: nuevoConsecutivo };
 },
 
-    // --- AGREGAR CRÉDITO ---
+    // --- 
+    // AGREGAR CRÉDITO 
+    // ---                         
     async agregarCredito(creditoData, userEmail, userData) {
     try {
         const office = creditoData.office;
         
-        // --- VALIDACIONES ---
-        if (!office || (office !== 'GDL' && office !== 'LEON')) return { success: false, message: 'Oficina inválida.' };
-        if ((creditoData.tipo === 'renovacion' || creditoData.tipo === 'reingreso') && creditoData.plazo !== 14 && creditoData.plazo !== 13) return { success: false, message: 'Plazo no permitido para renovación.' };
+        // --- 1. VALIDACIONES ---
+        if (!office || (office !== 'GDL' && office !== 'LEON')) return { success: false, message: 'Error crítico: Oficina inválida.' };
+        
+        // Regla: Renovación/Reingreso solo plazos 13 o 14
+        if ((creditoData.tipo === 'renovacion' || creditoData.tipo === 'reingreso') && creditoData.plazo !== 14 && creditoData.plazo !== 13) {
+            return { success: false, message: 'Plazo no permitido para renovación.' };
+        }
 
         const cliente = await database.buscarClientePorCURP(creditoData.curpCliente, office); 
         if (!cliente) return { success: false, message: "Cliente no encontrado." };
 
-        if (creditoData.plazo === 10 && !cliente.isComisionista) return { success: false, message: "Solo comisionistas pueden 10 semanas." };
+        // Regla: 10 semanas solo comisionistas
+        if (creditoData.plazo === 10 && !cliente.isComisionista) {
+            return { success: false, message: "Solo comisionistas pueden acceder a 10 semanas." };
+        }
 
-        // --- GENERAR FOLIO ---
+        // Regla: Etiqueta "No Aumentar"
+        if (cliente.etiqueta === 'no_aumentar') {
+            const creditosPreviosSnap = await db.collection('creditos')
+                .where('curpCliente', '==', creditoData.curpCliente)
+                .where('office', '==', office)
+                .orderBy('fechaCreacion', 'desc')
+                .limit(1)
+                .get();
+            if (!creditosPreviosSnap.empty) {
+                const credPrevio = creditosPreviosSnap.docs[0].data();
+                if (parseFloat(creditoData.monto) > credPrevio.monto) {
+                    return { success: false, message: `📉 BLOQUEADO: Etiqueta 'NO AUMENTAR'. Monto solicitado mayor al anterior.` };
+                }
+            }
+        }
+
+        // --- 2. GENERACIÓN DE FOLIO ---
+        console.log("🔄 Generando folio único...");
         const datosFolio = await this._generarSiguienteFolio(office, userData);
         const nuevoFolio = datosFolio.folio;
         const nuevoConsecutivo = datosFolio.consecutivo;
         const fechaISO = database.obtenerFechaLocalISO(); 
 
-        // --- PREPARAR DATOS ---
+        // --- 3. PREPARACIÓN DE DATOS ---
         const esCreditoComisionista = (creditoData.plazo === 10 && cliente.isComisionista);
         let montoPolizaDeduccion = esCreditoComisionista ? 0 : 100;
 
         const nuevoCreditoRef = db.collection('creditos').doc();
-        const tipoCredito = creditoData.tipo; // "renovacion"
+        const tipoCredito = creditoData.tipo; 
         const esRenovacion = tipoCredito === 'renovacion';
         // Comisión $100 SOLO si es nuevo o reingreso. Si es renovación = FALSE.
         const generaComisionApertura = (tipoCredito === 'nuevo' || tipoCredito === 'reingreso');
@@ -818,12 +850,14 @@ async _generarSiguienteFolio(office, userData) {
             busqueda: [ creditoData.curpCliente.toUpperCase(), nuevoFolio ]
         };
 
-        // --- LÓGICA DE HOJA DE CORTE (RENOVACIÓN) ---
+        // --- 4. LÓGICA DE RENOVACIÓN (DETECTAR PAGO PREVIO PARA HOJA DE CORTE) ---
         let montoDeduccionRenovacion = 0; 
         let idCreditoAnteriorHist = null;
+        let creditoAnteriorRef = null;
+        let crearPagoLiquidacionAutomatico = false;
         
         if (esRenovacion) {
-            // Buscamos el último crédito (incluso si ya está liquidado)
+            // Buscamos el último crédito
             const creditosAnteriores = await db.collection('creditos')
                                             .where('curpCliente', '==', creditoData.curpCliente)
                                             .where('office', '==', office)
@@ -834,9 +868,10 @@ async _generarSiguienteFolio(office, userData) {
             if (!creditosAnteriores.empty) {
                 const oldDoc = creditosAnteriores.docs[0];
                 idCreditoAnteriorHist = oldDoc.data().historicalIdCredito || oldDoc.id;
+                creditoAnteriorRef = oldDoc.ref;
                 nuevoCreditoData.renovacionDe = idCreditoAnteriorHist;
 
-                // BUSCAMOS EL PAGO "GATILLO" QUE LIQUIDÓ
+                // A. BUSCAMOS SI YA SE HIZO EL PAGO DE RENOVACIÓN (Manual)
                 const pagosSnap = await db.collection('pagos')
                     .where('idCredito', '==', idCreditoAnteriorHist)
                     .where('office', '==', office)
@@ -844,23 +879,36 @@ async _generarSiguienteFolio(office, userData) {
                     .limit(5)
                     .get();
 
+                let pagoPrevioEncontrado = false;
+
                 if (!pagosSnap.empty) {
-                    // Buscamos si existe un pago de renovación reciente
                     const pagoTrigger = pagosSnap.docs.find(d => {
                         const p = d.data();
                         return p.tipoPago === 'actualizado' || p.tipoPago === 'renovacion';
                     });
 
                     if (pagoTrigger) {
+                        // YA PAGÓ MANUALMENTE.
+                        pagoPrevioEncontrado = true;
                         montoDeduccionRenovacion = parseFloat(pagoTrigger.data().monto);
-                        console.log(`💰 Descuento hoja de corte: $${montoDeduccionRenovacion} (Pago previo detectado)`);
+                        crearPagoLiquidacionAutomatico = false; // No duplicar pago
+                        console.log(`✅ Pago renovación previo detectado ($${montoDeduccionRenovacion}).`);
+                    }
+                }
+
+                // B. SI NO HAY PAGO PREVIO, SE COBRA DEL SALDO (Automático)
+                if (!pagoPrevioEncontrado) {
+                    const saldoPendiente = oldDoc.data().saldo !== undefined ? oldDoc.data().saldo : oldDoc.data().montoTotal;
+                    if (saldoPendiente > 0.5) {
+                        montoDeduccionRenovacion = parseFloat(saldoPendiente);
+                        crearPagoLiquidacionAutomatico = true; // Crear pago automático
                     }
                 }
             }
         }
 
-        // --- CÁLCULO DE DINERO EN MANO ---
-        // $4500 (Nuevo) - $100 (Poliza) - $1350 (Pago renovación) = $3050 entregados
+        // --- 5. CÁLCULO DE DINERO EN MANO ---
+        // Nuevo Préstamo - Póliza - (Dinero de renovación que se retiene)
         let dineroEnMano = nuevoCreditoData.monto - montoPolizaDeduccion - montoDeduccionRenovacion;
 
         // =========================================================
@@ -871,14 +919,58 @@ async _generarSiguienteFolio(office, userData) {
         // A. Guardar Nuevo Crédito
         batch.set(nuevoCreditoRef, nuevoCreditoData);
 
-        // B. Movimiento de Caja (COLOCACIÓN)
+        // B. Asegurar Liquidación del Viejo
+        if (esRenovacion && creditoAnteriorRef) {
+             batch.update(creditoAnteriorRef, {
+                 estado: 'liquidado',
+                 saldo: 0,
+                 fechaLiquidacion: fechaISO,
+                 nota: `Renovado hacia ${nuevoFolio}`
+             });
+
+             // Si el pago NO existía, lo creamos ahora (Automático)
+             if (crearPagoLiquidacionAutomatico) {
+                 const pagoRef = db.collection('pagos').doc();
+                 batch.set(pagoRef, {
+                     idCredito: idCreditoAnteriorHist,
+                     firestoreIdCredito: creditoAnteriorRef.id,
+                     monto: parseFloat(montoDeduccionRenovacion.toFixed(2)),
+                     fecha: fechaISO,
+                     tipoPago: 'renovacion', 
+                     registradoPor: userEmail,
+                     office: office,
+                     origen: 'sistema_renovacion',
+                     descripcion: `Liquidación automática renovación ${nuevoFolio}`
+                 });
+
+                 // Comisión $10 (Solo si es automático)
+                 const comisionPagoRef = db.collection('movimientos_efectivo').doc();
+                 batch.set(comisionPagoRef, {
+                     userId: auth.currentUser ? auth.currentUser.uid : 'system',
+                     fecha: fechaISO,
+                     tipo: 'COMISION_PAGO', 
+                     categoria: 'COMISION',
+                     monto: -10, // Salida fija de $10
+                     descripcion: `Comisión por Renovación Crédito ${idCreditoAnteriorHist}`,
+                     creditoId: nuevoCreditoRef.id,
+                     poblacion: cliente.poblacion_grupo,
+                     registradoPor: userEmail,
+                     office: office
+                 });
+             }
+        }
+
+        // C. MOVIMIENTO DE CAJA (HOJA DE CORTE - COLOCACIÓN)
+        // Aquí es donde ajustamos el texto para que se vea claro y NO diga "Rollover"
         const movimientoRef = db.collection('movimientos_efectivo').doc();
         let descCaja = `Colocación ${tipoCredito.toUpperCase()} ${nuevoFolio}.`;
         
+        // DESGLOSE CLARO EN EL TEXTO
         if (montoDeduccionRenovacion > 0) {
-            descCaja += ` (Monto: $${nuevoCreditoData.monto} - Rollover: $${montoDeduccionRenovacion} - Póliza: $${montoPolizaDeduccion})`;
+            // Ejemplo: (Nominal: $4500 - Pago Renovación Cr. 1234: $1350 - Póliza: $100)
+            descCaja += ` (Nominal: $${nuevoCreditoData.monto} - Pago Renovación Cr. ${idCreditoAnteriorHist || 'Ant.'}: $${montoDeduccionRenovacion} - Póliza: $${montoPolizaDeduccion})`;
         } else {
-            descCaja += ` (Monto: $${nuevoCreditoData.monto} - Póliza: $${montoPolizaDeduccion})`;
+            descCaja += ` (Nominal: $${nuevoCreditoData.monto} - Póliza: $${montoPolizaDeduccion})`;
         }
 
         batch.set(movimientoRef, {
@@ -886,7 +978,9 @@ async _generarSiguienteFolio(office, userData) {
             fecha: fechaISO,
             tipo: 'COLOCACION',
             categoria: 'COLOCACION',
-            monto: -Math.abs(dineroEnMano), // Salida Neta ($3050 en el ejemplo)
+            // El monto es NEGATIVO porque es dinero que sale de caja
+            // Pero solo sale lo que realmente se entrega en mano ($3050 en tu ejemplo)
+            monto: -Math.abs(dineroEnMano), 
             descripcion: descCaja,
             creditoId: nuevoCreditoRef.id,
             poblacion: cliente.poblacion_grupo,
@@ -894,7 +988,7 @@ async _generarSiguienteFolio(office, userData) {
             office: office
         });
 
-        // C. Ingreso Póliza
+        // D. Ingreso Póliza
         if (montoPolizaDeduccion > 0) {
             const polizaRef = db.collection('movimientos_efectivo').doc();
             batch.set(polizaRef, {
@@ -911,8 +1005,9 @@ async _generarSiguienteFolio(office, userData) {
             });
         }
 
-        // D. Comisión Apertura (SOLO SI generaComisionApertura es TRUE)
-        // En renovación, generaComisionApertura es FALSE, así que esto se salta.
+        // E. Comisión Apertura
+        // IMPORTANTE: Si es RENOVACIÓN, generaComisionApertura es FALSE.
+        // Por lo tanto, no se genera comisión de $100, solo los $10 del pago (si fue hoy).
         if (!esCreditoComisionista && generaComisionApertura) {
             const comisionRef = db.collection('movimientos_efectivo').doc();
             batch.set(comisionRef, {
@@ -946,7 +1041,9 @@ async _generarSiguienteFolio(office, userData) {
     }
 },
 
-    // --- METODO DE PAGOS ---
+    // --- 
+    // METODO DE PAGOS 
+    // ---  
     getPagosPorCredito: async (historicalIdCredito, office) => {
         try {
             if (!office || (office !== 'GDL' && office !== 'LEON')) {
@@ -976,7 +1073,9 @@ async _generarSiguienteFolio(office, userData) {
         }
     },
 
-   // --- REGISTRAR PAGO (CON VÍNCULO A COMISIÓN) ---
+    // --- 
+    // REGISTRAR PAGO (CON VÍNCULO A COMISIÓN)
+    // ---
     async agregarPago(pagoData, emailUsuario, firestoreIdCredito) {
     try {
         const creditoRef = db.collection('creditos').doc(firestoreIdCredito);
@@ -1080,7 +1179,9 @@ async _generarSiguienteFolio(office, userData) {
     }
 },
 
-    // --- IMPORTACIÓN MASIVA (CORREGIDO) ---
+    // --- 
+    // IMPORTACIÓN MASIVA (CORREGIDO)
+    // ---
     importarDatosDesdeCSV: async (csvData, tipo, office) => {
         const lineas = csvData.split('\n').filter(linea => linea.trim().length > 0);
         if (lineas.length === 0) return { success: true, total: 0, importados: 0, errores: [] };
@@ -1312,7 +1413,9 @@ async _generarSiguienteFolio(office, userData) {
         }
     },
 
-    // --- FUNCIONES DE REPORTES Y MANTENIMIENTO ---
+    // --- 
+    // FUNCIONES DE REPORTES Y MANTENIMIENTO 
+    // ---
     generarReportes: async (userOffice = null) => {
         try {
             // 1. Preparar consultas base
@@ -1422,7 +1525,9 @@ async _generarSiguienteFolio(office, userData) {
         }
     },
 
-    // -- GENERACION DE REPORTES AVANZADOS ---
+    // --- 
+    // GENERACION DE REPORTES AVANZADOS
+    // ---
     generarReporteAvanzado: async (filtros) => {
         if (filtros.userOffice && filtros.userOffice !== 'AMBAS') filtros.office = filtros.userOffice;
         console.log("Generando reporte avanzado con filtros:", filtros);
@@ -1544,7 +1649,9 @@ async _generarSiguienteFolio(office, userData) {
         }
     },
 
-    // --- OBTENER DATOS PARA GRAFICOS ---
+    // --- 
+    // OBTENER DATOS PARA GRAFICOS 
+    // ---
     obtenerDatosParaGraficos: async (filtros) => {
         try { 
             if (filtros.userOffice && filtros.userOffice !== 'AMBAS') filtros.office = filtros.userOffice;
@@ -2556,6 +2663,7 @@ async _generarSiguienteFolio(office, userData) {
     },
 
 };
+
 
 
 
