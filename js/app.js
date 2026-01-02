@@ -2568,89 +2568,89 @@ async function handleSearchClientForCredit() {
     }
 
     showButtonLoading(btnBuscar, true, 'Buscando...');
-    statusColocacion.innerHTML = 'Consultando historial y elegibilidad...';
+    statusColocacion.innerHTML = 'Consultando historial...';
     statusColocacion.className = 'status-message status-info';
     formColocacion.classList.add('hidden');
 
     try {
-        // 1. Buscar Cliente
         const cliente = await database.buscarClientePorCURP(curp, currentUserData?.office);
-        if (!cliente) {
-            throw new Error('CURP no registrada. Debes registrar al cliente primero.');
-        }
+        if (!cliente) throw new Error('CURP no registrada. Debes registrar al cliente primero.');
+        
         clienteParaCredito = cliente;
-
-        // 2. VERIFICACIÓN DE REGLAS
+        
         const analisis = await database.verificarElegibilidadCliente(curp, currentUserData?.office);
 
         if (analisis.elegible === false) {
             throw new Error(analisis.mensaje);
         }
 
-        // 3. Configuración Exitosa
         const plazoSelect = document.getElementById('plazo_colocacion');
         const tipoCreditoSelect = document.getElementById('tipo_colocacion');
 
         actualizarPlazosSegunCliente(cliente.isComisionista || false, analisis.esRenovacion);
-        
         plazoSelect.disabled = false;
 
-        // --- LÓGICA DE CANDADOS Y TIPOS ---
-        
+        let mensajeInfo = "";
+
+        // --- LÓGICA DE CANDADO PARA RENOVACIÓN ---
         if (analisis.esRenovacion) {
-            // Caso Renovación
             let forzarRenovacion = false;
+            let montoPagoPrevio = 0;
             
-            // Verificamos si el último pago fue marcado como 'actualizado' o 'renovacion'
+            // Verificamos si hay un historial reciente (aunque esté liquidado)
             if (analisis.datosCreditoAnterior) {
                  const credAnt = analisis.datosCreditoAnterior;
                  const histId = credAnt.historicalIdCredito || credAnt.id;
-                 const pagos = await database.getPagosPorCredito(histId, credAnt.office);
                  
+                 // Buscamos el último pago para ver si fue renovación
+                 const pagos = await database.getPagosPorCredito(histId, credAnt.office);
                  if (pagos.length > 0) {
-                     // Ordenar por fecha descendente
-                     pagos.sort((a,b) => new Date(b.fecha) - new Date(a.fecha));
+                     pagos.sort((a,b) => new Date(b.fecha) - new Date(a.fecha)); // Orden descendente
                      const ultimoPago = pagos[0];
                      
+                     // Si el último pago fue de renovación, activamos el candado
                      if (ultimoPago.tipoPago === 'actualizado' || ultimoPago.tipoPago === 'renovacion') {
                          forzarRenovacion = true;
+                         montoPagoPrevio = ultimoPago.monto;
+                         mensajeInfo = `Pago de renovación detectado ($${montoPagoPrevio}). Se descontará del efectivo a entregar.`;
                      }
                  }
             }
 
+            // Aplicar el candado en la interfaz
+            // Llenamos el dropdown explícitamente para asegurar que 'renovacion' esté disponible
+            const tiposPermitidos = [{ value: 'renovacion', text: 'Renovación' }];
+            popularDropdown('tipo_colocacion', tiposPermitidos, null, true);
+            tipoCreditoSelect.value = 'renovacion';
+
             if (forzarRenovacion) {
-                tipoCreditoSelect.value = 'renovacion';
-                tipoCreditoSelect.disabled = true; // CANDADO ACTIVADO
-                showStatus('status_colocacion', `🔒 RENOVACIÓN OBLIGATORIA (Último pago marcado).`, 'info');
+                tipoCreditoSelect.disabled = true; // Bloqueado: Solo puede ser renovación
+                showStatus('status_colocacion', `🔒 ${mensajeInfo}`, 'info');
             } else {
-                tipoCreditoSelect.value = 'renovacion';
-                tipoCreditoSelect.disabled = false;
-                if (analisis.datosCreditoAnterior && analisis.datosCreditoAnterior.saldo > 0) {
-                    showStatus('status_colocacion', `✅ Elegible para renovación (Saldo pendiente: $${analisis.datosCreditoAnterior.saldo})`, 'success');
-                } else {
-                    showStatus('status_colocacion', `✅ Elegible para renovación.`, 'success');
-                }
+                tipoCreditoSelect.disabled = false; // Libre
+                showStatus('status_colocacion', `✅ Elegible para renovación.`, 'success');
             }
 
         } else if (analisis.esReingreso) {
-            // Caso Reingreso (Ya tuvo créditos, no debe nada)
+            const tiposPermitidos = [{ value: 'reingreso', text: 'Reingreso' }];
+            popularDropdown('tipo_colocacion', tiposPermitidos, null, true);
             tipoCreditoSelect.value = 'reingreso';
             tipoCreditoSelect.disabled = false;
-            showStatus('status_colocacion', `✅ Cliente REINGRESO (Historial limpio).`, 'success');
+            showStatus('status_colocacion', `✅ Cliente REINGRESO.`, 'success');
         
         } else {
-            // Caso Nuevo
+            const tiposPermitidos = [{ value: 'nuevo', text: 'Nuevo' }];
+            popularDropdown('tipo_colocacion', tiposPermitidos, null, true);
             tipoCreditoSelect.value = 'nuevo';
             tipoCreditoSelect.disabled = false; 
-            showStatus('status_colocacion', '✅ Cliente elegible para crédito NUEVO.', 'success');
+            showStatus('status_colocacion', '✅ Cliente NUEVO.', 'success');
         }
 
         // Llenar campos
         document.getElementById('nombre_colocacion').value = cliente.nombre;
-        document.getElementById('idCredito_colocacion').value = 'Se asignará automáticamente';
+        document.getElementById('idCredito_colocacion').value = 'Automático';
         document.getElementById('monto_colocacion').value = '';
         document.getElementById('montoTotal_colocacion').value = '';
-        
         document.getElementById('curpAval_colocacion').value = '';
         document.getElementById('nombreAval_colocacion').value = '';
         
@@ -8160,3 +8160,4 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
