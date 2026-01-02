@@ -495,6 +495,7 @@ const database = {
         }
     },
 
+    // -- ELIGIBILIDAD DE CLIENTES -- //
     verificarElegibilidadCliente: async (curp, office) => {
         try {
             // 1. Obtener Cliente
@@ -644,6 +645,7 @@ const database = {
         }
     },
 
+    // -- ELIGIBILIDAD DE AVAL -- //
     verificarElegibilidadAval: async (curpAval, office) => {
     if (!curpAval) return { elegible: false, message: "CURP de aval vacía." };
 
@@ -2554,6 +2556,7 @@ async _generarSiguienteFolio(office, userData) {
     },
 
 };
+
 
 
 
