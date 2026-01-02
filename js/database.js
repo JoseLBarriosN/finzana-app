@@ -818,7 +818,7 @@ const database = {
     try {
         const office = creditoData.office;
         
-        // Validaciones
+        // --- VALIDACIONES ---
         if (!office || (office !== 'GDL' && office !== 'LEON')) return { success: false, message: 'Oficina inválida.' };
         if ((creditoData.tipo === 'renovacion' || creditoData.tipo === 'reingreso') && creditoData.plazo !== 14 && creditoData.plazo !== 13) return { success: false, message: 'Plazo no permitido.' };
 
@@ -827,20 +827,20 @@ const database = {
 
         if (creditoData.plazo === 10 && !cliente.isComisionista) return { success: false, message: "Solo comisionistas 10 semanas." };
 
-        // Folio
+        // --- FOLIO ---
         const datosFolio = await this._generarSiguienteFolio(office, userData);
         const nuevoFolio = datosFolio.folio;
         const nuevoConsecutivo = datosFolio.consecutivo;
         const fechaISO = database.obtenerFechaLocalISO(); 
 
-        // Datos
+        // --- DATOS ---
         const esCreditoComisionista = (creditoData.plazo === 10 && cliente.isComisionista);
-        let montoPolizaDeduccion = esCreditoComisionista ? 0 : 100;
+        let montoPolizaDeduccion = esCreditoComisionista ? 0 : 100; // Regla Póliza Intacta
 
         const nuevoCreditoRef = db.collection('creditos').doc();
         const tipoCredito = creditoData.tipo; 
         const esRenovacion = tipoCredito === 'renovacion';
-        const generaComisionApertura = (tipoCredito === 'nuevo' || tipoCredito === 'reingreso');
+        const generaComisionApertura = (tipoCredito === 'nuevo' || tipoCredito === 'reingreso'); // Regla Comisión Apertura Intacta
 
         let nuevoCreditoData = {
             monto: parseFloat(creditoData.monto), 
@@ -868,7 +868,7 @@ const database = {
         let montoReferenciaRenovacion = 0; 
         let idCreditoAnteriorHist = null;
         let creditoAnteriorRef = null;
-        let crearPagoLiquidacionAutomatico = false; // Solo si NO existe pago previo
+        let crearPagoLiquidacionAutomatico = false; 
         let pagoPrevioEncontrado = false; 
         
         if (esRenovacion) {
@@ -897,13 +897,13 @@ const database = {
                         return p.tipoPago === 'actualizado' || p.tipoPago === 'renovacion';
                     });
                     if (pagoTrigger) {
-                        pagoPrevioEncontrado = true; 
+                        pagoPrevioEncontrado = true; // YA EXISTE EL PAGO
                         montoReferenciaRenovacion = parseFloat(pagoTrigger.data().monto);
                         crearPagoLiquidacionAutomatico = false; 
                     }
                 }
 
-                // 2. Si no hay pago, liquidar automático
+                // 2. Si no ha pagado, liquidar automático
                 if (!pagoPrevioEncontrado) {
                     const saldoPendiente = oldDoc.data().saldo !== undefined ? oldDoc.data().saldo : oldDoc.data().montoTotal;
                     if (saldoPendiente > 0.5) {
@@ -915,21 +915,22 @@ const database = {
         }
 
         // =========================================================
-        // TRANSACCIONES
+        // TRANSACCIONES (BATCH)
         // =========================================================
         const batch = db.batch();
 
         // A. Guardar Nuevo Crédito
         batch.set(nuevoCreditoRef, nuevoCreditoData);
 
-        // B. Movimiento SALIDA TOTAL (COLOCACIÓN)
-        // Registramos la salida completa del nuevo crédito (-4500)
+        // B. MOVIMIENTOS DE CAJA (CORREGIDO PARA NO DUPLICAR)
+        
+        // 1. SALIDA TOTAL DEL CRÉDITO
         const movSalidaRef = db.collection('movimientos_efectivo').doc();
         let descCaja = `Colocación ${tipoCredito.toUpperCase()} ${nuevoFolio}`;
         
-        // Agregar nota visual si es renovación, para referencia
+        // Nota visual solamente, no afecta el monto
         if (montoReferenciaRenovacion > 0) {
-            descCaja += ` (Renovación Cr. ${idCreditoAnteriorHist}: $${montoReferenciaRenovacion})`;
+            descCaja += ` (Con Renovación Cr. ${idCreditoAnteriorHist})`;
         }
 
         batch.set(movSalidaRef, {
@@ -937,7 +938,7 @@ const database = {
             fecha: fechaISO,
             tipo: 'COLOCACION',
             categoria: 'COLOCACION',
-            monto: -Math.abs(nuevoCreditoData.monto), // Salida Total (-4500)
+            monto: -Math.abs(nuevoCreditoData.monto), // Sale el total (-4500)
             descripcion: descCaja,
             creditoId: nuevoCreditoRef.id,
             poblacion: cliente.poblacion_grupo,
@@ -945,9 +946,9 @@ const database = {
             office: office
         });
 
-        // C. Movimiento ENTRADA (SOLO SI ES AUTOMÁTICO)
-        // Si el pago fue manual, el dinero YA entró en 'agregarPago'. NO lo duplicamos aquí.
-        // Si es automático, generamos la entrada virtual (+1350).
+        // 2. ENTRADA POR RENOVACIÓN (¡SOLO SI ES AUTOMÁTICA!)
+        // Si el pago fue manual (pagoPrevioEncontrado = true), el dinero YA entró en 'agregarPago'.
+        // Aquí evitamos duplicar la entrada.
         if (montoReferenciaRenovacion > 0 && crearPagoLiquidacionAutomatico) {
             const movEntradaRef = db.collection('movimientos_efectivo').doc();
             batch.set(movEntradaRef, {
@@ -964,7 +965,7 @@ const database = {
             });
         }
 
-        // D. Ingreso Póliza
+        // 3. Ingreso Póliza (Regla intacta)
         if (montoPolizaDeduccion > 0) {
             const polizaRef = db.collection('movimientos_efectivo').doc();
             batch.set(polizaRef, {
@@ -981,7 +982,7 @@ const database = {
             });
         }
 
-        // E. Liquidar Viejo
+        // C. Liquidar Viejo (Si es renovación)
         if (esRenovacion && creditoAnteriorRef) {
              batch.update(creditoAnteriorRef, {
                  estado: 'liquidado',
@@ -990,7 +991,7 @@ const database = {
                  nota: `Renovado hacia ${nuevoFolio}`
              });
 
-             // Si es automático, creamos pago y comisión
+             // Si es automático, creamos pago y comisión de $10
              if (crearPagoLiquidacionAutomatico) {
                  const pagoRef = db.collection('pagos').doc();
                  batch.set(pagoRef, {
@@ -1011,7 +1012,7 @@ const database = {
                      fecha: fechaISO,
                      tipo: 'COMISION_PAGO', 
                      categoria: 'COMISION',
-                     monto: -10, 
+                     monto: -10, // Salida $10
                      descripcion: `Comisión Renovación Cr. ${idCreditoAnteriorHist}`,
                      creditoId: nuevoCreditoRef.id,
                      poblacion: cliente.poblacion_grupo,
@@ -1021,7 +1022,7 @@ const database = {
              }
         }
 
-        // F. Comisión Apertura (SOLO NUEVO/REINGRESO)
+        // D. Comisión Apertura (Regla Intacta: SOLO NUEVO/REINGRESO)
         if (!esCreditoComisionista && generaComisionApertura) {
             const comisionRef = db.collection('movimientos_efectivo').doc();
             batch.set(comisionRef, {
@@ -1090,7 +1091,7 @@ const database = {
         const pagosRef = db.collection('pagos').doc();
         const batch = db.batch();
 
-        // 1. Obtener datos
+        // 1. Obtener datos actuales
         let doc;
         try {
             doc = await creditoRef.get();
@@ -1109,7 +1110,7 @@ const database = {
             ? new Date(pagoData.fechaPersonalizada).toISOString() 
             : database.obtenerFechaLocalISO();
 
-        // 2. Preparar Pago
+        // 2. Preparar Objeto Pago
         const nuevoPago = {
             id: pagosRef.id,
             idCredito: pagoData.idCredito, 
@@ -1125,7 +1126,6 @@ const database = {
 
         const nuevoSaldo = parseFloat((saldoActual - nuevoPago.monto).toFixed(2));
 
-        // 3. Batch principal
         batch.set(pagosRef, nuevoPago);
         batch.update(creditoRef, {
             saldo: nuevoSaldo,
@@ -1133,14 +1133,14 @@ const database = {
             ...(nuevoSaldo < 0.05 ? { estado: 'liquidado' } : {})
         });
 
-        // 4. MOVIMIENTO DE ENTRADA (DINERO ENTRANTE)
-        // Esto es lo que suma en la caja
+        // 3. REGISTRAR ENTRADA DE DINERO EN CAJA (COBRANZA)
+        // Esto asegura que el dinero del pago aparezca como entrada en la hoja de corte
         const movIngresoRef = db.collection('movimientos_efectivo').doc();
         batch.set(movIngresoRef, {
             id: movIngresoRef.id,
             tipo: 'COBRANZA', 
-            categoria: 'COBRANZA',
-            monto: Math.abs(nuevoPago.monto), // Positivo
+            categoria: 'COBRANZA', 
+            monto: Math.abs(parseFloat(pagoData.monto)), 
             descripcion: `Cobro ${nuevoPago.tipoPago.toUpperCase()} Crédito ${pagoData.idCredito}`,
             fecha: fechaISO,
             userId: (auth.currentUser) ? auth.currentUser.uid : 'offline_user',
@@ -1151,17 +1151,17 @@ const database = {
             pagoIdAsociado: pagosRef.id 
         });
 
-        // 5. MOVIMIENTO DE COMISIÓN (DINERO SALIENTE)
-        // Forzamos conversión a float para asegurar que entre al IF
-        const comisionVal = parseFloat(pagoData.comisionGenerada);
+        // 4. REGISTRAR COMISIÓN EN CAJA (SALIDA)
+        // CORRECCIÓN: Convertimos a número para asegurar que no falle la validación
+        const comisionVal = Number(pagoData.comisionGenerada);
         
-        if (!isNaN(comisionVal) && comisionVal > 0) {
+        if (comisionVal > 0) {
             const movComisionRef = db.collection('movimientos_efectivo').doc();
             batch.set(movComisionRef, {
                 id: movComisionRef.id,
                 tipo: 'COMISION_PAGO', 
                 categoria: 'COMISION', 
-                monto: -Math.abs(comisionVal), // Negativo (Salida)
+                monto: -Math.abs(comisionVal), // Negativo porque es salida (pago al agente)
                 descripcion: `Comisión pago ${pagoData.tipoPago} - Crédito ${pagoData.idCredito}`,
                 fecha: fechaISO,
                 userId: (auth.currentUser) ? auth.currentUser.uid : 'offline_user',
@@ -2672,6 +2672,7 @@ const database = {
     },
 
 };
+
 
 
 
