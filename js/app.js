@@ -2936,27 +2936,31 @@ async function handlePaymentForm(e) {
     let fechaPersonalizada = null;
     const inputFechaManual = document.getElementById('fecha_cobranza_manual');
     
+    // Solo si el input es visible y el usuario NO es comercial
     if (currentUserData.role !== 'Área comercial' && inputFechaManual && inputFechaManual.value) {
         fechaPersonalizada = inputFechaManual.value + 'T12:00:00';
     }
 
-    // --- CÁLCULO DE COMISIÓN ---
+    // --- CÁLCULO DE COMISIÓN (CORREGIDO PARA RENOVACIÓN) ---
     let comision = 0;
     const plazo = creditoActual.plazo || 14;
     const estadoInput = document.getElementById('estado_cobranza'); 
     const estadoActual = estadoInput ? estadoInput.value.toLowerCase() : (creditoActual.estado || 'al corriente');
 
-    if (plazo !== 10) { 
-        // Permitimos comisión en estos estados
+    // Solo calculamos si NO es plazo comisionista (10 semanas)
+    // A MENOS que sea renovación, que por regla general siempre paga $10 al agente.
+    if (plazo !== 10 || tipoPago === 'actualizado' || tipoPago === 'renovacion') { 
+        
+        // Verificamos estados válidos
         if (estadoActual === 'al corriente' || estadoActual === 'liquidado' || estadoActual === 'adelantado' || estadoActual === 'actualizado') {
             
             // CASO 1: RENOVACIÓN / ACTUALIZADO
-            // Ajuste: Comisión fija de $10, sin importar si cubre la semana matemática
+            // Regla: Comisión FIJA de $10, sin calcular semanas matemáticas.
             if (tipoPago === 'actualizado' || tipoPago === 'renovacion') {
                  comision = 10;
             }
-            // CASO 2: NORMAL / ADELANTO
-            else if (tipoPago === 'normal' || tipoPago === 'adelanto') {
+            // CASO 2: NORMAL / ADELANTO (Solo si NO es comisionista de 10 sem)
+            else if ((tipoPago === 'normal' || tipoPago === 'adelanto') && plazo !== 10) {
                 const pagoSemanal = creditoActual.montoTotal / creditoActual.plazo;
                 if (pagoSemanal > 0) {
                     const pagosCompletos = Math.floor((montoPago + 0.1) / pagoSemanal);
@@ -2977,12 +2981,11 @@ async function handlePaymentForm(e) {
             idCredito: historicalId,
             monto: montoPago,
             tipoPago: tipoPago,
-            comisionGenerada: comision, // Enviamos el valor calculado
+            comisionGenerada: comision, // Aquí ahora irá el 10 seguro
             origen: 'manual',
             fechaPersonalizada: fechaPersonalizada 
         };
 
-        // Llamada a la base de datos
         const resultado = await database.agregarPago(pagoData, currentUser.email, creditoActual.id);
 
         if (resultado.success) {
@@ -8157,6 +8160,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
