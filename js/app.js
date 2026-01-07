@@ -2932,44 +2932,39 @@ async function handlePaymentForm(e) {
         montoInput.classList.remove('input-error');
     }
 
-    // --- CAPTURA DE FECHA MANUAL (NUEVO) ---
+    // --- CAPTURA DE FECHA MANUAL ---
     let fechaPersonalizada = null;
     const inputFechaManual = document.getElementById('fecha_cobranza_manual');
     
-    // Solo si el input es visible y el usuario NO es comercial
     if (currentUserData.role !== 'Área comercial' && inputFechaManual && inputFechaManual.value) {
-        // Le agregamos la hora T12:00:00 para evitar problemas de zona horaria (UTC vs Local)
         fechaPersonalizada = inputFechaManual.value + 'T12:00:00';
     }
-    // ---------------------------------------
 
-    // --- REGLAS DE COMISIÓN (Tus reglas vigentes) ---
+    // --- CÁLCULO DE COMISIÓN ---
     let comision = 0;
     const plazo = creditoActual.plazo || 14;
     const estadoInput = document.getElementById('estado_cobranza'); 
     const estadoActual = estadoInput ? estadoInput.value.toLowerCase() : (creditoActual.estado || 'al corriente');
 
     if (plazo !== 10) { 
-        if (estadoActual === 'al corriente' || estadoActual === 'liquidado' || estadoActual === 'adelantado') {
+        // Permitimos comisión en estos estados
+        if (estadoActual === 'al corriente' || estadoActual === 'liquidado' || estadoActual === 'adelantado' || estadoActual === 'actualizado') {
             
-            if (tipoPago === 'normal' || tipoPago === 'adelanto') {
+            // CASO 1: RENOVACIÓN / ACTUALIZADO
+            // Ajuste: Comisión fija de $10, sin importar si cubre la semana matemática
+            if (tipoPago === 'actualizado' || tipoPago === 'renovacion') {
+                 comision = 10;
+            }
+            // CASO 2: NORMAL / ADELANTO
+            else if (tipoPago === 'normal' || tipoPago === 'adelanto') {
                 const pagoSemanal = creditoActual.montoTotal / creditoActual.plazo;
                 if (pagoSemanal > 0) {
                     const pagosCompletos = Math.floor((montoPago + 0.1) / pagoSemanal);
                     comision = pagosCompletos * 10;
                 }
             } 
-            else if (tipoPago === 'actualizado') {
-                const pagoSemanal = creditoActual.montoTotal / creditoActual.plazo;
-                if (pagoSemanal > 0 && montoPago >= (pagoSemanal - 0.9)) {
-                    comision = 10;
-                } else {
-                    comision = 0;
-                }
-            }
-        } else {
-            comision = 0; // Bloqueo por estatus
-        }
+            // Otros tipos (Extraordinario, Bancario) se quedan en 0
+        } 
     }
 
     showButtonLoading(submitButton, true, 'Registrando...');
@@ -2982,12 +2977,12 @@ async function handlePaymentForm(e) {
             idCredito: historicalId,
             monto: montoPago,
             tipoPago: tipoPago,
-            comisionGenerada: comision, 
+            comisionGenerada: comision, // Enviamos el valor calculado
             origen: 'manual',
-            // Enviamos la fecha personalizada (puede ser null, la DB lo manejará)
             fechaPersonalizada: fechaPersonalizada 
         };
 
+        // Llamada a la base de datos
         const resultado = await database.agregarPago(pagoData, currentUser.email, creditoActual.id);
 
         if (resultado.success) {
@@ -8162,6 +8157,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
