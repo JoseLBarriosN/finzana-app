@@ -2941,35 +2941,35 @@ async function handlePaymentForm(e) {
         fechaPersonalizada = inputFechaManual.value + 'T12:00:00';
     }
 
-    // --- CÁLCULO DE COMISIÓN (CORREGIDO PARA RENOVACIÓN) ---
+    // --- CÁLCULO DE COMISIÓN (LÓGICA CORREGIDA Y JERARQUIZADA) ---
     let comision = 0;
     const plazo = creditoActual.plazo || 14;
     const estadoInput = document.getElementById('estado_cobranza'); 
     const estadoActual = estadoInput ? estadoInput.value.toLowerCase() : (creditoActual.estado || 'al corriente');
 
-    // Solo calculamos si NO es plazo comisionista (10 semanas)
-    // A MENOS que sea renovación, que por regla general siempre paga $10 al agente.
-    if (plazo !== 10 || tipoPago === 'actualizado' || tipoPago === 'renovacion') { 
+    // 1. PRIORIDAD MÁXIMA: PAGO DE RENOVACIÓN / ACTUALIZADO
+    // Si es renovación, la comisión es $10 SIEMPRE (incluso si está atrasado o es comisionista).
+    if (tipoPago === 'actualizado' || tipoPago === 'renovacion') {
+         comision = 10;
+    }
+    // 2. PRIORIDAD MEDIA: PAGOS NORMALES / ADELANTOS
+    // Solo si NO es plazo 10 semanas (Comisionistas no generan por pagos normales)
+    else if (plazo !== 10) { 
         
-        // Verificamos estados válidos
-        if (estadoActual === 'al corriente' || estadoActual === 'liquidado' || estadoActual === 'adelantado' || estadoActual === 'actualizado') {
+        // Solo generan comisión si tienen "buen estatus"
+        if (estadoActual === 'al corriente' || estadoActual === 'liquidado' || estadoActual === 'adelantado') {
             
-            // CASO 1: RENOVACIÓN / ACTUALIZADO
-            // Regla: Comisión FIJA de $10, sin calcular semanas matemáticas.
-            if (tipoPago === 'actualizado' || tipoPago === 'renovacion') {
-                 comision = 10;
-            }
-            // CASO 2: NORMAL / ADELANTO (Solo si NO es comisionista de 10 sem)
-            else if ((tipoPago === 'normal' || tipoPago === 'adelanto') && plazo !== 10) {
+            if (tipoPago === 'normal' || tipoPago === 'adelanto') {
                 const pagoSemanal = creditoActual.montoTotal / creditoActual.plazo;
                 if (pagoSemanal > 0) {
                     const pagosCompletos = Math.floor((montoPago + 0.1) / pagoSemanal);
                     comision = pagosCompletos * 10;
                 }
-            } 
-            // Otros tipos (Extraordinario, Bancario) se quedan en 0
+            }
         } 
     }
+    // 3. PRIORIDAD BAJA: BANCARIOS O EXTRAORDINARIOS
+    // Se quedan en 0 por defecto.
 
     showButtonLoading(submitButton, true, 'Registrando...');
     showFixedProgress(50, 'Procesando pago...');
@@ -2981,7 +2981,7 @@ async function handlePaymentForm(e) {
             idCredito: historicalId,
             monto: montoPago,
             tipoPago: tipoPago,
-            comisionGenerada: comision, // Aquí ahora irá el 10 seguro
+            comisionGenerada: comision, // Enviamos el valor (10 o lo que corresponda)
             origen: 'manual',
             fechaPersonalizada: fechaPersonalizada 
         };
@@ -8160,6 +8160,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
