@@ -2914,40 +2914,46 @@ async function handlePaymentForm(e) {
     let fechaPersonalizada = null;
     const inputFechaManual = document.getElementById('fecha_cobranza_manual');
     
-    // Solo si el input es visible y el usuario NO es comercial
+    // Permitir a Admins/Gerencia poner fecha manual
     if (currentUserData.role !== 'Área comercial' && inputFechaManual && inputFechaManual.value) {
         fechaPersonalizada = inputFechaManual.value + 'T12:00:00';
     }
 
-    // --- CÁLCULO DE COMISIÓN (LÓGICA CORREGIDA Y JERARQUIZADA) ---
+    // ============================================================
+    // --- LÓGICA DE COMISIÓN (CON BYPASS PARA ADMINS) ---
+    // ============================================================
     let comision = 0;
-    const plazo = creditoActual.plazo || 14;
-    const estadoInput = document.getElementById('estado_cobranza'); 
-    const estadoActual = estadoInput ? estadoInput.value.toLowerCase() : (creditoActual.estado || 'al corriente');
-
-    // 1. PRIORIDAD MÁXIMA: PAGO DE RENOVACIÓN / ACTUALIZADO
-    // Si es renovación, la comisión es $10 SIEMPRE (incluso si está atrasado o es comisionista).
+    
+    // 1. REGLA SUPREMA: RENOVACIÓN = $10 SIEMPRE
     if (tipoPago === 'actualizado' || tipoPago === 'renovacion') {
          comision = 10;
     }
-    // 2. PRIORIDAD MEDIA: PAGOS NORMALES / ADELANTOS
-    // Solo si NO es plazo 10 semanas (Comisionistas no generan por pagos normales)
-    else if (plazo !== 10) { 
-        
-        // Solo generan comisión si tienen "buen estatus"
-        if (estadoActual === 'al corriente' || estadoActual === 'liquidado' || estadoActual === 'adelantado') {
+    // 2. REGLA PAGOS NORMALES/ADELANTOS
+    else if (tipoPago === 'normal' || tipoPago === 'adelanto') {
+        const plazo = creditoActual.plazo || 14;
+
+        // Comisionistas (10 semanas) nunca generan comisión por pago normal
+        if (plazo !== 10) { 
             
-            if (tipoPago === 'normal' || tipoPago === 'adelanto') {
+            const estadoInput = document.getElementById('estado_cobranza'); 
+            const estadoActual = estadoInput ? estadoInput.value.toLowerCase() : (creditoActual.estado || 'al corriente');
+            
+            // --- DETECCIÓN DE PERMISOS ---
+            const esAdmin = ['Super Admin', 'Gerencia', 'Administrador'].includes(currentUserData.role);
+            const estatusValido = (estadoActual === 'al corriente' || estadoActual === 'liquidado' || estadoActual === 'adelantado' || estadoActual === 'actualizado');
+
+            // CONDICIÓN: Generar comisión si el estatus es bueno O SI ES ADMIN (Bypass de estatus)
+            // Esto permite a los admins registrar pagos viejos y generar la comisión que correspondía en ese momento.
+            if (esAdmin || estatusValido) {
                 const pagoSemanal = creditoActual.montoTotal / creditoActual.plazo;
                 if (pagoSemanal > 0) {
                     const pagosCompletos = Math.floor((montoPago + 0.1) / pagoSemanal);
                     comision = pagosCompletos * 10;
                 }
             }
-        } 
+        }
     }
-    // 3. PRIORIDAD BAJA: BANCARIOS O EXTRAORDINARIOS
-    // Se quedan en 0 por defecto.
+    // ============================================================
 
     showButtonLoading(submitButton, true, 'Registrando...');
     showFixedProgress(50, 'Procesando pago...');
@@ -2959,7 +2965,7 @@ async function handlePaymentForm(e) {
             idCredito: historicalId,
             monto: montoPago,
             tipoPago: tipoPago,
-            comisionGenerada: comision, // Enviamos el valor (10 o lo que corresponda)
+            comisionGenerada: comision, // Valor calculado (10, math, o 0)
             origen: 'manual',
             fechaPersonalizada: fechaPersonalizada 
         };
@@ -8138,6 +8144,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
