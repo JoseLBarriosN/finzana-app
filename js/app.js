@@ -7670,7 +7670,7 @@ async function inicializarVistaMulticreditos() {
 // ============================================ //
 async function generarReporteMulticreditos(office) {
     const container = document.getElementById('multicreditos-resultados');
-    container.innerHTML = '<div style="text-align:center; padding:20px;"><i class="fas fa-spinner fa-spin fa-2x"></i><p>Analizando historial completo...</p></div>';
+    container.innerHTML = '<div style="text-align:center; padding:20px;"><div class="spinner"></div><p>Analizando historial completo...</p></div>';
 
     try {
         const { arbol, totalCasos } = await database.obtenerReporteMulticreditos(office);
@@ -7680,14 +7680,13 @@ async function generarReporteMulticreditos(office) {
                 <div class="alert alert-success" style="text-align:center; margin-top:20px;">
                     <i class="fas fa-check-circle fa-2x"></i><br>
                     <strong>¡Todo limpio!</strong><br>
-                    No se encontraron clientes con más de 1 créditos activos en ${office}.
+                    No se encontraron clientes con más de 1 créditos activos (deuda real) en ${office}.
                 </div>`;
             return;
         }
 
         let html = `<div class="alert alert-warning">Se encontraron <strong>${totalCasos}</strong> clientes con exceso de créditos activos.</div>`;
 
-        // NIVEL 1: RUTA
         const rutasOrdenadas = Object.keys(arbol).sort();
         
         for (const ruta of rutasOrdenadas) {
@@ -7699,7 +7698,6 @@ async function generarReporteMulticreditos(office) {
                 <div style="padding: 10px; background: #f8f9fa;">
             `;
 
-            // NIVEL 2: POBLACIÓN
             const poblaciones = arbol[ruta];
             const pobsOrdenadas = Object.keys(poblaciones).sort();
 
@@ -7709,13 +7707,20 @@ async function generarReporteMulticreditos(office) {
                     <h5 style="color: #6f42c1; border-bottom: 1px solid #ccc;">${pob}</h5>
                 `;
 
-                // NIVEL 3: CLIENTE
                 const clientes = poblaciones[pob];
                 for (const cliente of clientes) {
+                    // Badge Comisionista
+                    const badgeComisionista = cliente.esComisionista 
+                        ? '<span class="badge badge-warning" style="margin-left:5px; color:#000;"><i class="fas fa-star"></i> Comisionista</span>' 
+                        : '';
+
                     html += `
                     <div style="background: white; padding: 10px; margin-bottom: 10px; border-radius: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
                         <div style="display:flex; justify-content:space-between; align-items:center;">
-                            <strong><i class="fas fa-user"></i> ${cliente.nombre}</strong>
+                            <div>
+                                <strong><i class="fas fa-user"></i> ${cliente.nombre}</strong>
+                                ${badgeComisionista}
+                            </div>
                             <span class="badge badge-danger">${cliente.creditos.length} Créditos Activos</span>
                         </div>
                         <div style="font-size: 0.85em; color: #666;">CURP: ${cliente.curp}</div>
@@ -7727,13 +7732,14 @@ async function generarReporteMulticreditos(office) {
                         const saldo = cred.saldo !== undefined ? cred.saldo : cred.montoTotal;
                         const pctPagado = cred.montoTotal > 0 ? (1 - (saldo/cred.montoTotal)) * 100 : 0;
                         const fechaCred = parsearFecha(cred.fechaCreacion)?.toLocaleDateString('es-MX') || 'N/A';
+                        const plazoReal = cred.plazo || '?'; // Corregido: Variable real
 
                         html += `
                             <details id="details-${cred.id}" ontoggle="cargarPagosHist('details-${cred.id}', '${cred.historicalIdCredito}', '${office}')" 
                                 style="margin-bottom: 5px; border: 1px solid #e9ecef; border-radius: 4px;">
                                 <summary style="padding: 8px; cursor: pointer; background: #fff; font-size: 0.9em;">
                                     <div style="display:flex; justify-content:space-between;">
-                                        <span><strong>ID: ${cred.historicalIdCredito}</strong> | ${fechaCred} | $${cred.monto} (14 sem)</span>
+                                        <span><strong>ID: ${cred.historicalIdCredito}</strong> | ${fechaCred} | $${cred.monto} (${plazoReal} sem)</span>
                                         <span style="color: ${pctPagado >= 80 ? 'green' : 'red'};">Saldo: $${saldo.toFixed(2)} (${pctPagado.toFixed(0)}%)</span>
                                     </div>
                                 </summary>
@@ -7743,16 +7749,17 @@ async function generarReporteMulticreditos(office) {
                             </details>
                         `;
                     }
-                    html += `</div></div>`; // Fin cliente
+                    html += `</div></div>`; 
                 }
-                html += `</div>`; // Fin población
+                html += `</div>`; 
             }
-            html += `</div></details>`; // Fin ruta
+            html += `</div></details>`; 
         }
 
         container.innerHTML = html;
 
     } catch (error) {
+        console.error("Error renderizando multicréditos:", error);
         container.innerHTML = `<div class="alert alert-danger">Error: ${error.message}</div>`;
     }
 }
@@ -8272,6 +8279,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
