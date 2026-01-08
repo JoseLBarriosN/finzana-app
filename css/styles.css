@@ -2315,5 +2315,103 @@ body.has-connection-status #progress-container-fixed {
     z-index: 2; /* Asegura que esté por encima */
 }
 
+/* =========================================
+   ESTILOS PARA GESTIÓN DE RUTAS (CORRECCIÓN VISUAL)
+   ========================================= */
+
+/* 1. El Contenedor (Grid) */
+.rutas-list {
+    display: grid;
+    /* Esto asegura que las tarjetas tengan un ancho mínimo decente y no se aplasten */
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); 
+    gap: 20px;
+    padding: 20px 0;
+}
+
+/* 2. La Tarjeta (Card) */
+.ruta-card {
+    background: white;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px; /* Bordes redondeados igual que Poblaciones */
+    padding: 20px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between; /* Empuja el footer hacia abajo */
+    min-height: 150px; /* Altura mínima para uniformidad */
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.ruta-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+/* 3. Encabezado de la Tarjeta (Nombre + Badge) */
+.ruta-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 15px;
+}
+
+.ruta-nombre-editable {
+    font-weight: 700;
+    font-size: 1.1rem;
+    color: #333;
+    text-transform: uppercase;
+    line-height: 1.2;
+    margin-right: 10px;
+    /* Evita que nombres largos rompan el diseño */
+    word-break: break-word; 
+}
+
+/* Estilo cuando estás editando el nombre */
+.ruta-nombre-editable.editing {
+    border-bottom: 2px solid var(--primary);
+    background-color: #f0f8ff;
+    padding: 2px 4px;
+    outline: none;
+}
+
+/* 4. Footer de Acciones (Botones) */
+.ruta-actions {
+    display: flex;
+    gap: 10px; /* Espacio entre los botones */
+    margin-top: auto; /* Se asegura de estar al fondo de la tarjeta */
+    padding-top: 15px;
+    border-top: 1px solid #f0f0f0; /* La línea divisoria sutil */
+}
+
+/* Botón Principal (Editar/Guardar) - Ocupa el espacio disponible */
+.ruta-actions .btn-editar-ruta,
+.ruta-actions .btn-guardar-ruta,
+.ruta-actions .btn-cancelar-ruta {
+    flex: 1; /* Crece para llenar el espacio */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+}
+
+/* Botón Eliminar (Basurero) - Se mantiene cuadrado/pequeño a la derecha */
+.ruta-actions .btn-outline-danger {
+    flex: 0 0 40px; /* Ancho fijo */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Badge de Oficina (GDL/LEON) - Reutilizando estilos existentes pero asegurando consistencia */
+.office-badge {
+    font-size: 0.75rem;
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-weight: bold;
+    text-transform: uppercase;
+    border: 1px solid #ccc;
+    white-space: nowrap; 
+}
+
 
 
