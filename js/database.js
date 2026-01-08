@@ -2448,23 +2448,22 @@ const database = {
     // ============================================================
     obtenerReporteMulticreditos: async (office) => {
         try {
-            console.log(`🔎 Buscando multicréditos en ${office}...`);
+            console.log(`🔎 Auditoría Multicréditos (Cálculo Real) en ${office}...`);
             
-            // 1. Obtener TODOS los créditos activos de la oficina
-            // Nota: Esto puede ser pesado, pero es un reporte administrativo
+            // 1. Obtener TODOS los créditos "teóricamente" activos
             const snapshot = await db.collection('creditos')
                 .where('office', '==', office)
                 .where('estado', '!=', 'liquidado')
                 .get();
 
-            if (snapshot.empty) return {};
+            if (snapshot.empty) return { arbol: {}, totalCasos: 0 };
 
-            // 2. Agrupar créditos por CURP Cliente en memoria
-            const mapaClientes = new Map(); // CURP -> [credito1, credito2]
+            // 2. Agrupar créditos por CURP en memoria
+            const mapaClientes = new Map();
 
             snapshot.docs.forEach(doc => {
                 const cred = { id: doc.id, ...doc.data() };
-                // Filtro de seguridad extra para saldo
+                // Primer filtro rápido (si el documento ya dice saldo 0, lo ignoramos)
                 if (cred.saldo !== undefined && cred.saldo <= 0.05) return;
 
                 if (!mapaClientes.has(cred.curpCliente)) {
@@ -2473,40 +2472,61 @@ const database = {
                 mapaClientes.get(cred.curpCliente).push(cred);
             });
 
-            // 3. Filtrar clientes con MÁS DE 2 créditos activos
+            // 3. Filtrar clientes con MÁS DE 1 crédito y VALIDAR SALDOS REALES
             const clientesProblema = [];
-            const idsCreditosProblema = [];
 
+            // Iteramos sobre los posibles casos
             for (const [curp, listaCreditos] of mapaClientes.entries()) {
                 if (listaCreditos.length > 1) {
-                    clientesProblema.push({
-                        curp: curp,
-                        nombre: listaCreditos[0].nombreCliente,
-                        ruta: listaCreditos[0].ruta || 'SIN RUTA',
-                        poblacion: listaCreditos[0].poblacion_grupo || 'SIN POBLACION',
-                        creditos: listaCreditos
-                    });
-                    // Guardamos IDs para buscar pagos
-                    listaCreditos.forEach(c => idsCreditosProblema.push(c.historicalIdCredito));
+                    
+                    // --- VALIDACIÓN PROFUNDA (Auditoría) ---
+                    // Verificamos si realmente deben saldo consultando los PAGOS.
+                    // Esto corrige el error de "falsos activos".
+                    
+                    const creditosRealmenteActivos = [];
+
+                    // Usamos Promise.all para verificar los pagos de estos créditos en paralelo
+                    await Promise.all(listaCreditos.map(async (cred) => {
+                        const histId = cred.historicalIdCredito || cred.id;
+                        
+                        // Consultar pagos reales
+                        const pagosSnap = await db.collection('pagos')
+                            .where('idCredito', '==', histId)
+                            .where('office', '==', office)
+                            .get();
+
+                        const totalPagadoReal = pagosSnap.docs.reduce((sum, doc) => sum + (doc.data().monto || 0), 0);
+                        const montoTotal = cred.montoTotal || 0;
+                        const saldoRealCalculado = montoTotal - totalPagadoReal;
+
+                        // Solo si el saldo real (matemático) es mayor a 50 centavos, lo contamos
+                        if (saldoRealCalculado > 0.50) {
+                            // Actualizamos el objeto con el saldo real para que el reporte sea preciso
+                            cred.saldo = parseFloat(saldoRealCalculado.toFixed(2));
+                            cred.pagadoReal = totalPagadoReal; 
+                            creditosRealmenteActivos.push(cred);
+                        }
+                    }));
+
+                    // Si después de la auditoría siguen teniendo > 1 crédito activo
+                    if (creditosRealmenteActivos.length > 1) {
+                        // Ordenar por fecha (más nuevo primero)
+                        creditosRealmenteActivos.sort((a, b) => new Date(b.fechaCreacion) - new Date(a.fechaCreacion));
+
+                        clientesProblema.push({
+                            curp: curp,
+                            nombre: creditosRealmenteActivos[0].nombreCliente,
+                            ruta: creditosRealmenteActivos[0].ruta || 'SIN RUTA',
+                            poblacion: creditosRealmenteActivos[0].poblacion_grupo || 'SIN POBLACION',
+                            creditos: creditosRealmenteActivos
+                        });
+                    }
                 }
             }
 
-            if (clientesProblema.length === 0) return {};
+            if (clientesProblema.length === 0) return { arbol: {}, totalCasos: 0 };
 
-            // 4. Buscar Pagos (Solo de estos créditos)
-            // Hacemos lotes de 30 para usar 'in' query o traemos todos los pagos activos si son muchos
-            // Para optimizar en reporte pesado: Traemos pagos por fecha reciente o iteramos.
-            // Opción robusta: Iterar por crédito (lento pero seguro) o traer pagos activos.
-            
-            const mapaPagos = new Map(); // HistoricalID -> [pago1, pago2]
-
-            // Estrategia: Consultar pagos por crédito individualmente (Limitado a visualización)
-            // OJO: Si son 1000 créditos, esto es demasiado.
-            // MEJOR: Devolvemos los créditos y cargamos los pagos "On Demand" (al dar clic en la vista).
-            // PERO: Tú pediste que se muestren. Haremos una búsqueda optimizada.
-            
-            // Estructura Final Jerárquica:
-            // Arbol[Ruta][Poblacion][Cliente] = [Creditos...]
+            // 4. Construir Árbol Jerárquico para el Reporte
             const arbol = {};
 
             clientesProblema.forEach(cliente => {
@@ -2519,6 +2539,7 @@ const database = {
                 arbol[ruta][pob].push(cliente);
             });
 
+            console.log(`✅ Auditoría finalizada: ${clientesProblema.length} casos reales encontrados.`);
             return { arbol, totalCasos: clientesProblema.length };
 
         } catch (error) {
@@ -2714,6 +2735,7 @@ const database = {
     },
 
 };
+
 
 
 
