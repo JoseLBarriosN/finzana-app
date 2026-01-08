@@ -2184,87 +2184,95 @@ const database = {
 
     // --- ACTUALIZAR PAGO Y GESTIONAR COMISIÓN ---
     actualizarPago: async (pagoId, creditoId, dataToUpdate, diferenciaMonto) => {
-        try {
-            const creditoRef = db.collection('creditos').doc(creditoId);
-            const pagoRef = db.collection('pagos').doc(pagoId);
+    try {
+        const creditoRef = db.collection('creditos').doc(creditoId);
+        const pagoRef = db.collection('pagos').doc(pagoId);
+        
+        let creditoData = null;
+
+        await db.runTransaction(async (transaction) => {
+            const creditoDoc = await transaction.get(creditoRef);
+            const pagoDoc = await transaction.get(pagoRef);
             
-            // Determinar si el nuevo tipo genera comisión ($10) o no ($0)
-            // Regla: Normal/Adelanto/Actualizado/Grupal = $10. Extraordinario/Bancario = $0.
-            const tiposConComision = ['normal', 'adelanto', 'actualizado', 'grupal'];
-            const generaComision = tiposConComision.includes(dataToUpdate.tipoPago);
-            const montoComisionEsperado = generaComision ? 10 : 0;
+            if (!creditoDoc.exists) throw new Error("Crédito no encontrado.");
+            if (!pagoDoc.exists) throw new Error("Pago no encontrado.");
 
-            await db.runTransaction(async (transaction) => {
-                const creditoDoc = await transaction.get(creditoRef);
-                const pagoDoc = await transaction.get(pagoRef);
+            creditoData = creditoDoc.data();
+            const pagoAntiguo = pagoDoc.data();
+
+            // 1. Actualizar Saldo Crédito
+            let nuevoSaldo = (creditoData.saldo || 0) - diferenciaMonto;
+            if (nuevoSaldo < 0.01) nuevoSaldo = 0;
+            const nuevoEstado = (nuevoSaldo === 0) ? 'liquidado' : 'activo';
+
+            transaction.update(creditoRef, {
+                saldo: nuevoSaldo,
+                estado: nuevoEstado
+            });
+            
+            // 2. Actualizar datos del Pago
+            dataToUpdate.saldoDespues = nuevoSaldo;
+            transaction.update(pagoRef, dataToUpdate);
+        });
+
+        // 3. ACTUALIZAR COMISIÓN ASOCIADA (HOJA DE CORTE)
+        // Buscamos si existe una comisión ligada a este pago
+        const comisionesSnap = await db.collection('movimientos_efectivo')
+            .where('pagoIdAsociado', '==', pagoId)
+            .get();
+
+        if (!comisionesSnap.empty && creditoData) {
+            const batchComis = db.batch();
+            
+            // Datos necesarios para recalcular
+            const nuevoMontoPago = dataToUpdate.monto;
+            const nuevoTipo = dataToUpdate.tipoPago;
+            const nuevaFecha = dataToUpdate.fecha; // Fecha corregida
+
+            // Recalcular monto de comisión
+            let nuevaComision = 0;
+            
+            // Regla Renovación
+            if (nuevoTipo === 'actualizado' || nuevoTipo === 'renovacion') {
+                nuevaComision = 10;
+            } 
+            // Regla Normal (Solo si no es comisionista 10 semanas)
+            else if ((nuevoTipo === 'normal' || nuevoTipo === 'adelanto') && creditoData.plazo !== 10) {
+                const pagoSemanal = creditoData.montoTotal / creditoData.plazo;
+                if (pagoSemanal > 0) {
+                    const pagosCompletos = Math.floor((nuevoMontoPago + 0.1) / pagoSemanal);
+                    nuevaComision = pagosCompletos * 10;
+                }
+            }
+
+            // Aplicar cambios a la comisión existente
+            comisionesSnap.forEach(doc => {
+                const updateFields = {
+                    fecha: nuevaFecha // Movemos la comisión a la fecha correcta en la hoja de corte
+                };
+
+                // Solo actualizamos el monto si la nueva comisión es válida (>0)
+                // Si la nueva comisión es 0 (ej. cambió a tipo 'bancario'), podrías optar por borrarla.
+                // Aquí simplemente actualizamos el monto (incluso si es 0, para anular el gasto).
+                if (nuevaComision >= 0) {
+                    updateFields.monto = -Math.abs(nuevaComision); // Siempre negativo (Salida)
+                    updateFields.descripcion = `Comisión pago ${nuevoTipo} (Editado) - Crédito ${creditoData.idCredito}`;
+                }
                 
-                if (!creditoDoc.exists) throw new Error("Crédito no encontrado.");
-                if (!pagoDoc.exists) throw new Error("Pago no encontrado.");
-
-                const credito = creditoDoc.data();
-                const pagoAntiguo = pagoDoc.data();
-
-                // 1. Actualizar Saldo Crédito
-                let nuevoSaldo = (credito.saldo || 0) - diferenciaMonto;
-                if (nuevoSaldo < 0.01) nuevoSaldo = 0;
-                const nuevoEstado = (nuevoSaldo === 0) ? 'liquidado' : 'activo';
-
-                transaction.update(creditoRef, {
-                    saldo: nuevoSaldo,
-                    estado: nuevoEstado
-                });
-                
-                // 2. Actualizar datos del Pago
-                dataToUpdate.saldoDespues = nuevoSaldo;
-                transaction.update(pagoRef, dataToUpdate);
+                batchComis.update(doc.ref, updateFields);
             });
 
-            // 3. GESTIÓN DE COMISIONES (Post-Transacción)
-            const comisionesSnap = await db.collection('movimientos_efectivo')
-                .where('pagoIdAsociado', '==', pagoId)
-                .get();
-
-            const batchComis = db.batch();
-            let comisionExiste = !comisionesSnap.empty;
-
-            if (montoComisionEsperado === 0 && comisionExiste) {
-                // Caso A: Ya no debe haber comisión -> BORRAR
-                comisionesSnap.forEach(doc => batchComis.delete(doc.ref));
-                console.log("🔄 Actualización: Comisión eliminada (cambio de tipo).");
-            } 
-            else if (montoComisionEsperado > 0 && !comisionExiste) {
-                // Caso B: Debe haber comisión y no hay -> CREAR
-                // Necesitamos datos adicionales, los sacamos de una lectura rápida
-                const pSnap = await pagoRef.get();
-                const pData = pSnap.data();
-                const movimientoRef = db.collection('movimientos_efectivo').doc();
-                
-                batchComis.set(movimientoRef, {
-                    id: movimientoRef.id,
-                    tipo: 'COMISION_PAGO',
-                    categoria: 'COMISION',
-                    monto: -10, // Monto fijo negativo
-                    descripcion: `Comisión cobro crédito (Actualizado) ${pData.idCredito}`,
-                    fecha: new Date().toISOString(), // Fecha del ajuste
-                    userId: (auth.currentUser) ? auth.currentUser.uid : 'system',
-                    registradoPor: 'sistema_actualizacion',
-                    office: pData.office || 'GDL',
-                    creditoIdAsociado: creditoId,
-                    pagoIdAsociado: pagoId
-                });
-                console.log("🔄 Actualización: Comisión creada.");
-            }
-            
-            if (montoComisionEsperado === 0 && comisionExiste || montoComisionEsperado > 0 && !comisionExiste) {
-                await batchComis.commit();
-            }
-            
-            return { success: true, message: 'Pago actualizado y comisiones ajustadas.' };
-        } catch (error) {
-            console.error("Error actualizando pago:", error);
-            return { success: false, message: `Error: ${error.message}` };
+            await batchComis.commit();
+            console.log(`🔄 Comisión actualizada: Fecha=${nuevaFecha}, Monto=-$${nuevaComision}`);
         }
-    },
+        
+        return { success: true, message: 'Pago actualizado y comisiones ajustadas.' };
+
+    } catch (error) {
+        console.error("Error actualizando pago:", error);
+        return { success: false, message: `Error: ${error.message}` };
+    }
+},
 
     // --- ELIMINAR PAGO Y SU COMISIÓN ---
     eliminarPago: async (pagoId, creditoId, montoAReembolsar, office) => {
@@ -2686,6 +2694,7 @@ const database = {
     },
 
 };
+
 
 
 
