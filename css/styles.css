@@ -2534,4 +2534,32 @@ body.has-connection-status #progress-container-fixed {
     word-break: break-word; /* Rompe palabras largas si es necesario */
 }
 
+/* Corrección Visual Específica para Rutas */
+.ruta-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: auto;
+    padding-top: 15px;
+    border-top: 1px solid #f0f0f0;
+    align-items: center; /* ESTO EVITA QUE SE ESTIREN HACIA ARRIBA */
+}
+
+/* Forzar altura uniforme en las tarjetas */
+.ruta-card {
+    min-height: 140px; 
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+
+/* Asegurar que el título no rompa el diseño */
+.ruta-nombre-editable {
+    font-weight: 700;
+    font-size: 1.1rem;
+    color: #333;
+    text-transform: uppercase;
+    word-break: break-word;
+    margin-right: 10px;
+    line-height: 1.2;
+}
 
