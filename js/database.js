@@ -1883,6 +1883,26 @@ const database = {
         }
     },
 
+    // -- ACTUALIZAR NOMBRE POBLACION
+    actualizarNombrePoblacion: async (id, nuevoNombre) => {
+        if (!id || !nuevoNombre) return { success: false, message: 'Datos inválidos.' };
+        
+        try {
+            const docRef = db.collection('poblaciones').doc(id);
+            // Validar duplicados en la misma oficina si se desea, por ahora simple update:
+            await docRef.update({ nombre: nuevoNombre.toUpperCase() });
+            
+            // NOTA: Si quisieras actualizar también los clientes que tienen este nombre 
+            // en 'poblacion_grupo', se requeriría un batch masivo. 
+            // Por seguridad y rendimiento, aquí solo actualizamos el catálogo.
+            
+            return { success: true, message: 'Nombre de población actualizado.' };
+        } catch (error) {
+            console.error("Error actualizando población:", error);
+            return { success: false, message: error.message };
+        }
+    },
+    
     // --- OBTENER RUTAS ---
     obtenerRutas: async (office = null) => {
         try {
@@ -2694,6 +2714,7 @@ const database = {
     },
 
 };
+
 
 
 
