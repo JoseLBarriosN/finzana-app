@@ -4849,34 +4849,37 @@ function configurarEdicionRutas() {
     // ** CREA LA TARJETA DE RUTA ** //
 //=======================================//
 function crearTarjetaRuta(ruta) {
-    const id = ruta.id || 'ID_DESCONOCIDO';
-    const nombre = ruta.nombre || 'SIN NOMBRE';
-    const office = ruta.office || 'OTROS';
-    const displayOffice = (office === 'GDL' || office === 'LEON') ? office : 'OTROS';
-    const nombreEscapado = String(nombre).replace(/'/g, "&apos;").replace(/"/g, "&quot;");
+    const id = ruta.id || 'ID_DESCONOCIDO';
+    const nombre = ruta.nombre || 'SIN NOMBRE';
+    const office = ruta.office || 'OTROS';
+    const displayOffice = (office === 'GDL' || office === 'LEON') ? office : 'OTROS';
+    const nombreEscapado = String(nombre).replace(/'/g, "'").replace(/"/g, "");
 
-    return `
-        <div class="ruta-card" data-id="${id}" data-office="${displayOffice}" data-nombre="${nombre.toLowerCase()}">
-            <div class="ruta-header">
-                <div class="ruta-nombre-editable" contenteditable="false">${nombre}</div>
-                <span class="office-badge ${displayOffice}">${displayOffice}</span>
-            </div>
-            <div class="ruta-actions">
-                <button class="btn btn-sm btn-outline-info btn-editar-ruta" title="Editar Nombre">
-                    <i class="fas fa-edit"></i> Editar
-                </button>
-                                <button class="btn btn-sm btn-outline-success btn-guardar-ruta hidden" title="Guardar">
-                    <i class="fas fa-check"></i> Guardar
-                </button>
-                <button class="btn btn-sm btn-outline-secondary btn-cancelar-ruta hidden" title="Cancelar" data-original-nombre="${nombreEscapado}">
-                    <i class="fas fa-times"></i>
-                </button>
-                <button class="btn btn-sm btn-outline-danger" onclick="eliminarRuta('${id}', '${nombreEscapado}', '${office}')" title="Eliminar Ruta">
-                    <i class="fas fa-trash"></i>
-                </button>
-            </div>
-        </div>
-    `;
+    return `
+        <div class="ruta-card" data-id="${id}" data-office="${displayOffice}" data-nombre="${nombre.toLowerCase()}">
+            <div class="ruta-header">
+                <div class="ruta-nombre-editable" contenteditable="false">${nombre}</div>
+                <span class="office-badge ${displayOffice}">${displayOffice}</span>
+            </div>
+            
+            <div class="ruta-actions">
+                <button class="btn btn-sm btn-secondary btn-editar-ruta" title="Editar Nombre" style="flex: 1; justify-content: center;">
+                    <i class="fas fa-edit"></i> Editar
+                </button>
+
+                <button class="btn btn-sm btn-success btn-guardar-ruta hidden" title="Guardar" style="flex: 1; justify-content: center;">
+                    <i class="fas fa-check"></i>
+                </button>
+                <button class="btn btn-sm btn-secondary btn-cancelar-ruta hidden" title="Cancelar" data-original-nombre="${nombreEscapado}" style="flex: 0 0 auto;">
+                    <i class="fas fa-times"></i>
+                </button>
+
+                <button class="btn btn-sm btn-secondary btn-outline-danger" onclick="eliminarRuta('${id}', '${nombreEscapado}', '${office}')" title="Eliminar Ruta" style="flex: 0 0 40px; justify-content: center;">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </div>
+        </div>
+    `;
 }
 
 //====================================================//
@@ -8144,6 +8147,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
