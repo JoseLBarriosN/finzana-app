@@ -2413,5 +2413,125 @@ body.has-connection-status #progress-container-fixed {
     white-space: nowrap; 
 }
 
+/* =======================================================
+   CORRECCIÓN VISUAL: GESTIÓN DE RUTAS Y BOTONES FALTANTES
+   ======================================================= */
+
+/* 1. Definir los estilos de botones "Outline" que faltaban */
+.btn-outline-info {
+    background: transparent;
+    color: var(--info);
+    border: 1px solid var(--info);
+}
+.btn-outline-info:hover {
+    background: var(--info);
+    color: white;
+}
+
+.btn-outline-danger {
+    background: transparent;
+    color: var(--danger);
+    border: 1px solid var(--danger);
+}
+.btn-outline-danger:hover {
+    background: var(--danger);
+    color: white;
+}
+
+.btn-outline-success {
+    background: transparent;
+    color: var(--success);
+    border: 1px solid var(--success);
+}
+.btn-outline-success:hover {
+    background: var(--success);
+    color: white;
+}
+
+.btn-outline-secondary {
+    background: transparent;
+    color: var(--gray);
+    border: 1px solid var(--gray);
+}
+.btn-outline-secondary:hover {
+    background: var(--gray);
+    color: white;
+}
+
+/* 2. Arreglar el Grid de Rutas (Para que no se aplasten los textos) */
+.rutas-list {
+    display: grid;
+    /* Ancho mínimo de 280px por tarjeta para que quepan los textos */
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); 
+    gap: 20px;
+    padding: 15px 0;
+}
+
+/* 3. Arreglar la Tarjeta de Ruta */
+.ruta-card {
+    background: white;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    padding: 20px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    min-height: 140px; /* Altura uniforme */
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.ruta-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+/* 4. Arreglar los Botones (Alineación y Estiramiento) */
+.ruta-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: auto;
+    padding-top: 15px;
+    border-top: 1px solid #f0f0f0;
+    
+    /* ESTA ES LA CLAVE DEL ARREGLO VISUAL: */
+    align-items: center; /* Evita que los botones se estiren hacia arriba */
+    flex-wrap: nowrap;   /* Mantiene los botones en una sola línea */
+}
+
+/* El botón de editar ocupa el espacio restante */
+.ruta-actions .btn-editar-ruta,
+.ruta-actions .btn-guardar-ruta {
+    flex: 1; 
+    justify-content: center;
+}
+
+/* El botón de cancelar ocupa espacio */
+.ruta-actions .btn-cancelar-ruta {
+    flex: 1;
+    justify-content: center;
+}
+
+/* El botón de eliminar se queda pequeño a la derecha */
+.ruta-actions .btn-outline-danger {
+    width: 38px;
+    height: 38px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    flex-shrink: 0; /* No permitimos que se aplaste */
+}
+
+/* Ajuste del título para que no rompa la tarjeta */
+.ruta-nombre-editable {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #333;
+    line-height: 1.3;
+    margin-right: 10px;
+    word-break: break-word; /* Rompe palabras largas si es necesario */
+}
 
 
