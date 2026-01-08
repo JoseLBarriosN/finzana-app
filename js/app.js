@@ -4529,6 +4529,7 @@ async function cargarInterfazPoblaciones(officeFiltro) {
         if (!officeFiltro) {
             configurarFiltrosPoblaciones();
         }
+        configurarEdicionPoblaciones();
 
     } catch (error) {
         console.error("ERROR en cargarInterfazPoblaciones:", error);
@@ -4553,8 +4554,8 @@ function crearTarjetaPoblacion(poblacion) {
     const nombre = poblacion.nombre || 'SIN NOMBRE';
     const office = poblacion.office || 'OTROS';
     const ruta = poblacion.ruta || '';
-
     const displayOffice = (office === 'GDL' || office === 'LEON') ? office : 'OTROS';
+    const nombreEscapado = String(nombre).replace(/'/g, "'").replace(/"/g, "");
 
     const rutaDisplay = ruta
         ? `<span class="ruta-tag" title="Ruta asignada">${ruta}</span>`
@@ -4563,26 +4564,35 @@ function crearTarjetaPoblacion(poblacion) {
     return `
         <div class="poblacion-card" data-id="${id}" data-office="${displayOffice}" data-nombre="${nombre.toLowerCase()}">
             <div class="poblacion-header">
-                <h5 class="poblacion-nombre">${nombre}</h5>
+                <div class="poblacion-nombre-editable" contenteditable="false" style="font-weight:600; font-size:1.1em; color:#333; margin-right:10px;">${nombre}</div>
                 <span class="office-badge ${displayOffice}">${displayOffice}</span>
             </div>
+            
             <div class="poblacion-content">
-                <div class="ruta-asignacion">
+                <div class="ruta-asignacion" style="margin-top:5px;">
                     ${rutaDisplay}
                 </div>
             </div>
+            
             <div class="poblacion-actions">
                 <button class="btn btn-sm btn-outline-primary btn-asignar-ruta" 
-                        data-id="${id}" 
-                        data-nombre="${nombre}" 
-                        data-office="${office}"
-                        title="Asignar/Cambiar Ruta">
-                    <i class="fas fa-route"></i> Asignar Ruta
+                        data-id="${id}" data-nombre="${nombre}" data-office="${office}" title="Asignar Ruta">
+                    <i class="fas fa-route"></i>
                 </button>
+
+                <button class="btn btn-sm btn-outline-info btn-editar-poblacion" title="Editar Nombre">
+                    <i class="fas fa-edit"></i>
+                </button>
+
+                <button class="btn btn-sm btn-outline-success btn-guardar-poblacion hidden" title="Guardar" data-id="${id}">
+                    <i class="fas fa-check"></i>
+                </button>
+                <button class="btn btn-sm btn-outline-secondary btn-cancelar-poblacion hidden" title="Cancelar" data-original-nombre="${nombreEscapado}">
+                    <i class="fas fa-times"></i>
+                </button>
+
                 <button class="btn btn-sm btn-outline-danger btn-eliminar-poblacion" 
-                        data-id="${id}" 
-                        data-nombre="${nombre}"
-                        title="Eliminar Población">
+                        data-id="${id}" data-nombre="${nombre}" title="Eliminar Población">
                     <i class="fas fa-trash"></i>
                 </button>
             </div>
@@ -4641,6 +4651,121 @@ function configurarFiltrosPoblaciones() {
             searchInput.dispatchEvent(new Event('input'));
         });
     });
+}
+
+
+// ==================================================== //
+// PEGAR EN app.js: configurarEdicionPoblaciones //
+// ===================================================== //
+function configurarEdicionPoblaciones() {
+    // 1. Botón EDITAR
+    document.querySelectorAll('#tab-poblaciones .btn-editar-poblacion').forEach(btn => {
+        // Clonar para limpiar listeners previos
+        const newBtn = btn.cloneNode(true);
+        btn.parentNode.replaceChild(newBtn, btn);
+        
+        newBtn.addEventListener('click', function() {
+            const card = this.closest('.poblacion-card');
+            const nombreElement = card.querySelector('.poblacion-nombre-editable');
+            const originalNombre = nombreElement.textContent.trim();
+            
+            // Guardar original en el botón cancelar
+            card.querySelector('.btn-cancelar-poblacion').setAttribute('data-original-nombre', originalNombre);
+
+            // Activar edición
+            nombreElement.contentEditable = true;
+            nombreElement.classList.add('editing'); // Asegúrate de tener estilo .editing en CSS (borde azul)
+            nombreElement.style.borderBottom = "2px solid var(--info)";
+            nombreElement.style.backgroundColor = "#f0f8ff";
+            nombreElement.focus();
+            
+            // Toggle botones
+            this.classList.add('hidden'); // Ocultar editar
+            card.querySelector('.btn-asignar-ruta').classList.add('hidden'); // Ocultar ruta temporalmente
+            card.querySelector('.btn-eliminar-poblacion').classList.add('hidden'); // Ocultar borrar
+            
+            card.querySelector('.btn-guardar-poblacion').classList.remove('hidden');
+            card.querySelector('.btn-cancelar-poblacion').classList.remove('hidden');
+        });
+    });
+
+    // 2. Botón CANCELAR
+    document.querySelectorAll('#tab-poblaciones .btn-cancelar-poblacion').forEach(btn => {
+        const newBtn = btn.cloneNode(true);
+        btn.parentNode.replaceChild(newBtn, btn);
+
+        newBtn.addEventListener('click', function() {
+            const card = this.closest('.poblacion-card');
+            const nombreElement = card.querySelector('.poblacion-nombre-editable');
+            const originalNombre = this.getAttribute('data-original-nombre');
+            
+            // Restaurar
+            nombreElement.textContent = originalNombre;
+            nombreElement.contentEditable = false;
+            nombreElement.classList.remove('editing');
+            nombreElement.style.borderBottom = "none";
+            nombreElement.style.backgroundColor = "transparent";
+            
+            // Toggle botones
+            this.classList.add('hidden');
+            card.querySelector('.btn-guardar-poblacion').classList.add('hidden');
+            
+            card.querySelector('.btn-editar-poblacion').classList.remove('hidden');
+            card.querySelector('.btn-asignar-ruta').classList.remove('hidden');
+            card.querySelector('.btn-eliminar-poblacion').classList.remove('hidden');
+        });
+    });
+
+    // 3. Botón GUARDAR
+    document.querySelectorAll('#tab-poblaciones .btn-guardar-poblacion').forEach(btn => {
+        const newBtn = btn.cloneNode(true);
+        btn.parentNode.replaceChild(newBtn, btn);
+
+        newBtn.addEventListener('click', async function() {
+            const card = this.closest('.poblacion-card');
+            const nombreElement = card.querySelector('.poblacion-nombre-editable');
+            const poblacionId = this.getAttribute('data-id');
+            const nuevoNombre = nombreElement.textContent.trim().toUpperCase();
+            const originalNombre = card.querySelector('.btn-cancelar-poblacion').getAttribute('data-original-nombre');
+
+            if (!nuevoNombre) {
+                showStatus('status_configuracion', 'El nombre no puede estar vacío.', 'warning');
+                nombreElement.focus();
+                return;
+            }
+
+            if (nuevoNombre === originalNombre.toUpperCase()) {
+                card.querySelector('.btn-cancelar-poblacion').click();
+                return;
+            }
+
+            showProcessingOverlay(true, 'Actualizando nombre de población...');
+            // Llamada a la DB (función nueva que crearemos abajo)
+            const resultado = await database.actualizarNombrePoblacion(poblacionId, nuevoNombre);
+            showProcessingOverlay(false);
+
+            if (resultado.success) {
+                showStatus('status_configuracion', 'Población actualizada.', 'success');
+                // Actualizar original para futuros cancel
+                card.querySelector('.btn-cancelar-poblacion').setAttribute('data-original-nombre', nuevoNombre);
+                
+                // Salir modo edición
+                nombreElement.contentEditable = false;
+                nombreElement.style.borderBottom = "none";
+                nombreElement.style.backgroundColor = "transparent";
+                
+                this.classList.add('hidden');
+                card.querySelector('.btn-cancelar-poblacion').classList.add('hidden');
+                
+                card.querySelector('.btn-editar-poblacion').classList.remove('hidden');
+                card.querySelector('.btn-asignar-ruta').classList.remove('hidden');
+                card.querySelector('.btn-eliminar-poblacion').classList.remove('hidden');
+            } else {
+                showStatus('status_configuracion', `Error: ${resultado.message}`, 'error');
+                card.querySelector('.btn-cancelar-poblacion').click(); // Revertir
+            }
+        });
+    });
 }
 
 // =============================================
@@ -4863,18 +4988,18 @@ function crearTarjetaRuta(ruta) {
             </div>
             
             <div class="ruta-actions">
-                <button class="btn btn-sm btn-secondary btn-editar-ruta" title="Editar Nombre" style="flex: 1; justify-content: center;">
+                <button class="btn btn-sm btn-outline-info btn-editar-ruta" title="Editar Nombre" style="flex: 1;">
                     <i class="fas fa-edit"></i> Editar
                 </button>
 
-                <button class="btn btn-sm btn-success btn-guardar-ruta hidden" title="Guardar" style="flex: 1; justify-content: center;">
+                <button class="btn btn-sm btn-outline-success btn-guardar-ruta hidden" title="Guardar" style="flex: 1;">
                     <i class="fas fa-check"></i>
                 </button>
-                <button class="btn btn-sm btn-secondary btn-cancelar-ruta hidden" title="Cancelar" data-original-nombre="${nombreEscapado}" style="flex: 0 0 auto;">
+                <button class="btn btn-sm btn-outline-secondary btn-cancelar-ruta hidden" title="Cancelar" data-original-nombre="${nombreEscapado}">
                     <i class="fas fa-times"></i>
                 </button>
 
-                <button class="btn btn-sm btn-secondary btn-outline-danger" onclick="eliminarRuta('${id}', '${nombreEscapado}', '${office}')" title="Eliminar Ruta" style="flex: 0 0 40px; justify-content: center;">
+                <button class="btn btn-sm btn-outline-danger" onclick="eliminarRuta('${id}', '${nombreEscapado}', '${office}')" title="Eliminar Ruta">
                     <i class="fas fa-trash"></i>
                 </button>
             </div>
@@ -8147,6 +8272,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
