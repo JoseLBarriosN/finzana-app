@@ -2443,6 +2443,28 @@ const database = {
         }
     },
 
+    // --- ACTUALIZAR MOVIMIENTO DE EFECTIVO ---
+    actualizarMovimientoEfectivo: async (id, data) => {
+        try {
+            await db.collection('movimientos_efectivo').doc(id).update(data);
+            return { success: true, message: 'Movimiento actualizado correctamente.' };
+        } catch (error) {
+            console.error("Error actualizando movimiento:", error);
+            return { success: false, message: error.message };
+        }
+    },
+
+    // --- ELIMINAR MOVIMIENTO DE EFECTIVO ---
+    eliminarMovimientoEfectivo: async (id) => {
+        try {
+            await db.collection('movimientos_efectivo').doc(id).delete();
+            return { success: true, message: 'Movimiento eliminado correctamente.' };
+        } catch (error) {
+            console.error("Error eliminando movimiento:", error);
+            return { success: false, message: error.message };
+        }
+    },
+
     // ============================================================
     // REPORTE DE MULTICRÉDITOS (AUDITORÍA)
     // ============================================================
@@ -2737,6 +2759,7 @@ const database = {
     },
 
 };
+
 
 
 
