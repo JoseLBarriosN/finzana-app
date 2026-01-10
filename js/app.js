@@ -1579,51 +1579,57 @@ async function handleRegistrarEntregaInicial(e) {
     const agenteId = document.getElementById('entrega-agente').value;
     const monto = parseFloat(document.getElementById('entrega-monto').value);
     const descripcion = document.getElementById('entrega-descripcion').value || 'Entrega inicial de efectivo';
-    const fechaInput = document.getElementById('entrega-fecha').value; // <--- NUEVO CAMPO
+    const fechaInput = document.getElementById('entrega-fecha').value; 
     
-    // Obtener oficina del texto del dropdown (GDL/LEON)
+    // 1. Obtener oficina del texto del dropdown (GDL/LEON)
     const agenteSelect = document.getElementById('entrega-agente');
     const agenteTexto = agenteSelect.options[agenteSelect.selectedIndex].text;
-    const officeAgente = agenteTexto.includes('(GDL)') ? 'GDL' : (agenteTexto.includes('(LEON)') ? 'LEON' : null);
+    
+    // Lógica robusta para detectar oficina
+    let officeAgente = null;
+    if (agenteTexto.includes('(GDL)')) officeAgente = 'GDL';
+    else if (agenteTexto.includes('(LEON)')) officeAgente = 'LEON';
+    // Fallback: Si el usuario actual es admin de oficina fija, usar esa.
+    else if (currentUserData.office && currentUserData.office !== 'AMBAS') officeAgente = currentUserData.office;
 
     // Validaciones
     if (!agenteId || isNaN(monto) || monto <= 0 || !officeAgente || !fechaInput) {
-        showStatus(statusEl.id, 'Todos los campos son obligatorios.', 'error');
+        showStatus(statusEl.id, `Error: Faltan datos. Oficina detectada: ${officeAgente || 'Ninguna'}`, 'error');
         return;
     }
 
-    // Construir Fecha ISO: Usamos la fecha elegida + la hora actual para mantener orden cronológico
-    const ahora = new Date();
-    // Formato YYYY-MM-DD + T + HH:MM:SS
-    const fechaSeleccionada = new Date(fechaInput + 'T' + ahora.toTimeString().split(' ')[0]);
-    const fechaISO = fechaSeleccionada.toISOString();
+    // 2. Construir Fecha ISO Segura (Mediodía para evitar saltos de día)
+    const fechaISO = new Date(fechaInput + 'T12:00:00').toISOString();
 
     showButtonLoading(btn, true, 'Registrando...');
     showStatus(statusEl.id, 'Registrando entrega...', 'info');
 
     try {
         const movimientoData = {
-            userId: agenteId,
-            fecha: fechaISO, // Usamos la fecha manual
+            userId: agenteId, // El dinero va a la cuenta de este agente
+            fecha: fechaISO, 
             tipo: 'ENTREGA_INICIAL',
-            monto: monto,
+            categoria: 'FONDEO', // Categoría para reportes
+            monto: monto, // Positivo (Entrada para el agente)
             descripcion: descripcion,
-            registradoPor: currentUserData.email,
-            office: officeAgente
+            registradoPor: currentUserData.email, // La Admin que lo hizo
+            office: officeAgente,
+            // CLAVE PARA QUE APAREZCA EN HOJA DE CORTE:
+            poblacion: 'GENERAL / OFICINA' 
         };
 
         const resultado = await database.agregarMovimientoEfectivo(movimientoData);
         if (!resultado.success) throw new Error(resultado.message);
 
-        showStatus(statusEl.id, 'Entrega registrada exitosamente.', 'success');
+        showStatus(statusEl.id, 'Entrega registrada correctamente.', 'success');
         e.target.reset();
         
-        // Restaurar fecha a hoy por defecto para el siguiente registro
+        // Restaurar fecha a hoy
         const offset = new Date().getTimezoneOffset() * 60000;
         const localDate = new Date(Date.now() - offset).toISOString().split('T')[0];
         document.getElementById('entrega-fecha').value = localDate;
         
-        // Si estamos viendo la tabla del mismo agente, actualizar
+        // Actualizar tabla si es el mismo agente
         if (document.getElementById('filtro-agente').value === agenteId) {
             handleBuscarMovimientos();
         }
@@ -8296,6 +8302,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
