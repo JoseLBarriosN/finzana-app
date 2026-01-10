@@ -1654,7 +1654,6 @@ async function handleBuscarMovimientos() {
     
     const resultadosDiv = document.getElementById('resultados-gestion-efectivo');
     const tbody = document.getElementById('tabla-movimientos-efectivo');
-    const balanceContainer = document.getElementById('balance-container');
 
     if (!agenteId) {
         showStatus(statusEl, 'Por favor, selecciona un agente para buscar.', 'warning');
@@ -1664,13 +1663,7 @@ async function handleBuscarMovimientos() {
     showButtonLoading(btn, true, 'Buscando...');
     showStatus(statusEl, 'Buscando movimientos...', 'info');
     resultadosDiv.classList.add('hidden');
-    tbody.innerHTML = '<tr><td colspan="5">Buscando...</td></tr>';
-    
-    document.getElementById('balance-agente').textContent = '...';
-    document.getElementById('balance-entregado').textContent = '...';
-    document.getElementById('balance-gastos').textContent = '...';
-    document.getElementById('balance-colocado').textContent = '...';
-    document.getElementById('balance-final').textContent = '...';
+    tbody.innerHTML = '<tr><td colspan="6">Buscando...</td></tr>'; // Aumentamos colspan a 6
 
     try {
         const adminOffice = currentUserData?.office;
@@ -1686,36 +1679,44 @@ async function handleBuscarMovimientos() {
         const movimientos = await database.getMovimientosEfectivo(filtros);
 
         if (movimientos.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="5">No se encontraron movimientos para este agente en este rango de fechas.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="6">No se encontraron movimientos.</td></tr>';
             showStatus(statusEl, 'No se encontraron movimientos.', 'info');
         } else {
-            tbody.innerHTML = movimientos.map(mov => `
+            // Renderizar tabla con botones
+            tbody.innerHTML = movimientos.map(mov => {
+                const movJson = JSON.stringify(mov).replace(/'/g, "'").replace(/"/g, "&quot;");
+                return `
                 <tr style="color: ${mov.monto > 0 ? 'var(--success)' : 'var(--danger)'};">
                     <td>${formatDateForDisplay(parsearFecha(mov.fecha))}</td>
                     <td>${mov.tipo || 'N/A'}</td>
-                    <td>$${(mov.monto || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td>$${Math.abs(mov.monto).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                     <td>${mov.descripcion || 'N/A'}</td>
                     <td>${mov.registradoPor || 'N/A'}</td>
+                    <td style="text-align: center;">
+                        <button class="btn btn-sm btn-outline-info" onclick="iniciarEdicionMovimiento('${movJson}')" title="Editar">
+                            <i class="fas fa-edit"></i>
+                        </button>
+                        <button class="btn btn-sm btn-outline-danger" onclick="eliminarMovimiento('${mov.id}')" title="Eliminar">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </td>
                 </tr>
-            `).join('');
+            `}).join('');
             showStatus(statusEl, `Se encontraron ${movimientos.length} movimientos.`, 'success');
         }
         
+        // Calcular Balances (Visual)
         let totalEntregado = 0;
         let totalGastos = 0;
         let totalColocado = 0;
         
         movimientos.forEach(mov => {
-            if (mov.tipo === 'ENTREGA_INICIAL') {
-                totalEntregado += (mov.monto || 0);
-            } else if (mov.tipo === 'GASTO') {
-                totalGastos += (mov.monto || 0);
-            } else if (mov.tipo === 'COLOCACION') {
-                totalColocado += (mov.monto || 0);
-            }
+            if (mov.tipo === 'ENTREGA_INICIAL') totalEntregado += (mov.monto || 0);
+            else if (mov.tipo === 'GASTO') totalGastos += (mov.monto || 0);
+            else if (mov.tipo === 'COLOCACION') totalColocado += (mov.monto || 0);
         });
         
-        const balanceFinal = totalEntregado + totalGastos + totalColocado;
+        const balanceFinal = movimientos.reduce((sum, m) => sum + (m.monto || 0), 0);
 
         const agenteSelect = document.getElementById('filtro-agente');
         document.getElementById('balance-agente').textContent = agenteSelect.options[agenteSelect.selectedIndex].text;
@@ -1730,7 +1731,7 @@ async function handleBuscarMovimientos() {
     } catch (error) {
         console.error("Error buscando movimientos:", error);
         showStatus(statusEl, `Error: ${error.message}`, 'error');
-        tbody.innerHTML = `<tr><td colspan="5">Error: ${error.message}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="6">Error: ${error.message}</td></tr>`;
     } finally {
         showButtonLoading(btn, false);
     }
@@ -7326,8 +7327,13 @@ function renderizarResultadosCorte(datos) {
             esEntrada = true; concepto = 'COBRANZA'; subCobranza += monto;
         } else if (item.tipo === 'INGRESO_POLIZA') {
             esEntrada = true; concepto = 'PÓLIZA'; subPolizas += monto;
+        
+        // --- CORRECCIÓN AQUÍ: FONDEO AHORA ES SALIDA ---
         } else if (item.tipo === 'ENTREGA_INICIAL') {
-            esEntrada = true; concepto = 'FONDEO'; subFondeo += monto;
+            esEntrada = false; // Antes era true. Ahora es SALIDA (Sale de oficina -> Agente)
+            concepto = 'FONDEO'; 
+            subFondeo += monto;
+        
         } else if (item.tipo === 'COLOCACION') {
             esEntrada = false; concepto = 'COLOCACIÓN'; subColocacion += monto;
         } else if (item.tipo === 'GASTO') {
@@ -7335,6 +7341,7 @@ function renderizarResultadosCorte(datos) {
         } else if (item.tipo && item.tipo.includes('COMISION')) {
             esEntrada = false; concepto = 'COMISIÓN'; subComisiones += monto;
         } else {
+            // Fallback por signo
             esEntrada = (item.monto >= 0); 
             monto = Math.abs(item.monto);
             concepto = 'OTRO';
@@ -7342,11 +7349,12 @@ function renderizarResultadosCorte(datos) {
 
         if (esEntrada) totalEntradas += monto; else totalSalidas += monto;
 
-        // Agrupar por población (si no tiene, usar GENERAL)
+        // Agrupar por población
         const poblacion = item.poblacion || 'GENERAL / OFICINA';
         if (!gruposPoblacion[poblacion]) gruposPoblacion[poblacion] = [];
 
         gruposPoblacion[poblacion].push({ 
+            id: item.id, // Guardamos ID para referencias futuras
             hora: new Date(item.rawDate), 
             concepto, 
             descripcion: item.descripcion || '-', 
@@ -7367,16 +7375,16 @@ function renderizarResultadosCorte(datos) {
         <div class="card" style="border-left: 5px solid var(--success); flex: 1;">
             <h5 style="color:#666; margin:0;">ENTRADAS (+)</h5>
             <h3 style="color:var(--success); margin:5px 0;">$${totalEntradas.toLocaleString('es-MX', {minimumFractionDigits: 2})}</h3>
-            <div style="font-size:0.8em;">Cobranza: $${subCobranza.toLocaleString()} | Pólizas: $${subPolizas.toLocaleString()} | Fondeo: $${subFondeo.toLocaleString()}</div>
+            <div style="font-size:0.8em;">Cobranza: $${subCobranza.toLocaleString()} | Pólizas: $${subPolizas.toLocaleString()}</div>
         </div>
         <div class="card" style="border-left: 5px solid var(--danger); flex: 1;">
             <h5 style="color:#666; margin:0;">SALIDAS (-)</h5>
             <h3 style="color:var(--danger); margin:5px 0;">$${totalSalidas.toLocaleString('es-MX', {minimumFractionDigits: 2})}</h3>
-            <div style="font-size:0.8em;">Colocación: $${subColocacion.toLocaleString()} | Comis: $${subComisiones.toLocaleString()} | Gastos: $${subGastos.toLocaleString()}</div>
+            <div style="font-size:0.8em;">Colocación: $${subColocacion.toLocaleString()} | Fondeo: $${subFondeo.toLocaleString()} | Gastos: $${subGastos.toLocaleString()}</div>
         </div>
     `;
 
-    // 3. GENERAR HTML DE LAS TABLAS AGRUPADAS
+    // 3. GENERAR HTML DE LAS TABLAS
     let htmlTablas = '';
     const nombresPoblacion = Object.keys(gruposPoblacion).sort();
 
@@ -7387,7 +7395,6 @@ function renderizarResultadosCorte(datos) {
             const movimientos = gruposPoblacion[pob];
             movimientos.sort((a, b) => a.hora - b.hora);
 
-            // Calcular neto por población
             const neto = movimientos.reduce((acc, m) => acc + (m.esEntrada ? m.monto : -m.monto), 0);
             const colorNeto = neto >= 0 ? 'var(--success)' : 'var(--danger)';
 
@@ -7431,31 +7438,155 @@ function renderizarResultadosCorte(datos) {
         });
     }
 
-    // 4. INYECTAR EL HTML (CORRECCIÓN: HACERLO EN AMBOS LUGARES SIN EL "ELSE")
-    
-    // A. Vista Admin (Reporte Contable)
+    // Inyectar HTML
     const adminContainer = document.getElementById('reporte-contable-detalle');
     if (adminContainer) adminContainer.innerHTML = htmlTablas;
 
-    // B. Vista Usuario (Hoja de Corte)
-    // Buscamos la tabla original para reemplazar su contenedor padre con las nuevas tablas agrupadas
     const userTable = document.getElementById('tabla-corte-detalle');
     if (userTable) {
-        // Reemplazamos el div .table-responsive completo
         const parent = userTable.closest('.table-responsive') || userTable.parentNode;
         if (parent) {
-            // Le ponemos un ID único para encontrarlo en futuras actualizaciones
             parent.id = 'contenedor-dinamico-corte'; 
             parent.innerHTML = htmlTablas;
         }
     } else {
-        // Si la tabla ya fue reemplazada en una búsqueda anterior, buscamos el contenedor por ID
         const dynamicContainer = document.getElementById('contenedor-dinamico-corte');
-        if (dynamicContainer) {
-            dynamicContainer.innerHTML = htmlTablas;
-        }
+        if (dynamicContainer) dynamicContainer.innerHTML = htmlTablas;
     }
 }
+
+// ==========================================
+// AGREGAR AL FINAL DE app.js
+// ==========================================
+
+// --- INICIAR EDICIÓN (ABRIR MODAL) ---
+window.iniciarEdicionMovimiento = function(movJson) {
+    // Parche por si viene comillas codificadas
+    if (typeof movJson === 'string' && movJson.startsWith('{')) {
+       // ya es string
+    } else {
+       movJson = movJson.replace(/&quot;/g, '"');
+    }
+    const mov = JSON.parse(movJson);
+    
+    const fechaStr = mov.fecha ? new Date(mov.fecha).toISOString().split('T')[0] : '';
+    const esEntrada = mov.monto >= 0; // Si es positivo es entrada para el agente
+    
+    const modalTitle = document.getElementById('modal-title');
+    const modalBody = document.getElementById('modal-body');
+    
+    modalTitle.textContent = 'Editar Movimiento de Efectivo';
+    
+    modalBody.innerHTML = `
+        <form id="form-editar-movimiento">
+            <div class="form-group">
+                <label>Fecha del Movimiento:</label>
+                <input type="date" id="edit-mov-fecha" class="form-control" value="${fechaStr}" required>
+            </div>
+            
+            <div class="form-group">
+                <label>Monto ($):</label>
+                <input type="number" id="edit-mov-monto" class="form-control" value="${Math.abs(mov.monto)}" step="0.01" required>
+            </div>
+
+            <div class="form-group">
+                <label>Tipo de Movimiento (Dirección):</label>
+                <select id="edit-mov-sentido" class="form-control">
+                    <option value="SALIDA_OFICINA" ${esEntrada ? 'selected' : ''}>Entrega a Agente (Salida de Oficina)</option>
+                    <option value="ENTRADA_OFICINA" ${!esEntrada ? 'selected' : ''}>Reintegro / Gasto (Entrada a Oficina)</option>
+                </select>
+                <small class="text-muted">
+                    "Entrega a Agente" = Fondeo (Suma al agente, Resta a oficina)<br>
+                    "Reintegro/Gasto" = Devolución o Gasto (Resta al agente, Suma a oficina)
+                </small>
+            </div>
+
+            <div class="form-group">
+                <label>Categoría / Descripción:</label>
+                <input type="text" id="edit-mov-desc" class="form-control" value="${mov.descripcion || ''}">
+            </div>
+
+            <div class="modal-actions" style="justify-content: flex-end; margin-top: 20px;">
+                <button type="submit" class="btn btn-success"><i class="fas fa-save"></i> Guardar Cambios</button>
+            </div>
+        </form>
+    `;
+    
+    document.getElementById('generic-modal').classList.remove('hidden');
+    
+    document.getElementById('form-editar-movimiento').onsubmit = async (e) => {
+        e.preventDefault();
+        
+        const nuevaFecha = document.getElementById('edit-mov-fecha').value;
+        const nuevoMontoAbs = parseFloat(document.getElementById('edit-mov-monto').value);
+        const sentido = document.getElementById('edit-mov-sentido').value;
+        const nuevaDesc = document.getElementById('edit-mov-desc').value;
+        
+        if (!nuevaFecha || isNaN(nuevoMontoAbs)) {
+            alert("Datos inválidos."); return;
+        }
+
+        // Construir Fecha ISO con hora fija (Mediodía) para no saltar de día
+        const fechaISO = new Date(nuevaFecha + 'T12:00:00').toISOString();
+        
+        // Determinar signo
+        // SALIDA_OFICINA = Positivo para el agente (Fondeo)
+        // ENTRADA_OFICINA = Negativo para el agente (Gasto/Devolución)
+        const montoFinal = (sentido === 'SALIDA_OFICINA') ? Math.abs(nuevoMontoAbs) : -Math.abs(nuevoMontoAbs);
+        
+        // Determinar Tipo/Categoría aproximada si cambió el sentido
+        let nuevoTipo = mov.tipo;
+        let nuevaCat = mov.categoria;
+        
+        if (sentido === 'SALIDA_OFICINA' && mov.monto < 0) {
+            // Cambió de Gasto a Entrega
+            nuevoTipo = 'ENTREGA_INICIAL';
+            nuevaCat = 'FONDEO';
+        } else if (sentido === 'ENTRADA_OFICINA' && mov.monto > 0) {
+            // Cambió de Entrega a Gasto/Devolución
+            nuevoTipo = 'GASTO'; // Genérico
+            nuevaCat = 'GASTO';
+        }
+
+        const dataToUpdate = {
+            fecha: fechaISO,
+            monto: montoFinal,
+            descripcion: nuevaDesc,
+            tipo: nuevoTipo,
+            categoria: nuevaCat
+        };
+
+        showProcessingOverlay(true, "Actualizando movimiento...");
+        const res = await database.actualizarMovimientoEfectivo(mov.id, dataToUpdate);
+        showProcessingOverlay(false);
+        
+        if (res.success) {
+            document.getElementById('generic-modal').classList.add('hidden');
+            showStatus('status_registrar_entrega', 'Movimiento actualizado.', 'success');
+            handleBuscarMovimientos(); // Recargar tabla
+        } else {
+            alert("Error: " + res.message);
+        }
+    };
+};
+
+// --- ELIMINAR MOVIMIENTO ---
+window.eliminarMovimiento = async function(id) {
+    if(!confirm("¿Estás seguro de eliminar este movimiento de efectivo?\nEsta acción afectará el balance y la hoja de corte.")) {
+        return;
+    }
+    
+    showProcessingOverlay(true, "Eliminando...");
+    const res = await database.eliminarMovimientoEfectivo(id);
+    showProcessingOverlay(false);
+    
+    if (res.success) {
+        showStatus('status_registrar_entrega', 'Movimiento eliminado.', 'success');
+        handleBuscarMovimientos();
+    } else {
+        alert("Error: " + res.message);
+    }
+};
 
 // ==========================================
 // FUNCIONES DE GOOGLE MAPS (RUTA ÓPTIMA)
@@ -8302,6 +8433,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
