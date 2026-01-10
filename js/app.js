@@ -1491,7 +1491,7 @@ async function handleCargarRutas() {
     // ** CARGA DE AREA COMERCIAL EN GESTON DE EFECTIVO ** //
 //===============================================================//
 async function loadGestionEfectivo() {
-    console.log("--- Ejecutando loadGestionEfectivo (Admins + Agentes) ---");
+    console.log("--- Ejecutando loadGestionEfectivo (Corregido con Oficina Visual) ---");
     const selectAgenteEntrega = document.getElementById('entrega-agente');
     const selectAgenteFiltro = document.getElementById('filtro-agente');
     const statusEntrega = document.getElementById('status_registrar_entrega');
@@ -1504,10 +1504,14 @@ async function loadGestionEfectivo() {
     document.getElementById('tabla-movimientos-efectivo').innerHTML = '<tr><td colspan="5">Selecciona un usuario.</td></tr>';
     document.getElementById('form-registrar-entrega').reset();
 
+    // Fechas por defecto (Mes actual)
     const hoy = new Date();
     const haceUnMes = new Date(hoy.getFullYear(), hoy.getMonth() - 1, hoy.getDate() + 1);
-    document.getElementById('filtro-fecha-inicio-efectivo').value = haceUnMes.toISOString().split('T')[0];
-    document.getElementById('filtro-fecha-fin-efectivo').value = hoy.toISOString().split('T')[0];
+    const filtroInicio = document.getElementById('filtro-fecha-inicio-efectivo');
+    const filtroFin = document.getElementById('filtro-fecha-fin-efectivo');
+    
+    if (filtroInicio) filtroInicio.value = haceUnMes.toISOString().split('T')[0];
+    if (filtroFin) filtroFin.value = hoy.toISOString().split('T')[0];
 
     try {
         const resultado = await database.obtenerUsuarios();
@@ -1522,9 +1526,9 @@ async function loadGestionEfectivo() {
         const adminRole = currentUserData?.role;
         const esAdminConAccesoTotal = (adminRole === 'Super Admin' || adminRole === 'Gerencia');
 
-        // FILTRO CORREGIDO: Incluimos 'Área comercial' Y 'Administrador'
+        // Filtramos agentes y admins según permisos
         usuarios = usuarios.filter(u =>
-            (u.role === 'Área comercial' || u.role === 'Administrador') &&
+            (u.role === 'Área comercial' || u.role === 'Administrador' || u.role === 'Gerencia') &&
             (esAdminConAccesoTotal || adminOffice === 'AMBAS' || !adminOffice || u.office === adminOffice)
         );
 
@@ -1535,13 +1539,26 @@ async function loadGestionEfectivo() {
             popularDropdown('entrega-agente', [], msg, true);
             popularDropdown('filtro-agente', [], msg, true);
         } else {
-            // Mostramos Nombre + Rol para distinguir
-            const opciones = usuarios.map(a => ({ value: a.id, text: `${a.name} (${a.role})` }));
+            // --- CORRECCIÓN CRÍTICA AQUÍ ---
+            // Incluimos (${a.office}) en el texto para que handleRegistrarEntregaInicial pueda leerlo.
+            const opciones = usuarios.map(a => ({ 
+                value: a.id, 
+                text: `${a.name} (${a.office || 'Sin Of.'}) - ${a.role}` 
+            }));
+            
             popularDropdown('entrega-agente', opciones, 'Selecciona un usuario', true);
             popularDropdown('filtro-agente', opciones, 'Selecciona un usuario', true);
         }
 
         if (statusEntrega) showStatus(statusEntrega.id, 'Listo.', 'info');
+
+        // Restaurar fecha del formulario de entrega a hoy
+        const entregaFecha = document.getElementById('entrega-fecha');
+        if (entregaFecha) {
+             const offset = new Date().getTimezoneOffset() * 60000;
+             const localDate = new Date(Date.now() - offset).toISOString().split('T')[0];
+             entregaFecha.value = localDate;
+        }
 
     } catch (error) {
         console.error("Error cargando usuarios gestión efectivo:", error);
@@ -8279,6 +8296,7 @@ function setupEventListeners() {
 }
 
 console.log('app.js cargado correctamente y listo.');
+
 
 
 
